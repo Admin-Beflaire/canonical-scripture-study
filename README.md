@@ -1,8 +1,10 @@
-# AI Augmented Canonical Scripture Study
+# AI-Augmented Canonical Scripture Study
 
 An open-source project being built to support careful study of the Bible in its original languages and wider biblical context. It aims to help people investigate Scripture with AI assistance, keeping source evidence distinct from interpretation and conclusions.
 
 The application is one practical means of supporting the Vision and Mission below. It is currently in early development.
+
+The Vision, Mission and Principles below reproduce **version 0.10** of the project foundation.
 
 ## Vision
 

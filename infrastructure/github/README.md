@@ -19,13 +19,20 @@ contact the account API or apply settings.
 
 ## Adopt existing resources
 
-Copy `example.tfvars.example.json` to an ignored local input file and set the
-repository identities. Reconcile existing resources and protected state first.
-Migrate existing single-repository addresses to their matching
-`project["design"]`/`main["design"]` addresses, then import the application and
-newly managed permissions/protection with their observed IDs. The provisioning
-workflow supplies state handling separately. Do not apply an empty local state
-against existing repositories.
+Supply the two actual repository identities in the private Terraform inputs.
+`imports.tf` declares imports for the existing repositories, default branches,
+Actions permissions, workflow permissions, and enabled branch protections using
+those input names. Check that each referenced remote object exists. The first
+GitHub plan must propose **imports**, not creating/replacing repositories.
+If an object is missing or its import identity differs, stop and reconcile
+before any apply; do not remove an import just to make a plan pass.
+
+If an earlier verified state already tracks one of these resources, Terraform
+does not re-import it. Check that each object is mapped to only one state
+address; reconcile the previous single-repository addresses with
+`project["design"]`/`main["design"]` as needed. The provisioning
+workflow handles protected state separately. An owner-approved empty baseline
+does not authorize replacing existing repositories or permissions.
 
 Check the plan for unexpected creation, deletion, replacement, visibility or
 identity changes before applying it.
@@ -103,7 +110,7 @@ The workflow checks out the exact reviewed commit, but retains the state
 helper from the trusted dispatch revision. It initializes the selected
 Terraform root with its declared local backend, restores the last verified
 state (if any), and runs a plan. Plan output is written to one private
-`log--<target>--<run>-diagnostics.txt` release asset. Inspect this private
+`log--<target>--<run>--diagnostics.txt` release asset. Inspect this private
 output and the target commit before separately authorizing an apply.
 
 An apply dispatch makes its **own** plan and applies that plan during the
@@ -171,7 +178,7 @@ the limit, stop and migrate to a separately reviewed release/tag with
 verified state baselines. Do not delete prior checked state or failed markers
 just to free slots.
 
-**Not performed by this PR:** owner secret entry, baseline imports, real
+**Not performed by this PR:** owner secret entry, executing the declared imports, real
 Terraform plan/apply, state recovery or provider readbacks. Hosted CI covers
 the protocol and static workflow contract; operational acceptance follows
 an authorized live run.

@@ -48,6 +48,8 @@ multiple releases. The seeded `release_selection` singleton has null current/pre
 IDs before the first release. Maintenance selects a checked compatible release in
 one transaction, retaining the previous selection for operational rollback. Study
 resolves current once per request and restricts each evidence read to that membership.
+Membership inserts/deletes are rejected for both current and previous releases;
+unselected candidates can be assembled with explicit insert/delete before selection.
 These declarations perform no promotion and add no per-read permission engine.
 
 Validate named JSON records before writing them. SQL enforces foreign keys, source

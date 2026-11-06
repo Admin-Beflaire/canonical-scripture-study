@@ -259,3 +259,12 @@ BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
 
 CREATE TRIGGER releases_immutable BEFORE UPDATE ON releases
 BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER release_membership_insert_selected BEFORE INSERT ON release_outputs
+WHEN EXISTS (SELECT 1 FROM release_selection
+  WHERE NEW.release_id IN (current_release_id, previous_release_id))
+BEGIN SELECT RAISE(ABORT, 'Selected release membership is immutable'); END;
+CREATE TRIGGER release_membership_delete_selected BEFORE DELETE ON release_outputs
+WHEN EXISTS (SELECT 1 FROM release_selection
+  WHERE OLD.release_id IN (current_release_id, previous_release_id))
+BEGIN SELECT RAISE(ABORT, 'Selected release membership is immutable'); END;

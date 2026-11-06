@@ -170,6 +170,30 @@ class EvidenceContractsTests(unittest.TestCase):
         for release in ('release-1','release-2'):
             self.assertEqual(self.db.execute('SELECT count(*) FROM release_outputs ro JOIN character_statements cs ON cs.output_id=ro.output_id WHERE ro.release_id=? AND cs.status=?',(release,'approved')).fetchone()[0],1)
 
+    def test_selected_current_and_previous_memberships_reject_insert_and_delete(self):
+        self.releases()
+        spare = deepcopy(FIXTURE['records']['prepared_output'][0])
+        spare['id'] = 'spare-evidence'
+        self.insert('prepared_output', spare)
+        self.db.execute("UPDATE release_selection SET current_release_id='release-2',previous_release_id='release-1'")
+        for release, statement in [('release-2', 'statement-2'), ('release-1', 'statement-1')]:
+            with self.subTest(release=release):
+                with self.assertRaisesRegex(sqlite3.IntegrityError, 'Selected release membership is immutable'):
+                    self.insert('release_output', dict(release_id=release, output_id='spare-evidence'))
+                for output in ('shared', statement):
+                    with self.assertRaisesRegex(sqlite3.IntegrityError, 'Selected release membership is immutable'):
+                        self.db.execute('DELETE FROM release_outputs WHERE release_id=? AND output_id=?', (release,output))
+                with self.assertRaises(sqlite3.IntegrityError):
+                    self.db.execute('DELETE FROM character_statements WHERE output_id=?', (statement,))
+        self.assertEqual(self.db.execute('SELECT count(*) FROM release_outputs').fetchone()[0], 5)
+
+    def test_unselected_candidate_membership_can_be_built_and_corrected(self):
+        self.releases()
+        # Neither release is selected yet; candidate construction uses explicit delete/insert.
+        self.insert('release_output', dict(release_id='release-1', output_id='new'))
+        self.db.execute("DELETE FROM release_outputs WHERE release_id='release-1' AND output_id='new'")
+        self.assertEqual(self.db.execute("SELECT count(*) FROM release_outputs WHERE release_id='release-1'").fetchone()[0], 2)
+
     def test_immutable_prepared_records_reject_overwrite(self):
         self.releases()
         for sql in (

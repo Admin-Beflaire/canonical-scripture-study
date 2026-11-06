@@ -40,12 +40,11 @@ jobs:
     permissions:
       contents: read
     env:
-      PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
       PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
-      GITHUB_TOKEN: ${{ secrets.PLATFORM_GITHUB_TOKEN }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.PLATFORM_CLOUDFLARE_TOKEN }}
-      GITHUB_TFVARS: ${{ secrets.PLATFORM_GITHUB_TFVARS_JSON }}
-      CLOUDFLARE_TFVARS: ${{ secrets.PLATFORM_CLOUDFLARE_TFVARS_JSON }}
+      GITHUB_TOKEN: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TOKEN || '' }}
+      CLOUDFLARE_API_TOKEN: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TOKEN || '' }}
+      GITHUB_TFVARS: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TFVARS_JSON || '' }}
+      CLOUDFLARE_TFVARS: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TFVARS_JSON || '' }}
       SELECTED_SHA: ${{ inputs.commit }}
       TARGET: ${{ inputs.target }}
       OPERATION: ${{ inputs.operation }}
@@ -64,7 +63,7 @@ jobs:
           [[ "$SELECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           [[ "$TARGET" == github || "$TARGET" == cloudflare ]] || exit 1
           [[ "$OPERATION" == plan || "$OPERATION" == apply ]] || exit 1
-          [[ -n "$PLATFORM_STATE_TOKEN" && -n "$PLATFORM_STATE_REPO" ]] || exit 1
+          [[ -n "$PLATFORM_STATE_REPO" ]] || exit 1
           if [[ "$OPERATION" == apply ]]; then
             [[ "$APPROVAL" == APPLY ]] || exit 1
           else
@@ -76,6 +75,8 @@ jobs:
           # Never run a PR or an arbitrary commit supplied by the dispatch caller.
           git cat-file -e "$SELECTED_SHA^{commit}"
           git merge-base --is-ancestor "$SELECTED_SHA" HEAD
+          # Keep security-sensitive state logic at the protected dispatch revision.
+          cp infrastructure/github/platform_state.py "$RUNNER_TEMP/platform_state.py"
           git checkout --detach "$SELECTED_SHA" >/dev/null 2>&1
           if [[ "$TARGET" == github ]]; then
             [[ -n "$GITHUB_TOKEN" && -n "$GITHUB_TFVARS" ]] || exit 1
@@ -89,6 +90,8 @@ jobs:
           terraform_wrapper: false
       - name: Restore verified state and prepare isolated inputs
         id: restore
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -113,7 +116,7 @@ jobs:
           terraform validate > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
           EXTRA=()
           if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
-          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}" || exit 1
+          python3 "$RUNNER_TEMP/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}" || exit 1
           echo "Verified private state boundary"
       - name: Plan without applying
         if: inputs.operation == 'plan'
@@ -127,13 +130,15 @@ jobs:
           echo "Plan successful; no provider apply and no public plan artifact"
       - name: Record immutable begin marker before any apply
         id: begin
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
         if: inputs.operation == 'apply'
         shell: bash
         run: |
           set -euo pipefail
           cd "$WORK/config"
           terraform plan -input=false -lock=false -no-color -out="$WORK/apply.tfplan" > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
-          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" begin --key "$TARGET" --run "$ATTEMPT_ID"
+          python3 "$RUNNER_TEMP/platform_state.py" begin --key "$TARGET" --run "$ATTEMPT_ID"
       - name: Apply checked plan (no public output)
         id: apply
         if: inputs.operation == 'apply' && steps.begin.outcome == 'success'
@@ -147,6 +152,7 @@ jobs:
         if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success'
         shell: bash
         env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
           APPLY_OUTCOME: ${{ steps.apply.outcome }}
         run: |
           set -euo pipefail
@@ -154,7 +160,7 @@ jobs:
           [[ -s terraform.tfstate ]] || { echo "No state file: reconciliation required"; exit 1; }
           ARG=()
           if [[ "$APPLY_OUTCOME" == success ]]; then ARG+=(--success); fi
-          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" finish --key "$TARGET" --run "$ATTEMPT_ID" --path terraform.tfstate "${ARG[@]}"
+          python3 "$RUNNER_TEMP/platform_state.py" finish --key "$TARGET" --run "$ATTEMPT_ID" --path terraform.tfstate "${ARG[@]}"
       - name: Sanitize temporary private data
         if: always()
         shell: bash

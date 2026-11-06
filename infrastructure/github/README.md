@@ -77,7 +77,7 @@ optional-feature, search-capability and budget fixtures as they are implemented.
 `main` and the protected `provisioning` environment. Dispatch selects the
 `github` or `cloudflare` Terraform root, a full SHA already merged into
 `main`, and either `plan` or `apply`. Apply additionally requires the literal
-`APPLY` confirmation. A merge NEVER triggers plan/apply. All Terraform/provider
+`APPLY` confirmation, the original private plan run ID and its exact SHA-256. A merge NEVER triggers plan/apply. All Terraform/provider
 output stays in the short-lived runner and is not emitted in public Actions logs.
 
 Configure environment secrets (owner-entered, never copied to Git):
@@ -90,7 +90,7 @@ Configure environment secrets (owner-entered, never copied to Git):
 - `PLATFORM_GITHUB_TFVARS_JSON` and `PLATFORM_CLOUDFLARE_TFVARS_JSON`:
   separate validated Terraform input JSON objects with owner-supplied values.
 
-Set environment variable `PLATFORM_STATE_REPO` to the **private** design
+Set environment variable `PLATFORM_STATE_REPO` to the **private-visibility** design
 repository's `owner/name`. Restrict the provisioning environment to trusted
 `main`; record actual token permissions, supported environment enforcement,
 account plan and provider readbacks privately before the first operation.
@@ -102,7 +102,8 @@ The state protocol in `platform_state.py` uses the design repository's
 `platform-state-v1` operational release and independent `github`/`cloudflare`
 state names. Every apply writes a unique begin marker **before** mutation.
 It uploads a state snapshot and verifies its downloaded digest, then writes
-an append-only success/uncertain receipt under client-side duplicate checks.\nAny missing snapshot/receipt, failed
+an append-only success/uncertain receipt under client-side duplicate checks.
+Any missing snapshot/receipt, failed
 apply, unrecognized state asset or digest mismatch **blocks future runs**;
 do not fall back to older state or delete a failed marker to clear the error.
 Reconcile actual resources and state independently first. Preserve the
@@ -113,12 +114,28 @@ The initial Cloudflare state may be empty **only** when the owner separately
 authorized first creation and the external resource inventory proves those
 resources absent; dispatch `initialize_empty_cloudflare` to opt in. GitHub
 state is never initialized empty: adopt/import the already-existing repo
-settings into a checked private snapshot before applying. A workflow
-`plan` does **not** produce publicly reviewable changes or authorize apply;
-provider configuration and plan must be assessed through the approved
-private-channel process. A successful run means the Terraform command
+settings into a checked private snapshot before applying. A workflow `plan` saves the binary Terraform plan, human-readable
+`terraform show -no-color` text, and a manifest in the **private** state
+release as `plan--<target>--<run-id>-<attempt>--*` assets. Inspect the
+private `review.txt` and manifest; copy the recorded run ID and the
+`sha256` of the binary plan into a **separate** apply dispatch. Plan output
+must never be posted to public logs, PR comments or public artifacts.
+Apply downloads the **same binary plan**, checks its SHA-256, selected commit
+and verified state baseline, and applies it without regenerating another plan.
+If the baseline changed or a plan asset is incomplete, stop and create a new
+plan. An `APPLY` confirmation alone never approves a plan. A successful run means the Terraform command
 completed and the state was checked, **not** that provider drift, actual
 permissions, Worker deployment, or host authentication were verified.
+
+If normal post-apply release-state finalization fails, the workflow attempts
+a second private save using the same private repository's Contents API at
+`platform-recovery/<target>/<run-id>-<attempt>.tfstate` before runner cleanup.
+This is a **recovery snapshot, not an accepted state**: the incomplete begin
+marker still blocks subsequent provisioning pending independently reviewed
+resource/state reconciliation. Do not delete or overwrite the recovery file.
+This uses existing credentials/storage, not new infrastructure; simultaneous
+GitHub API outages could still defeat both saves and require recovery from
+provider inventory. Check the private copy exists before recovery operations.
 
 Current GH-02 limitations requiring separate operational acceptance:
 the first private release and baseline adoption require operator setup;
@@ -144,4 +161,8 @@ credentials are exposed to the workflow, while the private-state credential is
 limited to state-management steps. Provider commands do not receive the
 state-repository token.
 
-Terraform initialization, validation, planning and applying execute in a\nrestricted container with only the selected configuration directory mounted.\nThe trusted state helper and state token stay on the host, outside the container.\nProvider processes therefore do not inherit state-write authority. This\ncontainer boundary does not replace review of provider binaries and scopes.\n
+Terraform initialization, validation, planning and applying execute in a
+restricted container with only the selected configuration directory mounted.
+The trusted state helper and state token stay on the host, outside the container.
+Provider processes therefore do not inherit state-write authority. This
+container boundary does not replace review of provider binaries and scopes.

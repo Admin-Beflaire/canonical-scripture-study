@@ -20,8 +20,7 @@
     {
       "binding": "DATA_DB",
       "database_name": "css-data-{{INSTANCE}}",
-      "database_id": "{{DATABASE_ID}}",
-      "migrations_dir": "../../schemas/migrations"
+      "database_id": "{{DATABASE_ID}}"
     }
   ],
   "r2_buckets": [

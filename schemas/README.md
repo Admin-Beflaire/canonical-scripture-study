@@ -49,7 +49,9 @@ IDs before the first release. Maintenance selects a checked compatible release i
 one transaction, retaining the previous selection for operational rollback. Study
 resolves current once per request and restricts each evidence read to that membership.
 Membership inserts/deletes are rejected for both current and previous releases;
-unselected candidates can be assembled with explicit insert/delete before selection.
+Rows belonging to either selected output set also reject inserts/deletes, including
+relationship members through their parent relationship. Output-scoped evidence rows
+reject updates; unselected candidate construction/cleanup uses explicit insert/delete.
 These declarations perform no promotion and add no per-read permission engine.
 
 Validate named JSON records before writing them. SQL enforces foreign keys, source

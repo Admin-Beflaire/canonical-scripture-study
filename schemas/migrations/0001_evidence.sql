@@ -268,3 +268,130 @@ CREATE TRIGGER release_membership_delete_selected BEFORE DELETE ON release_outpu
 WHEN EXISTS (SELECT 1 FROM release_selection
   WHERE OLD.release_id IN (current_release_id, previous_release_id))
 BEGIN SELECT RAISE(ABORT, 'Selected release membership is immutable'); END;
+
+CREATE TRIGGER annotations_immutable BEFORE UPDATE ON annotations
+BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER relationships_immutable BEFORE UPDATE ON relationships
+BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER relation_members_immutable BEFORE UPDATE ON relation_members
+BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER coverage_immutable BEFORE UPDATE ON coverage
+BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER study_packages_immutable BEFORE UPDATE ON study_packages
+BEGIN SELECT RAISE(ABORT, 'Prepared evidence records are immutable'); END;
+
+CREATE TRIGGER artifacts_delete_selected BEFORE DELETE ON artifacts
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER artifacts_insert_selected BEFORE INSERT ON artifacts
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER native_spans_delete_selected BEFORE DELETE ON native_spans
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER native_spans_insert_selected BEFORE INSERT ON native_spans
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER annotations_delete_selected BEFORE DELETE ON annotations
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER annotations_insert_selected BEFORE INSERT ON annotations
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER relationships_delete_selected BEFORE DELETE ON relationships
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER relationships_insert_selected BEFORE INSERT ON relationships
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER coverage_delete_selected BEFORE DELETE ON coverage
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER coverage_insert_selected BEFORE INSERT ON coverage
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER study_packages_delete_selected BEFORE DELETE ON study_packages
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = OLD.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER study_packages_insert_selected BEFORE INSERT ON study_packages
+WHEN EXISTS (
+  SELECT 1 FROM release_outputs ro JOIN release_selection rs
+    ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE ro.output_id = NEW.output_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER relation_members_delete_selected BEFORE DELETE ON relation_members
+WHEN EXISTS (
+  SELECT 1 FROM relationships r JOIN release_outputs ro ON ro.output_id = r.output_id
+  JOIN release_selection rs ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE r.id = OLD.relationship_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;
+
+CREATE TRIGGER relation_members_insert_selected BEFORE INSERT ON relation_members
+WHEN EXISTS (
+  SELECT 1 FROM relationships r JOIN release_outputs ro ON ro.output_id = r.output_id
+  JOIN release_selection rs ON ro.release_id IN (rs.current_release_id, rs.previous_release_id)
+  WHERE r.id = NEW.relationship_id
+)
+BEGIN SELECT RAISE(ABORT, 'Selected output rows are immutable'); END;

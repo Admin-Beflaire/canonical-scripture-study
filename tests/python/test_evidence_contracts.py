@@ -206,6 +206,71 @@ class EvidenceContractsTests(unittest.TestCase):
             with self.subTest(sql=sql), self.assertRaises(sqlite3.IntegrityError):
                 self.db.execute(sql)
 
+    def test_output_scoped_rows_reject_updates(self):
+        for sql in (
+            "UPDATE annotations SET provider='changed' WHERE id='annotation-a'",
+            "UPDATE relationships SET status='supported' WHERE id='relation-a'",
+            "UPDATE relation_members SET correspondence='exact' WHERE role='from' AND ordinal=0",
+            "UPDATE coverage SET limitation='changed' WHERE capability='source_search'",
+            "UPDATE study_packages SET subject='changed' WHERE id='package-a'",
+        ):
+            with self.subTest(sql=sql), self.assertRaisesRegex(sqlite3.IntegrityError, 'Prepared evidence records are immutable'):
+                self.db.execute(sql)
+
+    def test_selected_output_rows_reject_deletes_in_current_and_previous(self):
+        self.releases()
+        empty = deepcopy(FIXTURE['records']['release'][0])
+        empty['id'] = 'release-empty'
+        self.insert('release', empty)
+        statements = (
+            "DELETE FROM annotations WHERE id='annotation-a'",
+            "DELETE FROM relationships WHERE id='relation-a'",
+            "DELETE FROM relation_members WHERE role='from' AND ordinal=0",
+            "DELETE FROM coverage WHERE output_id='shared'",
+            "DELETE FROM study_packages WHERE id='package-a'",
+            "DELETE FROM native_spans WHERE id='span-gap'",
+            "DELETE FROM artifacts WHERE id='search-index'",
+        )
+        for current, previous in [('release-1','release-empty'), ('release-empty','release-1')]:
+            self.db.execute('UPDATE release_selection SET current_release_id=?,previous_release_id=?', (current,previous))
+            for sql in statements:
+                with self.subTest(current=current,sql=sql), self.assertRaisesRegex(sqlite3.IntegrityError, 'Selected output rows are immutable'):
+                    self.db.execute(sql)
+            # Existing foreign keys/statement guards also retain selected parents and payloads.
+            for sql in ("DELETE FROM prepared_outputs WHERE id='shared'",
+                        "DELETE FROM text_payloads",
+                        "DELETE FROM character_statements WHERE output_id='statement-1'"):
+                with self.subTest(current=current,sql=sql), self.assertRaises(sqlite3.IntegrityError):
+                    self.db.execute(sql)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM annotations').fetchone()[0], 1)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM native_spans').fetchone()[0], 4)
+
+    def test_selected_outputs_reject_appended_evidence_rows(self):
+        self.releases()
+        empty = deepcopy(FIXTURE['records']['release'][0])
+        empty['id'] = 'release-empty'
+        self.insert('release', empty)
+        for current, previous in [('release-1','release-empty'), ('release-empty','release-1')]:
+            self.db.execute('UPDATE release_selection SET current_release_id=?,previous_release_id=?', (current,previous))
+            for kind in ('artifact','native_span','annotation','relationship','relation_member','coverage','study_package'):
+                row = deepcopy(next(row for row in FIXTURE['records'][kind]
+                                    if row.get('output_id') == 'shared' or kind == 'relation_member'))
+                if 'id' in row:
+                    row['id'] = 'appended-' + kind
+                elif kind == 'coverage':
+                    row['capability'] = 'appended-capability'
+                else:
+                    row['role'] = 'appended-role'
+                with self.subTest(current=current,kind=kind), self.assertRaisesRegex(sqlite3.IntegrityError, 'Selected output rows are immutable'):
+                    self.insert(kind, row)
+
+    def test_unselected_output_cleanup_remains_possible(self):
+        for table in ('relation_members','relationships','annotations','coverage','study_packages','native_spans'):
+            with self.subTest(table=table):
+                self.assertGreater(self.db.execute(f'DELETE FROM {table}').rowcount, 0)
+        self.assertEqual(self.db.execute('DELETE FROM artifacts WHERE output_id IS NOT NULL').rowcount, 2)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM artifacts WHERE id='original-body'").fetchone()[0], 1)
+
     def test_singleton_selection_and_failed_candidate_transaction_keep_current(self):
         self.releases()
         self.db.execute("UPDATE release_selection SET current_release_id='release-1' WHERE singleton_id=1")

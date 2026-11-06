@@ -20,9 +20,11 @@ contact the account API or apply settings.
 ## Adopt existing resources
 
 Supply the two actual repository identities in the private Terraform inputs.
-`imports.tf` declares imports for the existing repositories, default branches,
-Actions permissions, workflow permissions, and enabled branch protections using
-those input names. Check that each referenced remote object exists. The first
+`adoption/imports.tf` declares imports for existing repositories, default
+branches, Actions permissions, workflow permissions and enabled branch protections.
+The protected provisioning workflow stages this as `imports.tf` **only** for
+an authorized GitHub plan/apply; it is kept outside the normal Terraform root
+so offline mocked `terraform test` does not attempt to import live resources. Check that each referenced remote object exists. The first
 GitHub plan must propose **imports**, not creating/replacing repositories.
 If an object is missing or its import identity differs, stop and reconcile
 before any apply; do not remove an import just to make a plan pass.

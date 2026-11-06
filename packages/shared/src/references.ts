@@ -20,7 +20,7 @@ function keysMatch(value: Record<string, unknown>, keys: readonly string[]): boo
   return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
 function identifier(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
+  return typeof value === "string" && value.length > 0 && !/[\uD800-\uDFFF]/u.test(value);
 }
 function segment(value: unknown): value is NativeSegment {
   const declaration = schema.properties.segments.items;

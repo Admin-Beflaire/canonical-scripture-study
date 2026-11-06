@@ -36,6 +36,8 @@ for (const fixture of fixtures.references) {
       assert.deepEqual(parseReference(fixture.serialized), fixture.input);
     } else {
       assert.throws(() => assertReference(fixture.input));
+      assert.throws(() => serializeReference(fixture.input as NativeReference));
+      assert.throws(() => parseReference(JSON.stringify(fixture.input)));
     }
   });
 }

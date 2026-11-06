@@ -12,7 +12,7 @@ ALLOWED = {
     "shared-python": {"shared-python"},
     "preparation": {"preparation", "shared-python"},
 }
-BRIDGES = {"subprocess", "importlib", "runpy", "ctypes"}
+BRIDGES = {"subprocess", "multiprocessing", "importlib", "runpy", "ctypes"}
 
 
 def module_identity(file):
@@ -73,7 +73,7 @@ def check_source(root, file, source):
                 failures.append(f"{file}: dynamic code/import is not allowed")
             if isinstance(node.func, ast.Attribute):
                 operation = node.func.attr
-                if operation in {"import_module", "exec_module", "load_module", "system", "popen"} or operation.startswith(("exec", "spawn")):
+                if operation in {"import_module", "exec_module", "load_module", "system", "popen", "fork", "forkpty"} or operation.startswith(("exec", "spawn")):
                     failures.append(f"{file}: runtime execution bridge is not allowed")
     return failures
 

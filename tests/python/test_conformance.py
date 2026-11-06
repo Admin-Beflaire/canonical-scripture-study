@@ -28,10 +28,15 @@ class ConformanceTests(unittest.TestCase):
                 if case["valid"]:
                     assert_reference(case["input"])
                     self.assertEqual(serialize_reference(case["input"]), case["serialized"])
+                    serialize_reference(case["input"]).encode("utf-8")
                     self.assertEqual(parse_reference(case["serialized"]), case["input"])
                 else:
                     with self.assertRaises((ValueError, TypeError, KeyError)):
                         assert_reference(case["input"])
+                    with self.assertRaises((ValueError, TypeError, KeyError)):
+                        serialize_reference(case["input"])
+                    with self.assertRaises((ValueError, TypeError, KeyError)):
+                        parse_reference(json.dumps(case["input"], ensure_ascii=True))
 
     def test_parse_cases(self):
         for case in FIXTURES["parse"]:

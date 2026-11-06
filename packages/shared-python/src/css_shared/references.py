@@ -11,7 +11,11 @@ SCHEMA = json.loads(
 
 
 def _identifier(value):
-    return isinstance(value, str) and len(value) > 0
+    return (
+        isinstance(value, str)
+        and len(value) > 0
+        and not any(0xD800 <= ord(c) <= 0xDFFF for c in value)
+    )
 
 
 def _safe_integer(value):

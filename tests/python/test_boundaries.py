@@ -33,3 +33,14 @@ class BoundaryTests(unittest.TestCase):
 
     def test_relative_escape_is_rejected(self):
         self.assertTrue(CHECKER.check_source(ROOT, "packages/shared-python/src/css_shared/check.py", "from ...css_preparation import tasks"))
+
+    def test_multiprocessing_and_fork_bridges_are_rejected(self):
+        for source in (
+            "import multiprocessing",
+            "from multiprocessing import Process",
+            "import multiprocessing.pool",
+            "import os; os.fork()",
+            "import os; os.forkpty()",
+        ):
+            with self.subTest(source=source):
+                self.assertTrue(CHECKER.check_source(ROOT, "packages/shared-python/src/css_shared/check.py", source))

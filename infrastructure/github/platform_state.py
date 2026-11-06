@@ -65,8 +65,6 @@ def release(create=False):
         payload = json.dumps({"tag_name": TAG, "name": "Operational Terraform state",
                               "draft": False, "prerelease": True}).encode()
         obj = request("POST", "/repos/" + REPOSITORY + "/releases", payload)
-    if obj is None:
-        raise StateError("Protected state release absent; initialize under owner authorization")
     return obj
 
 
@@ -113,12 +111,11 @@ def download(asset):
 def inventory(key, allow_missing=False):
     if key not in KEYS:
         raise StateError("Unknown state key")
-    try:
-        rel = release()
-    except StateError:
+    rel = release()
+    if rel is None:
         if allow_missing:
             return None, None
-        raise
+        raise StateError("Protected state release absent; adopt or initialize explicitly")
     found = {asset["name"]: asset for asset in assets(rel)}
     prefix = key + "--"
     # Never silently reuse historical/unrecognized state in the same release.
@@ -181,6 +178,8 @@ def finish(key, run, state_path, success):
     if key not in KEYS or not SAFE_ID.fullmatch(run):
         raise StateError("Invalid state identity")
     rel = release()
+    if rel is None:
+        raise StateError("Protected state release absent")
     found = {x["name"]: x for x in assets(rel)}
     start, state_name, done = names(key, run)
     if start not in found or done in found or state_name in found:

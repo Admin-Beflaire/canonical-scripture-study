@@ -36,7 +36,7 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(profiles.select_profiles([path]), ["python"])
 
     def test_workflow_tooling_config_and_unknown_code_fail_closed(self):
-        for path in (".github/workflows/checks.yml", "infrastructure/github/main.tf", "tools/build.mjs", "tests/repository/test_ci_routing.py", "future/unknown.py", "package-lock.json", "tests/platform/platform.test.ts", "infrastructure/cloudflare/render.mjs"):
+        for path in (".github/workflows/checks.yml", "infrastructure/github/main.tf", "tools/build.mjs", "tests/repository/test_ci_routing.py", "future/unknown.py", "package-lock.json", "tests/platform/platform.test.ts", "infrastructure/cloudflare/render.mjs", "infrastructure/github/deployment/deploy.py", "tests/platform/deployment.test.ts", ".github/workflows/deploy.yml"):
             self.assertEqual(set(profiles.select_profiles([path])), set(profiles.PROFILES))
 
     def test_docs_only_change_keeps_gate_without_running_suites(self):

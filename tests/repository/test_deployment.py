@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,6 +44,26 @@ class DeploymentTests(unittest.TestCase):
                 execute.return_value.returncode = 1
                 with self.assertRaisesRegex(d.DeploymentError, "phase failed"):
                     d.run(["failed"], io.StringIO())
+
+    def test_real_forward_migrations_preserve_selection_for_compatible_code_revert(self):
+        db = sqlite3.connect(":memory:")
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        migrations = sorted((ROOT / "schemas/migrations").glob("*.sql"))
+        db.executescript(migrations[0].read_text())
+        db.execute("INSERT INTO releases VALUES(?,?,?,?,?,?,?)",
+                   ("r1", "manifest", "recipe", '{"evidence_records":"1","native_reference":"1"}', "coverage", "quality", "scope"))
+        db.execute("UPDATE release_selection SET current_release_id='r1' WHERE singleton_id=1")
+        query = lambda sql: [dict(row) for row in db.execute(sql)]
+        supported = json.loads((ROOT / "infrastructure/github/deployment/compatibility.json").read_text())
+        self.assertEqual(d.selection(query, supported), "r1")
+        for migration in migrations[1:]:
+            db.executescript(migration.read_text())
+        self.assertEqual(d.selection(query, supported), "r1")
+        with self.assertRaises(d.DeploymentError):
+            d.selection(query, {"evidence_records": ["0"]})
+        self.assertEqual(db.execute("SELECT current_release_id FROM release_selection").fetchone()[0], "r1")
+        db.close()
 
     def fixture(self, directory):
         root = Path(directory)

@@ -238,7 +238,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn(secret, header)
         for line in workflow.splitlines():
             if "uses:" in line:
-                self.assertRegex(line, r"uses: [\\w/-]+@[0-9a-f]{40}(?: |$)")
+                self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")
 
 
 if __name__ == "__main__":

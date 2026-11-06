@@ -5,6 +5,7 @@ failed attempt blocks all subsequent runs until a separately reviewed repair.
 No state bytes or provider response bodies are printed to public logs.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -203,28 +204,150 @@ def finish(key, run, state_path, success):
         raise StateError("Apply failed: state saved but reconciliation is required")
 
 
+
+def baseline_digest(key, allow_empty=False):
+    """Fingerprint the same verified state a plan must be based on."""
+    rel, latest = inventory(key, allow_missing=allow_empty)
+    if latest is None:
+        if allow_empty and key == "cloudflare":
+            return "empty"
+        raise StateError("No verified state for planning")
+    _, _, parts, receipt = latest
+    data = download(parts["state.tfstate"])
+    if digest(data) != receipt.get("sha256") or len(data) != receipt.get("bytes"):
+        raise StateError("Plan baseline failed verification")
+    return digest(data)
+
+
+def plan_names(key, run):
+    if key not in KEYS or not SAFE_ID.fullmatch(run):
+        raise StateError("Invalid plan identity")
+    prefix = "plan--" + key + "--" + run + "--"
+    return prefix + "binary.tfplan", prefix + "review.txt", prefix + "manifest.json"
+
+
+def plan_save(key, run, commit, plan_file, review_file, allow_empty=False):
+    """Store an exact saved plan and review text in the existing private release."""
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise StateError("Invalid reviewed commit")
+    base = baseline_digest(key, allow_empty)
+    saved_plan = Path(plan_file).read_bytes()
+    readable = Path(review_file).read_bytes()
+    if not saved_plan or not readable:
+        raise StateError("Empty private plan")
+    rel = release(create=True)
+    if len(assets(rel)) > 997:
+        raise StateError("Private release has insufficient room for plan")
+    plan_name, review_name, manifest_name = plan_names(key, run)
+    existing = {a["name"] for a in assets(rel)}
+    if any(name in existing for name in (plan_name, review_name, manifest_name)):
+        raise StateError("Plan already exists; use a fresh dispatch")
+    stored_plan = upload(rel, plan_name, saved_plan)
+    stored_review = upload(rel, review_name, readable)
+    if digest(download(stored_plan)) != digest(saved_plan) or digest(download(stored_review)) != digest(readable):
+        raise StateError("Private plan integrity check failed")
+    manifest = {
+        "key": key, "run": run, "commit": commit,
+        "baseline": base, "sha256": digest(saved_plan),
+        "bytes": len(saved_plan), "review_sha256": digest(readable),
+    }
+    upload(rel, manifest_name, json.dumps(manifest, sort_keys=True).encode())
+
+
+def plan_fetch(key, run, commit, approved_digest, output, allow_empty=False):
+    """Require owner-supplied plan digest and the original verified state."""
+    if not re.fullmatch(r"[0-9a-f]{40}", commit) or not re.fullmatch(r"[0-9a-f]{64}", approved_digest):
+        raise StateError("Invalid approved plan identity")
+    rel = release()
+    if rel is None:
+        raise StateError("Missing private plan release")
+    found = {a["name"]: a for a in assets(rel)}
+    plan_name, review_name, manifest_name = plan_names(key, run)
+    if not all(name in found for name in (plan_name, review_name, manifest_name)):
+        raise StateError("Incomplete private plan; rerun planning")
+    record = json.loads(download(found[manifest_name]))
+    if (not isinstance(record, dict) or record.get("key") != key or record.get("run") != run
+            or record.get("commit") != commit or record.get("sha256") != approved_digest):
+        raise StateError("Plan approval does not match stored plan")
+    if record.get("baseline") != baseline_digest(key, allow_empty):
+        raise StateError("State baseline changed since plan; create a new plan")
+    binary = download(found[plan_name])
+    readable = download(found[review_name])
+    if (digest(binary) != approved_digest or len(binary) != record.get("bytes")
+            or digest(readable) != record.get("review_sha256")):
+        raise StateError("Private plan integrity check failed")
+    path = Path(output)
+    path.write_bytes(binary)
+    path.chmod(0o600)
+
+
+def rescue(key, run, state_path):
+    """Private Contents API fallback if ordinary release finalization failed.
+
+    A rescue copy is not an accepted state: the interrupted begin stays blocked
+    until the operator reconciles and repairs it. Never overwrite recovery data.
+    """
+    if key not in KEYS or not SAFE_ID.fullmatch(run):
+        raise StateError("Invalid recovery identity")
+    data = Path(state_path).read_bytes()
+    if not data:
+        raise StateError("No state available for private recovery")
+    path = "/repos/" + REPOSITORY + "/contents/platform-recovery/" + key + "/" + run + ".tfstate"
+    if request("GET", path) is not None:
+        raise StateError("Private recovery snapshot already exists; inspect it")
+    payload = json.dumps({
+        "message": "recovery: hold Terraform state for independent reconciliation",
+        "content": base64.b64encode(data).decode("ascii"),
+    }).encode()
+    saved = request("PUT", path, payload)
+    if not isinstance(saved, dict) or not saved.get("content", {}).get("sha"):
+        raise StateError("Private recovery snapshot not confirmed")
+    check = request("GET", path)
+    try:
+        verified = base64.b64decode(check["content"], validate=False)
+    except (TypeError, ValueError, KeyError, AttributeError):
+        raise StateError("Private recovery readback failed") from None
+    if digest(verified) != digest(data):
+        raise StateError("Private recovery digest mismatch")
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("command", choices=("restore", "begin", "finish"))
+    p.add_argument("command", choices=("restore", "begin", "finish", "plan-save", "plan-fetch", "rescue"))
     p.add_argument("--key", required=True, choices=sorted(KEYS))
     p.add_argument("--run")
     p.add_argument("--path")
     p.add_argument("--allow-empty", action="store_true")
+    p.add_argument("--commit")
+    p.add_argument("--plan-run")
+    p.add_argument("--plan-sha256")
+    p.add_argument("--review-path")
     p.add_argument("--success", action="store_true")
     a = p.parse_args()
     metadata = request("GET", "/repos/" + REPOSITORY)
-    if not isinstance(metadata, dict) or metadata.get("private") is not True:
+    if (not isinstance(metadata, dict) or metadata.get("private") is not True
+            or metadata.get("visibility") != "private"):
         raise StateError("Protected state destination is not verified private")
     if a.command in ("begin", "finish") and (not a.run or not SAFE_ID.fullmatch(a.run)):
         raise StateError("Run must be the fixed GitHub run-id/attempt")
-    if a.command in ("restore", "finish") and not a.path:
+    if a.command in ("restore", "finish", "plan-save", "plan-fetch", "rescue") and not a.path:
         raise StateError("Missing state path")
     if a.command == "restore":
         restore(a.key, a.path, a.allow_empty)
     elif a.command == "begin":
         begin(a.key, a.run)
-    else:
+    elif a.command == "finish":
         finish(a.key, a.run, a.path, a.success)
+    elif a.command == "plan-save":
+        if not a.run or not a.commit or not a.review_path:
+            raise StateError("Missing private plan inputs")
+        plan_save(a.key, a.run, a.commit, a.path, a.review_path, a.allow_empty)
+    elif a.command == "plan-fetch":
+        if not a.plan_run or not a.commit or not a.plan_sha256:
+            raise StateError("Missing approved plan inputs")
+        plan_fetch(a.key, a.plan_run, a.commit, a.plan_sha256, a.path, a.allow_empty)
+    elif a.command == "rescue":
+        rescue(a.key, a.run, a.path)
     print("Protected state " + a.command + " verified")
 
 

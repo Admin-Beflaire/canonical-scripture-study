@@ -7,6 +7,12 @@ The confirmation word is an operator guard, not independent proof of review or
 owner permission. Main protection, recorded review and restricted dispatch access
 remain the authority boundary, as with provisioning.
 
+Dispatch only after the preceding deployment is terminal. The shared concurrency
+group serializes Study and Control, but GitHub retains only one pending run: a
+third dispatch can cancel the older pending run even with `cancel-in-progress:
+false`. Inspect cancelled/pending runs and their private receipts; do not assume an
+authorized dispatch executed. Redispatch only under its still-applicable authority.
+
 The selected commit must be reachable from the trusted dispatch revision. The
 workflow installs locked dependencies without lifecycle scripts or provider
 credentials, builds only the selected Worker and renders the existing templates.

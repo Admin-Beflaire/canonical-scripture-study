@@ -226,6 +226,7 @@ class WorkflowTests(unittest.TestCase):
                      "terraform apply -input=false", "begin --key", "finish --key",
                      "diagnostic --key", "if: always()"):
             self.assertIn(item, workflow)
+        self.assertIn('cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"', workflow)
         for removed in ("docker run", "terraform_isolated.sh", "plan-save", "plan-fetch",
                         "plan_run:", "plan_sha256:", "rescue --key", "-backend=false",
                         "upload-artifact", "pull_request:", "pull_request_target:",

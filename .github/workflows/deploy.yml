@@ -1,0 +1,111 @@
+name: Authorized application deployment
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Independent Worker
+        required: true
+        type: choice
+        options: [study, control]
+      commit:
+        description: Reviewed exact 40-character commit reachable from main
+        required: true
+        type: string
+      approval:
+        description: Type DEPLOY only under recorded owner authorization
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: application-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: deployment
+    timeout-minutes: 20
+    env:
+      SELECTED_SHA: ${{ inputs.commit }}
+      TARGET: ${{ inputs.target }}
+      APPROVAL: ${{ inputs.approval }}
+      ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      WRANGLER_SEND_METRICS: 'false'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate trusted exact commit and authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SELECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$TARGET" == study || "$TARGET" == control ]] || exit 1
+          [[ "$APPROVAL" == DEPLOY ]] || exit 1
+          git cat-file -e "$SELECTED_SHA^{commit}"
+          git merge-base --is-ancestor "$SELECTED_SHA" HEAD
+          umask 077
+          WORK="$RUNNER_TEMP/gh03"
+          mkdir -p "$WORK/trusted/infrastructure/github" "$WORK/trusted/schemas"
+          cp -a infrastructure/github/deployment "$WORK/trusted/infrastructure/github/"
+          cp infrastructure/github/platform_state.py "$WORK/trusted/infrastructure/github/"
+          cp -a schemas/migrations "$WORK/trusted/schemas/"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          git checkout --detach "$SELECTED_SHA" > "$WORK/build.log" 2>&1
+          echo "Exact trusted commit validated"
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version-file: .python-version
+      - name: Build selected Worker from locked inputs without deployment credentials
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund >> "$WORK/build.log" 2>&1 || { echo "Dependency install blocked"; exit 1; }
+          npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || { echo "Worker build blocked"; exit 1; }
+          test -f infrastructure/github/deployment/compatibility.json || { echo "Commit predates deployment compatibility contract"; exit 1; }
+          echo "Selected Worker built"
+      - name: Render private instance configuration and validate bundle
+        id: render
+        env:
+          INSTANCE_JSON: ${{ secrets.DEPLOYMENT_INSTANCE_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ -n "$INSTANCE_JSON" ]] || { echo "Missing instance configuration"; exit 1; }
+          printf '%s' "$INSTANCE_JSON" > "$WORK/instance.json"
+          node infrastructure/cloudflare/render.mjs "$WORK/instance.json" >> "$WORK/build.log" 2>&1 || { echo "Instance rendering blocked"; exit 1; }
+          node_modules/.bin/wrangler deploy --dry-run --config "dist/config/$TARGET.json" >> "$WORK/build.log" 2>&1 || { echo "Worker validation blocked"; exit 1; }
+          echo "Temporary configuration and bundle checked"
+      - name: Apply compatible migrations, deploy and read back protected endpoint
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.DEPLOYMENT_CLOUDFLARE_TOKEN }}
+          DEPLOYMENT_SMOKE_JWT: ${{ secrets[format('DEPLOYMENT_{0}_SMOKE_JWT', inputs.target)] }}
+        run: python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" deploy --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
+      - name: Retain private diagnostics and exact receipt
+        if: always() && env.WORK != ''
+        env:
+          PLATFORM_STATE_REPO: ${{ vars.DEPLOYMENT_DIAGNOSTICS_REPO }}
+          PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}
+        run: python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" diagnostics --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
+      - name: Report public outcome and remove private local files
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+        shell: bash
+        run: |
+          if [[ "$DEPLOY_OUTCOME" == success ]]; then
+            echo "Selected code deployed and HTTP-checked; private receipt records commit/run/data. Host acceptance is separate."
+          else
+            echo "Deployment incomplete; inspect private diagnostics. No data selection or automatic rollback requested."
+          fi
+          rm -rf -- "$RUNNER_TEMP/gh03" "$GITHUB_WORKSPACE/dist/config" "$GITHUB_WORKSPACE/.wrangler"

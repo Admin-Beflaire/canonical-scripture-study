@@ -1,0 +1,28 @@
+{
+  "name": "canonical-scripture-study",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build:study": "node tools/build.mjs study",
+    "build:control": "node tools/build.mjs control",
+    "build:preparation": "node tools/build.mjs preparation",
+    "build": "npm run build:study && npm run build:control && npm run build:preparation && npm run build:shared",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "check": "npm run typecheck && npm run check:boundaries && npm test && npm run build",
+    "build:shared": "node tools/build.mjs shared",
+    "check:boundaries": "node tools/check-boundaries.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261106.1",
+    "@types/node": "24.19.2",
+    "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3"
+  }
+}

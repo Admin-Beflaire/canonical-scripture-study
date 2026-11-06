@@ -1,0 +1,7 @@
+{
+  "owner": "example-owner",
+  "repositories": {
+    "application": {"name": "example-app", "visibility": "public", "enforce_protection": true, "required_checks": ["Application checks"]},
+    "design": {"name": "example-design", "visibility": "private", "enforce_protection": false, "required_checks": []}
+  }
+}

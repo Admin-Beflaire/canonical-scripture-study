@@ -14,7 +14,9 @@ import sys
 import urllib.error
 import urllib.request
 
-REPOSITORY = "Admin-Beflaire/canonical-scripture-study-design"
+REPOSITORY = os.environ.get("PLATFORM_STATE_REPO", "")
+if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY) or REPOSITORY == os.environ.get("GITHUB_REPOSITORY"):
+    raise RuntimeError("Private state repository must be configured separately")
 TAG = "platform-state-v1"
 ROOT = "https://api.github.com"
 KEYS = {"github", "cloudflare"}
@@ -121,14 +123,14 @@ def inventory(key, allow_missing=False):
     prefix = key + "--"
     # Never silently reuse historical/unrecognized state in the same release.
     unknown = [name for name in found if name.startswith(prefix)
-               and not re.fullmatch(re.escape(prefix) + r"[0-9]{1,20}-[0-9]{1,5}--(begin\\.json|state\\.tfstate|receipt\\.json)", name)]
+               and not re.fullmatch(re.escape(prefix) + r"[0-9]{1,20}-[0-9]{1,5}--(begin\.json|state\.tfstate|receipt\.json)", name)]
     if unknown:
         raise StateError("Unrecognized state assets require explicit migration")
     attempts = {}
     for name, asset in found.items():
         if not name.startswith(prefix):
             continue
-        match = re.fullmatch(re.escape(prefix) + r"([0-9]{1,20}-[0-9]{1,5})--(begin\\.json|state\\.tfstate|receipt\\.json)", name)
+        match = re.fullmatch(re.escape(prefix) + r"([0-9]{1,20}-[0-9]{1,5})--(begin\.json|state\.tfstate|receipt\.json)", name)
         if match:
             attempts.setdefault(match[1], {})[match[2]] = asset
     # Every begin MUST have a successful terminal receipt to start any new run.

@@ -24,6 +24,8 @@ A `(search_key, occurrence_id)` pair occurs once in an index. Empty normalized k
 are valid. Original wording is recovered through the immutable native reference;
 normalization does not replace it. Word postings retain the form, admitted
 analysis revisions, provider alternatives, grammar and attributed lemma IDs.
+Consumers reject a posting if its `source_revision_id` or `coordinate_version`
+differs from the corresponding value in its `native_reference`.
 
 Each file directory records ordered, contiguous, non-overlapping, line-aligned
 pages covering the entire file. Each page records inclusive first/last keys,

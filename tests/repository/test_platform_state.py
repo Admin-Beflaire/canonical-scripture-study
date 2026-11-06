@@ -25,7 +25,11 @@ class FakePrivateRelease:
             self.release = {"id": 1}
             return self.release
         if method == "GET" and "/assets?" in path:
-            return self.items[:]
+            from urllib.parse import parse_qs, urlparse
+            query = parse_qs(urlparse(path).query)
+            page = int(query.get("page", ["1"])[0])
+            page_size = int(query.get("per_page", ["100"])[0])
+            return self.items[(page - 1) * page_size:page * page_size]
         if method == "POST" and upload:
             from urllib.parse import parse_qs, urlparse
             name = parse_qs(urlparse(path).query)["name"][0]

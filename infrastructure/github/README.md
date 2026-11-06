@@ -125,3 +125,21 @@ the first private release and baseline adoption require operator setup;
 uncertain state requires a reviewed manual reconciliation procedure; and
 provider readbacks must be performed on the actual authorized first
 apply. No Cloudflare or GitHub apply is triggered by this PR.
+
+## Release capacity and recovery
+
+GitHub releases permit at most 1,000 assets. Before beginning an apply, the
+state helper requires three free slots for its begin marker, verified state,
+and terminal receipt. When capacity is low, **do not delete history in place**
+or bypass the check. Freeze provisioning, preserve a private export of the
+complete release and verified per-key baselines, reconcile both roots against
+live resources, and establish a separately reviewed new release protocol/tag
+with migrated baselines before resuming. Record the migration and verify both
+roots by private readback. Earlier workflow attempts must not be rerun after
+newer successful applies; start a fresh dispatch instead.
+
+The current dispatch revision owns the state helper even when Terraform is
+checked out from an older approved commit. Only the selected target's provider
+credentials are exposed to the workflow, while the private-state credential is
+limited to state-management steps. Provider commands do not receive the
+state-repository token.

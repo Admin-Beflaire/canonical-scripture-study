@@ -1,0 +1,23 @@
+{
+  "name": "canonical-scripture-study",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build:study": "node tools/build.mjs study",
+    "build:control": "node tools/build.mjs control",
+    "build:preparation": "node tools/build.mjs preparation",
+    "build": "npm run build:study && npm run build:control && npm run build:preparation",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/**/*.test.ts",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "esbuild": "0.28.2"
+  }
+}

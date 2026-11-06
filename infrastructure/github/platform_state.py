@@ -167,9 +167,15 @@ def restore(key, output, allow_empty=False):
 def begin(key, run):
     if key not in KEYS or not SAFE_ID.fullmatch(run):
         raise StateError("Invalid state identity")
-    rel, _ = inventory(key, allow_missing=True)
+    rel, latest = inventory(key, allow_missing=True)
+    # An old workflow rerun must never overwrite the effective latest state.
+    if latest is not None and tuple(map(int, run.split("-"))) <= latest[:2]:
+        raise StateError("Stale run attempt; use a new workflow dispatch")
     if rel is None:
         rel = release(create=True)
+    # Reserve room for begin, state and terminal receipt before mutation.
+    if len(assets(rel)) > 997:
+        raise StateError("State release capacity exhausted; migrate before apply")
     upload(rel, names(key, run)[0], json.dumps({"key": key, "run": run,
                                                 "stage": "begin"}, sort_keys=True).encode())
 

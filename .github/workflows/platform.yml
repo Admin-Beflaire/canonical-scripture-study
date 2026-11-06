@@ -71,7 +71,7 @@ jobs:
             [[ -z "$APPROVAL" ]] || exit 1
           fi
           if [[ "$EMPTY_CLOUDFLARE" == true ]]; then
-            [[ "$TARGET" == cloudflare && "$OPERATION" == apply ]] || exit 1
+            [[ "$TARGET" == cloudflare ]] || exit 1
           fi
           # Never run a PR or an arbitrary commit supplied by the dispatch caller.
           git cat-file -e "$SELECTED_SHA^{commit}"

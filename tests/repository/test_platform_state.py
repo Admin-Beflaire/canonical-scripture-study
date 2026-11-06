@@ -1,11 +1,11 @@
-"""Credential-free GH-02 protocol and workflow boundary tests."""
+"""Credential-free GH-02 state protocol and workflow tests."""
 import importlib.util
-import base64
 import json
-import sys
 from pathlib import Path
+import sys
 import tempfile
 import unittest
+import urllib.request
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,21 +19,8 @@ class FakePrivateRelease:
         self.release = None
         self.items = []
         self.next_id = 1
-        self.recovery = {}
 
     def request(self, method, path, data=None, binary=False, upload=False):
-        if "/git/blobs/" in path and method == "GET":
-            return {"encoding": "base64", "content": self.recovery[path.rsplit("/", 1)[-1]]}
-        if "/contents/platform-recovery/" in path:
-            if method == "GET":
-                return {"content": self.recovery[path]} if path in self.recovery else None
-            if method == "PUT" and path not in self.recovery:
-                encoded = json.loads(data)["content"]
-                self.recovery[path] = encoded
-                sha = "mock-sha-" + str(len(self.recovery))
-                self.recovery[sha] = encoded
-                return {"content": {"sha": sha}}
-            raise AssertionError("Attempted to overwrite private recovery")
         if "/releases/tags/" in path:
             return self.release
         if method == "POST" and path.endswith("/releases"):
@@ -43,8 +30,8 @@ class FakePrivateRelease:
             from urllib.parse import parse_qs, urlparse
             query = parse_qs(urlparse(path).query)
             page = int(query.get("page", ["1"])[0])
-            page_size = int(query.get("per_page", ["100"])[0])
-            return self.items[(page - 1) * page_size:page * page_size]
+            size = int(query.get("per_page", ["100"])[0])
+            return self.items[(page - 1) * size:page * size]
         if method == "POST" and upload:
             from urllib.parse import parse_qs, urlparse
             name = parse_qs(urlparse(path).query)["name"][0]
@@ -61,54 +48,55 @@ class FakePrivateRelease:
 class StateTests(unittest.TestCase):
     def setUp(self):
         self.fake = FakePrivateRelease()
-        self.patch = patch.object(state, "request", side_effect=self.fake.request)
-        self.patch.start()
-        self.addCleanup(self.patch.stop)
+        p = patch.object(state, "request", side_effect=self.fake.request)
+        p.start()
+        self.addCleanup(p.stop)
 
-    def test_missing_state_blocks_github_and_cloudflare_without_opt_in(self):
+    def test_missing_state_requires_explicit_approval_for_both_targets(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(state.StateError):
-                state.restore("github", str(Path(tmp) / "a"))
-            with self.assertRaises(state.StateError):
-                state.restore("cloudflare", str(Path(tmp) / "b"))
-            self.assertEqual(state.restore("cloudflare", str(Path(tmp) / "c"), True), "empty")
+            for key in ("github", "cloudflare"):
+                output = Path(tmp) / key
+                with self.assertRaises(state.StateError):
+                    state.restore(key, output)
+                self.assertEqual(state.restore(key, output, True), "empty")
+                self.assertFalse(output.exists())
 
-    def test_checked_state_round_trip_and_separate_keys(self):
+    def test_checked_state_round_trip_and_separate_targets(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "state"
-            path.write_bytes(b'{"version":4,"serial":1}')
-            state.begin("cloudflare", "123-1")
-            state.finish("cloudflare", "123-1", path, True)
-            output = Path(tmp) / "restore"
-            self.assertEqual(state.restore("cloudflare", output), "verified")
-            self.assertEqual(output.read_bytes(), path.read_bytes())
+            p = Path(tmp) / "state"
+            p.write_bytes(b'{"version":4,"serial":1}')
+            state.begin("github", "123-1")
+            state.finish("github", "123-1", p, True)
+            output = Path(tmp) / "restored"
+            self.assertEqual(state.restore("github", output), "verified")
+            self.assertEqual(output.read_bytes(), p.read_bytes())
             with self.assertRaises(state.StateError):
-                state.restore("github", output)
-            self.assertEqual(state.restore("cloudflare", output), "verified")
+                state.restore("cloudflare", output)
+            self.assertEqual(state.restore("cloudflare", output, True), "empty")
 
-    def test_partial_failure_saves_but_blocks_further_actions(self):
+    def test_uncertain_apply_keeps_state_and_blocks_next_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "state"
-            path.write_bytes(b'{"version":4}')
+            p = Path(tmp) / "state"
+            p.write_bytes(b'{"version":4}')
             state.begin("github", "200-1")
             with self.assertRaises(state.StateError):
-                state.finish("github", "200-1", path, False)
+                state.finish("github", "200-1", p, False)
             self.assertTrue(any(x["name"].endswith("receipt.json") for x in self.fake.items))
             with self.assertRaises(state.StateError):
-                state.restore("github", Path(tmp) / "restored")
-            with self.assertRaises(state.StateError):
                 state.begin("github", "201-1")
+            with self.assertRaises(state.StateError):
+                state.restore("github", Path(tmp) / "out", True)
 
-    def test_interrupted_begin_blocks_without_fallback(self):
+    def test_interrupted_begin_with_no_state_blocks_reuse(self):
         state.begin("cloudflare", "300-1")
-        with self.assertRaises(state.StateError):
+        with self.assertRaisesRegex(state.StateError, "Interrupted"):
             state.begin("cloudflare", "301-1")
         with self.assertRaises(state.StateError):
-            state.restore("cloudflare", "/ignored", True)
+            state.restore("cloudflare", "/unused", True)
 
-    def test_corrupt_and_missing_snapshot_are_rejected(self):
+    def test_corrupt_snapshot_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p = Path(tmp) / "tf"
+            p = Path(tmp) / "state"
             p.write_bytes(b'{"version":4}')
             state.begin("cloudflare", "400-1")
             state.finish("cloudflare", "400-1", p, True)
@@ -116,108 +104,90 @@ class StateTests(unittest.TestCase):
             with self.assertRaises(state.StateError):
                 state.restore("cloudflare", Path(tmp) / "out")
 
-    def test_stale_rerun_and_capacity_are_rejected(self):
+    def test_stale_run_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            p = Path(tmp) / "tf"
+            p = Path(tmp) / "state"
             p.write_bytes(b'{"version":4}')
             state.begin("github", "500-1")
             state.finish("github", "500-1", p, True)
-            with self.assertRaises(state.StateError):
-                state.begin("github", "499-2")
-            with self.assertRaises(state.StateError):
-                state.begin("github", "500-1")
-            self.fake.items.extend(
-                {"name": "other--dummy-" + str(i), "id": 10000 + i, "payload": b""}
-                for i in range(995)
-            )
-            with self.assertRaisesRegex(state.StateError, "State release capacity exhausted"):
-                state.begin("github", "501-1")
+            for run in ("499-2", "500-1"):
+                with self.assertRaisesRegex(state.StateError, "Stale"):
+                    state.begin("github", run)
 
-    def test_capacity_allows_997_assets(self):
-        # A run must have three free slots for its state protocol assets.
+    def test_capacity_allows_996_assets_but_rejects_997(self):
+        self.fake.release = {"id": 1}
         self.fake.items = [
             {"name": "other--dummy-" + str(i), "id": 10000 + i, "payload": b""}
-            for i in range(997)
+            for i in range(996)
         ]
-        self.fake.release = {"id": 1}
         state.begin("github", "501-1")
         self.assertEqual(self.fake.items[-1]["name"], "github--501-1--begin.json")
+        with self.assertRaisesRegex(state.StateError, "capacity exhausted"):
+            state.begin("cloudflare", "502-1")
 
-    def test_private_exact_plan_round_trip_and_approval_binding(self):
+    def test_private_diagnostics_are_one_verified_asset(self):
         with tempfile.TemporaryDirectory() as tmp:
-            state_file = Path(tmp) / "terraform.tfstate"
-            state_file.write_bytes(b'{"version":4,"serial":1}')
-            state.begin("github", "710-1")
-            state.finish("github", "710-1", state_file, True)
-            plan = Path(tmp) / "plan.tfplan"
-            review = Path(tmp) / "review.txt"
-            output = Path(tmp) / "approved.tfplan"
-            plan.write_bytes(b"exact synthetic binary plan")
-            review.write_text("Synthetic readable Terraform changes")
-            approved = state.digest(plan.read_bytes())
-            state.plan_save("github", "711-1", "a" * 40, plan, review)
-            state.plan_fetch("github", "711-1", "a" * 40, approved, output)
-            self.assertEqual(output.read_bytes(), plan.read_bytes())
-            with self.assertRaises(state.StateError):
-                state.plan_fetch("github", "711-1", "a" * 40, "b" * 64, output)
-            with self.assertRaises(state.StateError):
-                state.plan_fetch("github", "711-1", "b" * 40, approved, output)
-            state_file.write_bytes(b'{"version":4,"serial":2}')
-            state.begin("github", "712-1")
-            state.finish("github", "712-1", state_file, True)
-            with self.assertRaises(state.StateError):
-                state.plan_fetch("github", "711-1", "a" * 40, approved, output)
+            path = Path(tmp) / "diagnostics"
+            path.write_bytes(b"plan or apply details: private")
+            state.diagnostic("github", "600-1", path)
+            self.assertEqual(len(self.fake.items), 1)
+            self.assertEqual(self.fake.items[0]["name"], "log--github--600-1--diagnostics.txt")
+            self.assertEqual(self.fake.items[0]["payload"], path.read_bytes())
+            with self.assertRaisesRegex(state.StateError, "Duplicate"):
+                state.diagnostic("github", "600-1", path)
 
-    def test_incomplete_private_plan_fails_closed(self):
+    def test_diagnostics_upload_readback_failure_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
-            plan = Path(tmp) / "plan"
-            review = Path(tmp) / "review"
-            plan.write_bytes(b"plan")
-            review.write_bytes(b"review")
-            state.plan_save("cloudflare", "801-1", "a" * 40, plan, review, True)
-            self.fake.items.pop()
-            with self.assertRaisesRegex(state.StateError, "Incomplete private plan"):
-                state.plan_fetch("cloudflare", "801-1", "a" * 40,
-                                 state.digest(plan.read_bytes()), Path(tmp) / "out", True)
+            path = Path(tmp) / "diagnostics"
+            path.write_bytes(b"private")
+            original = self.fake.request
+            def tampered(method, name, data=None, binary=False, upload=False):
+                result = original(method, name, data, binary, upload)
+                if binary:
+                    return b"tampered"
+                return result
+            with patch.object(state, "request", side_effect=tampered):
+                with self.assertRaisesRegex(state.StateError, "verification failed"):
+                    state.diagnostic("github", "601-1", path)
 
-    def test_private_recovery_fallback_and_no_overwrite(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            state_file = Path(tmp) / "terraform.tfstate"
-            state_file.write_bytes(b'{"version":4,"serial":42}')
-            state.rescue("github", "901-1", state_file)
-            self.assertEqual(len(self.fake.recovery), 2)
-            self.assertEqual(base64.b64decode(next(iter(self.fake.recovery.values()))),
-                             state_file.read_bytes())
-            with self.assertRaisesRegex(state.StateError, "already exists"):
-                state.rescue("github", "901-1", state_file)
+    def test_existing_legacy_assets_untouched_by_explicit_empty_start(self):
+        self.fake.release = {"id": 1}
+        self.fake.items = [
+            {"name": "github-state-old.age", "id": 1, "payload": b"legacy"},
+            {"name": "attempt-123", "id": 2, "payload": b"legacy"},
+            {"name": "complete-123", "id": 3, "payload": b"legacy"},
+        ]
+        self.assertEqual(state.restore("github", "/unused", True), "empty")
+        state.begin("github", "700-1")
+        self.assertEqual(len(self.fake.items), 4)
+        self.assertEqual(self.fake.items[0]["payload"], b"legacy")
 
-    def test_large_private_recovery_uses_blob_readback(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "large.tfstate"
-            path.write_bytes(b'{"sample":"' + b"x" * (1024 * 1024 + 50) + b'"}')
-            state.rescue("cloudflare", "903-1", path)
-            self.assertTrue(any("/contents/platform-recovery/" in k for k in self.fake.recovery))
-
-    def test_redirect_strips_token_when_destination_host_changes(self):
-        import urllib.request
-        handler = state.SafeRedirectHandler()
-        original = urllib.request.Request(
-            "https://api.github.com/repos/acme/repo/releases/assets/123",
-            headers={"Authorization": "Bearer private-state-token"})
-        cross = handler.redirect_request(
-            original, None, 302, "Found", {},
-            "https://release-assets.githubusercontent.com/private-asset")
-        self.assertIsNone(cross.get_header("Authorization"))
-        same = handler.redirect_request(
-            original, None, 302, "Found", {},
-            "https://api.github.com/safe-location")
-        self.assertEqual(same.get_header("Authorization"), "Bearer private-state-token")
+    def test_unknown_asset_in_new_protocol_blocks(self):
+        state.begin("cloudflare", "800-1")
+        self.fake.items.append({"name": "cloudflare--legacy.tfstate", "id": 50, "payload": b"old"})
         with self.assertRaises(state.StateError):
-            handler.redirect_request(original, None, 302, "Found", {},
-                                     "http://release-assets.githubusercontent.com/file")
+            state.restore("cloudflare", "/unused", True)
 
-    def test_internal_repository_not_accepted_as_private(self):
-        with patch.object(sys, "argv", ["platform_state.py", "restore",
+    def test_non_dictionary_and_corrupted_receipts_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "state"
+            p.write_bytes(b'{"version":4}')
+            state.begin("github", "810-1")
+            state.finish("github", "810-1", p, True)
+            for content in (b'[]', b'invalid-json'):
+                self.fake.items[-1]["payload"] = content
+                with self.assertRaises((state.StateError, ValueError)):
+                    state.restore("github", Path(tmp) / "out")
+
+    def test_invalid_run_ids_and_duplicate_runs(self):
+        with self.assertRaises(state.StateError):
+            state.begin("github", "../../bad")
+        state.begin("cloudflare", "820-1")
+        with self.assertRaises(state.StateError):
+            state.begin("cloudflare", "820-1")
+
+    def test_private_visibility_required(self):
+        with patch.object(sys, "argv", ["state.py", "restore",
                                         "--key", "github", "--path", "/unused"]):
             with patch.object(state, "request",
                               return_value={"private": True, "visibility": "internal"}):
@@ -229,55 +199,46 @@ class StateTests(unittest.TestCase):
                     state.main()
                     restored.assert_called_once()
 
-    def test_non_dictionary_receipt_is_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            p = Path(tmp) / "tf"
-            p.write_bytes(b'{"version":4}')
-            state.begin("github", "600-1")
-            state.finish("github", "600-1", p, True)
-            self.fake.items[-1]["payload"] = b'[]'
-            with self.assertRaises(state.StateError):
-                state.restore("github", Path(tmp) / "restore")
-
-    def test_duplicate_run_and_wrong_ids_fail_closed(self):
+    def test_redirect_strips_cross_host_bearer(self):
+        handler = state.SafeRedirectHandler()
+        request = urllib.request.Request(
+            "https://api.github.com/repos/x/y/releases/assets/1",
+            headers={"Authorization": "Bearer private"})
+        result = handler.redirect_request(request, None, 302, "Found", {},
+                                          "https://release-assets.githubusercontent.com/asset")
+        self.assertIsNone(result.get_header("Authorization"))
+        same = handler.redirect_request(request, None, 302, "Found", {},
+                                        "https://api.github.com/next")
+        self.assertEqual(same.get_header("Authorization"), "Bearer private")
         with self.assertRaises(state.StateError):
-            state.begin("cloudflare", "../../bad")
-        state.begin("cloudflare", "555-1")
-        with self.assertRaises(state.StateError):
-            state.begin("cloudflare", "555-1")
-
-    def test_unknown_asset_blocks_legacy_fallback(self):
-        state.begin("cloudflare", "888-1")
-        self.fake.items.append({"name": "cloudflare--legacy.tfstate", "id": 50, "payload": b"a"})
-        with self.assertRaises(state.StateError):
-            state.restore("cloudflare", "/ignored")
+            handler.redirect_request(request, None, 302, "Found", {},
+                                     "http://release-assets.githubusercontent.com/file")
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_dispatch_never_uses_pr_or_provider_credentials_in_checks(self):
+    def test_minimal_manual_trusted_workflow_with_step_scoped_secrets(self):
         workflow = (ROOT / ".github/workflows/platform.yml").read_text()
-        for text in ("workflow_dispatch:", "group: platform-state", "cancel-in-progress: false",
-                     "environment: provisioning", "git merge-base --is-ancestor",
-                     "git checkout --detach", "if: github.ref == 'refs/heads/main'",
-                     "persist-credentials: false", "steps.begin.outcome == 'success'",
-                     "if: always()", "PLATFORM_STATE_TOKEN", "PLATFORM_STATE_REPO"):
-            self.assertIn(text, workflow)
-        self.assertNotIn("pull_request:", workflow)
-        self.assertNotIn("pull_request_target:", workflow)
-        self.assertNotIn("workflow_run:", workflow)
-        self.assertNotIn("upload-artifact", workflow)
-        self.assertIn("--cap-drop ALL", workflow)
-        self.assertIn('export WORK="$RUNNER_TEMP/gh02"', workflow)
-        self.assertIn("plan-save --key", workflow)
-        self.assertIn("plan-fetch --key", workflow)
-        self.assertIn('plan_sha256:', workflow)
-        self.assertIn("steps.finish.outcome != 'success'", workflow)
-        self.assertIn('rescue --key "$TARGET"', workflow)
-        self.assertIn("steps.apply_plan.outcome == 'success'", workflow)
-        self.assertNotIn("--env PLATFORM_STATE_TOKEN", workflow)
+        for item in ("workflow_dispatch:", "group: platform-state",
+                     "cancel-in-progress: false", "environment: provisioning",
+                     "git merge-base --is-ancestor", "git checkout --detach",
+                     "persist-credentials: false", "initialize_empty_state:",
+                     "terraform init -input=false", "terraform plan -input=false",
+                     "terraform apply -input=false", "begin --key", "finish --key",
+                     "diagnostic --key", "if: always()"):
+            self.assertIn(item, workflow)
+        for removed in ("docker run", "terraform_isolated.sh", "plan-save", "plan-fetch",
+                        "plan_run:", "plan_sha256:", "rescue --key", "-backend=false",
+                        "upload-artifact", "pull_request:", "pull_request_target:",
+                        "workflow_run:"):
+            self.assertNotIn(removed, workflow)
+        header = workflow.split("    steps:", 1)[0]
+        for secret in ("PLATFORM_GITHUB_TOKEN", "PLATFORM_CLOUDFLARE_TOKEN",
+                       "PLATFORM_GITHUB_TFVARS_JSON", "PLATFORM_CLOUDFLARE_TFVARS_JSON",
+                       "PLATFORM_STATE_TOKEN"):
+            self.assertNotIn(secret, header)
         for line in workflow.splitlines():
             if "uses:" in line:
-                self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")
+                self.assertRegex(line, r"uses: [\\w/-]+@[0-9a-f]{40}(?: |$)")
 
 
 if __name__ == "__main__":

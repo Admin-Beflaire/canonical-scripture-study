@@ -1,0 +1,54 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "css-study-{{INSTANCE}}",
+  "main": "../study/index.js",
+  "compatibility_date": "2026-11-05",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "account_id": "{{ACCOUNT_ID}}",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "{{STUDY_HOSTNAME}}",
+      "zone_id": "{{ZONE_ID}}",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DATA_DB",
+      "database_name": "css-data-{{INSTANCE}}",
+      "database_id": "{{DATABASE_ID}}"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PRIVATE_OBJECTS",
+      "bucket_name": "css-private-{{INSTANCE}}"
+    }
+  ],
+  "vars": {
+    "ACCESS_ISSUER": "{{ACCESS_ISSUER}}",
+    "HOSTNAME": "{{STUDY_HOSTNAME}}",
+    "HOST_AUDIENCE": "{{STUDY_AUDIENCE}}",
+    "ENHANCEMENTS": "{{ENHANCEMENTS}}",
+    "MAX_PAGE_BYTES": "{{MAX_PAGE_BYTES}}",
+    "REQUEST_BYTES": "{{REQUEST_BYTES}}",
+    "MAX_D1_CALLS": "{{MAX_D1_CALLS}}",
+    "MAX_SUBREQUESTS": "{{MAX_SUBREQUESTS}}",
+    "CPU_BUDGET_MS": "{{CPU_BUDGET_MS}}"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.1
+    }
+  }
+}

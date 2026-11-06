@@ -41,3 +41,10 @@ establish real source coverage or hosted behaviour.
 The Python runner selects `python3` on Unix or `python` on Windows. Set
 `PYTHON` to an interpreter executable path when needed; no shell command is used.
 
+
+Public CI uses `tools/repository/run_test_profile.py` to route TypeScript,
+Python and repository checks by changed paths. Run `npm run check:repository`
+for routing/credential-boundary tests. Shared schema/conformance changes run both
+language consumers. Documentation-only PRs still complete the required
+`Application checks` gate without rerunning application suites. Terraform checks
+and mocked two-repository settings tests are described in `infrastructure/github/`.

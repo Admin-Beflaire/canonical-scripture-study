@@ -13,12 +13,13 @@
     "build": "npm run build:study && npm run build:control && npm run build:shared",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
     "test": "npm run test:typescript && npm run test:python",
-    "check": "npm run typecheck && npm run check:boundaries && npm run check:python && npm test && npm run build",
+    "check": "npm run typecheck && npm run check:boundaries && npm run check:python && npm test && npm run check:repository && npm run build",
     "build:shared": "node tools/build.mjs shared",
     "check:boundaries": "node tools/check-boundaries.mjs && node tools/run-python.mjs boundaries",
     "test:typescript": "node --test \"tests/**/*.test.ts\"",
     "test:python": "node tools/run-python.mjs test",
-    "check:python": "node tools/run-python.mjs import"
+    "check:python": "node tools/run-python.mjs import",
+    "check:repository": "node tools/run-python.mjs repository"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",

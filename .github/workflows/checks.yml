@@ -1,0 +1,58 @@
+name: Application checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    name: Application checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version-file: .python-version
+      - name: Select relevant profiles
+        id: route
+        env:
+          CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 tools/repository/run_test_profile.py route
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        if: steps.route.outputs.typescript == 'true' || steps.route.outputs.python == 'true'
+        with:
+          node-version: '24.22.1'
+          package-manager-cache: false
+      - name: Install locked development dependencies
+        if: steps.route.outputs.typescript == 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: TypeScript and Worker checks
+        if: steps.route.outputs.typescript == 'true'
+        run: python3 tools/repository/run_test_profile.py typescript
+      - name: Python preparation and common contracts
+        if: steps.route.outputs.python == 'true'
+        run: python3 tools/repository/run_test_profile.py python
+      - name: Repository routing and configuration checks
+        if: steps.route.outputs.repository == 'true'
+        run: python3 tools/repository/run_test_profile.py repository
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        if: steps.route.outputs.repository == 'true'
+        with:
+          terraform_version: '1.13.5'
+          terraform_wrapper: false
+      - name: Terraform configuration and mocked settings
+        if: steps.route.outputs.repository == 'true'
+        working-directory: infrastructure/github
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -lockfile=readonly -input=false
+          terraform validate
+          terraform test

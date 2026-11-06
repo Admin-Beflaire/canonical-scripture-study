@@ -22,12 +22,17 @@ class FakePrivateRelease:
         self.recovery = {}
 
     def request(self, method, path, data=None, binary=False, upload=False):
+        if "/git/blobs/" in path and method == "GET":
+            return {"encoding": "base64", "content": self.recovery[path.rsplit("/", 1)[-1]]}
         if "/contents/platform-recovery/" in path:
             if method == "GET":
                 return {"content": self.recovery[path]} if path in self.recovery else None
             if method == "PUT" and path not in self.recovery:
-                self.recovery[path] = json.loads(data)["content"]
-                return {"content": {"sha": "mock-sha"}}
+                encoded = json.loads(data)["content"]
+                self.recovery[path] = encoded
+                sha = "mock-sha-" + str(len(self.recovery))
+                self.recovery[sha] = encoded
+                return {"content": {"sha": sha}}
             raise AssertionError("Attempted to overwrite private recovery")
         if "/releases/tags/" in path:
             return self.release
@@ -180,11 +185,36 @@ class StateTests(unittest.TestCase):
             state_file = Path(tmp) / "terraform.tfstate"
             state_file.write_bytes(b'{"version":4,"serial":42}')
             state.rescue("github", "901-1", state_file)
-            self.assertEqual(len(self.fake.recovery), 1)
+            self.assertEqual(len(self.fake.recovery), 2)
             self.assertEqual(base64.b64decode(next(iter(self.fake.recovery.values()))),
                              state_file.read_bytes())
             with self.assertRaisesRegex(state.StateError, "already exists"):
                 state.rescue("github", "901-1", state_file)
+
+    def test_large_private_recovery_uses_blob_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "large.tfstate"
+            path.write_bytes(b'{"sample":"' + b"x" * (1024 * 1024 + 50) + b'"}')
+            state.rescue("cloudflare", "903-1", path)
+            self.assertTrue(any("/contents/platform-recovery/" in k for k in self.fake.recovery))
+
+    def test_redirect_strips_token_when_destination_host_changes(self):
+        import urllib.request
+        handler = state.SafeRedirectHandler()
+        original = urllib.request.Request(
+            "https://api.github.com/repos/acme/repo/releases/assets/123",
+            headers={"Authorization": "Bearer private-state-token"})
+        cross = handler.redirect_request(
+            original, None, 302, "Found", {},
+            "https://release-assets.githubusercontent.com/private-asset")
+        self.assertIsNone(cross.get_header("Authorization"))
+        same = handler.redirect_request(
+            original, None, 302, "Found", {},
+            "https://api.github.com/safe-location")
+        self.assertEqual(same.get_header("Authorization"), "Bearer private-state-token")
+        with self.assertRaises(state.StateError):
+            handler.redirect_request(original, None, 302, "Found", {},
+                                     "http://release-assets.githubusercontent.com/file")
 
     def test_internal_repository_not_accepted_as_private(self):
         with patch.object(sys, "argv", ["platform_state.py", "restore",
@@ -237,6 +267,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("workflow_run:", workflow)
         self.assertNotIn("upload-artifact", workflow)
         self.assertIn("--cap-drop ALL", workflow)
+        self.assertIn('export WORK="$RUNNER_TEMP/gh02"', workflow)
         self.assertIn("plan-save --key", workflow)
         self.assertIn("plan-fetch --key", workflow)
         self.assertIn('plan_sha256:', workflow)

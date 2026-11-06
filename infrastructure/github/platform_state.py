@@ -15,8 +15,6 @@ import urllib.error
 import urllib.request
 
 REPOSITORY = os.environ.get("PLATFORM_STATE_REPO", "")
-if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY) or REPOSITORY == os.environ.get("GITHUB_REPOSITORY"):
-    raise RuntimeError("Private state repository must be configured separately")
 TAG = "platform-state-v1"
 ROOT = "https://api.github.com"
 KEYS = {"github", "cloudflare"}
@@ -32,6 +30,8 @@ def digest(data):
 
 
 def request(method, path, data=None, binary=False, upload=False):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY) or REPOSITORY == os.environ.get("GITHUB_REPOSITORY"):
+        raise StateError("Invalid private state repository boundary")
     token = os.environ["PLATFORM_STATE_TOKEN"]
     host = "https://uploads.github.com" if upload else ROOT
     headers = {

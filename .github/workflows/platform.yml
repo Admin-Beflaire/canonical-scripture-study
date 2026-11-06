@@ -1,0 +1,163 @@
+name: Protected platform provisioning
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Terraform configuration (strict choice)
+        required: true
+        type: choice
+        options: [github, cloudflare]
+      operation:
+        description: Explicit plan or apply
+        required: true
+        type: choice
+        options: [plan, apply]
+      commit:
+        description: Exact reviewed 40-character SHA reachable from main
+        required: true
+        type: string
+      approval:
+        description: Type APPLY for apply operations; plan leaves this blank
+        required: false
+        type: string
+      initialize_empty_cloudflare:
+        description: First Cloudflare state only, after external empty-resource inventory and owner approval
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: platform-state
+  cancel-in-progress: false
+jobs:
+  platform:
+    name: Protected platform execution
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: provisioning
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+      PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
+      GITHUB_TOKEN: ${{ secrets.PLATFORM_GITHUB_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.PLATFORM_CLOUDFLARE_TOKEN }}
+      GITHUB_TFVARS: ${{ secrets.PLATFORM_GITHUB_TFVARS_JSON }}
+      CLOUDFLARE_TFVARS: ${{ secrets.PLATFORM_CLOUDFLARE_TFVARS_JSON }}
+      SELECTED_SHA: ${{ inputs.commit }}
+      TARGET: ${{ inputs.target }}
+      OPERATION: ${{ inputs.operation }}
+      APPROVAL: ${{ inputs.approval }}
+      EMPTY_CLOUDFLARE: ${{ inputs.initialize_empty_cloudflare }}
+      ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate authorization and exact committed code
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SELECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$TARGET" == github || "$TARGET" == cloudflare ]] || exit 1
+          [[ "$OPERATION" == plan || "$OPERATION" == apply ]] || exit 1
+          [[ -n "$PLATFORM_STATE_TOKEN" && -n "$PLATFORM_STATE_REPO" ]] || exit 1
+          if [[ "$OPERATION" == apply ]]; then
+            [[ "$APPROVAL" == APPLY ]] || exit 1
+          else
+            [[ -z "$APPROVAL" ]] || exit 1
+          fi
+          if [[ "$EMPTY_CLOUDFLARE" == true ]]; then
+            [[ "$TARGET" == cloudflare && "$OPERATION" == apply ]] || exit 1
+          fi
+          # Never run a PR or an arbitrary commit supplied by the dispatch caller.
+          git cat-file -e "$SELECTED_SHA^{commit}"
+          git merge-base --is-ancestor "$SELECTED_SHA" HEAD
+          git checkout --detach "$SELECTED_SHA" >/dev/null 2>&1
+          if [[ "$TARGET" == github ]]; then
+            [[ -n "$GITHUB_TOKEN" && -n "$GITHUB_TFVARS" ]] || exit 1
+          else
+            [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_TFVARS" ]] || exit 1
+          fi
+          echo "Validated trusted platform configuration and dispatch"
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: '1.13.5'
+          terraform_wrapper: false
+      - name: Restore verified state and prepare isolated inputs
+        id: restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          WORK="$RUNNER_TEMP/gh02"
+          mkdir -p "$WORK"
+          chmod 700 "$WORK"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          export TF_IN_AUTOMATION=1
+          if [[ "$TARGET" == github ]]; then
+            printf '%s' "$GITHUB_TFVARS" > "$WORK/instance.auto.tfvars.json"
+          else
+            printf '%s' "$CLOUDFLARE_TFVARS" > "$WORK/instance.auto.tfvars.json"
+          fi
+          chmod 600 "$WORK/instance.auto.tfvars.json"
+          mkdir -p "$WORK/config"
+          cp -a "infrastructure/$TARGET/." "$WORK/config/"
+          cp "$WORK/instance.auto.tfvars.json" "$WORK/config/instance.auto.tfvars.json"
+          cd "$WORK/config"
+          # No Terraform output in public logs, including provider diagnostics.
+          terraform init -backend=false -input=false -lockfile=readonly > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
+          terraform validate > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
+          EXTRA=()
+          if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
+          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}" || exit 1
+          echo "Verified private state boundary"
+      - name: Plan without applying
+        if: inputs.operation == 'plan'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          terraform plan -input=false -lock=false -no-color -out="$WORK/plan.tfplan" > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked; inspect privately"; exit 1; }
+          # No public plan output or artifact; operator must independently inspect
+          # the private reviewed plan before authorizing an apply.
+          echo "Plan successful; no provider apply and no public plan artifact"
+      - name: Record immutable begin marker before any apply
+        id: begin
+        if: inputs.operation == 'apply'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          terraform plan -input=false -lock=false -no-color -out="$WORK/apply.tfplan" > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" begin --key "$TARGET" --run "$ATTEMPT_ID"
+      - name: Apply checked plan (no public output)
+        id: apply
+        if: inputs.operation == 'apply' && steps.begin.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          terraform apply -input=false -no-color "$WORK/apply.tfplan" > "$WORK/apply.log" 2>&1 || { echo "Terraform apply failed; state reconciliation required"; exit 1; }
+          echo "Terraform apply returned success (provider readback remains separate)"
+      - name: Preserve state after success or partial failure
+        if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success'
+        shell: bash
+        env:
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          [[ -s terraform.tfstate ]] || { echo "No state file: reconciliation required"; exit 1; }
+          ARG=()
+          if [[ "$APPLY_OUTCOME" == success ]]; then ARG+=(--success); fi
+          python3 "$GITHUB_WORKSPACE/infrastructure/github/platform_state.py" finish --key "$TARGET" --run "$ATTEMPT_ID" --path terraform.tfstate "${ARG[@]}"
+      - name: Sanitize temporary private data
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${WORK:-}" && -d "$WORK" ]]; then rm -rf -- "$WORK"; fi
+          echo "Platform run finished; plan/apply/state status must be read separately"

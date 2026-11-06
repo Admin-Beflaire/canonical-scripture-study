@@ -10,20 +10,26 @@ const owners = [
   ["packages/shared/", "shared"],
   ["schemas/", "schemas"],
 ];
+/** @type {Record<string, Set<string>>} */
 const allowed = {
   study: new Set(["study", "shared", "schemas"]),
   control: new Set(["control", "shared", "schemas"]),
   preparation: new Set(["preparation", "shared", "schemas"]),
   shared: new Set(["shared", "schemas"]),
 };
+/** @param {string} path */
 const owner = path => owners.find(([prefix]) => path.startsWith(prefix))?.[1];
 const compilerOptions = { moduleResolution: ts.ModuleResolutionKind.NodeNext, resolveJsonModule: true };
 
+/** @param {string} root @param {string} file @param {string} source */
 export function checkSource(root, file, source) {
   const from = owner(file);
-  if (!allowed[from]) return [];
+  if (!from || !allowed[from]) return [`${file}: unowned module path`];
+  const permitted = allowed[from];
+  /** @type {string[]} */
   const failures = [];
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  /** @param {import("typescript").Node | undefined} node */
   function dependency(node) {
     if (!node || !ts.isStringLiteral(node)) {
       failures.push(`${file}: computed module dependency is not allowed`);
@@ -35,11 +41,12 @@ export function checkSource(root, file, source) {
     const target = ts.resolveModuleName(name, resolve(root, file), compilerOptions, ts.sys).resolvedModule;
     const path = target && relative(root, target.resolvedFileName).replaceAll("\\", "/");
     if (path?.split("/").includes("node_modules")) return;
-    if (!path || !allowed[from].has(owner(path))) failures.push(`${file}: forbidden or unresolved dependency ${name}`);
+    if (!path || !permitted.has(owner(path) ?? "")) failures.push(`${file}: forbidden or unresolved dependency ${name}`);
   }
+  /** @param {import("typescript").Node} node */
   function visit(node) {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node) && node.moduleSpecifier) dependency(node.moduleSpecifier);
-    if (ts.isImportTypeNode(node)) dependency(node.argument.literal);
+    if (ts.isImportTypeNode(node)) dependency(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined);
     if (ts.isImportEqualsDeclaration(node)) failures.push(`${file}: import-equals is not allowed`);
     if (ts.isCallExpression(node)) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) dependency(node.arguments[0]);
@@ -52,6 +59,7 @@ export function checkSource(root, file, source) {
   return failures;
 }
 
+/** @param {string} directory @returns {string[]} */
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const path = resolve(directory, entry.name);

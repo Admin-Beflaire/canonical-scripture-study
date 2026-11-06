@@ -21,5 +21,5 @@ Study owns evidence retrieval. Maintenance Control owns tasks and release select
 
 Tests use synthetic fixtures. Do not commit credentials, generated indexes or source materials without public redistribution permission and required notices.
 
-`npm run check:boundaries` checks imports, re-exports and dynamic imports across the application and Shared modules. JSON Schema checks and semantic reference tests run under `npm test`; their fixtures do not establish real source coverage or hosted behaviour.
+`npm run check:boundaries` rejects files outside the known service and Shared module paths and checks imports, re-exports and dynamic imports. TypeScript checks Node preparation, tests and tools with Node.js types, and checks both Workers and Shared separately with Workers runtime types. The quoted test pattern discovers nested test folders. JSON Schema checks and semantic reference tests run under `npm test`; their fixtures do not establish real source coverage or hosted behaviour.
 

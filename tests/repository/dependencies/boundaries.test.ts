@@ -1,9 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { checkSource } from "../../tools/check-boundaries.mjs";
+import { checkSource } from "../../../tools/check-boundaries.mjs";
 
-const root = resolve(import.meta.dirname, "../..");
+const root = resolve(import.meta.dirname, "../../..");
+test("unowned service and package files fail even without imports", () => {
+  for (const file of ["services/other/index.ts", "packages/other/index.ts", "services/index.ts"]) {
+    assert.ok(checkSource(root, file, "").some(message => message.includes("unowned module path")));
+    assert.ok(checkSource(root, file, 'import "../study/src/index.ts";').some(message => message.includes("unowned module path")));
+  }
+});
 test("Study cannot reach Maintenance through imports, exports or dynamic imports", () => {
   const target = "../../maintenance/control/src/index.ts";
   for (const source of [

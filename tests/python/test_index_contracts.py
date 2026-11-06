@@ -43,7 +43,7 @@ def read_fixture_window(manifest, key, position, budget, fetch, hasher=hashlib.s
             raise ValueError('Page integrity mismatch')
         if not raw.endswith(b'\n'):
             raise ValueError('Unaligned NDJSON page')
-        rows = [decode(line) for line in raw.decode('utf-8',errors='strict').splitlines()]
+        rows = [decode(line) for line in raw.decode('utf-8',errors='strict').split('\n')[:-1]]
         result.extend(row for row in rows if row['search_key'] == key)
     next_position = position+len(window)
     return result,next_position,next_position == len(pages)
@@ -92,7 +92,7 @@ class IndexContractTests(unittest.TestCase):
                     self.assertLessEqual(len(part),m['encoded_page_cap_bytes'])
                     self.assertEqual(hashlib.sha256(part).hexdigest(),page['sha256'])
                     self.assertTrue(part.endswith(b'\n'))
-                    records=[json.loads(line) for line in part.decode('utf-8',errors='strict').splitlines()]
+                    records=[json.loads(line) for line in part.decode('utf-8',errors='strict').split('\n')[:-1]]
                     self.assertEqual(records[0]['search_key'],page['first_key'])
                     self.assertEqual(records[-1]['search_key'],page['last_key'])
                     for row in records:
@@ -143,11 +143,21 @@ class IndexContractTests(unittest.TestCase):
         for row in rows:
             text=extract_scalar_segments(row['native_reference'],dict(source_revision_id=row['source_revision_id'],coordinate_version=row['coordinate_version'],units=FIXTURE['native_units']))
             self.assertEqual(text,['אָ']);self.assertNotEqual(text[0],row['search_key'])
-        records=[json.loads(line) for line in (FIXTURE_ROOT/'word.ndjson').read_text().splitlines()]
+        records=[json.loads(line) for line in (FIXTURE_ROOT/'word.ndjson').read_text().split('\n')[:-1]]
         for row in records:
             analyses=row['analyses'];self.assertEqual(len({a['analysis_id'] for a in analyses}),2)
             self.assertEqual(len({a['lemma_id'] for a in analyses}),2)
             self.assertEqual({a['analysis_revision_id'] for a in analyses},set(MANIFESTS['word']['analysis_revision_ids']))
+
+    def test_lf_framing_preserves_unicode_text_separators(self):
+        manifest=deepcopy(MANIFESTS['source'])
+        raw=(json.dumps({'search_key':'', 'text':'before\u2028middle\u0085after'},ensure_ascii=False)+'\n').encode()
+        file=manifest['files'][0];file['byte_length']=len(raw)
+        file['pages']=[dict(first_key='',last_key='',byte_offset=0,byte_length=len(raw),sha256=hashlib.sha256(raw).hexdigest())]
+        manifest['files']=[file]
+        rows,_,done=read_fixture_window(manifest,'',0,FIXTURE['fixture_budget'],lambda *_:raw)
+        self.assertTrue(done)
+        self.assertEqual(rows[0]['text'],'before\u2028middle\u0085after')
 
     def test_navigation_finds_overlapping_discontinuous_units_with_scoped_index(self):
         helper=self.database();db=helper.db

@@ -101,6 +101,10 @@ test("initial capabilities exclude phrase/proximity/fuzzy and reject malformed m
     const m = structuredClone(manifests.source); m.coverage.capabilities = [capability];
     assert.equal(validateManifest(m), false);
   }
+  const sourceLemma = structuredClone(manifests.source); sourceLemma.coverage.capabilities = ["lemma_exact"];
+  assert.equal(validateManifest(sourceLemma), false);
+  const wordText = structuredClone(manifests.word); wordText.coverage.capabilities = ["word_exact"];
+  assert.equal(validateManifest(wordText), false);
   const m = structuredClone(manifests.word); m.analysis_revision_ids = [];
   assert.equal(validateManifest(m), false);
   const partial = structuredClone(manifests.source); partial.coverage.state = "partial";

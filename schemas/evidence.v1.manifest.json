@@ -1,0 +1,26 @@
+{
+  "schema_version": "evidence-contract-manifest/1",
+  "record_schema": "evidence-records.v1.schema.json",
+  "native_reference_schema": "native-reference.v1.schema.json",
+  "migration": "migrations/0001_evidence.sql",
+  "record_tables": {
+    "source_node": "source_nodes",
+    "admission": "admissions",
+    "artifact": "artifacts",
+    "prepared_output": "prepared_outputs",
+    "text_payload": "text_payloads",
+    "native_span": "native_spans",
+    "annotation": "annotations",
+    "relationship": "relationships",
+    "relation_member": "relation_members",
+    "coverage": "coverage",
+    "study_package": "study_packages",
+    "character_statement": "character_statements",
+    "release": "releases",
+    "release_output": "release_outputs",
+    "release_selection": "release_selection"
+  },
+  "json_columns": "Fields ending in _json contain decoded JSON in contracts and UTF-8 JSON text in SQL.",
+  "booleans": "Contracts use JSON booleans; SQL stores 0 or 1.",
+  "release_selection": "singleton_id=1; both release IDs null before the first selected release."
+}

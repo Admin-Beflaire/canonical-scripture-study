@@ -48,7 +48,9 @@ class EvidenceContractsTests(unittest.TestCase):
         tables = {row[0] for row in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertEqual(tables, set(TABLES.values()))
         self.assertEqual(self.db.execute('PRAGMA foreign_key_check').fetchall(), [])
-        self.assertEqual(list((ROOT / 'schemas/migrations').glob('*.sql')), [ROOT / 'schemas' / MANIFEST['migration']])
+        migrations = sorted((ROOT / 'schemas/migrations').glob('*.sql'))
+        self.assertEqual(migrations[0], ROOT / 'schemas' / MANIFEST['migration'])
+        self.assertEqual([int(p.name.split('_')[0]) for p in migrations], list(range(1, len(migrations)+1)))
         plan = self.db.execute('EXPLAIN QUERY PLAN SELECT output_id FROM release_outputs WHERE release_id=?', ('release-1',)).fetchall()
         self.assertTrue(any('INDEX' in row[3] for row in plan))
         plan = self.db.execute('EXPLAIN QUERY PLAN SELECT relationship_id FROM relation_members WHERE span_id=?', ('span-a',)).fetchall()

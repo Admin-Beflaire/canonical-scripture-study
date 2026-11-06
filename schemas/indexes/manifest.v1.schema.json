@@ -1,0 +1,275 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "index_kind",
+    "prepared_output_id",
+    "source_revision_ids",
+    "native_extent",
+    "coordinate_version",
+    "normalization_rule",
+    "tokenizer_version",
+    "analysis_revision_ids",
+    "parameters",
+    "ordering",
+    "key_collation",
+    "encoded_page_cap_bytes",
+    "files",
+    "coverage"
+  ],
+  "properties": {
+    "format_version": {
+      "const": "index-manifest/1"
+    },
+    "index_kind": {
+      "enum": [
+        "source_text",
+        "word_language"
+      ]
+    },
+    "prepared_output_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\uD800-\\uDFFF]*$"
+    },
+    "source_revision_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\uD800-\\uDFFF]*$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "native_extent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit_ids"
+      ],
+      "properties": {
+        "unit_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\uD800-\\uDFFF]*$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "coordinate_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\uD800-\\uDFFF]*$"
+    },
+    "normalization_rule": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\uD800-\\uDFFF]*$"
+    },
+    "tokenizer_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\uD800-\\uDFFF]*$"
+    },
+    "analysis_revision_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[^\\uD800-\\uDFFF]*$"
+      },
+      "minItems": 0,
+      "uniqueItems": true
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "ordering": {
+      "const": [
+        "search_key",
+        "native_order",
+        "occurrence_id"
+      ]
+    },
+    "key_collation": {
+      "const": "utf8-bytewise"
+    },
+    "encoded_page_cap_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "artifact_id",
+          "byte_length",
+          "sha256",
+          "pages"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\uD800-\\uDFFF]*$"
+          },
+          "byte_length": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "first_key",
+                "last_key",
+                "byte_offset",
+                "byte_length",
+                "sha256"
+              ],
+              "properties": {
+                "first_key": {
+                  "type": "string",
+                  "pattern": "^[^\\uD800-\\uDFFF]*$"
+                },
+                "last_key": {
+                  "type": "string",
+                  "pattern": "^[^\\uD800-\\uDFFF]*$"
+                },
+                "byte_offset": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "byte_length": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "minItems": 1
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capabilities",
+        "state",
+        "limitation"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "word_exact",
+              "lemma_exact",
+              "form_exact",
+              "grammar_exact"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "state": {
+          "enum": [
+            "available",
+            "partial",
+            "missing",
+            "unresolved"
+          ]
+        },
+        "limitation": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\uD800-\\uDFFF]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "index_kind": {
+            "const": "word_language"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "analysis_revision_ids": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "coverage": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "partial",
+                  "missing",
+                  "unresolved"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "limitation": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:css:index-manifest:1"
+}

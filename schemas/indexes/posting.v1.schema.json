@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:css:index-posting:1",
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "posting_kind",
+        "search_key",
+        "source_revision_id",
+        "span_id",
+        "coordinate_version",
+        "native_order",
+        "occurrence_id",
+        "native_reference"
+      ],
+      "properties": {
+        "posting_kind": {
+          "const": "source"
+        },
+        "search_key": {
+          "type": "string",
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "source_revision_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "span_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "coordinate_version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "native_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "occurrence_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "native_reference": {
+          "$ref": "urn:css:native-reference:1"
+        }
+      }
+    },
+    "word": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "posting_kind",
+        "search_key",
+        "source_revision_id",
+        "span_id",
+        "coordinate_version",
+        "native_order",
+        "occurrence_id",
+        "native_reference",
+        "lookup_kind",
+        "form_id",
+        "form",
+        "analyses"
+      ],
+      "properties": {
+        "posting_kind": {
+          "const": "word"
+        },
+        "search_key": {
+          "type": "string",
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "source_revision_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "span_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "coordinate_version": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "native_order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "occurrence_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "native_reference": {
+          "$ref": "urn:css:native-reference:1"
+        },
+        "lookup_kind": {
+          "enum": [
+            "form",
+            "lemma",
+            "grammar"
+          ]
+        },
+        "form_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "form": {
+          "type": "string",
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "analyses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "analysis_id",
+              "analysis_revision_id",
+              "lemma_id",
+              "grammar",
+              "provider",
+              "basis"
+            ],
+            "properties": {
+              "analysis_id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              },
+              "analysis_revision_id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              },
+              "lemma_id": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              },
+              "grammar": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\uD800-\\uDFFF]*$"
+                }
+              },
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              },
+              "basis": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\uD800-\\uDFFF]*$"
+              }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/source"
+    },
+    {
+      "$ref": "#/$defs/word"
+    }
+  ]
+}

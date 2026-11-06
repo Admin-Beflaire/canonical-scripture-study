@@ -20,6 +20,14 @@ on:
         description: Type APPLY for apply operations; plan leaves this blank
         required: false
         type: string
+      plan_run:
+        description: Exact plan run-attempt identifier, shown in private plan asset names (apply only)
+        required: false
+        type: string
+      plan_sha256:
+        description: SHA-256 of the privately reviewed saved plan (apply only)
+        required: false
+        type: string
       initialize_empty_cloudflare:
         description: First Cloudflare state only, after external empty-resource inventory and owner approval
         required: false
@@ -49,6 +57,8 @@ jobs:
       TARGET: ${{ inputs.target }}
       OPERATION: ${{ inputs.operation }}
       APPROVAL: ${{ inputs.approval }}
+      PLAN_RUN: ${{ inputs.plan_run }}
+      PLAN_SHA256: ${{ inputs.plan_sha256 }}
       EMPTY_CLOUDFLARE: ${{ inputs.initialize_empty_cloudflare }}
       ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -66,8 +76,10 @@ jobs:
           [[ -n "$PLATFORM_STATE_REPO" ]] || exit 1
           if [[ "$OPERATION" == apply ]]; then
             [[ "$APPROVAL" == APPLY ]] || exit 1
+            [[ "$PLAN_RUN" =~ ^[0-9]{1,20}-[0-9]{1,5}$ ]] || exit 1
+            [[ "$PLAN_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 1
           else
-            [[ -z "$APPROVAL" ]] || exit 1
+            [[ -z "$APPROVAL" && -z "$PLAN_RUN" && -z "$PLAN_SHA256" ]] || exit 1
           fi
           if [[ "$EMPTY_CLOUDFLARE" == true ]]; then
             [[ "$TARGET" == cloudflare ]] || exit 1
@@ -137,23 +149,36 @@ jobs:
           if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
           python3 "$RUNNER_TEMP/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}" || exit 1
           echo "Verified private state boundary"
-      - name: Plan without applying
+      - name: Create readable and binary private plan
         if: inputs.operation == 'plan'
         shell: bash
         run: |
           set -euo pipefail
-          cd "$WORK/config"
-          "$RUNNER_TEMP/terraform_isolated.sh" plan -input=false -lock=false -no-color -out=plan.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked; inspect privately"; exit 1; }
-          # No public plan output or artifact; operator must independently inspect
-          # the private reviewed plan before authorizing an apply.
-          echo "Plan successful; no provider apply and no public plan artifact"
-      - name: Prepare apply plan without state authority
-        if: inputs.operation == 'apply'
-        id: apply_plan
+          "$RUNNER_TEMP/terraform_isolated.sh" plan -input=false -lock=false -no-color -out=plan.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" show -no-color plan.tfplan > "$WORK/plan-review.txt" 2>&1 || { echo "Terraform show blocked"; exit 1; }
+      - name: Save exact plan to private release for owner review
+        if: inputs.operation == 'plan'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/terraform_isolated.sh" plan -input=false -lock=false -no-color -out=apply.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          EXTRA=()
+          if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
+          python3 "$RUNNER_TEMP/platform_state.py" plan-save --key "$TARGET" --run "$ATTEMPT_ID" --commit "$SELECTED_SHA" --path "$WORK/config/plan.tfplan" --review-path "$WORK/plan-review.txt" "${EXTRA[@]}"
+          echo "Private plan saved: review the plan-run assets and manifest digest before a separate apply dispatch"
+      - name: Retrieve exact owner-approved plan
+        if: inputs.operation == 'apply'
+        id: apply_plan
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
+          python3 "$RUNNER_TEMP/platform_state.py" plan-fetch --key "$TARGET" --plan-run "$PLAN_RUN" --commit "$SELECTED_SHA" --plan-sha256 "$PLAN_SHA256" --path "$WORK/config/apply.tfplan" "${EXTRA[@]}"
+          echo "Owner-supplied digest matches stored binary plan, configuration and baseline"
       - name: Record begin marker before any apply
         id: begin
         env:
@@ -173,6 +198,7 @@ jobs:
           "$RUNNER_TEMP/terraform_isolated.sh" apply -input=false -no-color apply.tfplan > "$WORK/apply.log" 2>&1 || { echo "Terraform apply failed; state reconciliation required"; exit 1; }
           echo "Terraform apply returned success (provider readback remains separate)"
       - name: Preserve state after success or partial failure
+        id: finish
         if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success'
         shell: bash
         env:
@@ -185,6 +211,16 @@ jobs:
           ARG=()
           if [[ "$APPLY_OUTCOME" == success ]]; then ARG+=(--success); fi
           python3 "$RUNNER_TEMP/platform_state.py" finish --key "$TARGET" --run "$ATTEMPT_ID" --path terraform.tfstate "${ARG[@]}"
+      - name: Rescue state privately if normal state finalization fails
+        if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success' && steps.finish.outcome != 'success'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -s "$WORK/config/terraform.tfstate" ]] || { echo "No local state to rescue; manual reconciliation required"; exit 1; }
+          python3 "$RUNNER_TEMP/platform_state.py" rescue --key "$TARGET" --run "$ATTEMPT_ID" --path "$WORK/config/terraform.tfstate"
+          echo "Private rescue copy verified; apply remains blocked pending independent reconciliation"
       - name: Sanitize temporary private data
         if: always()
         shell: bash

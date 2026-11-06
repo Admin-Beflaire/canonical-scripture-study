@@ -88,10 +88,7 @@ jobs:
         with:
           terraform_version: '1.13.5'
           terraform_wrapper: false
-      - name: Restore verified state and prepare isolated inputs
-        id: restore
-        env:
-          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+      - name: Prepare isolated Terraform configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -114,6 +111,13 @@ jobs:
           # No Terraform output in public logs, including provider diagnostics.
           terraform init -backend=false -input=false -lockfile=readonly > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
           terraform validate > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
+      - name: Restore verified private state
+        id: restore
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
           EXTRA=()
           if [[ "$EMPTY_CLOUDFLARE" == true ]]; then EXTRA+=(--allow-empty); fi
           python3 "$RUNNER_TEMP/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}" || exit 1

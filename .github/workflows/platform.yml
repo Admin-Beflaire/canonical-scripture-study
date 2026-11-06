@@ -120,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          WORK="$RUNNER_TEMP/gh02"
+          export WORK="$RUNNER_TEMP/gh02"
           mkdir -p "$WORK"
           chmod 700 "$WORK"
           echo "WORK=$WORK" >> "$GITHUB_ENV"

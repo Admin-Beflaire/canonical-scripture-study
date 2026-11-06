@@ -48,6 +48,19 @@ test("UTF-8 ranges preserve segment order and exact digests", () => {
   assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from("😀").subarray(1)));
 });
 
+test("exact text payloads reject lone surrogates while preserving valid Unicode", () => {
+  const validate = validator("text_payload");
+  for (const exact_text of ["\uD800", "\uDC00", "before\uD800after"]) {
+    assert.equal(validate({ content_id: "a".repeat(64), exact_text }), false);
+  }
+  for (const exact_text of ["", "אְ😀ב", "é", "é"]) {
+    const content_id = createHash("sha256").update(exact_text, "utf8").digest("hex");
+    const row = { content_id, exact_text };
+    assert.equal(validate(row), true);
+    assert.deepEqual(JSON.parse(JSON.stringify(row)), row);
+  }
+});
+
 test("schema rejects ambiguous bodies, unsafe ranges and fake held references", () => {
   const span = structuredClone(fixture.records.native_span[0]);
   assert.equal(validator("native_span")({ ...span, body_ranges_json: [{ segment_ordinal: 0, artifact_id: "range-body", byte_offset: 0, byte_length: 2, sha256: "a".repeat(64) }] }), false);

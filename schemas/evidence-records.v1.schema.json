@@ -379,7 +379,8 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "exact_text": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
         }
       }
     },

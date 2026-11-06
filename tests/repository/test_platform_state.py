@@ -115,8 +115,18 @@ class StateTests(unittest.TestCase):
                 {"name": "other--dummy-" + str(i), "id": 10000 + i, "payload": b""}
                 for i in range(995)
             )
-            with self.assertRaises(state.StateError):
+            with self.assertRaisesRegex(state.StateError, "State release capacity exhausted"):
                 state.begin("github", "501-1")
+
+    def test_capacity_allows_997_assets(self):
+        # A run must have three free slots for its state protocol assets.
+        self.fake.items = [
+            {"name": "other--dummy-" + str(i), "id": 10000 + i, "payload": b""}
+            for i in range(997)
+        ]
+        self.fake.release = {"id": 1}
+        state.begin("github", "501-1")
+        self.assertEqual(self.fake.items[-1]["name"], "github--501-1--begin.json")
 
     def test_non_dictionary_receipt_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

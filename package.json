@@ -13,19 +13,25 @@
     "build": "npm run build:study && npm run build:control && npm run build:shared",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
     "test": "npm run test:typescript && npm run test:python",
-    "check": "npm run typecheck && npm run check:boundaries && npm run check:python && npm test && npm run check:repository && npm run build",
+    "check": "npm run typecheck && npm run check:boundaries && npm run check:python && npm test && npm run check:repository && npm run build && npm run check:platform",
     "build:shared": "node tools/build.mjs shared",
     "check:boundaries": "node tools/check-boundaries.mjs && node tools/run-python.mjs boundaries",
     "test:typescript": "node --test \"tests/**/*.test.ts\"",
     "test:python": "node tools/run-python.mjs test",
     "check:python": "node tools/run-python.mjs import",
-    "check:repository": "node tools/run-python.mjs repository"
+    "check:repository": "node tools/run-python.mjs repository",
+    "check:platform": "node --conditions=workerd --test tests/platform/*.test.ts && node infrastructure/cloudflare/render.mjs tests/platform/instance.fixture.json && wrangler deploy --dry-run --config dist/config/study.json && wrangler deploy --dry-run --config dist/config/control.json"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",
     "@types/node": "24.19.2",
     "ajv": "8.20.0",
     "esbuild": "0.28.2",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "4.158.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "jose": "6.2.15"
   }
 }

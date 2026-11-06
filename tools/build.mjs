@@ -10,5 +10,5 @@ const target = process.argv[2];
 if (!target || !Object.hasOwn(entries, target)) throw new Error("Choose study, control or shared");
 const [entry, platform] = entries[target];
 await build({ entryPoints: [entry], bundle: true, format: "esm", platform,
-  target: "es2023", outfile: `dist/${target}/index.js`, logLevel: "info" });
+  conditions: ["workerd", "worker", "browser"], target: "es2023", outfile: `dist/${target}/index.js`, logLevel: "info" });
 

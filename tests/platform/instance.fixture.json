@@ -1,0 +1,19 @@
+{
+  "ACCOUNT_ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "ZONE_ID": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ZONE_NAME": "example.invalid",
+  "INSTANCE": "fixture-a",
+  "STUDY_HOSTNAME": "study.example.invalid",
+  "CONTROL_HOSTNAME": "control.example.invalid",
+  "DATABASE_ID": "11111111-1111-4111-8111-111111111111",
+  "ACCESS_ISSUER": "https://fixture.cloudflareaccess.com",
+  "STUDY_AUDIENCE": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "CONTROL_AUDIENCE": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "JOB_AUDIENCE": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "ENHANCEMENTS": false,
+  "MAX_PAGE_BYTES": 2048,
+  "REQUEST_BYTES": 4096,
+  "MAX_D1_CALLS": 40,
+  "MAX_SUBREQUESTS": 45,
+  "CPU_BUDGET_MS": 10
+}

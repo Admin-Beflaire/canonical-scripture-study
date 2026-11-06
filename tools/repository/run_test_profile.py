@@ -51,7 +51,7 @@ def changed_paths(base):
 def run(profile):
     commands = {
         "typescript": [["npm", "run", "typecheck"], ["node", "tools/check-boundaries.mjs"],
-                       ["npm", "run", "test:typescript"], ["npm", "run", "build"]],
+                       ["npm", "run", "test:typescript"], ["npm", "run", "build"], ["npm", "run", "check:platform"]],
         "python": [["node", "tools/run-python.mjs", mode] for mode in ("boundaries", "import", "test")],
         "repository": [[sys.executable, "-m", "unittest", "discover", "-s", "tests/repository", "-p", "test_*.py", "-v"]],
     }

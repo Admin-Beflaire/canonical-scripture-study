@@ -56,3 +56,11 @@ jobs:
           terraform init -backend=false -lockfile=readonly -input=false
           terraform validate
           terraform test
+      - name: Cloudflare templates and mocked resource boundaries
+        if: steps.route.outputs.repository == 'true'
+        working-directory: infrastructure/cloudflare
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -lockfile=readonly -input=false
+          terraform validate
+          terraform test

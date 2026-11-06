@@ -29,3 +29,13 @@ test("applications can consume Shared and Shared can consume declarative schemas
   assert.deepEqual(checkSource(root, "services/study/src/index.ts", 'import "../../../packages/shared/src/index.ts";'), []);
   assert.deepEqual(checkSource(root, "packages/shared/src/references.ts", 'import "../../../schemas/native-reference.v1.schema.json" with { type: "json" };'), []);
 });
+
+test("Worker code cannot import a Node process bridge", () => {
+  assert.ok(checkSource(root, "services/study/src/index.ts", 'import { spawn } from "node:child_process";').length);
+});
+
+test("Python runtime homes and Data declarations cannot contain TypeScript runtime code", () => {
+  for (const file of ["services/maintenance/data-preparation/src/index.ts", "packages/shared-python/src/index.ts", "schemas/index.ts"]) {
+    assert.ok(checkSource(root, file, "").length);
+  }
+});

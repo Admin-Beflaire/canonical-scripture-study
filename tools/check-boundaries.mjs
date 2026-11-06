@@ -6,7 +6,6 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 const owners = [
   ["services/study/", "study"],
   ["services/maintenance/control/", "control"],
-  ["services/maintenance/data-preparation/", "preparation"],
   ["packages/shared/", "shared"],
   ["schemas/", "schemas"],
 ];
@@ -14,7 +13,6 @@ const owners = [
 const allowed = {
   study: new Set(["study", "shared", "schemas"]),
   control: new Set(["control", "shared", "schemas"]),
-  preparation: new Set(["preparation", "shared", "schemas"]),
   shared: new Set(["shared", "schemas"]),
 };
 /** @param {string} path */
@@ -36,7 +34,12 @@ export function checkSource(root, file, source) {
       return;
     }
     const name = node.text;
-    if (name.startsWith("node:")) return;
+    if (name.startsWith("node:")) {
+      if (["node:child_process", "node:worker_threads", "node:vm"].includes(name)) {
+        failures.push(`${file}: Node process bridge is not allowed in Worker/Shared code`);
+      }
+      return;
+    }
     // Resolve bare names too: an alias must not bypass the repository boundary.
     const target = ts.resolveModuleName(name, resolve(root, file), compilerOptions, ts.sys).resolvedModule;
     const path = target && relative(root, target.resolvedFileName).replaceAll("\\", "/");
@@ -63,13 +66,13 @@ export function checkSource(root, file, source) {
 function files(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const path = resolve(directory, entry.name);
-    return entry.isDirectory() ? files(path) : /\.[cm]?tsx?$/.test(entry.name) ? [path] : [];
+    return entry.isDirectory() ? files(path) : /\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : [];
   });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const failures = ["services", "packages"].flatMap(directory =>
+  const failures = ["services", "packages", "schemas"].flatMap(directory =>
     files(resolve(root, directory)).flatMap(path => checkSource(root, relative(root, path).replaceAll("\\", "/"), readFileSync(path, "utf8"))));
   if (failures.length) {
     console.error(failures.join("\n"));

@@ -206,6 +206,9 @@ def main():
     p.add_argument("--allow-empty", action="store_true")
     p.add_argument("--success", action="store_true")
     a = p.parse_args()
+    metadata = request("GET", "/repos/" + REPOSITORY)
+    if not isinstance(metadata, dict) or metadata.get("private") is not True:
+        raise StateError("Protected state destination is not verified private")
     if a.command in ("begin", "finish") and (not a.run or not SAFE_ID.fullmatch(a.run)):
         raise StateError("Run must be the fixed GitHub run-id/attempt")
     if a.command in ("restore", "finish") and not a.path:

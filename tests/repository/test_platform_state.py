@@ -97,6 +97,33 @@ class StateTests(unittest.TestCase):
             with self.assertRaises(state.StateError):
                 state.restore("cloudflare", Path(tmp) / "out")
 
+    def test_stale_rerun_and_capacity_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "tf"
+            p.write_bytes(b'{"version":4}')
+            state.begin("github", "500-1")
+            state.finish("github", "500-1", p, True)
+            with self.assertRaises(state.StateError):
+                state.begin("github", "499-2")
+            with self.assertRaises(state.StateError):
+                state.begin("github", "500-1")
+            self.fake.items.extend(
+                {"name": "other--dummy-" + str(i), "id": 10000 + i, "payload": b""}
+                for i in range(995)
+            )
+            with self.assertRaises(state.StateError):
+                state.begin("github", "501-1")
+
+    def test_non_dictionary_receipt_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "tf"
+            p.write_bytes(b'{"version":4}')
+            state.begin("github", "600-1")
+            state.finish("github", "600-1", p, True)
+            self.fake.items[-1]["payload"] = b'[]'
+            with self.assertRaises(state.StateError):
+                state.restore("github", Path(tmp) / "restore")
+
     def test_duplicate_run_and_wrong_ids_fail_closed(self):
         with self.assertRaises(state.StateError):
             state.begin("cloudflare", "../../bad")
@@ -124,6 +151,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("pull_request_target:", workflow)
         self.assertNotIn("workflow_run:", workflow)
         self.assertNotIn("upload-artifact", workflow)
+        self.assertIn("--cap-drop ALL", workflow)
+        self.assertIn("steps.apply_plan.outcome == 'success'", workflow)
+        self.assertNotIn("--env PLATFORM_STATE_TOKEN", workflow)
         for line in workflow.splitlines():
             if "uses:" in line:
                 self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")

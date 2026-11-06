@@ -1,0 +1,62 @@
+{
+  "format_version": "index-manifest/1",
+  "index_kind": "source_text",
+  "prepared_output_id": "ix-source",
+  "source_revision_ids": [
+    "synthetic:a:source_revision"
+  ],
+  "native_extent": {
+    "unit_ids": [
+      "index-unit"
+    ]
+  },
+  "coordinate_version": "synthetic:unicode-scalars/1",
+  "normalization_rule": "synthetic:strip-marks-punctuation/1",
+  "tokenizer_version": "synthetic:fixture-tokens/1",
+  "analysis_revision_ids": [],
+  "parameters": {},
+  "ordering": [
+    "search_key",
+    "native_order",
+    "occurrence_id"
+  ],
+  "key_collation": "utf8-bytewise",
+  "encoded_page_cap_bytes": 2048,
+  "files": [
+    {
+      "artifact_id": "ix-source-postings",
+      "byte_length": 2146,
+      "sha256": "f58afa51cd714181d64cf5960ed9ec27ac089ac4305ba60cb51419c9bae5d6f8",
+      "pages": [
+        {
+          "first_key": "",
+          "last_key": "א",
+          "byte_offset": 0,
+          "byte_length": 856,
+          "sha256": "c2d4ba83e942cab1f5221378bfad0ebd56a8330567bf2ab2a305583cd27f6893"
+        },
+        {
+          "first_key": "א",
+          "last_key": "א",
+          "byte_offset": 856,
+          "byte_length": 859,
+          "sha256": "3a7ba4e5567ccd141d1095dbff636764347cd158ef3b2dac35f73710903f7286"
+        },
+        {
+          "first_key": "ב",
+          "last_key": "ב",
+          "byte_offset": 1715,
+          "byte_length": 431,
+          "sha256": "60c0667b7c7ef3613d0790cda142a3f5fa0c3da4727d79664ab359c21535a700"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "capabilities": [
+      "word_exact"
+    ],
+    "state": "available",
+    "limitation": null
+  }
+}

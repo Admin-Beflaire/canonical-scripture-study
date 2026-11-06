@@ -1,0 +1,723 @@
+{
+  "fixture_version": "index-contracts/1",
+  "manifests": {
+    "source": "source.manifest.json",
+    "word": "word.manifest.json",
+    "lexicon": "lexicon.manifest.json"
+  },
+  "postings": {
+    "ix-source-postings": "source.ndjson",
+    "ix-word-postings": "word.ndjson",
+    "ix-lexicon-postings": "lexicon.ndjson"
+  },
+  "artifact_files": {
+    "ix-source-postings": "source.ndjson",
+    "ix-source-manifest": "source.manifest.json",
+    "ix-word-postings": "word.ndjson",
+    "ix-word-manifest": "word.manifest.json",
+    "ix-lexicon-postings": "lexicon.ndjson",
+    "ix-lexicon-manifest": "lexicon.manifest.json",
+    "ix-native-body": "native-body.txt"
+  },
+  "native_units": {
+    "index-unit": "׃ אָ אָ אָ בּ",
+    "lex-unit": "entry-a entry-b"
+  },
+  "evidence_delta": {
+    "source_node": [
+      {
+        "id": "synthetic:lex:work",
+        "kind": "work",
+        "parent_id": null,
+        "name": "Synthetic lex",
+        "attribution": "Synthetic lex",
+        "origin": "https://example.invalid/lex",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:lex:edition",
+        "kind": "edition",
+        "parent_id": "synthetic:lex:work",
+        "name": "Synthetic lex",
+        "attribution": "Synthetic lex",
+        "origin": "https://example.invalid/lex",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:lex:representation",
+        "kind": "representation",
+        "parent_id": "synthetic:lex:edition",
+        "name": "Synthetic lex",
+        "attribution": "Synthetic lex",
+        "origin": "https://example.invalid/lex",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:lex:source_revision",
+        "kind": "source_revision",
+        "parent_id": "synthetic:lex:representation",
+        "name": "Synthetic lex",
+        "attribution": "Synthetic lex",
+        "origin": "https://example.invalid/lex",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-a:work",
+        "kind": "work",
+        "parent_id": null,
+        "name": "Synthetic analysis-a",
+        "attribution": "Synthetic analysis-a",
+        "origin": "https://example.invalid/analysis-a",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-a:edition",
+        "kind": "edition",
+        "parent_id": "synthetic:analysis-a:work",
+        "name": "Synthetic analysis-a",
+        "attribution": "Synthetic analysis-a",
+        "origin": "https://example.invalid/analysis-a",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-a:representation",
+        "kind": "representation",
+        "parent_id": "synthetic:analysis-a:edition",
+        "name": "Synthetic analysis-a",
+        "attribution": "Synthetic analysis-a",
+        "origin": "https://example.invalid/analysis-a",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-a:source_revision",
+        "kind": "source_revision",
+        "parent_id": "synthetic:analysis-a:representation",
+        "name": "Synthetic analysis-a",
+        "attribution": "Synthetic analysis-a",
+        "origin": "https://example.invalid/analysis-a",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-b:work",
+        "kind": "work",
+        "parent_id": null,
+        "name": "Synthetic analysis-b",
+        "attribution": "Synthetic analysis-b",
+        "origin": "https://example.invalid/analysis-b",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-b:edition",
+        "kind": "edition",
+        "parent_id": "synthetic:analysis-b:work",
+        "name": "Synthetic analysis-b",
+        "attribution": "Synthetic analysis-b",
+        "origin": "https://example.invalid/analysis-b",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-b:representation",
+        "kind": "representation",
+        "parent_id": "synthetic:analysis-b:edition",
+        "name": "Synthetic analysis-b",
+        "attribution": "Synthetic analysis-b",
+        "origin": "https://example.invalid/analysis-b",
+        "details_json": {}
+      },
+      {
+        "id": "synthetic:analysis-b:source_revision",
+        "kind": "source_revision",
+        "parent_id": "synthetic:analysis-b:representation",
+        "name": "Synthetic analysis-b",
+        "attribution": "Synthetic analysis-b",
+        "origin": "https://example.invalid/analysis-b",
+        "details_json": {}
+      }
+    ],
+    "admission": [
+      {
+        "id": "ix-admit-synthetic:lex:source_revision",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "component": "text",
+        "terms_basis": "Synthetic fixture, not an actual admission",
+        "permitted_uses_json": [
+          "retain",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [],
+        "notices_json": [
+          "Synthetic provider"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "allowed"
+      },
+      {
+        "id": "ix-admit-synthetic:analysis-a:source_revision",
+        "source_revision_id": "synthetic:analysis-a:source_revision",
+        "component": "annotations",
+        "terms_basis": "Synthetic fixture, not an actual admission",
+        "permitted_uses_json": [
+          "retain",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [],
+        "notices_json": [
+          "Synthetic provider"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "allowed"
+      },
+      {
+        "id": "ix-admit-synthetic:analysis-b:source_revision",
+        "source_revision_id": "synthetic:analysis-b:source_revision",
+        "component": "annotations",
+        "terms_basis": "Synthetic fixture, not an actual admission",
+        "permitted_uses_json": [
+          "retain",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [],
+        "notices_json": [
+          "Synthetic provider"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "allowed"
+      }
+    ],
+    "prepared_output": [
+      {
+        "id": "ix-evidence",
+        "kind": "evidence",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:lex:source_revision",
+          "synthetic:analysis-a:source_revision",
+          "synthetic:analysis-b:source_revision"
+        ],
+        "method_version": "synthetic:fixture-tokens/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit",
+            "lex-unit"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "indexes/1"
+        }
+      },
+      {
+        "id": "ix-source",
+        "kind": "source_search",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:lex:source_revision",
+          "synthetic:analysis-a:source_revision",
+          "synthetic:analysis-b:source_revision"
+        ],
+        "method_version": "synthetic:fixture-tokens/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit",
+            "lex-unit"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "indexes/1"
+        }
+      },
+      {
+        "id": "ix-word",
+        "kind": "word_index",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:lex:source_revision",
+          "synthetic:analysis-a:source_revision",
+          "synthetic:analysis-b:source_revision"
+        ],
+        "method_version": "synthetic:fixture-tokens/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit",
+            "lex-unit"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "indexes/1"
+        }
+      },
+      {
+        "id": "ix-lexicon",
+        "kind": "source_search",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:lex:source_revision",
+          "synthetic:analysis-a:source_revision",
+          "synthetic:analysis-b:source_revision"
+        ],
+        "method_version": "synthetic:fixture-tokens/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit",
+            "lex-unit"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "indexes/1"
+        }
+      }
+    ],
+    "artifact": [
+      {
+        "id": "ix-source-postings",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-source",
+        "sha256": "f58afa51cd714181d64cf5960ed9ec27ac089ac4305ba60cb51419c9bae5d6f8",
+        "byte_count": 2146,
+        "format": "application/x-ndjson",
+        "registered_locator": "synthetic/indexes/ix-source-postings"
+      },
+      {
+        "id": "ix-source-manifest",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-source",
+        "sha256": "a00382f7f763b57e613b38eb9ac82a1d7c21e7b93fc600ea023a3ce285572b84",
+        "byte_count": 1615,
+        "format": "application/json",
+        "registered_locator": "synthetic/indexes/ix-source-manifest"
+      },
+      {
+        "id": "ix-word-postings",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-word",
+        "sha256": "1d2612dbeeb243152731429e2c1ec89b8a37a3c415cf11bbfd2f54d867406ba2",
+        "byte_count": 12141,
+        "format": "application/x-ndjson",
+        "registered_locator": "synthetic/indexes/ix-word-postings"
+      },
+      {
+        "id": "ix-word-manifest",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-word",
+        "sha256": "dcdcbf18a000469d291dbf2b1cd07060fb5573d952b0d35f5fa7075293cc65e8",
+        "byte_count": 4103,
+        "format": "application/json",
+        "registered_locator": "synthetic/indexes/ix-word-manifest"
+      },
+      {
+        "id": "ix-lexicon-postings",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "output_id": "ix-lexicon",
+        "sha256": "601a9f232d06793d164dcbf70b6b217e37250d52bf9b6e9ff8546e7427ead119",
+        "byte_count": 865,
+        "format": "application/x-ndjson",
+        "registered_locator": "synthetic/indexes/ix-lexicon-postings"
+      },
+      {
+        "id": "ix-lexicon-manifest",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "output_id": "ix-lexicon",
+        "sha256": "e6b1930b9b5b028008101b5a6782a28e73f23274b44cf100c071106283259cc7",
+        "byte_count": 1162,
+        "format": "application/json",
+        "registered_locator": "synthetic/indexes/ix-lexicon-manifest"
+      },
+      {
+        "id": "ix-native-body",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-evidence",
+        "sha256": "1eeea160b0b1604eae9d2d81e0177b4ec6f2661804d81b3f017f30fd124281bd",
+        "byte_count": 22,
+        "format": "text/utf-8",
+        "registered_locator": "synthetic/indexes/native-body"
+      }
+    ],
+    "text_payload": [
+      {
+        "content_id": "1eeea160b0b1604eae9d2d81e0177b4ec6f2661804d81b3f017f30fd124281bd",
+        "exact_text": "׃ אָ אָ אָ בּ"
+      },
+      {
+        "content_id": "c2f1e59b138100d13516aee89b8808cdb212f88a131c37cb2e38dac2f4548b7c",
+        "exact_text": "entry-a entry-b"
+      },
+      {
+        "content_id": "fd23070f84710335f632c753de8271c419c4b34d11c185d76f5ca15b35cdbeca",
+        "exact_text": "entry-a"
+      },
+      {
+        "content_id": "52098ad5aace4b029a97f1f6d0d9c5065cb99a9badc353df6631bf73194032d7",
+        "exact_text": "entry-b"
+      }
+    ],
+    "native_span": [
+      {
+        "id": "ix-passage",
+        "output_id": "ix-evidence",
+        "source_revision_id": "synthetic:a:source_revision",
+        "parent_id": null,
+        "kind": "passage",
+        "label": "Synthetic ix-passage",
+        "native_order": 0,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "index-unit",
+            "start": 0,
+            "end": 13
+          }
+        ],
+        "basis_json": {
+          "receipt": "synthetic-boundary-ix-passage",
+          "uncertainty": "fixture"
+        },
+        "content_id": "1eeea160b0b1604eae9d2d81e0177b4ec6f2661804d81b3f017f30fd124281bd",
+        "body_ranges_json": [],
+        "reading_kind": "preserved"
+      },
+      {
+        "id": "ix-literary",
+        "output_id": "ix-evidence",
+        "source_revision_id": "synthetic:a:source_revision",
+        "parent_id": null,
+        "kind": "literary_unit",
+        "label": "Synthetic ix-literary",
+        "native_order": 1,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "index-unit",
+            "start": 2,
+            "end": 4
+          },
+          {
+            "unit_id": "index-unit",
+            "start": 8,
+            "end": 10
+          }
+        ],
+        "basis_json": {
+          "receipt": "synthetic-boundary-ix-literary",
+          "uncertainty": "fixture"
+        },
+        "content_id": null,
+        "body_ranges_json": [
+          {
+            "segment_ordinal": 0,
+            "artifact_id": "ix-native-body",
+            "byte_offset": 3,
+            "byte_length": 4,
+            "sha256": "2a73887d8f537d151936e0ff188a96bb9a640882ca456acf3af1419594fc6bb1"
+          },
+          {
+            "segment_ordinal": 1,
+            "artifact_id": "ix-native-body",
+            "byte_offset": 13,
+            "byte_length": 4,
+            "sha256": "2a73887d8f537d151936e0ff188a96bb9a640882ca456acf3af1419594fc6bb1"
+          }
+        ],
+        "reading_kind": "preserved"
+      },
+      {
+        "id": "ix-overlap",
+        "output_id": "ix-evidence",
+        "source_revision_id": "synthetic:a:source_revision",
+        "parent_id": null,
+        "kind": "literary_unit",
+        "label": "Synthetic ix-overlap",
+        "native_order": 2,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "index-unit",
+            "start": 5,
+            "end": 13
+          }
+        ],
+        "basis_json": {
+          "receipt": "synthetic-boundary-ix-overlap",
+          "uncertainty": "fixture"
+        },
+        "content_id": null,
+        "body_ranges_json": [
+          {
+            "segment_ordinal": 0,
+            "artifact_id": "ix-native-body",
+            "byte_offset": 8,
+            "byte_length": 14,
+            "sha256": "494c318388890b6b29e89f56b3708fc87227953a6ddab7f0dc584fc23d7bba20"
+          }
+        ],
+        "reading_kind": "preserved"
+      },
+      {
+        "id": "ix-lex-0",
+        "output_id": "ix-evidence",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "parent_id": null,
+        "kind": "lexicon_entry",
+        "label": "Synthetic ix-lex-0",
+        "native_order": 3,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "lex-unit",
+            "start": 0,
+            "end": 7
+          }
+        ],
+        "basis_json": {
+          "receipt": "synthetic-boundary-ix-lex-0",
+          "uncertainty": "fixture"
+        },
+        "content_id": "fd23070f84710335f632c753de8271c419c4b34d11c185d76f5ca15b35cdbeca",
+        "body_ranges_json": [],
+        "reading_kind": "preserved"
+      },
+      {
+        "id": "ix-lex-1",
+        "output_id": "ix-evidence",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "parent_id": null,
+        "kind": "lexicon_entry",
+        "label": "Synthetic ix-lex-1",
+        "native_order": 4,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "lex-unit",
+            "start": 8,
+            "end": 15
+          }
+        ],
+        "basis_json": {
+          "receipt": "synthetic-boundary-ix-lex-1",
+          "uncertainty": "fixture"
+        },
+        "content_id": "52098ad5aace4b029a97f1f6d0d9c5065cb99a9badc353df6631bf73194032d7",
+        "body_ranges_json": [],
+        "reading_kind": "preserved"
+      }
+    ],
+    "relationship": [
+      {
+        "id": "ix-link-0",
+        "output_id": "ix-evidence",
+        "kind": "lemma_lexicon_entry",
+        "direction": "directed",
+        "status": "supported",
+        "basis_json": {
+          "lemma_id": "provider-0:lemma-א",
+          "provider": "synthetic-provider-0",
+          "receipt_id": "synthetic-link-receipt-0"
+        }
+      },
+      {
+        "id": "ix-link-1",
+        "output_id": "ix-evidence",
+        "kind": "lemma_lexicon_entry",
+        "direction": "directed",
+        "status": "supported",
+        "basis_json": {
+          "lemma_id": "provider-1:lemma-א",
+          "provider": "synthetic-provider-1",
+          "receipt_id": "synthetic-link-receipt-1"
+        }
+      }
+    ],
+    "relation_member": [
+      {
+        "relationship_id": "ix-link-0",
+        "role": "from",
+        "ordinal": 0,
+        "span_id": "ix-passage",
+        "correspondence": "partial",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "ix-link-0",
+        "role": "to",
+        "ordinal": 0,
+        "span_id": "ix-lex-0",
+        "correspondence": "partial",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "ix-link-1",
+        "role": "from",
+        "ordinal": 0,
+        "span_id": "ix-passage",
+        "correspondence": "partial",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "ix-link-1",
+        "role": "to",
+        "ordinal": 0,
+        "span_id": "ix-lex-1",
+        "correspondence": "partial",
+        "gap_reason": null
+      }
+    ],
+    "coverage": [
+      {
+        "output_id": "ix-source",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit"
+          ]
+        },
+        "capability": "source_search",
+        "state": "available",
+        "method_version": "synthetic:fixture-tokens/1",
+        "index_artifact_id": "ix-source-manifest",
+        "dependencies_json": [
+          "ix-evidence"
+        ],
+        "limitation": null
+      },
+      {
+        "output_id": "ix-word",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit"
+          ]
+        },
+        "capability": "word_analysis",
+        "state": "available",
+        "method_version": "synthetic:fixture-tokens/1",
+        "index_artifact_id": "ix-word-manifest",
+        "dependencies_json": [
+          "ix-evidence"
+        ],
+        "limitation": null
+      },
+      {
+        "output_id": "ix-lexicon",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "native_extent_json": {
+          "unit_ids": [
+            "lex-unit"
+          ]
+        },
+        "capability": "source_search",
+        "state": "available",
+        "method_version": "synthetic:fixture-tokens/1",
+        "index_artifact_id": "ix-lexicon-manifest",
+        "dependencies_json": [
+          "ix-evidence"
+        ],
+        "limitation": null
+      }
+    ],
+    "release": [
+      {
+        "id": "ix-release",
+        "manifest_revision": "synthetic:ix-manifest/1",
+        "recipe_revision": "synthetic:ix-recipe/1",
+        "schema_versions_json": {
+          "evidence_records": "1",
+          "index_manifest": "1"
+        },
+        "coverage_basis": "synthetic index coverage",
+        "quality_receipt": "synthetic:quality-ix",
+        "scope_receipt": "synthetic:scope-ix"
+      }
+    ],
+    "release_output": [
+      {
+        "release_id": "ix-release",
+        "output_id": "ix-evidence"
+      },
+      {
+        "release_id": "ix-release",
+        "output_id": "ix-source"
+      },
+      {
+        "release_id": "ix-release",
+        "output_id": "ix-word"
+      },
+      {
+        "release_id": "ix-release",
+        "output_id": "ix-lexicon"
+      }
+    ]
+  },
+  "span_segments": [
+    {
+      "span_id": "ix-passage",
+      "segment_ordinal": 0,
+      "source_revision_id": "synthetic:a:source_revision",
+      "kind": "passage",
+      "start_order": 0,
+      "end_order": 12
+    },
+    {
+      "span_id": "ix-literary",
+      "segment_ordinal": 0,
+      "source_revision_id": "synthetic:a:source_revision",
+      "kind": "literary_unit",
+      "start_order": 2,
+      "end_order": 3
+    },
+    {
+      "span_id": "ix-literary",
+      "segment_ordinal": 1,
+      "source_revision_id": "synthetic:a:source_revision",
+      "kind": "literary_unit",
+      "start_order": 8,
+      "end_order": 9
+    },
+    {
+      "span_id": "ix-overlap",
+      "segment_ordinal": 0,
+      "source_revision_id": "synthetic:a:source_revision",
+      "kind": "literary_unit",
+      "start_order": 5,
+      "end_order": 12
+    },
+    {
+      "span_id": "ix-lex-0",
+      "segment_ordinal": 0,
+      "source_revision_id": "synthetic:lex:source_revision",
+      "kind": "lexicon_entry",
+      "start_order": 0,
+      "end_order": 6
+    },
+    {
+      "span_id": "ix-lex-1",
+      "segment_ordinal": 0,
+      "source_revision_id": "synthetic:lex:source_revision",
+      "kind": "lexicon_entry",
+      "start_order": 8,
+      "end_order": 14
+    }
+  ],
+  "expected_source_occurrences": [
+    "occ-001",
+    "occ-002",
+    "occ-003"
+  ],
+  "expected_word_occurrences": [
+    "occ-001",
+    "occ-002",
+    "occ-003"
+  ],
+  "fixture_budget": {
+    "max_encoded_page_bytes": 2048,
+    "max_request_bytes": 4096,
+    "max_pages": 2
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "format_version": "index-contracts/1",
+  "schemas": [
+    "manifest.v1.schema.json",
+    "posting.v1.schema.json",
+    "span-segment.v1.schema.json"
+  ],
+  "native_reference_schema": "../native-reference.v1.schema.json",
+  "migration": "../migrations/0002_span_navigation.sql"
+}

@@ -1,0 +1,48 @@
+{
+  "format_version": "index-manifest/1",
+  "index_kind": "source_text",
+  "prepared_output_id": "ix-lexicon",
+  "source_revision_ids": [
+    "synthetic:lex:source_revision"
+  ],
+  "native_extent": {
+    "unit_ids": [
+      "lex-unit"
+    ]
+  },
+  "coordinate_version": "synthetic:unicode-scalars/1",
+  "normalization_rule": "synthetic:identity/1",
+  "tokenizer_version": "synthetic:fixture-tokens/1",
+  "analysis_revision_ids": [],
+  "parameters": {},
+  "ordering": [
+    "search_key",
+    "native_order",
+    "occurrence_id"
+  ],
+  "key_collation": "utf8-bytewise",
+  "encoded_page_cap_bytes": 2048,
+  "files": [
+    {
+      "artifact_id": "ix-lexicon-postings",
+      "byte_length": 865,
+      "sha256": "601a9f232d06793d164dcbf70b6b217e37250d52bf9b6e9ff8546e7427ead119",
+      "pages": [
+        {
+          "first_key": "entry-a",
+          "last_key": "entry-b",
+          "byte_offset": 0,
+          "byte_length": 865,
+          "sha256": "601a9f232d06793d164dcbf70b6b217e37250d52bf9b6e9ff8546e7427ead119"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "capabilities": [
+      "word_exact"
+    ],
+    "state": "available",
+    "limitation": null
+  }
+}

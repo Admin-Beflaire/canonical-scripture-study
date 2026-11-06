@@ -19,7 +19,6 @@
     "checkJs": true
   },
   "include": [
-    "services/maintenance/data-preparation/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts",
     "tools/**/*.mjs"

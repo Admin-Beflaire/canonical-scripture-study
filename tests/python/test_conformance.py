@@ -17,6 +17,8 @@ FIXTURES = json.loads(
     (Path(__file__).resolve().parents[1] / "conformance/native-reference.v1.json")
     .read_text(encoding="utf-8")
 )
+if FIXTURES["fixture_version"] != "native-reference-conformance/1":
+    raise ValueError("Unsupported conformance fixture version")
 
 
 class ConformanceTests(unittest.TestCase):

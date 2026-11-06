@@ -14,6 +14,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 REPOSITORY = os.environ.get("PLATFORM_STATE_REPO", "")
 TAG = "platform-state-v1"
@@ -24,6 +25,18 @@ SAFE_ID = re.compile(r"^[0-9]{1,20}-[0-9]{1,5}$")
 
 class StateError(Exception):
     pass
+
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Do not forward the private state token to signed asset destinations."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urlsplit(newurl).scheme != "https":
+            raise StateError("Private state redirect must use HTTPS")
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected and urlsplit(req.full_url).netloc.lower() != urlsplit(newurl).netloc.lower():
+            redirected.remove_header("Authorization")
+        return redirected
 
 
 def digest(data):
@@ -45,7 +58,7 @@ def request(method, path, data=None, binary=False, upload=False):
         headers["Content-Type"] = "application/octet-stream" if upload else "application/json"
     req = urllib.request.Request(host + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.build_opener(SafeRedirectHandler()).open(req, timeout=30) as response:
             body = response.read()
             if binary:
                 return body
@@ -302,9 +315,14 @@ def rescue(key, run, state_path):
     saved = request("PUT", path, payload)
     if not isinstance(saved, dict) or not saved.get("content", {}).get("sha"):
         raise StateError("Private recovery snapshot not confirmed")
-    check = request("GET", path)
+    # Contents API does not return base64 content for blobs over 1 MB.
+    # Read by the committed Git blob SHA instead, including large states.
+    blob_sha = saved["content"]["sha"]
+    check = request("GET", "/repos/" + REPOSITORY + "/git/blobs/" + blob_sha)
     try:
-        verified = base64.b64decode(check["content"], validate=False)
+        if not isinstance(check, dict) or check.get("encoding") != "base64":
+            raise StateError("Private recovery readback format invalid")
+        verified = base64.b64decode(check["content"], validate=True)
     except (TypeError, ValueError, KeyError, AttributeError):
         raise StateError("Private recovery readback failed") from None
     if digest(verified) != digest(data):

@@ -136,7 +136,7 @@ def inventory(key, allow_missing=False):
         if "begin.json" not in parts or "receipt.json" not in parts or "state.tfstate" not in parts:
             raise StateError("Interrupted state attempt; reconcile before another run")
         receipt = json.loads(download(parts["receipt.json"]))
-        if receipt.get("run") != run or receipt.get("key") != key:
+        if not isinstance(receipt, dict) or receipt.get("run") != run or receipt.get("key") != key:
             raise StateError("State receipt identity mismatch")
         if receipt.get("outcome") != "success":
             raise StateError("Failed/uncertain apply requires independent reconciliation")

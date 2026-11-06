@@ -2,6 +2,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("profiles", ROOT / "tools/repository/run_test_profile.py")
@@ -10,6 +11,20 @@ spec.loader.exec_module(profiles)
 
 
 class RoutingTests(unittest.TestCase):
+    def test_wrong_language_files_run_both_boundary_checkers(self):
+        typescript_homes = ("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/")
+        python_homes = ("services/maintenance/data-preparation/", "packages/shared-python/", "tests/python/")
+        for path in [home + "misplaced.py" for home in typescript_homes] + [
+                home + "misplaced" + suffix for home in python_homes
+                for suffix in (".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs")]:
+            with self.subTest(path=path):
+                self.assertEqual(set(profiles.select_profiles([path])), set(profiles.PROFILES))
+
+    def test_repository_profile_reuses_selected_python_interpreter(self):
+        with patch.object(profiles.sys, "executable", "selected-python"), patch.object(profiles.subprocess, "run") as execute:
+            profiles.run("repository")
+        self.assertEqual(execute.call_args.args[0][0], "selected-python")
+
     def test_shared_contract_changes_run_both_languages(self):
         for path in ("schemas/new.json", "tests/conformance/reference.json"):
             self.assertEqual(profiles.select_profiles([path]), ["python", "typescript"])

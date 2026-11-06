@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = ("typescript", "python", "repository")
@@ -13,6 +14,13 @@ PROFILES = ("typescript", "python", "repository")
 def select_profiles(paths):
     selected = set()
     for path in paths:
+        typescript_home = path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/"))
+        python_home = path.startswith(("services/maintenance/data-preparation/", "packages/shared-python/", "tests/python/"))
+        suffix = Path(path).suffix
+        if ((typescript_home and suffix == ".py") or
+                (python_home and suffix in {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"})):
+            selected.update(PROFILES)
+            continue
         if path.startswith(("schemas/", "tests/conformance/")):
             selected.update(("typescript", "python"))
         elif path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/")):
@@ -45,7 +53,7 @@ def run(profile):
         "typescript": [["npm", "run", "typecheck"], ["node", "tools/check-boundaries.mjs"],
                        ["npm", "run", "test:typescript"], ["npm", "run", "build"]],
         "python": [["node", "tools/run-python.mjs", mode] for mode in ("boundaries", "import", "test")],
-        "repository": [["python3", "-m", "unittest", "discover", "-s", "tests/repository", "-p", "test_*.py", "-v"]],
+        "repository": [[sys.executable, "-m", "unittest", "discover", "-s", "tests/repository", "-p", "test_*.py", "-v"]],
     }
     if profile not in commands:
         raise ValueError("Unknown check profile")

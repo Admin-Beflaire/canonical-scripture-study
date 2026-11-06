@@ -19,7 +19,7 @@
     "test:typescript": "node --test \"tests/**/*.test.ts\"",
     "test:python": "node tools/run-python.mjs test",
     "check:python": "node tools/run-python.mjs import",
-    "check:repository": "python3 tools/repository/run_test_profile.py repository"
+    "check:repository": "node tools/run-python.mjs repository"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",

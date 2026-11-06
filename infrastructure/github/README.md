@@ -70,3 +70,58 @@ accept no task/source/private inputs and upload no artifacts.
 
 Extend routing tests with new domain modules and protocol-baseline,
 optional-feature, search-capability and budget fixtures as they are implemented.
+
+## GH-02 protected provisioning (construction only)
+
+`.github/workflows/platform.yml` is manual-dispatch only, restricted to trusted
+`main` and the protected `provisioning` environment. Dispatch selects the
+`github` or `cloudflare` Terraform root, a full SHA already merged into
+`main`, and either `plan` or `apply`. Apply additionally requires the literal
+`APPLY` confirmation. A merge NEVER triggers plan/apply. All Terraform/provider
+output stays in the short-lived runner and is not emitted in public Actions logs.
+
+Configure environment secrets (owner-entered, never copied to Git):
+
+- `PLATFORM_STATE_TOKEN`: separate private design repository Contents write token
+  capable of reading/writing assets in its operational release.
+- `PLATFORM_GITHUB_TOKEN`: GitHub settings provisioning identity, scoped to
+  approved repositories and privileges (not the default Actions token).
+- `PLATFORM_CLOUDFLARE_TOKEN`: Cloudflare account resource-management identity.
+- `PLATFORM_GITHUB_TFVARS_JSON` and `PLATFORM_CLOUDFLARE_TFVARS_JSON`:
+  separate validated Terraform input JSON objects with owner-supplied values.
+
+Set environment variable `PLATFORM_STATE_REPO` to the **private** design
+repository's `owner/name`. Restrict the provisioning environment to trusted
+`main`; record actual token permissions, supported environment enforcement,
+account plan and provider readbacks privately before the first operation.
+The default Actions token stays read-only. Never pass values in dispatch
+inputs, workflow logs or public artifacts. The existing and historical states
+must be inventoried and imported/adopted first, not overwritten.
+
+The state protocol in `platform_state.py` uses the design repository's
+`platform-state-v1` operational release and independent `github`/`cloudflare`
+state names. Every apply writes a unique begin marker **before** mutation.
+It uploads a state snapshot and verifies its downloaded digest, then writes
+an immutable success/uncertain receipt. Any missing snapshot/receipt, failed
+apply, unrecognized state asset or digest mismatch **blocks future runs**;
+do not fall back to older state or delete a failed marker to clear the error.
+Reconcile actual resources and state independently first. Preserve the
+preceding checked snapshot. No state is placed in public source, Actions
+artifacts or recovery bundles.
+
+The initial Cloudflare state may be empty **only** when the owner separately
+authorized first creation and the external resource inventory proves those
+resources absent; dispatch `initialize_empty_cloudflare` to opt in. GitHub
+state is never initialized empty: adopt/import the already-existing repo
+settings into a checked private snapshot before applying. A workflow
+`plan` does **not** produce publicly reviewable changes or authorize apply;
+provider configuration and plan must be assessed through the approved
+private-channel process. A successful run means the Terraform command
+completed and the state was checked, **not** that provider drift, actual
+permissions, Worker deployment, or host authentication were verified.
+
+Current GH-02 limitations requiring separate operational acceptance:
+the first private release and baseline adoption require operator setup;
+uncertain state requires a reviewed manual reconciliation procedure; and
+provider readbacks must be performed on the actual authorized first
+apply. No Cloudflare or GitHub apply is triggered by this PR.

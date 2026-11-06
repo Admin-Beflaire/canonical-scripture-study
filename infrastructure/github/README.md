@@ -102,7 +102,7 @@ The state protocol in `platform_state.py` uses the design repository's
 `platform-state-v1` operational release and independent `github`/`cloudflare`
 state names. Every apply writes a unique begin marker **before** mutation.
 It uploads a state snapshot and verifies its downloaded digest, then writes
-an immutable success/uncertain receipt. Any missing snapshot/receipt, failed
+an append-only success/uncertain receipt under client-side duplicate checks.\nAny missing snapshot/receipt, failed
 apply, unrecognized state asset or digest mismatch **blocks future runs**;
 do not fall back to older state or delete a failed marker to clear the error.
 Reconcile actual resources and state independently first. Preserve the
@@ -143,3 +143,5 @@ checked out from an older approved commit. Only the selected target's provider
 credentials are exposed to the workflow, while the private-state credential is
 limited to state-management steps. Provider commands do not receive the
 state-repository token.
+
+Terraform initialization, validation, planning and applying execute in a\nrestricted container with only the selected configuration directory mounted.\nThe trusted state helper and state token stay on the host, outside the container.\nProvider processes therefore do not inherit state-write authority. This\ncontainer boundary does not replace review of provider binaries and scopes.\n

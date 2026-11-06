@@ -97,6 +97,12 @@ jobs:
             printf '%s' "$CLOUDFLARE_TFVARS" > "$WORK/config/instance.auto.tfvars.json"
           fi
           cp -a "infrastructure/$TARGET/." "$WORK/config/"
+          if [[ "$TARGET" == github ]]; then
+            # Terraform mock tests cannot import live objects; stage adoption
+            # imports only for an authorized real GitHub plan/apply.
+            [[ -f "$WORK/config/adoption/imports.tf" ]] || exit 1
+            cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"
+          fi
           cd "$WORK/config"
           terraform init -input=false -lockfile=readonly -no-color > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
           terraform validate -no-color > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }

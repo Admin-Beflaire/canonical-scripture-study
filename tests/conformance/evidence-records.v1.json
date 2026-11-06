@@ -1,0 +1,778 @@
+{
+  "fixture_version": "evidence-contracts/1",
+  "records": {
+    "source_node": [
+      {
+        "id": "synthetic:a:work",
+        "kind": "work",
+        "parent_id": null,
+        "name": "Synthetic a work",
+        "attribution": "Synthetic Provider A",
+        "origin": "https://example.invalid/a",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:a:edition",
+        "kind": "edition",
+        "parent_id": "synthetic:a:work",
+        "name": "Synthetic a edition",
+        "attribution": "Synthetic Provider A",
+        "origin": "https://example.invalid/a",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:a:representation",
+        "kind": "representation",
+        "parent_id": "synthetic:a:edition",
+        "name": "Synthetic a representation",
+        "attribution": "Synthetic Provider A",
+        "origin": "https://example.invalid/a",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:a:source_revision",
+        "kind": "source_revision",
+        "parent_id": "synthetic:a:representation",
+        "name": "Synthetic a source_revision",
+        "attribution": "Synthetic Provider A",
+        "origin": "https://example.invalid/a",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:b:work",
+        "kind": "work",
+        "parent_id": null,
+        "name": "Synthetic b work",
+        "attribution": "Synthetic Provider B",
+        "origin": "https://example.invalid/b",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:b:edition",
+        "kind": "edition",
+        "parent_id": "synthetic:b:work",
+        "name": "Synthetic b edition",
+        "attribution": "Synthetic Provider B",
+        "origin": "https://example.invalid/b",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:b:representation",
+        "kind": "representation",
+        "parent_id": "synthetic:b:edition",
+        "name": "Synthetic b representation",
+        "attribution": "Synthetic Provider B",
+        "origin": "https://example.invalid/b",
+        "details_json": {
+          "synthetic": true
+        }
+      },
+      {
+        "id": "synthetic:b:source_revision",
+        "kind": "source_revision",
+        "parent_id": "synthetic:b:representation",
+        "name": "Synthetic b source_revision",
+        "attribution": "Synthetic Provider B",
+        "origin": "https://example.invalid/b",
+        "details_json": {
+          "synthetic": true
+        }
+      }
+    ],
+    "prepared_output": [
+      {
+        "id": "shared",
+        "kind": "evidence",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:b:source_revision"
+        ],
+        "method_version": "synthetic:recipe/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "units": [
+            "unit-a",
+            "unit-b",
+            "page-a"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "synthetic-only"
+        }
+      },
+      {
+        "id": "new",
+        "kind": "evidence",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:b:source_revision"
+        ],
+        "method_version": "synthetic:recipe/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "units": [
+            "unit-a",
+            "unit-b",
+            "page-a"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "synthetic-only"
+        }
+      },
+      {
+        "id": "statement-1",
+        "kind": "character_statement",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:b:source_revision"
+        ],
+        "method_version": "synthetic:recipe/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "units": [
+            "unit-a",
+            "unit-b",
+            "page-a"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "synthetic-only"
+        }
+      },
+      {
+        "id": "statement-2",
+        "kind": "character_statement",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:b:source_revision"
+        ],
+        "method_version": "synthetic:recipe/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "units": [
+            "unit-a",
+            "unit-b",
+            "page-a"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "synthetic-only"
+        }
+      },
+      {
+        "id": "draft-statement",
+        "kind": "character_statement",
+        "input_revisions_json": [
+          "synthetic:a:source_revision",
+          "synthetic:b:source_revision"
+        ],
+        "method_version": "synthetic:recipe/1",
+        "parameters_json": {},
+        "native_extent_json": {
+          "units": [
+            "unit-a",
+            "unit-b",
+            "page-a"
+          ]
+        },
+        "validation_basis_json": {
+          "fixture": "synthetic-only"
+        }
+      }
+    ],
+    "admission": [
+      {
+        "id": "admission-a-text",
+        "source_revision_id": "synthetic:a:source_revision",
+        "component": "text",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "acquire",
+          "retain",
+          "git_history",
+          "backup",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [],
+        "notices_json": [
+          "Synthetic Provider A"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "allowed"
+      },
+      {
+        "id": "admission-b-text",
+        "source_revision_id": "synthetic:b:source_revision",
+        "component": "text",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "acquire",
+          "retain",
+          "git_history",
+          "backup",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [],
+        "notices_json": [
+          "Synthetic Provider B"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "allowed"
+      },
+      {
+        "id": "admission-a-annotations",
+        "source_revision_id": "synthetic:a:source_revision",
+        "component": "annotations",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "acquire",
+          "retain",
+          "git_history",
+          "backup",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [
+          "No public redistribution established"
+        ],
+        "notices_json": [
+          "Synthetic Provider A"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "not_allowed"
+      },
+      {
+        "id": "admission-b-annotations",
+        "source_revision_id": "synthetic:b:source_revision",
+        "component": "annotations",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "acquire",
+          "retain",
+          "git_history",
+          "backup",
+          "prepare",
+          "chatgpt",
+          "claude"
+        ],
+        "restrictions_json": [
+          "No public redistribution established"
+        ],
+        "notices_json": [
+          "Synthetic Provider B"
+        ],
+        "both_hosts_eligible": true,
+        "public_redistribution": "not_allowed"
+      },
+      {
+        "id": "admission-a-scans",
+        "source_revision_id": "synthetic:a:source_revision",
+        "component": "scans",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "retain"
+        ],
+        "restrictions_json": [
+          "No public redistribution established"
+        ],
+        "notices_json": [
+          "Synthetic Provider A"
+        ],
+        "both_hosts_eligible": false,
+        "public_redistribution": "unresolved"
+      },
+      {
+        "id": "admission-b-scans",
+        "source_revision_id": "synthetic:b:source_revision",
+        "component": "scans",
+        "terms_basis": "Synthetic test permission; not source admission",
+        "permitted_uses_json": [
+          "retain"
+        ],
+        "restrictions_json": [
+          "No public redistribution established"
+        ],
+        "notices_json": [
+          "Synthetic Provider B"
+        ],
+        "both_hosts_eligible": false,
+        "public_redistribution": "unresolved"
+      }
+    ],
+    "artifact": [
+      {
+        "id": "original-body",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": null,
+        "sha256": "2c1c2b9e8d732ccb3cebf7da57de2abffd05cac85d25a189083873390d6fc54c",
+        "byte_count": 9,
+        "format": "text/utf-8",
+        "registered_locator": "synthetic/artifacts/2c1c2b9e8d732ccb3cebf7da57de2abffd05cac85d25a189083873390d6fc54c/original-body.txt"
+      },
+      {
+        "id": "range-body",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "new",
+        "sha256": "2c1c2b9e8d732ccb3cebf7da57de2abffd05cac85d25a189083873390d6fc54c",
+        "byte_count": 9,
+        "format": "text/utf-8",
+        "registered_locator": "synthetic/artifacts/2c1c2b9e8d732ccb3cebf7da57de2abffd05cac85d25a189083873390d6fc54c/range-body.txt"
+      },
+      {
+        "id": "search-index",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "shared",
+        "sha256": "4806b48897590ce684c38e27e33bc6b002a29880f682a6ead484b10c27f08598",
+        "byte_count": 21,
+        "format": "text/utf-8",
+        "registered_locator": "synthetic/artifacts/4806b48897590ce684c38e27e33bc6b002a29880f682a6ead484b10c27f08598/search-index.txt"
+      }
+    ],
+    "text_payload": [
+      {
+        "content_id": "1e031d39f80be251466bd2fe05b7d3e75bef84e0b46dc960e397a333ec1b6cfa",
+        "exact_text": "אְ😀ב"
+      }
+    ],
+    "native_span": [
+      {
+        "id": "span-a",
+        "output_id": "shared",
+        "source_revision_id": "synthetic:a:source_revision",
+        "parent_id": null,
+        "kind": "literary_unit",
+        "label": "Synthetic a",
+        "native_order": 0,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "unit-a",
+            "start": 0,
+            "end": 4
+          }
+        ],
+        "basis_json": {
+          "method": "synthetic",
+          "boundary_status": "disputed"
+        },
+        "content_id": "1e031d39f80be251466bd2fe05b7d3e75bef84e0b46dc960e397a333ec1b6cfa",
+        "body_ranges_json": [],
+        "reading_kind": "preserved"
+      },
+      {
+        "id": "span-b",
+        "output_id": "shared",
+        "source_revision_id": "synthetic:b:source_revision",
+        "parent_id": null,
+        "kind": "literary_unit",
+        "label": "Synthetic b",
+        "native_order": 0,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "unit-b",
+            "start": 0,
+            "end": 4
+          }
+        ],
+        "basis_json": {
+          "method": "synthetic",
+          "boundary_status": "disputed"
+        },
+        "content_id": "1e031d39f80be251466bd2fe05b7d3e75bef84e0b46dc960e397a333ec1b6cfa",
+        "body_ranges_json": [],
+        "reading_kind": "transcribed"
+      },
+      {
+        "id": "span-range",
+        "output_id": "new",
+        "source_revision_id": "synthetic:a:source_revision",
+        "parent_id": null,
+        "kind": "commentary_unit",
+        "label": "Synthetic discontinuous unit",
+        "native_order": 1,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "page-a",
+            "start": 1,
+            "end": 2
+          },
+          {
+            "unit_id": "page-a",
+            "start": 3,
+            "end": 4
+          }
+        ],
+        "basis_json": {
+          "method": "synthetic UTF-8 extraction"
+        },
+        "content_id": null,
+        "body_ranges_json": [
+          {
+            "segment_ordinal": 0,
+            "artifact_id": "range-body",
+            "byte_offset": 2,
+            "byte_length": 4,
+            "sha256": "f0443a342c5ef54783a111b51ba56c938e474c32324d90c3a60c9c8e3a37e2d9"
+          },
+          {
+            "segment_ordinal": 1,
+            "artifact_id": "range-body",
+            "byte_offset": 7,
+            "byte_length": 2,
+            "sha256": "e3c622e5fd53065d82b70802b06f30aee09e564e033a7d13c773fa67d5fcf1e8"
+          }
+        ],
+        "reading_kind": "extracted"
+      },
+      {
+        "id": "span-gap",
+        "output_id": "shared",
+        "source_revision_id": "synthetic:b:source_revision",
+        "parent_id": null,
+        "kind": "witness_gap",
+        "label": "Synthetic gap",
+        "native_order": 2,
+        "coordinate_version": "synthetic:unicode-scalars/1",
+        "segments_json": [
+          {
+            "unit_id": "unit-b",
+            "start": 4,
+            "end": 4
+          }
+        ],
+        "basis_json": {
+          "gap": "not preserved"
+        },
+        "content_id": null,
+        "body_ranges_json": [],
+        "reading_kind": "gap"
+      }
+    ],
+    "annotation": [
+      {
+        "id": "annotation-a",
+        "output_id": "shared",
+        "source_revision_id": "synthetic:a:source_revision",
+        "span_id": "span-a",
+        "kind": "witness_reading",
+        "provider": "Synthetic provider",
+        "basis_json": {
+          "method": "fixture"
+        },
+        "details_json": {
+          "reading_status": "editorial reconstruction; synthetic"
+        }
+      }
+    ],
+    "relationship": [
+      {
+        "id": "relation-a",
+        "output_id": "shared",
+        "kind": "quotation",
+        "direction": "directed",
+        "status": "disputed",
+        "basis_json": {
+          "method": "synthetic composite correspondence"
+        }
+      }
+    ],
+    "relation_member": [
+      {
+        "relationship_id": "relation-a",
+        "role": "from",
+        "ordinal": 0,
+        "span_id": "span-b",
+        "correspondence": "reordered",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "relation-a",
+        "role": "from",
+        "ordinal": 1,
+        "span_id": "span-a",
+        "correspondence": "composite",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "relation-a",
+        "role": "to",
+        "ordinal": 0,
+        "span_id": "span-a",
+        "correspondence": "partial",
+        "gap_reason": null
+      },
+      {
+        "relationship_id": "relation-a",
+        "role": "to",
+        "ordinal": 1,
+        "span_id": null,
+        "correspondence": "missing",
+        "gap_reason": "No preserved synthetic counterpart"
+      }
+    ],
+    "coverage": [
+      {
+        "output_id": "shared",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "units": [
+            "unit-a"
+          ]
+        },
+        "capability": "source_search",
+        "state": "available",
+        "method_version": "synthetic:recipe/1",
+        "index_artifact_id": "search-index",
+        "dependencies_json": [],
+        "limitation": null
+      },
+      {
+        "output_id": "shared",
+        "source_revision_id": "synthetic:b:source_revision",
+        "native_extent_json": {
+          "units": [
+            "unit-b"
+          ]
+        },
+        "capability": "relationships",
+        "state": "partial",
+        "method_version": "synthetic:recipe/1",
+        "index_artifact_id": null,
+        "dependencies_json": [],
+        "limitation": "Synthetic partial extent"
+      },
+      {
+        "output_id": "shared",
+        "source_revision_id": "synthetic:b:source_revision",
+        "native_extent_json": {
+          "units": [
+            "unit-b"
+          ]
+        },
+        "capability": "word_search",
+        "state": "missing",
+        "method_version": "synthetic:recipe/1",
+        "index_artifact_id": null,
+        "dependencies_json": [],
+        "limitation": "Synthetic missing extent"
+      },
+      {
+        "output_id": "shared",
+        "source_revision_id": "synthetic:b:source_revision",
+        "native_extent_json": {
+          "units": [
+            "unit-b"
+          ]
+        },
+        "capability": "witness_alignment",
+        "state": "unresolved",
+        "method_version": "synthetic:recipe/1",
+        "index_artifact_id": null,
+        "dependencies_json": [],
+        "limitation": "Synthetic unresolved extent"
+      },
+      {
+        "output_id": "new",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "units": [
+            "unit-a"
+          ]
+        },
+        "capability": "source_context",
+        "state": "available",
+        "method_version": "synthetic:recipe/1",
+        "index_artifact_id": "range-body",
+        "dependencies_json": [
+          "shared"
+        ],
+        "limitation": null
+      }
+    ],
+    "study_package": [
+      {
+        "id": "package-a",
+        "output_id": "shared",
+        "subject": "Synthetic source lookup",
+        "source_refs_json": [
+          {
+            "availability": "held",
+            "reference": {
+              "schema_version": "native-reference/1",
+              "source_revision_id": "synthetic:a:source_revision",
+              "coordinate_version": "synthetic:unicode-scalars/1",
+              "segments": [
+                {
+                  "unit_id": "unit-a",
+                  "start": 0,
+                  "end": 4
+                }
+              ]
+            },
+            "attribution": "Synthetic Provider A"
+          },
+          {
+            "availability": "external",
+            "attribution": "Synthetic external commentator",
+            "locator": "https://example.invalid/not-held"
+          }
+        ],
+        "dependency_ids_json": [
+          "shared"
+        ]
+      }
+    ],
+    "character_statement": [
+      {
+        "id": "synthetic-statement-1",
+        "output_id": "statement-1",
+        "name": "Synthetic statement contract fixture",
+        "version": "1",
+        "status": "approved",
+        "scripture_basis_json": [
+          {
+            "schema_version": "native-reference/1",
+            "source_revision_id": "synthetic:a:source_revision",
+            "coordinate_version": "synthetic:unicode-scalars/1",
+            "segments": [
+              {
+                "unit_id": "unit-a",
+                "start": 0,
+                "end": 4
+              }
+            ]
+          }
+        ],
+        "owner_approval_ref": "synthetic:test-approval/1"
+      },
+      {
+        "id": "synthetic-statement-2",
+        "output_id": "statement-2",
+        "name": "Synthetic statement contract fixture",
+        "version": "2",
+        "status": "approved",
+        "scripture_basis_json": [
+          {
+            "schema_version": "native-reference/1",
+            "source_revision_id": "synthetic:a:source_revision",
+            "coordinate_version": "synthetic:unicode-scalars/1",
+            "segments": [
+              {
+                "unit_id": "unit-a",
+                "start": 0,
+                "end": 4
+              }
+            ]
+          }
+        ],
+        "owner_approval_ref": "synthetic:test-approval/2"
+      },
+      {
+        "id": "synthetic-statement-draft",
+        "output_id": "draft-statement",
+        "name": "Synthetic statement contract fixture",
+        "version": "draft",
+        "status": "draft",
+        "scripture_basis_json": [
+          {
+            "schema_version": "native-reference/1",
+            "source_revision_id": "synthetic:a:source_revision",
+            "coordinate_version": "synthetic:unicode-scalars/1",
+            "segments": [
+              {
+                "unit_id": "unit-a",
+                "start": 0,
+                "end": 4
+              }
+            ]
+          }
+        ],
+        "owner_approval_ref": null
+      }
+    ],
+    "release": [
+      {
+        "id": "release-1",
+        "manifest_revision": "synthetic:manifest/1",
+        "recipe_revision": "synthetic:recipe/1",
+        "schema_versions_json": {
+          "evidence_records": "1",
+          "native_reference": "1"
+        },
+        "coverage_basis": "synthetic output coverage",
+        "quality_receipt": "synthetic:quality-pass/release-1",
+        "scope_receipt": "synthetic:scope-pass/release-1"
+      },
+      {
+        "id": "release-2",
+        "manifest_revision": "synthetic:manifest/1",
+        "recipe_revision": "synthetic:recipe/1",
+        "schema_versions_json": {
+          "evidence_records": "1",
+          "native_reference": "1"
+        },
+        "coverage_basis": "synthetic output coverage",
+        "quality_receipt": "synthetic:quality-pass/release-2",
+        "scope_receipt": "synthetic:scope-pass/release-2"
+      }
+    ],
+    "release_output": [
+      {
+        "release_id": "release-1",
+        "output_id": "shared"
+      },
+      {
+        "release_id": "release-1",
+        "output_id": "statement-1"
+      },
+      {
+        "release_id": "release-2",
+        "output_id": "shared"
+      },
+      {
+        "release_id": "release-2",
+        "output_id": "new"
+      },
+      {
+        "release_id": "release-2",
+        "output_id": "statement-2"
+      }
+    ],
+    "release_selection": [
+      {
+        "singleton_id": 1,
+        "current_release_id": "release-2",
+        "previous_release_id": "release-1"
+      }
+    ]
+  },
+  "artifact_text": {
+    "original-body": "é😀 Ω",
+    "range-body": "é😀 Ω",
+    "search-index": "synthetic index bytes"
+  },
+  "expected_range_text": [
+    "😀",
+    "Ω"
+  ]
+}

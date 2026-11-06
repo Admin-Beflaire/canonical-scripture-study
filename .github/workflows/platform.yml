@@ -77,6 +77,21 @@ jobs:
           git merge-base --is-ancestor "$SELECTED_SHA" HEAD
           # Keep security-sensitive state logic at the protected dispatch revision.
           cp infrastructure/github/platform_state.py "$RUNNER_TEMP/platform_state.py"
+          # Run Terraform providers in a container isolated from host state authority.
+          cat > "$RUNNER_TEMP/terraform_isolated.sh" <<'TF_ISOLATED'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec docker run --rm --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --read-only \
+            --tmpfs /tmp:rw,nosuid,size=128m \
+            --mount "type=bind,src=$WORK/config,dst=/workspace" \
+            --mount "type=bind,src=$(command -v terraform),dst=/usr/local/bin/terraform,readonly" \
+            --workdir /workspace --env HOME=/tmp --env TF_IN_AUTOMATION=1 \
+            --env GITHUB_TOKEN --env CLOUDFLARE_API_TOKEN \
+            ubuntu:24.04 /usr/local/bin/terraform "$@"
+          TF_ISOLATED
+          chmod 700 "$RUNNER_TEMP/terraform_isolated.sh"
           git checkout --detach "$SELECTED_SHA" >/dev/null 2>&1
           if [[ "$TARGET" == github ]]; then
             [[ -n "$GITHUB_TOKEN" && -n "$GITHUB_TFVARS" ]] || exit 1
@@ -109,8 +124,8 @@ jobs:
           cp "$WORK/instance.auto.tfvars.json" "$WORK/config/instance.auto.tfvars.json"
           cd "$WORK/config"
           # No Terraform output in public logs, including provider diagnostics.
-          terraform init -backend=false -input=false -lockfile=readonly > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
-          terraform validate > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" init -backend=false -input=false -lockfile=readonly > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" validate > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
       - name: Restore verified private state
         id: restore
         env:
@@ -128,20 +143,25 @@ jobs:
         run: |
           set -euo pipefail
           cd "$WORK/config"
-          terraform plan -input=false -lock=false -no-color -out="$WORK/plan.tfplan" > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked; inspect privately"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" plan -input=false -lock=false -no-color -out=plan.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked; inspect privately"; exit 1; }
           # No public plan output or artifact; operator must independently inspect
           # the private reviewed plan before authorizing an apply.
           echo "Plan successful; no provider apply and no public plan artifact"
-      - name: Record immutable begin marker before any apply
-        id: begin
-        env:
-          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+      - name: Prepare apply plan without state authority
         if: inputs.operation == 'apply'
+        id: apply_plan
         shell: bash
         run: |
           set -euo pipefail
-          cd "$WORK/config"
-          terraform plan -input=false -lock=false -no-color -out="$WORK/apply.tfplan" > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" plan -input=false -lock=false -no-color -out=apply.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+      - name: Record begin marker before any apply
+        id: begin
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        if: inputs.operation == 'apply' && steps.apply_plan.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
           python3 "$RUNNER_TEMP/platform_state.py" begin --key "$TARGET" --run "$ATTEMPT_ID"
       - name: Apply checked plan (no public output)
         id: apply
@@ -150,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$WORK/config"
-          terraform apply -input=false -no-color "$WORK/apply.tfplan" > "$WORK/apply.log" 2>&1 || { echo "Terraform apply failed; state reconciliation required"; exit 1; }
+          "$RUNNER_TEMP/terraform_isolated.sh" apply -input=false -no-color apply.tfplan > "$WORK/apply.log" 2>&1 || { echo "Terraform apply failed; state reconciliation required"; exit 1; }
           echo "Terraform apply returned success (provider readback remains separate)"
       - name: Preserve state after success or partial failure
         if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success'

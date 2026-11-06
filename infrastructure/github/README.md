@@ -71,98 +71,107 @@ accept no task/source/private inputs and upload no artifacts.
 Extend routing tests with new domain modules and protocol-baseline,
 optional-feature, search-capability and budget fixtures as they are implemented.
 
-## GH-02 protected provisioning (construction only)
+## GH-02 — lean protected provisioning (construction only)
 
-`.github/workflows/platform.yml` is manual-dispatch only, restricted to trusted
-`main` and the protected `provisioning` environment. Dispatch selects the
-`github` or `cloudflare` Terraform root, a full SHA already merged into
-`main`, and either `plan` or `apply`. Apply additionally requires the literal
-`APPLY` confirmation, the original private plan run ID and its exact SHA-256. A merge NEVER triggers plan/apply. All Terraform/provider
-output stays in the short-lived runner and is not emitted in public Actions logs.
+`.github/workflows/platform.yml` is manual-only on trusted `main` under
+the protected `provisioning` environment. Select the `github` or
+`cloudflare` root, a reviewed 40-character SHA reachable from `main`,
+and `plan` or `apply`. Apply also requires typing `APPLY`. A merge
+never invokes Terraform.
 
-Configure environment secrets (owner-entered, never copied to Git):
+Owner-entered environment settings:
 
-- `PLATFORM_STATE_TOKEN`: separate private design repository Contents write token
-  capable of reading/writing assets in its operational release.
-- `PLATFORM_GITHUB_TOKEN`: GitHub settings provisioning identity, scoped to
-  approved repositories and privileges (not the default Actions token).
-- `PLATFORM_CLOUDFLARE_TOKEN`: Cloudflare account resource-management identity.
+- `PLATFORM_STATE_REPO` (variable): the **private-visibility** design
+  repository's `owner/name`.
+- `PLATFORM_STATE_TOKEN` (secret): dedicated access to its private
+  `platform-state-v1` release, scoped to the design repository.
+- `PLATFORM_GITHUB_TOKEN` and `PLATFORM_CLOUDFLARE_TOKEN`: target-specific
+  provider credentials, made available only during Terraform plan/apply.
 - `PLATFORM_GITHUB_TFVARS_JSON` and `PLATFORM_CLOUDFLARE_TFVARS_JSON`:
-  separate validated Terraform input JSON objects with owner-supplied values.
+  selected Terraform inputs, supplied only during preparation.
 
-Set environment variable `PLATFORM_STATE_REPO` to the **private-visibility** design
-repository's `owner/name`. Restrict the provisioning environment to trusted
-`main`; record actual token permissions, supported environment enforcement,
-account plan and provider readbacks privately before the first operation.
-The default Actions token stays read-only. Never pass values in dispatch
-inputs, workflow logs or public artifacts. The existing and historical states
-must be inventoried and imported/adopted first, not overwritten.
+Restrict the environment to trusted `main`, and verify actual secrets,
+repository permissions and resource identities before the first operation.
+Tokens and Terraform output never belong in public logs, PR comments,
+source control or public Actions artifacts. The default Actions token is
+read-only. State and diagnostics are **unencrypted private release assets**,
+not Git files. Encryption of release assets is deliberately not part of GH-02.
 
-The state protocol in `platform_state.py` uses the design repository's
-`platform-state-v1` operational release and independent `github`/`cloudflare`
-state names. Every apply writes a unique begin marker **before** mutation.
-It uploads a state snapshot and verifies its downloaded digest, then writes
-an append-only success/uncertain receipt under client-side duplicate checks.
-Any missing snapshot/receipt, failed
-apply, unrecognized state asset or digest mismatch **blocks future runs**;
-do not fall back to older state or delete a failed marker to clear the error.
-Reconcile actual resources and state independently first. Preserve the
-preceding checked snapshot. No state is placed in public source, Actions
-artifacts or recovery bundles.
+### Execution and review
 
-The initial Cloudflare state may be empty **only** when the owner separately
-authorized first creation and the external resource inventory proves those
-resources absent; dispatch `initialize_empty_cloudflare` to opt in. GitHub
-state is never initialized empty: adopt/import the already-existing repo
-settings into a checked private snapshot before applying. A workflow `plan` saves the binary Terraform plan, human-readable
-`terraform show -no-color` text, and a manifest in the **private** state
-release as `plan--<target>--<run-id>-<attempt>--*` assets. Inspect the
-private `review.txt` and manifest; copy the recorded run ID and the
-`sha256` of the binary plan into a **separate** apply dispatch. Plan output
-must never be posted to public logs, PR comments or public artifacts.
-Apply downloads the **same binary plan**, checks its SHA-256, selected commit
-and verified state baseline, and applies it without regenerating another plan.
-If the baseline changed or a plan asset is incomplete, stop and create a new
-plan. An `APPLY` confirmation alone never approves a plan. A successful run means the Terraform command
-completed and the state was checked, **not** that provider drift, actual
-permissions, Worker deployment, or host authentication were verified.
+The workflow checks out the exact reviewed commit, but retains the state
+helper from the trusted dispatch revision. It initializes the selected
+Terraform root with its declared local backend, restores the last verified
+state (if any), and runs a plan. Plan output is written to one private
+`log--<target>--<run>-diagnostics.txt` release asset. Inspect this private
+output and the target commit before separately authorizing an apply.
 
-If normal post-apply release-state finalization fails, the workflow attempts
-a second private save using the same private repository's Contents API at
-`platform-recovery/<target>/<run-id>-<attempt>.tfstate` before runner cleanup.
-This is a **recovery snapshot, not an accepted state**: the incomplete begin
-marker still blocks subsequent provisioning pending independently reviewed
-resource/state reconciliation. Do not delete or overwrite the recovery file.
-This uses existing credentials/storage, not new infrastructure; simultaneous
-GitHub API outages could still defeat both saves and require recovery from
-provider inventory. Check the private copy exists before recovery operations.
+An apply dispatch makes its **own** plan and applies that plan during the
+same run, after writing an attempt-qualified begin marker. A prior plan
+dispatch is for information; it is *not* cryptographically bound to the apply.
+Resource/state drift could change the plan between dispatches. When strict
+change verification matters, obtain independent provider readbacks and
+review the resulting private diagnostics before accepting the operation.
 
-Current GH-02 limitations requiring separate operational acceptance:
-the first private release and baseline adoption require operator setup;
-uncertain state requires a reviewed manual reconciliation procedure; and
-provider readbacks must be performed on the actual authorized first
-apply. No Cloudflare or GitHub apply is triggered by this PR.
+State is stored as `<target>--<run>--begin.json`,
+`<target>--<run>--state.tfstate`, and
+`<target>--<run>--receipt.json`. The helper uploads the state, downloads
+it to verify its SHA-256, and records success or uncertain outcome. Both
+targets have separate state identities; checked prior snapshots are retained.
+All uploads are append-only **under client checks**, not immutable storage.
 
-## Release capacity and recovery
+For a first run of **either** target, `initialize_empty_state` must be
+explicitly owner-approved. It does not mean no resources exist. In particular,
+the existing GitHub repositories and settings need reviewed Terraform
+`import` blocks so the first plan adopts existing resources rather than
+recreating them. Inspect existing private legacy assets and current live
+resources first; the old encrypted `github-*`, `attempt-*` and
+`complete-*` assets remain untouched. Do not interpret their presence as
+a verified current state; no migration/encryption mechanism is added.
 
-GitHub releases permit at most 1,000 assets. Before beginning an apply, the
-state helper requires three free slots for its begin marker, verified state,
-and terminal receipt. When capacity is low, **do not delete history in place**
-or bypass the check. Freeze provisioning, preserve a private export of the
-complete release and verified per-key baselines, reconcile both roots against
-live resources, and establish a separately reviewed new release protocol/tag
-with migrated baselines before resuming. Record the migration and verify both
-roots by private readback. Earlier workflow attempts must not be rerun after
-newer successful applies; start a fresh dispatch instead.
+### Failure handling and private diagnostics
 
-The current dispatch revision owns the state helper even when Terraform is
-checked out from an older approved commit. Only the selected target's provider
-credentials are exposed to the workflow, while the private-state credential is
-limited to state-management steps. Provider commands do not receive the
-state-repository token.
+The workflow captures initialization, validation, plan and apply logs in a
+**single private release asset**, including on failed runs. If apply has
+begun, it attempts to preserve whatever nonempty state file Terraform left,
+even when apply fails, with an uncertain receipt. Never publish raw logs.
+A successful Terraform command is not a provider readback or deployment
+acceptance; verify actual resources/settings separately.
 
-Terraform initialization, validation, planning and applying execute in a
-restricted container with only the selected configuration directory mounted.
-The trusted state helper and state token stay on the host, outside the container.
-Provider processes therefore do not inherit state-write authority. This
-container boundary does not replace review of provider binaries and scopes.
+An unfinished begin, missing snapshot or receipt, uncertain outcome,
+invalid digest or unfamiliar new-protocol asset blocks further execution.
+No automatic fallback to older state, deleting markers, or blind retry is
+allowed. Repair is a separately owner-approved manual operation:
+
+1. Stop new dispatches. Privately inspect the relevant release assets,
+   diagnostics and preceding checked snapshot; check actual provider
+   resources against their configurations.
+2. If the attempt has a state snapshot, verify it against the actual
+   provider resources before repairing its incomplete/uncertain receipt.
+   If no state file exists (such as a failed first creation), rebuild an
+   accurate state with reviewed imports against live resources; do not
+   silently initialize empty again or replay a failed attempt.
+3. Preserve the original assets and a private copy of the evidence. A
+   separately reviewed reconciliation procedure must establish a trusted
+   baseline and recorded outcome before provisioning resumes. The helper
+   intentionally contains no force-reset or automatic repair command.
+
+There is **no** Contents API rescue fallback and no state written into Git.
+If GitHub release upload is unavailable after a resource mutation, the
+updated runner-local state may be lost. Future runs stay blocked and
+reconciliation from live resources is necessary. This residual risk is
+accepted for the small free-first MVP; no extra backup service is implied.
+
+### Release capacity
+
+GitHub releases allow 1,000 assets. The helper reserves **four slots**
+before apply: begin, snapshot, receipt, and one private diagnostics asset.
+A plan-only dispatch adds one diagnostics asset. When capacity approaches
+the limit, stop and migrate to a separately reviewed release/tag with
+verified state baselines. Do not delete prior checked state or failed markers
+just to free slots.
+
+**Not performed by this PR:** owner secret entry, baseline imports, real
+Terraform plan/apply, state recovery or provider readbacks. Hosted CI covers
+the protocol and static workflow contract; operational acceptance follows
+an authorized live run.

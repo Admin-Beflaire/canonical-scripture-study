@@ -8,14 +8,14 @@ variable "account_id" {
 variable "instance" {
   type = string
   validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,24}$", var.instance))
-    error_message = "Use a short lowercase instance suffix."
+    condition     = can(regex("^[a-z0-9]([a-z0-9-]{0,23}[a-z0-9])?$", var.instance))
+    error_message = "Use a short lowercase instance suffix ending in a letter or digit."
   }
 }
 variable "hostnames" {
   type = object({ study = string, control = string })
   validation {
-    condition     = alltrue([for h in values(var.hostnames) : can(regex("^[a-z0-9][a-z0-9.-]+\\.[a-z]{2,}$", h)) && !endswith(h, ".workers.dev")]) && var.hostnames.study != var.hostnames.control
+    condition     = alltrue([for h in values(var.hostnames) : length(h) <= 253 && can(regex("^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$", h)) && !endswith(h, ".workers.dev")]) && var.hostnames.study != var.hostnames.control
     error_message = "Supply distinct custom hostnames, without paths or workers.dev."
   }
 }

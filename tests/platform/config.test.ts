@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, chmodSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { renderWorkerConfigs } from '../../infrastructure/cloudflare/render.mjs';
 const root = resolve(import.meta.dirname,'../..');
 import input from "./instance.fixture.json" with { type: "json" };
@@ -27,13 +28,37 @@ test('one template renders two independent instance/binding sets', () => {
 test('missing, injected, reused and oversized settings fail before rendering', () => {
   for (const key of Object.keys(input)) {
     const copy: Record<string,unknown> = {...input}; delete copy[key];
-    assert.throws(()=>renderWorkerConfigs(copy,root),key);
+    const message = key === 'ENHANCEMENTS' ? 'Explicit ENHANCEMENTS boolean required' : `Invalid or missing ${key}`;
+    assert.throws(()=>renderWorkerConfigs(copy,root),{message});
   }
-  for (const extra of [{STUDY_HOSTNAME:input.CONTROL_HOSTNAME},{STUDY_HOSTNAME:'evil.workers.dev'},{STUDY_AUDIENCE:input.JOB_AUDIENCE},{INSTANCE:'{{missing}}'},{REQUEST_BYTES:1},{MAX_D1_CALLS:51},{CPU_BUDGET_MS:11},{CLOUDFLARE_API_TOKEN:'never-render'}]) assert.throws(()=>renderWorkerConfigs({...input,...extra},root));
+  assert.throws(()=>renderWorkerConfigs({...input,INSTANCE:'{{missing}}'},root),/Invalid or missing INSTANCE/);
+  for (const extra of [{STUDY_HOSTNAME:input.CONTROL_HOSTNAME},{STUDY_HOSTNAME:'evil.workers.dev'},{STUDY_AUDIENCE:input.JOB_AUDIENCE},{REQUEST_BYTES:1},{MAX_D1_CALLS:51},{CPU_BUDGET_MS:11},{CLOUDFLARE_API_TOKEN:'never-render'}]) assert.throws(()=>renderWorkerConfigs({...input,...extra},root));
 });
 test('no competing Worker or SQL writer in Terraform; R2 managed access disabled',()=>{
-  const terraform=readFileSync(resolve(root,'infrastructure/cloudflare/main.tf'),'utf8');
+  const directory = resolve(root,'infrastructure/cloudflare');
+  const terraform = readdirSync(directory).filter(name=>name.endsWith('.tf')).map(name=>readFileSync(resolve(directory,name),'utf8')).join('\n');
   assert.doesNotMatch(terraform,/resource "cloudflare_workers|resource "cloudflare_dns|local-exec/);
   assert.match(terraform,/resource "cloudflare_r2_managed_domain"[\s\S]*?enabled\s+= false/);
   assert.match(terraform,/\/internal\/jobs\/\*/);
+});
+
+test('malformed DNS labels and trailing instance hyphens fail validation',()=>{
+  for (const key of ['ZONE_NAME','STUDY_HOSTNAME','CONTROL_HOSTNAME']) {
+    for (const value of ['a..example.invalid','-a.example.invalid','a-.example.invalid','a'.repeat(64)+'.example.invalid',('a'.repeat(60)+'.').repeat(5)+'invalid']) {
+      assert.throws(()=>renderWorkerConfigs({...input,[key]:value},root),{message:`Invalid or missing ${key}`});
+    }
+  }
+  assert.throws(()=>renderWorkerConfigs({...input,INSTANCE:'a-'},root),/Invalid or missing INSTANCE/);
+});
+test('re-rendering resets stale directory and file permissions', {skip:process.platform==='win32'},()=>{
+  const directory=resolve(root,'dist/config');
+  mkdirSync(directory,{recursive:true});
+  chmodSync(directory,0o755);
+  for (const role of ['study','control']) {
+    const path=resolve(directory,`${role}.json`);
+    writeFileSync(path,'{}'); chmodSync(path,0o644);
+  }
+  execFileSync(process.execPath,['infrastructure/cloudflare/render.mjs','tests/platform/instance.fixture.json'],{cwd:root});
+  assert.equal(statSync(directory).mode & 0o777,0o700);
+  for (const role of ['study','control']) assert.equal(statSync(resolve(directory,`${role}.json`)).mode & 0o777,0o600);
 });

@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -6,12 +6,13 @@ import { pathToFileURL } from 'node:url';
 export function validateInstance(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Instance object required');
   const v = /** @type {Record<string, unknown>} */ (input);
+  const DNS_NAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
   const patterns = {
     ACCOUNT_ID: /^[a-f0-9]{32}$/, ZONE_ID: /^[a-f0-9]{32}$/,
-    ZONE_NAME: /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/,
-    INSTANCE: /^[a-z0-9][a-z0-9-]{0,24}$/,
-    STUDY_HOSTNAME: /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/,
-    CONTROL_HOSTNAME: /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/,
+    ZONE_NAME: DNS_NAME,
+    INSTANCE: /^[a-z0-9]([a-z0-9-]{0,23}[a-z0-9])?$/,
+    STUDY_HOSTNAME: DNS_NAME,
+    CONTROL_HOSTNAME: DNS_NAME,
     DATABASE_ID: /^[a-f0-9-]{36}$/,
     ACCESS_ISSUER: /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/,
     STUDY_AUDIENCE: /^[a-f0-9]{64}$/, CONTROL_AUDIENCE: /^[a-f0-9]{64}$/, JOB_AUDIENCE: /^[a-f0-9]{64}$/,
@@ -57,5 +58,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   // Fixed ignored directory; no instance values in logs or source files.
   const directory = resolve(root, 'dist/config');
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  for (const [role, config] of Object.entries(rendered)) writeFileSync(resolve(directory, `${role}.json`), JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  chmodSync(directory, 0o700);
+  for (const [role, config] of Object.entries(rendered)) {
+    const output = resolve(directory, `${role}.json`);
+    writeFileSync(output, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+    chmodSync(output, 0o600);
+  }
 }

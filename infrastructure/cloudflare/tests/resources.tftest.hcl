@@ -46,3 +46,16 @@ run "reject_unresolved_account" {
   variables { account_id = "{{ACCOUNT_ID}}" }
   expect_failures = [var.account_id]
 }
+
+run "reject_malformed_dns" {
+  command = plan
+  variables {
+    hostnames = { study = "a..example.invalid", control = "control.example.invalid" }
+  }
+  expect_failures = [var.hostnames]
+}
+run "reject_trailing_instance_hyphen" {
+  command = plan
+  variables { instance = "a-" }
+  expect_failures = [var.instance]
+}

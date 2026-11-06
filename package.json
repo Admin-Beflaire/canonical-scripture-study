@@ -17,7 +17,8 @@
     "check": "npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
-    "typescript": "7.0.2",
-    "esbuild": "0.28.2"
+    "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
   }
 }

@@ -1,0 +1,201 @@
+name: Protected platform provisioning
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Terraform root
+        required: true
+        type: choice
+        options: [github, cloudflare]
+      operation:
+        description: Explicit plan or apply
+        required: true
+        type: choice
+        options: [plan, apply]
+      commit:
+        description: Reviewed 40-character commit SHA reachable from main
+        required: true
+        type: string
+      approval:
+        description: Type APPLY when applying; leave blank to plan
+        required: false
+        type: string
+      initialize_empty_state:
+        description: Owner-approved first empty state for this target (existing resources require reviewed imports)
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: platform-state
+  cancel-in-progress: false
+jobs:
+  platform:
+    name: Protected platform execution
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: provisioning
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
+      SELECTED_SHA: ${{ inputs.commit }}
+      TARGET: ${{ inputs.target }}
+      OPERATION: ${{ inputs.operation }}
+      APPROVAL: ${{ inputs.approval }}
+      ALLOW_EMPTY: ${{ inputs.initialize_empty_state }}
+      ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      TF_IN_AUTOMATION: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate authorized target and reviewed commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SELECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$TARGET" == github || "$TARGET" == cloudflare ]] || exit 1
+          [[ "$OPERATION" == plan || "$OPERATION" == apply ]] || exit 1
+          [[ -n "$PLATFORM_STATE_REPO" ]] || exit 1
+          if [[ "$OPERATION" == apply ]]; then
+            [[ "$APPROVAL" == APPLY ]] || exit 1
+          else
+            [[ -z "$APPROVAL" ]] || exit 1
+          fi
+          git cat-file -e "$SELECTED_SHA^{commit}"
+          git merge-base --is-ancestor "$SELECTED_SHA" HEAD
+          # State handling belongs to the trusted dispatch revision, not an older target.
+          cp infrastructure/github/platform_state.py "$RUNNER_TEMP/platform_state.py"
+          git checkout --detach "$SELECTED_SHA" >/dev/null 2>&1
+          echo "Reviewed commit and operation validated"
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: '1.13.5'
+          terraform_wrapper: false
+      - name: Prepare and validate Terraform
+        id: prepare
+        env:
+          GITHUB_TFVARS: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TFVARS_JSON || '' }}
+          CLOUDFLARE_TFVARS: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TFVARS_JSON || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          WORK="$RUNNER_TEMP/gh02"
+          mkdir -p "$WORK/config"
+          chmod 700 "$WORK"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          if [[ "$TARGET" == github ]]; then
+            [[ -n "$GITHUB_TFVARS" ]] || { echo "Missing selected Terraform inputs"; exit 1; }
+            printf '%s' "$GITHUB_TFVARS" > "$WORK/config/instance.auto.tfvars.json"
+          else
+            [[ -n "$CLOUDFLARE_TFVARS" ]] || { echo "Missing selected Terraform inputs"; exit 1; }
+            printf '%s' "$CLOUDFLARE_TFVARS" > "$WORK/config/instance.auto.tfvars.json"
+          fi
+          cp -a "infrastructure/$TARGET/." "$WORK/config/"
+          if [[ "$TARGET" == github ]]; then
+            # Terraform mock tests cannot import live objects; stage adoption
+            # imports only for an authorized real GitHub plan/apply.
+            [[ -f "$WORK/config/adoption/imports.tf" ]] || exit 1
+            cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"
+          fi
+          cd "$WORK/config"
+          terraform init -input=false -lockfile=readonly -no-color > "$WORK/init.log" 2>&1 || { echo "Terraform init blocked"; exit 1; }
+          terraform validate -no-color > "$WORK/validate.log" 2>&1 || { echo "Terraform validation blocked"; exit 1; }
+      - name: Restore last verified private state
+        id: restore
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "$ALLOW_EMPTY" == true ]]; then EXTRA+=(--allow-empty); fi
+          python3 "$RUNNER_TEMP/platform_state.py" restore --key "$TARGET" --path "$WORK/config/terraform.tfstate" "${EXTRA[@]}"
+          echo "Verified private state or explicitly approved empty start"
+      - name: Generate Terraform plan
+        id: plan
+        if: steps.restore.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TOKEN || '' }}
+          CLOUDFLARE_API_TOKEN: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TOKEN || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          if [[ "$TARGET" == github ]]; then
+            [[ -n "$GITHUB_TOKEN" ]] || exit 1
+          else
+            [[ -n "$CLOUDFLARE_API_TOKEN" ]] || exit 1
+          fi
+          if [[ "$OPERATION" == apply ]]; then
+            terraform plan -input=false -lock=false -no-color -out=apply.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          else
+            terraform plan -input=false -lock=false -no-color > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }
+          fi
+          echo "Terraform plan completed; details available in private diagnostics"
+      - name: Record begin marker before apply
+        id: begin
+        if: inputs.operation == 'apply' && steps.plan.outcome == 'success'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$RUNNER_TEMP/platform_state.py" begin --key "$TARGET" --run "$ATTEMPT_ID"
+      - name: Apply same-run Terraform plan
+        id: apply
+        if: inputs.operation == 'apply' && steps.begin.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TOKEN || '' }}
+          CLOUDFLARE_API_TOKEN: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TOKEN || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$WORK/config"
+          terraform apply -input=false -no-color apply.tfplan > "$WORK/apply.log" 2>&1 || { echo "Apply failed; state reconciliation may be required"; exit 1; }
+          echo "Terraform apply returned success; provider readback is separate"
+      - name: Preserve post-apply state, including uncertain outcomes
+        id: finish
+        if: always() && inputs.operation == 'apply' && steps.begin.outcome == 'success'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -s "$WORK/config/terraform.tfstate" ]] || { echo "No state file; manual reconciliation required"; exit 1; }
+          ARG=()
+          if [[ "$APPLY_OUTCOME" == success ]]; then ARG+=(--success); fi
+          python3 "$RUNNER_TEMP/platform_state.py" finish --key "$TARGET" --run "$ATTEMPT_ID" --path "$WORK/config/terraform.tfstate" "${ARG[@]}"
+      - name: Save sanitized-status private diagnostics
+        if: always() && steps.prepare.outcome != 'skipped'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK="${WORK:-$RUNNER_TEMP/gh02}"
+          if [[ -d "$WORK" ]]; then
+            umask 077
+            for phase in init validate plan apply; do
+              if [[ -f "$WORK/$phase.log" ]]; then
+                printf '=== %s ===\n' "$phase"
+                cat "$WORK/$phase.log"
+              fi
+            done > "$WORK/diagnostics.txt"
+            if [[ -s "$WORK/diagnostics.txt" ]]; then
+              python3 "$RUNNER_TEMP/platform_state.py" diagnostic --key "$TARGET" --run "$ATTEMPT_ID" --path "$WORK/diagnostics.txt"
+            fi
+          fi
+          echo "Diagnostics retained only in private release"
+      - name: Sanitize local private files
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${WORK:-}" && -d "$WORK" ]]; then rm -rf -- "$WORK"; fi
+          echo "Platform attempt finished; review state and diagnostics privately"

@@ -55,6 +55,11 @@ jobs:
           terraform fmt -check -recursive
           terraform init -backend=false -lockfile=readonly -input=false
           terraform validate
+          # Validate live import declarations without importing from mocked providers.
+          cp adoption/imports.tf imports.tf
+          trap 'rm -f imports.tf' EXIT
+          terraform validate
+          rm imports.tf
           terraform test
       - name: Cloudflare templates and mocked resource boundaries
         if: steps.route.outputs.repository == 'true'

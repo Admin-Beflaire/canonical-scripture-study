@@ -87,3 +87,14 @@ and migrations, rather than introduce a third application.
 
 No workflow dispatch, provider mutation or live acceptance is performed by local
 checks or by opening this PR.
+
+The deployment/diagnostics repository must be **identical** to the private
+Terraform state repository configured as `PLATFORM_STATE_REPO` in the
+provisioning environment; both are the existing private design repository.
+Deployment uses that checked state and does not maintain resource-ID JSON.
+A selected older Worker that lacks the deployment client ID is rejected
+before the first database query or migration.
+
+The deployment diagnostics release has a 1,000-asset limit. Before writing a
+run's log or receipt files, the runner reserves the needed slots; exhaustion
+blocks instead of starting an incomplete upload.

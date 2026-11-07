@@ -47,6 +47,22 @@ test('signed JWTs isolate host and job routes before handlers run', async () => 
   assert.equal((await host.fetch(request('/internal/jobs/result',deployment),settings)).status,401);
   const batch = new Request('https://control.example.invalid/mcp',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':deployment},body:JSON.stringify([{jsonrpc:'2.0',id:1,method:'ping'}])});
   assert.equal((await host.fetch(batch,settings)).status,403);
+  // Node/Workers streaming requests need not declare Content-Length.
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array(40000));
+      controller.enqueue(new Uint8Array(40000));
+    },
+  });
+  const oversized = new Request('https://control.example.invalid/mcp',{
+    method:'POST',headers:{'Cf-Access-Jwt-Assertion':deployment},body:stream,
+    duplex:'half'
+  } as RequestInit & {duplex:'half'});
+  assert.equal(oversized.headers.has('Content-Length'), false);
+  assert.equal((await host.fetch(oversized,settings)).status,403);
+  // Reject before dispatching any application operation.
+  // The original tee branch remains untouched; cancellation is best-effort.
+
 });
 
 async function rpc(handler: ReturnType<typeof protocolHandler>, body: {method:string; params?:Record<string,unknown>; [key:string]:unknown}, version?: string) {

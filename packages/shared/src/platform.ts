@@ -33,6 +33,32 @@ export function platformServer(role: ApplicationRole, enhancements: boolean) {
   });
 }
 
+/** Parse only a bounded deployment-check body without consuming the request
+ *  passed to the MCP handler. A streaming request may omit Content-Length. */
+async function boundedRpc(request: Request): Promise<unknown> {
+  const reader = request.clone().body?.getReader();
+  if (!reader) throw new Error('Missing request body');
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let bytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 65536) throw new Error('Request body too large');
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return JSON.parse(text);
+  } finally {
+    // Do not await cancellation of one tee branch: the original request may
+    // still be needed by the downstream handler.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
 /** Authenticate before invoking either host or job handler. No raw identity trust. */
 export function protectedWorker(role: ApplicationRole, options: {
   keys?: JWTVerifyGetKey;
@@ -74,11 +100,8 @@ export function protectedWorker(role: ApplicationRole, options: {
           if (Number(request.headers.get('content-length') || 0) > 65536)
             return new Response('Forbidden', { status: 403 });
           let rpc: unknown;
-          try {
-            const body = await request.clone().text();
-            if (new TextEncoder().encode(body).length > 65536) return new Response('Forbidden', { status: 403 });
-            rpc = JSON.parse(body);
-          } catch { return new Response('Forbidden', { status: 403 }); }
+          try { rpc = await boundedRpc(request); }
+          catch { return new Response('Forbidden', { status: 403 }); }
           if (!rpc || typeof rpc !== 'object' || Array.isArray(rpc)
               || (rpc as Record<string,unknown>).jsonrpc !== '2.0'
               || !['initialize', 'ping', 'tools/list'].includes(String((rpc as Record<string,unknown>).method)))

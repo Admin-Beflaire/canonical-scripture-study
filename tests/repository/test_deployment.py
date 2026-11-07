@@ -67,7 +67,7 @@ class DeploymentTests(unittest.TestCase):
 
     def fixture(self, directory):
         root = Path(directory)
-        config = {"account_id": "a" * 32, "name": "css-study-test", "d1_databases": [{"database_id": "database"}], "r2_buckets": [{"bucket_name": "bucket"}], "vars": {"HOSTNAME": "study.example.invalid", "ENHANCEMENTS": False}}
+        config = {"account_id": "a" * 32, "name": "css-study-test", "d1_databases": [{"database_id": "database"}], "r2_buckets": [{"bucket_name": "bucket"}], "vars": {"HOSTNAME": "study.example.invalid", "ENHANCEMENTS": False, "DEPLOYMENT_CLIENT_ID": "a"*32+".access"}}
         (root / "dist/config").mkdir(parents=True)
         (root / "dist/config/study.json").write_text(json.dumps(config))
         (root / "infrastructure/github/deployment").mkdir(parents=True)
@@ -79,11 +79,26 @@ class DeploymentTests(unittest.TestCase):
     def test_binding_identity_and_settings_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, config = self.fixture(tmp)
-            settings = {"bindings": [{"name": "DATA_DB", "id": "database"}, {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"}, {"name": "HOSTNAME", "text": "study.example.invalid"}, {"name": "ENHANCEMENTS", "type": "json", "json": False}]}
+            settings = {"bindings": [{"name": "DATA_DB", "id": "database"}, {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"}, {"name": "HOSTNAME", "text": "study.example.invalid"}, {"name": "ENHANCEMENTS", "type": "json", "json": False}, {"name": "DEPLOYMENT_CLIENT_ID", "text": "a"*32+".access"}]}
             d.check_bindings(settings, config)
             settings["bindings"][0]["id"] = "wrong"
             with self.assertRaises(d.DeploymentError):
                 d.check_bindings(settings, config)
+
+    def test_pre_guard_worker_is_rejected_before_database_queries_or_migrations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, config = self.fixture(tmp)
+            config["vars"].pop("DEPLOYMENT_CLIENT_ID")
+            (root / "dist/config/study.json").write_text(json.dumps(config))
+            with patch.dict(os.environ, {
+                "CLOUDFLARE_API_TOKEN": "fixture",
+                "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access",
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "fixture"
+            }), patch.object(d, "api") as api, patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "does not enforce"):
+                    d.deploy(root, root, root, "study")
+                api.assert_not_called()
+                run.assert_not_called()
 
     def test_migration_failure_never_deploys_or_writes_success_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -121,6 +136,30 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(receipt["selected_data"], "r1")
             self.assertEqual(receipt["host_observations"], "not_performed")
             self.assertNotIn("secret", (root / "receipt.json").read_text())
+
+    def test_diagnostics_capacity_blocks_before_any_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trusted = root / "infrastructure/github"
+            trusted.mkdir(parents=True)
+            # Production helper is loaded dynamically; patch provider-facing functions
+            # of its copy without contacting GitHub.
+            state = (ROOT / "infrastructure/github/platform_state.py").read_text()
+            (trusted / "platform_state.py").write_text(state)
+            (root / "build.log").write_text("fixture")
+            (root / "deployment.log").write_text("fixture")
+            env = {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"}
+            class FakeTransport:
+                REPOSITORY = "fixture/private"
+                TAG = ""
+                SAFE_ID = __import__("re").compile(r"^[0-9]+-[0-9]+$")
+                def request(self,*_): return {"private": True, "visibility": "private"}
+                def release(self,**_): return {"id": 1}
+                def assets(self,*_): return list(range(999))
+                def upload(self,*_): raise AssertionError("unexpected partial upload")
+            with patch.dict(os.environ,env), patch.object(d.importlib.util,"module_from_spec",return_value=FakeTransport()):
+                with self.assertRaisesRegex(d.DeploymentError,"release is full"):
+                    d.diagnostics(trusted,root)
 
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()

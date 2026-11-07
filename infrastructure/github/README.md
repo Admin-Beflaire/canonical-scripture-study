@@ -230,3 +230,14 @@ continues using its already-configured static
 
 The first plan needs separately authorized bootstrap/adoption and provider
 verification. **This PR performs no Terraform plan/apply or deployment.**
+
+### Verified state destination agreement
+
+The `provisioning` environment variable `PLATFORM_STATE_REPO` and the
+`deployment` environment variable `DEPLOYMENT_DIAGNOSTICS_REPO` **must point
+to the same private repository**. Provisioning saves checked Cloudflare
+Terraform state there; deployment restores it, and uploads its private
+diagnostics under a separate release tag. An inconsistent repository will
+block deployment or read the wrong state. Check both environment variables
+at initial setup and after repository migration. Do not copy state into a
+public artifact or hardcode its resource IDs.

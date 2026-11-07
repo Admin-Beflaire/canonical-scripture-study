@@ -37,7 +37,22 @@ def api(path, params=None):
             data=json.load(response)
         if data.get("success") is not True or not isinstance(data.get("result"),list):
             raise InputError("Invalid Cloudflare inventory")
-        return data["result"]
+        records = data["result"]
+        info = data.get("result_info")
+        # Do not resolve privileged identities against only the first page.
+        # Small lists without result_info are accepted only below the requested
+        # page size; a full page without metadata is ambiguous and must stop.
+        limit = int(params.get("per_page", 100)) if params else 100
+        if info is not None:
+            if not isinstance(info, dict) or not all(
+                    isinstance(info.get(key), int) for key in ("page", "total_pages", "total_count")):
+                raise InputError("Cloudflare inventory pagination is unknown")
+            if (info["page"] != 1 or info["total_pages"] != 1
+                    or info["total_count"] != len(records)):
+                raise InputError("Cloudflare inventory has additional pages")
+        elif len(records) >= limit:
+            raise InputError("Cloudflare inventory completeness is unknown")
+        return records
     except (OSError,ValueError,KeyError):
         raise InputError("Cloudflare inventory unavailable") from None
 

@@ -117,3 +117,16 @@ References checked 6 November 2026:
 [SDK runtime adapter](https://ts.sdk.modelcontextprotocol.io/v2/serving/web-standard),
 [SDK versions](https://ts.sdk.modelcontextprotocol.io/v2/protocol-versions),
 [provider 5.28.1 application schema](https://github.com/cloudflare/terraform-provider-cloudflare/blob/v5.28.1/docs/resources/zero_trust_access_application.md).
+
+## Instance naming and initial limits
+
+For this MVP, the Cloudflare Terraform input helper intentionally derives the
+hostnames as `study.<zone>` and `control.<zone>` rather than adding another
+variable. Changing this convention later requires a reviewed implementation
+change, not a manual edit to the rendered deployment JSON.
+
+The deploy-state reader fixes `ENHANCEMENTS=false` and conservative budget
+defaults (`MAX_PAGE_BYTES=65536`, `REQUEST_BYTES=262144`,
+`MAX_D1_CALLS=25`, `MAX_SUBREQUESTS=40`, `CPU_BUDGET_MS=10`).
+They are reviewed construction choices, not owner-maintained settings. Adjust
+them in code only after measured Worker/host fit requires it.

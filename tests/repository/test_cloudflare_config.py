@@ -54,5 +54,38 @@ class CloudflareConfigTests(unittest.TestCase):
         with self.assertRaises(instance.InstanceError):
             instance.instance({**binding,"audiences":{}},"f"*32+".access")
 
+
+class InventoryPaginationTests(unittest.TestCase):
+    def test_list_requires_complete_inventory_before_matching_principals(self):
+        import io
+        from unittest.mock import patch
+
+        def get(records, info=None, limit=100):
+            payload = {"success": True, "result": records}
+            if info is not None:
+                payload["result_info"] = info
+            data = io.BytesIO(__import__("json").dumps(payload).encode())
+            class Response:
+                def __enter__(self): return data
+                def __exit__(self, *_): return False
+            class Opener:
+                def open(self, *_args, **_kwargs): return Response()
+            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "fixture"}), patch.object(inputs.urllib.request, "build_opener", return_value=Opener()):
+                return inputs.api("accounts/a/access/service_tokens", {"per_page": limit})
+
+        info = {"page": 1, "total_pages": 1, "total_count": 1}
+        self.assertEqual(get([{"name": "fixture"}], info), [{"name": "fixture"}])
+        self.assertEqual(get([{"name": "fixture"}], None), [{"name": "fixture"}])
+        for incomplete in [
+            {"page": 1, "total_pages": 2, "total_count": 101},
+            {"page": 2, "total_pages": 2, "total_count": 101},
+            {"page": 1, "total_pages": 1, "total_count": 2},
+            {"page": 1, "total_pages": 1},
+        ]:
+            with self.assertRaises(inputs.InputError):
+                get([{"name": "fixture"}], incomplete)
+        with self.assertRaises(inputs.InputError):
+            get([{"name": "fixture"}], None, limit=1)
+
 if __name__=="__main__":
     unittest.main()

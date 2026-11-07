@@ -184,3 +184,60 @@ just to free slots.
 Terraform plan/apply, state recovery or provider readbacks. Hosted CI covers
 the protocol and static workflow contract; operational acceptance follows
 an authorized live run.
+
+## Minimal recurring credential maintenance (7 November 2026)
+
+The owner prefers one reusable GitHub credential and one reusable Cloudflare
+account API token wherever supported, rather than a separate token per workflow.
+The protected environment **secret names** remain distinct, even when their
+values are the same; the existing dedicated GitHub tokens can be consolidated
+when replaced with a credential having both Administration and design-repository
+Contents write. No credential is changed automatically by this PR.
+
+- GitHub Personal Access Tokens: GitHub Settings > Developer settings >
+  Personal access tokens > Fine-grained. Renew the reviewed token and replace
+  `provisioning/PLATFORM_GITHUB_TOKEN`, `provisioning/PLATFORM_STATE_TOKEN`,
+  and `deployment/DEPLOYMENT_DIAGNOSTICS_TOKEN` if it is reused for all three.
+  If still distinct, renew each one separately.
+- Cloudflare Account API Tokens: Manage Account > Account API Tokens >
+  `CSS Cloudflare Provisioning`. It is configured for account-wide Workers
+  Admin, D1/R2 and Access Apps/Policies/Service Tokens, and all-zone DNS,
+  Zone, Zone DNS Settings, Zone Settings and Workers Routes. Dashboard
+  expiration as configured: **7 November 2027**. On renewal, replace the value
+  in both `provisioning/PLATFORM_CLOUDFLARE_TOKEN` and
+  `deployment/DEPLOYMENT_CLOUDFLARE_TOKEN`. Update future consumers too.
+- Cloudflare Zero Trust > Access controls > Service credentials > Service
+  Tokens: `CSS Internal Jobs` and `CSS Deployment Check` are non-expiring.
+  If rotating a Client Secret, update its protected consumer only; do not
+  confuse the service-token resource ID, Client ID, and Client Secret. Deployment
+  uses `deployment/DEPLOYMENT_ACCESS_CLIENT_ID` (environment variable) and
+  `deployment/DEPLOYMENT_ACCESS_CLIENT_SECRET` (environment secret).
+- Never paste credential values in Git, issues, chat or logs. Check read-only
+  permission/readback before revoking an old credential. Spending and adding
+  credentials remain owner-reserved actions.
+
+For the first Cloudflare plan, configure these **one-time environment
+variables** in the trusted `provisioning` environment, not JSON:
+`PLATFORM_CF_ACCOUNT_ID`, `PLATFORM_CF_ZONE_NAME`,
+`PLATFORM_CF_ACCESS_ISSUER`, `PLATFORM_CF_OWNER_EMAIL`, and
+`PLATFORM_CF_OAUTH_REDIRECT_URIS` (semicolon-separated, verified HTTPS
+ChatGPT/Claude callbacks). Optional `PLATFORM_CF_INSTANCE` defaults to
+`main`. Study/Control hostnames derive from the zone (study./control.),
+while zone and service-token resource IDs are read from Cloudflare each run.
+Missing/ambiguous identities stop the plan. The `github` Terraform target
+continues using its already-configured static
+`PLATFORM_GITHUB_TFVARS_JSON`; it needs no resource-ID copying.
+
+The first plan needs separately authorized bootstrap/adoption and provider
+verification. **This PR performs no Terraform plan/apply or deployment.**
+
+### Verified state destination agreement
+
+The `provisioning` environment variable `PLATFORM_STATE_REPO` and the
+`deployment` environment variable `DEPLOYMENT_DIAGNOSTICS_REPO` **must point
+to the same private repository**. Provisioning saves checked Cloudflare
+Terraform state there; deployment restores it, and uploads its private
+diagnostics under a separate release tag. An inconsistent repository will
+block deployment or read the wrong state. Check both environment variables
+at initial setup and after repository migration. Do not copy state into a
+public artifact or hardcode its resource IDs.

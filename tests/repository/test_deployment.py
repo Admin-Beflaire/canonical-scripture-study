@@ -32,7 +32,7 @@ class DeploymentTests(unittest.TestCase):
             d.selection(lambda sql: next(responses), {"evidence_records": ["1"]})
 
     def test_subprocess_has_no_shell_and_only_explicit_privileged_credentials(self):
-        with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "private-marker", "PLATFORM_STATE_TOKEN": "private-marker", "DEPLOYMENT_SMOKE_JWT": "private-marker"}):
+        with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "private-marker", "PLATFORM_STATE_TOKEN": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_ID": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "private-marker"}):
             with patch.object(d.subprocess, "run") as execute:
                 execute.return_value.returncode = 0
                 d.run(["node", "build"], io.StringIO())
@@ -67,7 +67,7 @@ class DeploymentTests(unittest.TestCase):
 
     def fixture(self, directory):
         root = Path(directory)
-        config = {"account_id": "a" * 32, "name": "css-study-test", "d1_databases": [{"database_id": "database"}], "r2_buckets": [{"bucket_name": "bucket"}], "vars": {"HOSTNAME": "study.example.invalid", "ENHANCEMENTS": False}}
+        config = {"account_id": "a" * 32, "name": "css-study-test", "d1_databases": [{"database_id": "database"}], "r2_buckets": [{"bucket_name": "bucket"}], "vars": {"HOSTNAME": "study.example.invalid", "ENHANCEMENTS": False, "DEPLOYMENT_CLIENT_ID": "a"*32+".access"}}
         (root / "dist/config").mkdir(parents=True)
         (root / "dist/config/study.json").write_text(json.dumps(config))
         (root / "infrastructure/github/deployment").mkdir(parents=True)
@@ -79,11 +79,26 @@ class DeploymentTests(unittest.TestCase):
     def test_binding_identity_and_settings_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, config = self.fixture(tmp)
-            settings = {"bindings": [{"name": "DATA_DB", "id": "database"}, {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"}, {"name": "HOSTNAME", "text": "study.example.invalid"}, {"name": "ENHANCEMENTS", "type": "json", "json": False}]}
+            settings = {"bindings": [{"name": "DATA_DB", "id": "database"}, {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"}, {"name": "HOSTNAME", "text": "study.example.invalid"}, {"name": "ENHANCEMENTS", "type": "json", "json": False}, {"name": "DEPLOYMENT_CLIENT_ID", "text": "a"*32+".access"}]}
             d.check_bindings(settings, config)
             settings["bindings"][0]["id"] = "wrong"
             with self.assertRaises(d.DeploymentError):
                 d.check_bindings(settings, config)
+
+    def test_pre_guard_worker_is_rejected_before_database_queries_or_migrations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, config = self.fixture(tmp)
+            config["vars"].pop("DEPLOYMENT_CLIENT_ID")
+            (root / "dist/config/study.json").write_text(json.dumps(config))
+            with patch.dict(os.environ, {
+                "CLOUDFLARE_API_TOKEN": "fixture",
+                "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access",
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "fixture"
+            }), patch.object(d, "api") as api, patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "does not enforce"):
+                    d.deploy(root, root, root, "study")
+                api.assert_not_called()
+                run.assert_not_called()
 
     def test_migration_failure_never_deploys_or_writes_success_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,7 +107,7 @@ class DeploymentTests(unittest.TestCase):
             def fail(command, log, env=None):
                 commands.append(command)
                 raise d.DeploymentError("migration failed")
-            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_SMOKE_JWT": "jwt"}), patch.object(d, "selection", return_value=None), patch.object(d, "api", return_value=[{"success": True, "results": []}]), patch.object(d, "run", side_effect=fail):
+            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret"}), patch.object(d, "selection", return_value=None), patch.object(d, "api", return_value=[{"success": True, "results": []}]), patch.object(d, "run", side_effect=fail):
                 with self.assertRaises(d.DeploymentError):
                     d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
@@ -110,7 +125,7 @@ class DeploymentTests(unittest.TestCase):
                 if path.endswith("/subdomain"):
                     return {"enabled": False, "previews_enabled": False}
                 return {"bindings": []}
-            env = {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_SMOKE_JWT": "jwt", "SELECTED_SHA": "a"*40, "ATTEMPT_ID": "1-1"}
+            env = {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret", "SELECTED_SHA": "a"*40, "ATTEMPT_ID": "1-1"}
             with patch.dict(os.environ, env), patch.object(d, "selection", return_value="r1"), patch.object(d, "api", side_effect=provider), patch.object(d, "check_bindings"), patch.object(d, "run", side_effect=lambda command, log, env=None: commands.append(command)):
                 d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
@@ -122,14 +137,40 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(receipt["host_observations"], "not_performed")
             self.assertNotIn("secret", (root / "receipt.json").read_text())
 
+    def test_diagnostics_capacity_blocks_before_any_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            trusted = root
+            (trusted / "infrastructure/github").mkdir(parents=True)
+            # A small fake private transport tests capacity with no GitHub API.
+            (trusted / "infrastructure/github/platform_state.py").write_text("""
+import re
+REPOSITORY = "fixture/private"
+SAFE_ID = re.compile(r"^[0-9]+-[0-9]+$")
+def request(*args): return {"private": True, "visibility": "private"}
+def release(create=False): return {"id": 1}
+def assets(*args): return list(range(999))
+def upload(*args): raise AssertionError("unexpected partial upload")
+""")
+            (root / "build.log").write_text("fixture")
+            (root / "deployment.log").write_text("fixture")
+            with patch.dict(os.environ, {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"}):
+                with self.assertRaisesRegex(d.DeploymentError, "release is full"):
+                    d.diagnostics(trusted, root)
+
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
         for required in ("workflow_dispatch:", "github.ref == 'refs/heads/main'", "environment: deployment", "persist-credentials: false", "git merge-base --is-ancestor", "npm ci --ignore-scripts", 'npm run "build:$TARGET"', '"$APPROVAL" == DEPLOY', "if: always()", "cancel-in-progress: false"):
             self.assertIn(required, workflow)
         for denied in ("pull_request:", "pull_request_target:", "workflow_run:", "upload-artifact", "download-artifact", "actions/cache", "contents: write"):
             self.assertNotIn(denied, workflow)
-        build = workflow.split("      - name: Build selected", 1)[1].split("      - name: Render", 1)[0]
+        build = workflow.split("      - name: Build selected", 1)[1].split("      - name: Restore verified", 1)[0]
         self.assertNotIn("secrets.", build)
+        render = workflow.split("      - name: Render private", 1)[1].split("      - name: Apply compatible", 1)[0]
+        self.assertNotIn("secrets.", render)
+        self.assertIn('PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}', workflow)
+        self.assertNotIn("DEPLOYMENT_SMOKE_JWT", workflow)
+        self.assertNotIn("DEPLOYMENT_INSTANCE_JSON", workflow)
         for line in workflow.splitlines():
             if "uses:" in line:
                 self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")

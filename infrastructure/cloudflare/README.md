@@ -3,7 +3,7 @@
 Terraform 1.13.5 / Cloudflare provider 5.28.1 own one D1 database, one private R2
 bucket, disabled managed public access, two owner-only Managed OAuth resources
 and a more-specific Service Auth resource at Control `/internal/jobs/*`.
-An existing Access service-token **ID** is an input; its credentials are issued
+An existing internal-jobs and deployment-check Access service-token **ID** are inputs; its credentials are issued
 separately and stay in protected runner secrets. No secret generation or Worker
 resource is managed by this Terraform root. Its state must use the protected
 provisioning path before any real plan/apply; never archive state with source.
@@ -24,12 +24,15 @@ Terraform does not apply SQL or duplicate Worker/domain/DNS settings.
 | `DATABASE_ID` | Terraform-created database |
 | `ACCESS_ISSUER` | HTTPS Access team issuer |
 | `STUDY_AUDIENCE`, `CONTROL_AUDIENCE`, `JOB_AUDIENCE` | Distinct Terraform-created application audiences |
+| `DEPLOYMENT_CLIENT_ID` | Non-secret Access deployment-check Client ID, shared by both Workers; not the resource ID or secret |
 | `ENHANCEMENTS` | Boolean; start false, test newer protocol separately |
 | `MAX_PAGE_BYTES`, `REQUEST_BYTES`, `MAX_D1_CALLS`, `MAX_SUBREQUESTS`, `CPU_BUDGET_MS` | Positive bounded settings, measured before production retrieval |
 
 The database/bucket names use the same `INSTANCE` suffix as Terraform. Terraform
-additionally takes `owner_email`, `hostnames`, `oauth_redirect_uris` and the
-existing `job_service_token_id`. Verify the intended ChatGPT/Claude callback URIs
+additionally takes `owner_email`, `hostnames`, `oauth_redirect_uris`, the
+existing `job_service_token_id` and `deployment_service_token_id`. Terraform
+outputs the account, zone, hostnames, issuer, D1/R2 bindings and Access audiences
+for the deployment workflow; nothing is copied into a deployment JSON by hand. Verify the intended ChatGPT/Claude callback URIs
 when setting up those protected inputs; wildcard localhost registration is off.
 Do not put account values, owner identity, credentials or rendered files in Git.
 The checked-in `tests/platform/instance.fixture.json` is synthetic, not an instance.
@@ -60,7 +63,9 @@ Shared Platform code verifies RS256 signature, issuer, intended audience and
 required expiration/issued-at claims using the trusted issuer's Access JWKS.
 JWKS caching contains keys only, never request identities. The Worker checks
 HTTPS/custom hostname, Host and Origin before accepting `/mcp`; only Control
-accepts the job path, with its distinct job audience. Error responses reveal no
+accepts the job path, with its distinct job audience. The signed deployment-check `common_name`
+is allowed only for `initialize`, `ping` and `tools/list` (never domain tools,
+batch calls or internal jobs). Unknown service identities fail closed. Error responses reveal no
 assertions, keys or validation details. Unconfigured Workers fail closed.
 Managed OAuth metadata/login/registration are supplied by Access, not these
 Worker routes. Direct calls to the origin cannot use a login redirect as proof
@@ -84,7 +89,7 @@ bundling alone do not establish workerd execution or either host's support.
 | Control | Same bindings, separate host/job audiences; later fixed-workflow dispatch token |
 | Preparation | D1 API candidate writes, bucket-scoped R2 object credentials, internal-job Access token; no deploy/Terraform token |
 | Provisioning | D1 Write, Workers R2 Storage Write, Access Apps and Policies Write for intended account; state protected separately |
-| Deployment | Workers Scripts Write and required route/custom-domain zone access; separate from preparation |
+| Deployment | Workers Admin/Editor and required route/custom-domain zone access; same owner-managed account API token may also serve provisioning, but environments keep credentials isolated from preparation |
 | Export | Only required D1 read/export and bucket object reads; separate workflow authority |
 
 D1 grants/bindings do not isolate individual tables and R2 object credentials do
@@ -112,3 +117,16 @@ References checked 6 November 2026:
 [SDK runtime adapter](https://ts.sdk.modelcontextprotocol.io/v2/serving/web-standard),
 [SDK versions](https://ts.sdk.modelcontextprotocol.io/v2/protocol-versions),
 [provider 5.28.1 application schema](https://github.com/cloudflare/terraform-provider-cloudflare/blob/v5.28.1/docs/resources/zero_trust_access_application.md).
+
+## Instance naming and initial limits
+
+For this MVP, the Cloudflare Terraform input helper intentionally derives the
+hostnames as `study.<zone>` and `control.<zone>` rather than adding another
+variable. Changing this convention later requires a reviewed implementation
+change, not a manual edit to the rendered deployment JSON.
+
+The deploy-state reader fixes `ENHANCEMENTS=false` and conservative budget
+defaults (`MAX_PAGE_BYTES=65536`, `REQUEST_BYTES=262144`,
+`MAX_D1_CALLS=25`, `MAX_SUBREQUESTS=40`, `CPU_BUDGET_MS=10`).
+They are reviewed construction choices, not owner-maintained settings. Adjust
+them in code only after measured Worker/host fit requires it.

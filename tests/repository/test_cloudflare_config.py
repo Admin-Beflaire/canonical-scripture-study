@@ -75,7 +75,8 @@ class InventoryPaginationTests(unittest.TestCase):
 
         info = {"page": 1, "total_pages": 1, "total_count": 1}
         self.assertEqual(get([{"name": "fixture"}], info), [{"name": "fixture"}])
-        self.assertEqual(get([{"name": "fixture"}], None), [{"name": "fixture"}])
+        with self.assertRaises(inputs.InputError):
+            get([{"name": "fixture"}], None)
         for incomplete in [
             {"page": 1, "total_pages": 2, "total_count": 101},
             {"page": 2, "total_pages": 2, "total_count": 101},

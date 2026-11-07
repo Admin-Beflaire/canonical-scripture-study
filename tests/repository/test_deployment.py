@@ -140,10 +140,10 @@ class DeploymentTests(unittest.TestCase):
     def test_diagnostics_capacity_blocks_before_any_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            trusted = root / "infrastructure/github"
-            trusted.mkdir(parents=True)
+            trusted = root
+            (trusted / "infrastructure/github").mkdir(parents=True)
             # A small fake private transport tests capacity with no GitHub API.
-            (trusted / "platform_state.py").write_text("""
+            (trusted / "infrastructure/github/platform_state.py").write_text("""
 import re
 REPOSITORY = "fixture/private"
 SAFE_ID = re.compile(r"^[0-9]+-[0-9]+$")

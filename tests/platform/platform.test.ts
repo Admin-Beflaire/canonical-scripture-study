@@ -7,15 +7,15 @@ import { protectedWorker, platformServer, protocolHandler, LEGACY_VERSIONS, type
 const issuer = 'https://test-team.cloudflareaccess.com';
 const pair = await generateKeyPair('RS256');
 const keys = createLocalJWKSet({ keys: [{ ...await exportJWK(pair.publicKey), kid: 'test', alg: 'RS256' }] });
-const settings: AccessSettings = { ACCESS_ISSUER: issuer, HOSTNAME: 'control.example.invalid', HOST_AUDIENCE: 'human-control', JOB_AUDIENCE: 'runner', ENHANCEMENTS: false };
-const sign = (aud: string, iss = issuer, exp = Math.floor(Date.now()/1000)+300) => new SignJWT({}).setProtectedHeader({ alg: 'RS256', kid: 'test' }).setIssuer(iss).setAudience(aud).setIssuedAt().setExpirationTime(exp).sign(pair.privateKey);
+const settings: AccessSettings = { ACCESS_ISSUER: issuer, HOSTNAME: 'control.example.invalid', HOST_AUDIENCE: 'human-control', JOB_AUDIENCE: 'runner', DEPLOYMENT_CLIENT_ID: 'a'.repeat(32)+'.access', ENHANCEMENTS: false };
+const sign = (aud: string, iss = issuer, exp = Math.floor(Date.now()/1000)+300) => new SignJWT({email:'owner@example.invalid'}).setProtectedHeader({ alg: 'RS256', kid: 'test' }).setIssuer(iss).setAudience(aud).setIssuedAt().setExpirationTime(exp).sign(pair.privateKey);
 function request(path = '/mcp', token?: string, hostname = settings.HOSTNAME, extra: Record<string,string> = {}) {
   return new Request(`https://${hostname}${path}`, { method: 'POST', headers: { ...(token ? {'Cf-Access-Jwt-Assertion': token} : {}), ...extra } });
 }
 
 test('signed JWTs isolate host and job routes before handlers run', async () => {
   const worker = protectedWorker('control', { keys, host: async () => new Response('host'), job: async () => new Response('job') });
-  const human = await sign('human-control'), runner = await sign('runner');
+  const human = await sign('human-control'), runner = await new SignJWT({common_name:'b'.repeat(32)+'.access'}).setProtectedHeader({alg:'RS256',kid:'test'}).setIssuer(issuer).setAudience('runner').setIssuedAt().setExpirationTime('5m').sign(pair.privateKey);
   assert.equal(await (await worker.fetch(request('/mcp', human), settings)).text(), 'host');
   assert.equal(await (await worker.fetch(request('/internal/jobs/result', runner), settings)).text(), 'job');
   for (const [path, token] of [['/mcp', runner], ['/internal/jobs/result', human], ['/mcp', await sign('study')], ['/mcp', await sign('human-control','https://evil.invalid')], ['/mcp', await sign('human-control',issuer,1)], ['/mcp','forged.jwt.assertion']] as const) {
@@ -34,6 +34,19 @@ test('signed JWTs isolate host and job routes before handlers run', async () => 
   const study = protectedWorker('study', { keys });
   assert.equal((await study.fetch(request('/internal/jobs/result',runner),settings)).status,404);
   assert.equal((await worker.fetch(request('/mcp',human))).status,503);
+  const deployment = await new SignJWT({common_name:settings.DEPLOYMENT_CLIENT_ID}).setProtectedHeader({alg:'RS256',kid:'test'}).setIssuer(issuer).setAudience('human-control').setIssuedAt().setExpirationTime('5m').sign(pair.privateKey);
+  const foreign = await new SignJWT({common_name:'b'.repeat(32)+'.access'}).setProtectedHeader({alg:'RS256',kid:'test'}).setIssuer(issuer).setAudience('human-control').setIssuedAt().setExpirationTime('5m').sign(pair.privateKey);
+  const host = protectedWorker('control',{keys,host:async()=>new Response('accepted')});
+  const rpcRequest = (method:string, token=deployment) => new Request('https://control.example.invalid/mcp',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':token},body:JSON.stringify({jsonrpc:'2.0',id:1,method})});
+  for (const method of ['initialize','ping','tools/list'])
+    assert.equal((await host.fetch(rpcRequest(method),settings)).status,200);
+  for (const method of ['tools/call','resources/read','tasks/cancel','notifications/initialized'])
+    assert.equal((await host.fetch(rpcRequest(method),settings)).status,403);
+  assert.equal((await host.fetch(rpcRequest('ping',foreign),settings)).status,403);
+  assert.equal((await host.fetch(request('/mcp',deployment),settings)).status,403);
+  assert.equal((await host.fetch(request('/internal/jobs/result',deployment),settings)).status,401);
+  const batch = new Request('https://control.example.invalid/mcp',{method:'POST',headers:{'Cf-Access-Jwt-Assertion':deployment},body:JSON.stringify([{jsonrpc:'2.0',id:1,method:'ping'}])});
+  assert.equal((await host.fetch(batch,settings)).status,403);
 });
 
 async function rpc(handler: ReturnType<typeof protocolHandler>, body: {method:string; params?:Record<string,unknown>; [key:string]:unknown}, version?: string) {

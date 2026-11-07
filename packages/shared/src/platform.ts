@@ -6,6 +6,7 @@ export interface AccessSettings {
   ACCESS_ISSUER: string;
   HOSTNAME: string;
   HOST_AUDIENCE: string;
+  DEPLOYMENT_CLIENT_ID: string;
   JOB_AUDIENCE?: string;
   ENHANCEMENTS: boolean;
 }
@@ -43,7 +44,7 @@ export function protectedWorker(role: ApplicationRole, options: {
   let cachedKeys: JWTVerifyGetKey | undefined;
   return {
     async fetch(request: Request, settings?: AccessSettings): Promise<Response> {
-      if (!settings || !settings.HOSTNAME || !settings.HOST_AUDIENCE || !settings.ACCESS_ISSUER || typeof settings.ENHANCEMENTS !== 'boolean') return new Response('Unavailable', { status: 503 });
+      if (!settings || !settings.HOSTNAME || !settings.HOST_AUDIENCE || !settings.ACCESS_ISSUER || !/^[a-f0-9]{32}\.access$/.test(settings.DEPLOYMENT_CLIENT_ID || '') || typeof settings.ENHANCEMENTS !== 'boolean') return new Response('Unavailable', { status: 503 });
       const url = new URL(request.url);
       if (url.protocol !== 'https:' || url.host !== settings.HOSTNAME || (request.headers.has('Host') && request.headers.get('Host') !== settings.HOSTNAME)) return new Response('Forbidden', { status: 403 });
       const origin = request.headers.get('Origin');
@@ -61,7 +62,30 @@ export function protectedWorker(role: ApplicationRole, options: {
           cachedKeys = createRemoteJWKSet(new URL(`${settings.ACCESS_ISSUER}/cdn-cgi/access/certs`));
           cachedIssuer = settings.ACCESS_ISSUER;
         }
-        await verifyAccess(token, settings.ACCESS_ISSUER, audience, options.keys ?? cachedKeys);
+        const claims = await verifyAccess(token, settings.ACCESS_ISSUER, audience, options.keys ?? cachedKeys);
+        const service = claims.common_name;
+        if (jobRoute) {
+          if (typeof service !== 'string' || !service.endsWith('.access') || service === settings.DEPLOYMENT_CLIENT_ID)
+            return new Response('Forbidden', { status: 403 });
+        } else if (service !== undefined) {
+          if (service !== settings.DEPLOYMENT_CLIENT_ID || request.method !== 'POST')
+            return new Response('Forbidden', { status: 403 });
+          // Deny every non-discovery method before calling any application handler.
+          if (Number(request.headers.get('content-length') || 0) > 65536)
+            return new Response('Forbidden', { status: 403 });
+          let rpc: unknown;
+          try {
+            const body = await request.clone().text();
+            if (new TextEncoder().encode(body).length > 65536) return new Response('Forbidden', { status: 403 });
+            rpc = JSON.parse(body);
+          } catch { return new Response('Forbidden', { status: 403 }); }
+          if (!rpc || typeof rpc !== 'object' || Array.isArray(rpc)
+              || (rpc as Record<string,unknown>).jsonrpc !== '2.0'
+              || !['initialize', 'ping', 'tools/list'].includes(String((rpc as Record<string,unknown>).method)))
+            return new Response('Forbidden', { status: 403 });
+        } else if (typeof claims.email !== 'string' || !claims.email.includes('@')) {
+          return new Response('Forbidden', { status: 403 });
+        }
       }
       catch { return new Response('Unauthorized', { status: 401 }); }
       if (jobRoute) return options.job ? options.job(request, settings) : new Response('Not implemented', { status: 501 });

@@ -39,15 +39,20 @@ unrelated workflows could reach them.
 
 | Input | Purpose |
 | --- | --- |
-| `DEPLOYMENT_INSTANCE_JSON` secret | Non-public instance values accepted by `infrastructure/cloudflare/render.mjs`; same shape as the synthetic fixture. |
+| Verified Cloudflare state (automatic) | The runner reads the checked `cloudflare` snapshot from the private state release using the existing diagnostics repository credential, then renders the temporary instance; no manually maintained deployment JSON. |
 | `DEPLOYMENT_CLOUDFLARE_TOKEN` secret | Worker deployment/settings readback, custom domains, D1 migration/query and required binding access for the intended account/resources. No GitHub/provider administration or preparation dispatch credential. |
-| `DEPLOYMENT_STUDY_SMOKE_JWT` secret | Fresh owner-authenticated Access application token for Study, used as the Access cookie. |
-| `DEPLOYMENT_CONTROL_SMOKE_JWT` secret | Equivalent token for Control's distinct host audience; only the selected token is supplied. |
+| `DEPLOYMENT_ACCESS_CLIENT_ID` variable | Shared deployment-check Access service token Client ID, also rendered into Worker config. |
+| `DEPLOYMENT_ACCESS_CLIENT_SECRET` secret | Shared deployment-check service token Client Secret, supplied only for authenticated HTTP checks. |
 | `DEPLOYMENT_DIAGNOSTICS_REPO` variable | Actual private design repository in `owner/name` form. |
 | `DEPLOYMENT_DIAGNOSTICS_TOKEN` secret | Dedicated private-repository Contents read/write token for diagnostic release uploads/readback. |
 
-Actual token scope/resource restrictions, environment enforcement and valid Access
-sign-in must be recorded at authorized setup. D1 API access is not table-scoped.
+Actual token scope/resource restrictions, environment enforcement and
+verified Access service-token policies must be recorded at authorized setup.
+The private diagnostics token already has Contents read/write and can also
+read the protected Terraform state. The checked state is validated before
+any D1 migration, Worker deployment or protected HTTP check. Missing,
+inconsistent or unreconciled state blocks, rather than guessing resource IDs.
+No copied browser JWT is needed for recurring deployments. D1 API access is not table-scoped.
 Private-repository Contents write also permits other Contents/release changes,
 including operational state assets; GitHub does not provide tag-scoped tokens.
 This dedicated diagnostic token is supplied only to the trusted final upload step,

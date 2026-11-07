@@ -15,5 +15,6 @@
   "REQUEST_BYTES": 4096,
   "MAX_D1_CALLS": 40,
   "MAX_SUBREQUESTS": 45,
-  "CPU_BUDGET_MS": 10
+  "CPU_BUDGET_MS": 10,
+  "DEPLOYMENT_CLIENT_ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.access"
 }

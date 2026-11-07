@@ -20,6 +20,13 @@ resource "cloudflare_zero_trust_access_policy" "owner" {
   decision   = "allow"
   include    = [{ email = { email = var.owner_email } }]
 }
+# Access allows the same deployment token on both hosts; Workers enforce check-only methods.
+resource "cloudflare_zero_trust_access_policy" "deployment_check" {
+  account_id = var.account_id
+  name       = "css-deployment-check-${var.instance}"
+  decision   = "non_identity"
+  include    = [{ service_token = { token_id = var.deployment_service_token_id } }]
+}
 resource "cloudflare_zero_trust_access_policy" "jobs" {
   account_id = var.account_id
   name       = "css-jobs-${var.instance}"
@@ -34,7 +41,10 @@ resource "cloudflare_zero_trust_access_application" "host" {
   domain           = each.value
   destinations     = [{ type = "public", uri = each.value }]
   session_duration = "1h"
-  policies         = [{ id = cloudflare_zero_trust_access_policy.owner.id, precedence = 1 }]
+  policies = [
+    { id = cloudflare_zero_trust_access_policy.owner.id, precedence = 1 },
+    { id = cloudflare_zero_trust_access_policy.deployment_check.id, precedence = 2 }
+  ]
   oauth_configuration = {
     enabled = true
     dynamic_client_registration = {

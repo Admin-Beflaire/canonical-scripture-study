@@ -32,7 +32,7 @@ class DeploymentTests(unittest.TestCase):
             d.selection(lambda sql: next(responses), {"evidence_records": ["1"]})
 
     def test_subprocess_has_no_shell_and_only_explicit_privileged_credentials(self):
-        with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "private-marker", "PLATFORM_STATE_TOKEN": "private-marker", "DEPLOYMENT_SMOKE_JWT": "private-marker"}):
+        with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "private-marker", "PLATFORM_STATE_TOKEN": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_ID": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "private-marker"}):
             with patch.object(d.subprocess, "run") as execute:
                 execute.return_value.returncode = 0
                 d.run(["node", "build"], io.StringIO())
@@ -92,7 +92,7 @@ class DeploymentTests(unittest.TestCase):
             def fail(command, log, env=None):
                 commands.append(command)
                 raise d.DeploymentError("migration failed")
-            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_SMOKE_JWT": "jwt"}), patch.object(d, "selection", return_value=None), patch.object(d, "api", return_value=[{"success": True, "results": []}]), patch.object(d, "run", side_effect=fail):
+            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret"}), patch.object(d, "selection", return_value=None), patch.object(d, "api", return_value=[{"success": True, "results": []}]), patch.object(d, "run", side_effect=fail):
                 with self.assertRaises(d.DeploymentError):
                     d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
@@ -110,7 +110,7 @@ class DeploymentTests(unittest.TestCase):
                 if path.endswith("/subdomain"):
                     return {"enabled": False, "previews_enabled": False}
                 return {"bindings": []}
-            env = {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_SMOKE_JWT": "jwt", "SELECTED_SHA": "a"*40, "ATTEMPT_ID": "1-1"}
+            env = {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret", "SELECTED_SHA": "a"*40, "ATTEMPT_ID": "1-1"}
             with patch.dict(os.environ, env), patch.object(d, "selection", return_value="r1"), patch.object(d, "api", side_effect=provider), patch.object(d, "check_bindings"), patch.object(d, "run", side_effect=lambda command, log, env=None: commands.append(command)):
                 d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
@@ -128,8 +128,13 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn(required, workflow)
         for denied in ("pull_request:", "pull_request_target:", "workflow_run:", "upload-artifact", "download-artifact", "actions/cache", "contents: write"):
             self.assertNotIn(denied, workflow)
-        build = workflow.split("      - name: Build selected", 1)[1].split("      - name: Render", 1)[0]
+        build = workflow.split("      - name: Build selected", 1)[1].split("      - name: Restore verified", 1)[0]
         self.assertNotIn("secrets.", build)
+        render = workflow.split("      - name: Render private", 1)[1].split("      - name: Apply compatible", 1)[0]
+        self.assertNotIn("secrets.", render)
+        self.assertIn('PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}', workflow)
+        self.assertNotIn("DEPLOYMENT_SMOKE_JWT", workflow)
+        self.assertNotIn("DEPLOYMENT_INSTANCE_JSON", workflow)
         for line in workflow.splitlines():
             if "uses:" in line:
                 self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")

@@ -19,6 +19,7 @@ test('one template renders two independent instance/binding sets', () => {
       assert.equal(config[role].d1_databases[0].binding,'DATA_DB');
       assert.equal(config[role].r2_buckets[0].binding,'PRIVATE_OBJECTS');
       assert.equal(config[role].vars.ENHANCEMENTS,false);
+      assert.equal(config[role].vars.DEPLOYMENT_CLIENT_ID,input.DEPLOYMENT_CLIENT_ID);
       assert.doesNotMatch(JSON.stringify(config[role]),/\{\{/);
     }
     assert.equal(config.study.vars.JOB_AUDIENCE,undefined);
@@ -40,6 +41,7 @@ test('no competing Worker or SQL writer in Terraform; R2 managed access disabled
   assert.doesNotMatch(terraform,/resource "cloudflare_workers|resource "cloudflare_dns|local-exec/);
   assert.match(terraform,/resource "cloudflare_r2_managed_domain"[\s\S]*?enabled\s+= false/);
   assert.match(terraform,/\/internal\/jobs\/\*/);
+  assert.match(terraform,/resource "cloudflare_zero_trust_access_policy" "deployment_check"/);
 });
 
 test('malformed DNS labels and trailing instance hyphens fail validation',()=>{

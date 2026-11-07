@@ -14,6 +14,7 @@ export function validateInstance(input) {
     STUDY_HOSTNAME: DNS_NAME,
     CONTROL_HOSTNAME: DNS_NAME,
     DATABASE_ID: /^[a-f0-9-]{36}$/,
+    DEPLOYMENT_CLIENT_ID: /^[a-f0-9]{32}\.access$/,
     ACCESS_ISSUER: /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/,
     STUDY_AUDIENCE: /^[a-f0-9]{64}$/, CONTROL_AUDIENCE: /^[a-f0-9]{64}$/, JOB_AUDIENCE: /^[a-f0-9]{64}$/,
   };

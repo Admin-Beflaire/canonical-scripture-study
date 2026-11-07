@@ -16,7 +16,7 @@ class DeploymentError(Exception):
 def run(command, log, env=None):
     # No shell, inherited deployment credentials, raw exception text or tool output.
     safe_env = {k: v for k, v in os.environ.items() if k not in {
-        "CLOUDFLARE_API_TOKEN", "DEPLOYMENT_SMOKE_JWT", "PLATFORM_STATE_TOKEN"}}
+        "CLOUDFLARE_API_TOKEN", "DEPLOYMENT_ACCESS_CLIENT_ID", "DEPLOYMENT_ACCESS_CLIENT_SECRET", "PLATFORM_STATE_TOKEN"}}
     safe_env.update(env or {})
     result = subprocess.run(command, stdout=log, stderr=log, env=safe_env)
     if result.returncode:
@@ -75,8 +75,9 @@ def check_bindings(settings, config):
 
 def deploy(root, trusted, work, role):
     token = os.environ["CLOUDFLARE_API_TOKEN"]
-    jwt = os.environ["DEPLOYMENT_SMOKE_JWT"]
-    if not token or not jwt:
+    check_id = os.environ["DEPLOYMENT_ACCESS_CLIENT_ID"]
+    check_secret = os.environ["DEPLOYMENT_ACCESS_CLIENT_SECRET"]
+    if not token or not check_id or not check_secret:
         raise DeploymentError("Missing deployment credentials")
     config_path = root / "dist/config" / (role + ".json")
     config = json.loads(config_path.read_text())
@@ -111,7 +112,9 @@ def deploy(root, trusted, work, role):
         if alternate.get("enabled") is not False or alternate.get("previews_enabled") is not False:
             raise DeploymentError("Alternate Worker access is enabled")
         run(["node", str(trusted / "infrastructure/github/deployment/smoke.mjs"),
-             config["vars"]["HOSTNAME"]], log, {"DEPLOYMENT_SMOKE_JWT": jwt})
+             config["vars"]["HOSTNAME"]], log, {
+                 "DEPLOYMENT_ACCESS_CLIENT_ID": check_id,
+                 "DEPLOYMENT_ACCESS_CLIENT_SECRET": check_secret})
         if selection(query, supported) != current:
             raise DeploymentError("Selection changed during deployment; recheck compatibility")
         receipt = {"commit": os.environ["SELECTED_SHA"], "run": os.environ["ATTEMPT_ID"],

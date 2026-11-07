@@ -72,16 +72,23 @@ jobs:
           npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || { echo "Worker build blocked"; exit 1; }
           test -f infrastructure/github/deployment/compatibility.json || { echo "Commit predates deployment compatibility contract"; exit 1; }
           echo "Selected Worker built"
-      - name: Render private instance configuration and validate bundle
-        id: render
+      - name: Restore verified Cloudflare instance using trusted helper only
+        id: state
         env:
-          INSTANCE_JSON: ${{ secrets.DEPLOYMENT_INSTANCE_JSON }}
+          PLATFORM_STATE_REPO: ${{ vars.DEPLOYMENT_DIAGNOSTICS_REPO }}
+          PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}
+          DEPLOYMENT_ACCESS_CLIENT_ID: ${{ vars.DEPLOYMENT_ACCESS_CLIENT_ID }}
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          [[ -n "$INSTANCE_JSON" ]] || { echo "Missing instance configuration"; exit 1; }
-          printf '%s' "$INSTANCE_JSON" > "$WORK/instance.json"
+          python3 "$WORK/trusted/infrastructure/github/deployment/instance.py" "$WORK/instance.json" "$WORK/cloudflare.tfstate" || { echo "Verified Cloudflare instance unavailable"; exit 1; }
+      - name: Render private instance configuration and validate bundle
+        id: render
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
           node infrastructure/cloudflare/render.mjs "$WORK/instance.json" >> "$WORK/build.log" 2>&1 || { echo "Instance rendering blocked"; exit 1; }
           node_modules/.bin/wrangler deploy --dry-run --config "dist/config/$TARGET.json" >> "$WORK/build.log" 2>&1 || { echo "Worker validation blocked"; exit 1; }
           echo "Temporary configuration and bundle checked"
@@ -89,7 +96,8 @@ jobs:
         id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.DEPLOYMENT_CLOUDFLARE_TOKEN }}
-          DEPLOYMENT_SMOKE_JWT: ${{ secrets[format('DEPLOYMENT_{0}_SMOKE_JWT', inputs.target)] }}
+          DEPLOYMENT_ACCESS_CLIENT_ID: ${{ vars.DEPLOYMENT_ACCESS_CLIENT_ID }}
+          DEPLOYMENT_ACCESS_CLIENT_SECRET: ${{ secrets.DEPLOYMENT_ACCESS_CLIENT_SECRET }}
         run: python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" deploy --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
       - name: Retain private diagnostics and exact receipt
         if: always() && env.WORK != ''

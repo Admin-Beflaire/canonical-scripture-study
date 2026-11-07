@@ -70,6 +70,7 @@ jobs:
           git merge-base --is-ancestor "$SELECTED_SHA" HEAD
           # State handling belongs to the trusted dispatch revision, not an older target.
           cp infrastructure/github/platform_state.py "$RUNNER_TEMP/platform_state.py"
+          cp infrastructure/github/cloudflare_inputs.py "$RUNNER_TEMP/cloudflare_inputs.py"
           git checkout --detach "$SELECTED_SHA" >/dev/null 2>&1
           echo "Reviewed commit and operation validated"
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
@@ -80,7 +81,6 @@ jobs:
         id: prepare
         env:
           GITHUB_TFVARS: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TFVARS_JSON || '' }}
-          CLOUDFLARE_TFVARS: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TFVARS_JSON || '' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -92,9 +92,6 @@ jobs:
           if [[ "$TARGET" == github ]]; then
             [[ -n "$GITHUB_TFVARS" ]] || { echo "Missing selected Terraform inputs"; exit 1; }
             printf '%s' "$GITHUB_TFVARS" > "$WORK/config/instance.auto.tfvars.json"
-          else
-            [[ -n "$CLOUDFLARE_TFVARS" ]] || { echo "Missing selected Terraform inputs"; exit 1; }
-            printf '%s' "$CLOUDFLARE_TFVARS" > "$WORK/config/instance.auto.tfvars.json"
           fi
           cp -a "infrastructure/$TARGET/." "$WORK/config/"
           if [[ "$TARGET" == github ]]; then
@@ -123,6 +120,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ inputs.target == 'github' && secrets.PLATFORM_GITHUB_TOKEN || '' }}
           CLOUDFLARE_API_TOKEN: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CLOUDFLARE_TOKEN || '' }}
+          PLATFORM_CF_ACCOUNT_ID: ${{ vars.PLATFORM_CF_ACCOUNT_ID }}
+          PLATFORM_CF_ZONE_NAME: ${{ vars.PLATFORM_CF_ZONE_NAME }}
+          PLATFORM_CF_ACCESS_ISSUER: ${{ vars.PLATFORM_CF_ACCESS_ISSUER }}
+          PLATFORM_CF_OWNER_EMAIL: ${{ vars.PLATFORM_CF_OWNER_EMAIL }}
+          PLATFORM_CF_OAUTH_REDIRECT_URIS: ${{ vars.PLATFORM_CF_OAUTH_REDIRECT_URIS }}
+          PLATFORM_CF_INSTANCE: ${{ vars.PLATFORM_CF_INSTANCE }}
         shell: bash
         run: |
           set -euo pipefail
@@ -131,6 +134,7 @@ jobs:
             [[ -n "$GITHUB_TOKEN" ]] || exit 1
           else
             [[ -n "$CLOUDFLARE_API_TOKEN" ]] || exit 1
+            python3 "$RUNNER_TEMP/cloudflare_inputs.py" "$WORK/config/instance.auto.tfvars.json" || { echo "Cloudflare input verification blocked"; exit 1; }
           fi
           if [[ "$OPERATION" == apply ]]; then
             terraform plan -input=false -lock=false -no-color -out=apply.tfplan > "$WORK/plan.log" 2>&1 || { echo "Terraform plan blocked"; exit 1; }

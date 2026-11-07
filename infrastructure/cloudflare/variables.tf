@@ -41,32 +41,31 @@ variable "oauth_redirect_uris" {
     error_message = "Supply the verified HTTPS callback URIs for the intended hosts."
   }
 }
-
 variable "zone_id" {
   type = string
   validation {
-    condition = can(regex("^[a-f0-9]{32}$", var.zone_id))
+    condition     = can(regex("^[a-f0-9]{32}$", var.zone_id))
     error_message = "Provide the verified Cloudflare zone ID."
   }
 }
 variable "zone_name" {
   type = string
   validation {
-    condition = can(regex("^([a-z0-9-]+\\.)+[a-z]{2,63}$", var.zone_name))
+    condition     = can(regex("^([a-z0-9-]+\\.)+[a-z]{2,63}$", var.zone_name))
     error_message = "Provide the verified zone name."
   }
 }
 variable "access_issuer" {
   type = string
   validation {
-    condition = can(regex("^https://[a-z0-9-]+\\.cloudflareaccess\\.com$", var.access_issuer))
+    condition     = can(regex("^https://[a-z0-9-]+\\.cloudflareaccess\\.com$", var.access_issuer))
     error_message = "Provide the verified Access team issuer."
   }
 }
 variable "deployment_service_token_id" {
   type = string
   validation {
-    condition = can(regex("^[a-f0-9-]{36}$", var.deployment_service_token_id))
+    condition     = can(regex("^[a-f0-9-]{36}$", var.deployment_service_token_id))
     error_message = "Provide the existing deployment service token resource ID."
   }
 }

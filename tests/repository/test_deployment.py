@@ -142,24 +142,21 @@ class DeploymentTests(unittest.TestCase):
             root = Path(tmp)
             trusted = root / "infrastructure/github"
             trusted.mkdir(parents=True)
-            # Production helper is loaded dynamically; patch provider-facing functions
-            # of its copy without contacting GitHub.
-            state = (ROOT / "infrastructure/github/platform_state.py").read_text()
-            (trusted / "platform_state.py").write_text(state)
+            # A small fake private transport tests capacity with no GitHub API.
+            (trusted / "platform_state.py").write_text("""
+import re
+REPOSITORY = "fixture/private"
+SAFE_ID = re.compile(r"^[0-9]+-[0-9]+$")
+def request(*args): return {"private": True, "visibility": "private"}
+def release(create=False): return {"id": 1}
+def assets(*args): return list(range(999))
+def upload(*args): raise AssertionError("unexpected partial upload")
+""")
             (root / "build.log").write_text("fixture")
             (root / "deployment.log").write_text("fixture")
-            env = {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"}
-            class FakeTransport:
-                REPOSITORY = "fixture/private"
-                TAG = ""
-                SAFE_ID = __import__("re").compile(r"^[0-9]+-[0-9]+$")
-                def request(self,*_): return {"private": True, "visibility": "private"}
-                def release(self,**_): return {"id": 1}
-                def assets(self,*_): return list(range(999))
-                def upload(self,*_): raise AssertionError("unexpected partial upload")
-            with patch.dict(os.environ,env), patch.object(d.importlib.util,"module_from_spec",return_value=FakeTransport()):
-                with self.assertRaisesRegex(d.DeploymentError,"release is full"):
-                    d.diagnostics(trusted,root)
+            with patch.dict(os.environ, {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"}):
+                with self.assertRaisesRegex(d.DeploymentError, "release is full"):
+                    d.diagnostics(trusted, root)
 
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()

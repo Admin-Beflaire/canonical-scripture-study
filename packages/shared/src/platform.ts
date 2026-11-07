@@ -38,7 +38,7 @@ export function platformServer(role: ApplicationRole, enhancements: boolean) {
 async function boundedRpc(request: Request): Promise<unknown> {
   const reader = request.clone().body?.getReader();
   if (!reader) throw new Error('Missing request body');
-  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const decoder = new TextDecoder();
   let bytes = 0;
   let text = '';
   try {

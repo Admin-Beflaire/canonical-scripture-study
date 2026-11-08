@@ -42,6 +42,8 @@ test('no competing Worker or SQL writer in Terraform; R2 managed access disabled
   assert.match(terraform,/resource "cloudflare_r2_managed_domain"[\s\S]*?enabled\s+= false/);
   assert.match(terraform,/\/internal\/jobs\/\*/);
   assert.match(terraform,/resource "cloudflare_zero_trust_access_policy" "deployment_check"/);
+  assert.match(terraform,/resource "cloudflare_zero_trust_access_policy" "study_owner"/);
+  assert.match(terraform,/each\.key == "study" \? cloudflare_zero_trust_access_policy\.study_owner\.id : cloudflare_zero_trust_access_policy\.owner\.id/);
 });
 
 test('malformed DNS labels and trailing instance hyphens fail validation',()=>{

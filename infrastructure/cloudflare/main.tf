@@ -20,6 +20,13 @@ resource "cloudflare_zero_trust_access_policy" "owner" {
   decision   = "allow"
   include    = [{ email = { email = var.owner_email } }]
 }
+# Study uses a distinct human identity policy; Control retains its existing owner policy.
+resource "cloudflare_zero_trust_access_policy" "study_owner" {
+  account_id = var.account_id
+  name       = "css-study-owner-${var.instance}"
+  decision   = "allow"
+  include    = [{ email = { email = var.study_owner_email } }]
+}
 # Access allows the same deployment token on both hosts; Workers enforce check-only methods.
 resource "cloudflare_zero_trust_access_policy" "deployment_check" {
   account_id = var.account_id
@@ -42,7 +49,7 @@ resource "cloudflare_zero_trust_access_application" "host" {
   destinations     = [{ type = "public", uri = each.value }]
   session_duration = "1h"
   policies = [
-    { id = cloudflare_zero_trust_access_policy.owner.id, precedence = 1 },
+    { id = each.key == "study" ? cloudflare_zero_trust_access_policy.study_owner.id : cloudflare_zero_trust_access_policy.owner.id, precedence = 1 },
     { id = cloudflare_zero_trust_access_policy.deployment_check.id, precedence = 2 }
   ]
   oauth_configuration = {

@@ -3,7 +3,8 @@ variables {
   account_id                  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   instance                    = "fixture-a"
   hostnames                   = { study = "study.example.invalid", control = "control.example.invalid" }
-  owner_email                 = "owner@example.invalid"
+  owner_email                 = "control@example.invalid"
+  study_owner_email           = "study@example.invalid"
   zone_id                     = "cccccccccccccccccccccccccccccccc"
   zone_name                   = "example.invalid"
   access_issuer               = "https://example.cloudflareaccess.com"
@@ -18,6 +19,10 @@ run "protected_instance_a" {
     error_message = "Bucket must not be public."
   }
   assert {
+    condition     = one([for rule in cloudflare_zero_trust_access_policy.owner.include : rule.email.email]) == var.owner_email && one([for rule in cloudflare_zero_trust_access_policy.study_owner.include : rule.email.email]) == var.study_owner_email
+    error_message = "Study and Control must use separately configured human Access policies."
+  }
+  assert {
     condition     = length(cloudflare_zero_trust_access_application.host) == 2 && cloudflare_zero_trust_access_application.jobs.domain == "control.example.invalid/internal/jobs/*"
     error_message = "Two host resources and the specific job resource are required."
   }
@@ -29,12 +34,13 @@ run "protected_instance_a" {
 run "protected_instance_b" {
   command = plan
   variables {
-    account_id    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    instance      = "fixture-b"
-    zone_id       = "dddddddddddddddddddddddddddddddd"
-    zone_name     = "second.invalid"
-    access_issuer = "https://second.cloudflareaccess.com"
-    hostnames     = { study = "s.second.invalid", control = "c.second.invalid" }
+    account_id        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    instance          = "fixture-b"
+    study_owner_email = "study-b@example.invalid"
+    zone_id           = "dddddddddddddddddddddddddddddddd"
+    zone_name         = "second.invalid"
+    access_issuer     = "https://second.cloudflareaccess.com"
+    hostnames         = { study = "s.second.invalid", control = "c.second.invalid" }
   }
   assert {
     condition     = cloudflare_d1_database.data.name == "css-data-fixture-b" && cloudflare_r2_bucket.private.name == "css-private-fixture-b"

@@ -10,6 +10,7 @@
   "include": [
     "services/study/**/*.ts",
     "services/maintenance/control/**/*.ts",
-    "packages/**/*.ts"
+    "packages/**/*.ts",
+    "tools/cloudflare/study-fit.ts"
   ]
 }

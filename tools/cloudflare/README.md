@@ -11,7 +11,8 @@ generator checks all object lengths and digests, applies the repository migratio
 to in-memory SQLite, and rehearses the insert, select, clear and delete stages.
 The resulting SQL and object inventory are local files.
 
-Build the temporary entry with:
+For local inspection, build the temporary entry separately from the deployable
+Study bundle:
 
 ```sh
 node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
@@ -19,7 +20,8 @@ node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
   --outfile=dist/study-fit/index.js
 ```
 
-The ordinary Study build continues to use its normal entry.
+The protected workflow writes its fit build to `dist/study/index.js`, which is
+the path used by Wrangler. The ordinary Study build uses its normal entry.
 
 ## Protected run requirements
 

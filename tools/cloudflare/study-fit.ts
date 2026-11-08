@@ -23,7 +23,7 @@ interface FixtureBindings {
   };
 }
 
-const decoder = new TextDecoder('utf-8', { fatal: true });
+const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
 
 async function checkedRead(bucket: FixtureBindings['PRIVATE_OBJECTS'], key: string,
                            size: number, digest: string, offset?: number) {

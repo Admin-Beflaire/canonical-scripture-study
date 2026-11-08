@@ -34,13 +34,13 @@ run "protected_instance_a" {
 run "protected_instance_b" {
   command = plan
   variables {
-    account_id    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    instance      = "fixture-b"
+    account_id        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    instance          = "fixture-b"
     study_owner_email = "study-b@example.invalid"
-    zone_id       = "dddddddddddddddddddddddddddddddd"
-    zone_name     = "second.invalid"
-    access_issuer = "https://second.cloudflareaccess.com"
-    hostnames     = { study = "s.second.invalid", control = "c.second.invalid" }
+    zone_id           = "dddddddddddddddddddddddddddddddd"
+    zone_name         = "second.invalid"
+    access_issuer     = "https://second.cloudflareaccess.com"
+    hostnames         = { study = "s.second.invalid", control = "c.second.invalid" }
   }
   assert {
     condition     = cloudflare_d1_database.data.name == "css-data-fixture-b" && cloudflare_r2_bucket.private.name == "css-private-fixture-b"

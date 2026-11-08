@@ -34,9 +34,12 @@ the same instance and enforce these checks:
    selecting the fixture. Abort unless precisely one selection row changes.
 3. Use an authorized Study identity to call `fixture_search`. Record the
    expected three occurrences, D1 query counts and rows read, R2 requests
-   and bytes, and the deployed revision. Capture Worker CPU through provider
-   telemetry and report elapsed time separately. Record unavailable counters
-   as unknown.
+   and bytes, and the deployed revision. The fit deployment enables invocation
+   logs at full sampling. Record the request timestamp and response correlation
+   information privately, read the corresponding invocation's CPU time from
+   Workers Observability, and record client elapsed time separately. Record
+   unavailable counters as unknown. The ordinary deployment restores its
+   existing logging configuration.
 4. Clear selection only if it still identifies this fixture and the previous
    pointer is empty. Verify both pointers, restore the ordinary Study build,
    and remove the matching fixture rows and verified objects. Verify their

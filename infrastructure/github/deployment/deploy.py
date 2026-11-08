@@ -89,6 +89,7 @@ def deploy(root, trusted, work, role):
         if role != "study" or os.environ.get("APPROVAL") != "DEPLOY-FIT":
             raise DeploymentError("Fixture deployment approval required")
         supported = {**supported, "index_manifest": ["1"]}
+        config["observability"]["logs"].update({"invocation_logs": True, "head_sampling_rate": 1})
     account = config["account_id"]
     database = config["d1_databases"][0]["database_id"]
     def query(sql):

@@ -139,7 +139,9 @@ class DeploymentTests(unittest.TestCase):
 
     def test_study_fit_requires_approval_and_selected_fixture_before_deploy(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root, _ = self.fixture(tmp)
+            root, config = self.fixture(tmp)
+            config["observability"] = {"logs": {"enabled": True, "invocation_logs": False}}
+            (root / "dist/config/study.json").write_text(json.dumps(config))
             env = {
                 "CLOUDFLARE_API_TOKEN": "fixture",
                 "DEPLOYMENT_ACCESS_CLIENT_ID": "a" * 32 + ".access",

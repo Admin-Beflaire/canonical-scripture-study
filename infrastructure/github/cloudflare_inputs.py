@@ -67,7 +67,10 @@ def build(zones,tokens):
         ids[kind]=found[0]["id"]
     issuer=env("PLATFORM_CF_ACCESS_ISSUER")
     owner=env("PLATFORM_CF_OWNER_EMAIL")
-    if not re.fullmatch(r"https://[a-z0-9-]+\.cloudflareaccess\.com",issuer) or not re.fullmatch(r"[^@ ]+@[^@ ]+\.[^@ ]+",owner):
+    study_owner=env("PLATFORM_CF_STUDY_OWNER_EMAIL")
+    if (not re.fullmatch(r"https://[a-z0-9-]+\.cloudflareaccess\.com",issuer)
+            or not re.fullmatch(r"[^@ ]+@[^@ ]+\.[^@ ]+",owner)
+            or not re.fullmatch(r"[^@ ]+@[^@ ]+\.[^@ ]+",study_owner)):
         raise InputError("Invalid Access identity")
     callbacks=[s.strip() for s in env("PLATFORM_CF_OAUTH_REDIRECT_URIS").split(";") if s.strip()]
     if not callbacks or any(not re.fullmatch(r"https://[^/ *]+/[^ ]*",s) for s in callbacks):
@@ -78,6 +81,7 @@ def build(zones,tokens):
     return {
         "account_id":account,"zone_id":matched[0]["id"],"zone_name":zone,
         "access_issuer":issuer,"instance":instance,"owner_email":owner,
+        "study_owner_email":study_owner,
         "hostnames":{"study":"study."+zone,"control":"control."+zone},
         "oauth_redirect_uris":callbacks,
         "job_service_token_id":ids["job"],"deployment_service_token_id":ids["deployment"]

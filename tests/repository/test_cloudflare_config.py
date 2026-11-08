@@ -20,7 +20,8 @@ class CloudflareConfigTests(unittest.TestCase):
     def test_provider_resolved_ids_not_hand_maintained_json(self):
         fields={
             "PLATFORM_CF_ACCOUNT_ID":"a"*32,"PLATFORM_CF_ZONE_NAME":"example.invalid",
-            "PLATFORM_CF_OWNER_EMAIL":"owner@example.invalid",
+            "PLATFORM_CF_OWNER_EMAIL":"control@example.invalid",
+            "PLATFORM_CF_STUDY_OWNER_EMAIL":"study@example.invalid",
             "PLATFORM_CF_ACCESS_ISSUER":"https://team.cloudflareaccess.com",
             "PLATFORM_CF_OAUTH_REDIRECT_URIS":"https://host.example.invalid/callback"
         }
@@ -30,7 +31,12 @@ class CloudflareConfigTests(unittest.TestCase):
         with patch.dict(os.environ,fields):
             cfg=inputs.build(zones,tokens)
             self.assertEqual(cfg["hostnames"]["study"],"study.example.invalid")
+            self.assertEqual(cfg["owner_email"],"control@example.invalid")
+            self.assertEqual(cfg["study_owner_email"],"study@example.invalid")
             self.assertEqual(cfg["deployment_service_token_id"],tokens[1]["id"])
+            with patch.dict(os.environ, {"PLATFORM_CF_STUDY_OWNER_EMAIL":""}):
+                with self.assertRaises(inputs.InputError):
+                    inputs.build(zones,tokens)
             with self.assertRaises(inputs.InputError):
                 inputs.build(zones,tokens+tokens[:1])
             with self.assertRaises(inputs.InputError):

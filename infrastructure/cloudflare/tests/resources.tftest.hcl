@@ -3,7 +3,8 @@ variables {
   account_id                  = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   instance                    = "fixture-a"
   hostnames                   = { study = "study.example.invalid", control = "control.example.invalid" }
-  owner_email                 = "owner@example.invalid"
+  owner_email                 = "control@example.invalid"
+  study_owner_email           = "study@example.invalid"
   zone_id                     = "cccccccccccccccccccccccccccccccc"
   zone_name                   = "example.invalid"
   access_issuer               = "https://example.cloudflareaccess.com"
@@ -16,6 +17,10 @@ run "protected_instance_a" {
   assert {
     condition     = cloudflare_r2_managed_domain.private.enabled == false
     error_message = "Bucket must not be public."
+  }
+  assert {
+    condition     = cloudflare_zero_trust_access_policy.owner.include[0].email.email == var.owner_email && cloudflare_zero_trust_access_policy.study_owner.include[0].email.email == var.study_owner_email
+    error_message = "Study and Control must use separately configured human Access policies."
   }
   assert {
     condition     = length(cloudflare_zero_trust_access_application.host) == 2 && cloudflare_zero_trust_access_application.jobs.domain == "control.example.invalid/internal/jobs/*"
@@ -31,6 +36,7 @@ run "protected_instance_b" {
   variables {
     account_id    = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     instance      = "fixture-b"
+    study_owner_email = "study-b@example.invalid"
     zone_id       = "dddddddddddddddddddddddddddddddd"
     zone_name     = "second.invalid"
     access_issuer = "https://second.cloudflareaccess.com"

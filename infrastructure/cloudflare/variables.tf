@@ -27,6 +27,14 @@ variable "owner_email" {
     error_message = "Supply the protected owner identity."
   }
 }
+variable "study_owner_email" {
+  type      = string
+  sensitive = true
+  validation {
+    condition     = can(regex("^[^@ ]+@[^@ ]+\\.[^@ ]+$", var.study_owner_email))
+    error_message = "Supply the protected Study identity."
+  }
+}
 variable "job_service_token_id" {
   type = string
   validation {

@@ -19,7 +19,7 @@ run "protected_instance_a" {
     error_message = "Bucket must not be public."
   }
   assert {
-    condition     = cloudflare_zero_trust_access_policy.owner.include[0].email.email == var.owner_email && cloudflare_zero_trust_access_policy.study_owner.include[0].email.email == var.study_owner_email
+    condition     = one([for rule in cloudflare_zero_trust_access_policy.owner.include : rule.email.email]) == var.owner_email && one([for rule in cloudflare_zero_trust_access_policy.study_owner.include : rule.email.email]) == var.study_owner_email
     error_message = "Study and Control must use separately configured human Access policies."
   }
   assert {

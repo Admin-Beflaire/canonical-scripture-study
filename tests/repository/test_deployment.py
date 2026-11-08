@@ -137,6 +137,28 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(receipt["host_observations"], "not_performed")
             self.assertNotIn("secret", (root / "receipt.json").read_text())
 
+    def test_study_fit_requires_approval_and_selected_fixture_before_deploy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, _ = self.fixture(tmp)
+            env = {
+                "CLOUDFLARE_API_TOKEN": "fixture",
+                "DEPLOYMENT_ACCESS_CLIENT_ID": "a" * 32 + ".access",
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "fixture",
+                "STUDY_FIT": "true",
+                "APPROVAL": "DEPLOY",
+            }
+            with patch.dict(os.environ, env), patch.object(d, "api") as api, patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "approval required"):
+                    d.deploy(root, root, root, "study")
+                api.assert_not_called()
+                run.assert_not_called()
+            env["APPROVAL"] = "DEPLOY-FIT"
+            with patch.dict(os.environ, env), patch.object(d, "selection", return_value="other") as selection, patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "Selected synthetic fixture required"):
+                    d.deploy(root, root, root, "study")
+                self.assertEqual(selection.call_args.args[1]["index_manifest"], ["1"])
+                run.assert_not_called()
+
     def test_diagnostics_capacity_blocks_before_any_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

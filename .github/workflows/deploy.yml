@@ -11,8 +11,12 @@ on:
         description: Reviewed exact 40-character commit reachable from main
         required: true
         type: string
+      study_fit:
+        description: Temporarily deploy the synthetic Study measurement reader
+        type: boolean
+        default: false
       approval:
-        description: Type DEPLOY only under recorded owner authorization
+        description: Type DEPLOY for ordinary deployment or DEPLOY-FIT for the approved Study fixture
         required: true
         type: string
 permissions:
@@ -30,6 +34,7 @@ jobs:
       SELECTED_SHA: ${{ inputs.commit }}
       TARGET: ${{ inputs.target }}
       APPROVAL: ${{ inputs.approval }}
+      STUDY_FIT: ${{ inputs.study_fit }}
       ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       WRANGLER_SEND_METRICS: 'false'
       CI: 'true'
@@ -44,7 +49,11 @@ jobs:
           set -euo pipefail
           [[ "$SELECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           [[ "$TARGET" == study || "$TARGET" == control ]] || exit 1
-          [[ "$APPROVAL" == DEPLOY ]] || exit 1
+          if [[ "$STUDY_FIT" == true ]]; then
+            [[ "$TARGET" == study && "$APPROVAL" == DEPLOY-FIT ]] || exit 1
+          else
+            [[ "$APPROVAL" == DEPLOY ]] || exit 1
+          fi
           git cat-file -e "$SELECTED_SHA^{commit}"
           git merge-base --is-ancestor "$SELECTED_SHA" HEAD
           umask 077
@@ -69,7 +78,13 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund >> "$WORK/build.log" 2>&1 || { echo "Dependency install blocked"; exit 1; }
-          npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || { echo "Worker build blocked"; exit 1; }
+          if [[ "$STUDY_FIT" == true ]]; then
+            node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
+              --platform=neutral --conditions=workerd,worker,browser --target=es2023 \
+              --outfile=dist/study/index.js >> "$WORK/build.log" 2>&1 || { echo "Fixture build blocked"; exit 1; }
+          else
+            npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || { echo "Worker build blocked"; exit 1; }
+          fi
           test -f infrastructure/github/deployment/compatibility.json || { echo "Commit predates deployment compatibility contract"; exit 1; }
           echo "Selected Worker built"
       - name: Restore verified Cloudflare instance using trusted helper only

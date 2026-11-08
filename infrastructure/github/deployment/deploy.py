@@ -84,6 +84,11 @@ def deploy(root, trusted, work, role):
     if config.get("vars", {}).get("DEPLOYMENT_CLIENT_ID") != check_id:
         raise DeploymentError("Selected Worker does not enforce deployment identity")
     supported = json.loads((root / "infrastructure/github/deployment/compatibility.json").read_text())
+    study_fit = os.environ.get("STUDY_FIT") == "true"
+    if study_fit:
+        if role != "study" or os.environ.get("APPROVAL") != "DEPLOY-FIT":
+            raise DeploymentError("Fixture deployment approval required")
+        supported = {**supported, "index_manifest": ["1"]}
     account = config["account_id"]
     database = config["d1_databases"][0]["database_id"]
     def query(sql):
@@ -93,6 +98,8 @@ def deploy(root, trusted, work, role):
         return result[0]["results"]
     with (work / "deployment.log").open("a") as log:
         current = selection(query, supported)
+        if study_fit and current != "ix-release":
+            raise DeploymentError("Selected synthetic fixture required")
         # Use the trusted dispatch revision's single forward migration sequence,
         # including when selected code is an older compatible revert.
         migration_dir = trusted / "schemas/migrations"
@@ -120,7 +127,7 @@ def deploy(root, trusted, work, role):
         if selection(query, supported) != current:
             raise DeploymentError("Selection changed during deployment; recheck compatibility")
         receipt = {"commit": os.environ["SELECTED_SHA"], "run": os.environ["ATTEMPT_ID"],
-                   "target": role, "selected_data": current, "http_checks": "passed",
+                   "target": role, "study_fit": study_fit, "selected_data": current, "http_checks": "passed",
                    "host_observations": "not_performed"}
         (work / "receipt.json").write_text(json.dumps(receipt))
 

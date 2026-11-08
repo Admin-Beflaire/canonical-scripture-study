@@ -23,8 +23,9 @@ The ordinary Study build continues to use its normal entry.
 
 ## Protected run requirements
 
-Use the reviewed deployment workflow for the temporary build and the
-restoration build. Live orchestration must serialize with other operations on
+Use the reviewed deployment workflow with Study, the fit input, and the
+`DEPLOY-FIT` marker for the temporary build. Use ordinary Study deployment
+for restoration after clearing the fixture selection. Live orchestration must serialize with other operations on
 the same instance and enforce these checks:
 
 1. Confirm both selection pointers are empty and all fixture SQL identities
@@ -36,10 +37,10 @@ the same instance and enforce these checks:
    and bytes, and the deployed revision. Capture Worker CPU through provider
    telemetry and report elapsed time separately. Record unavailable counters
    as unknown.
-4. Restore the ordinary Study build. Clear selection only if it still
-   identifies this fixture and the previous pointer is empty. Verify both
-   pointers, remove the matching fixture rows and verified objects, then
-   verify their absence and the protected smoke check. Stop for reconciliation
+4. Clear selection only if it still identifies this fixture and the previous
+   pointer is empty. Verify both pointers, restore the ordinary Study build,
+   and remove the matching fixture rows and verified objects. Verify their
+   absence and the protected smoke check. Stop for reconciliation
    on changed ownership, changed selection or uncertain writes.
 
 The generator emits data and guarded pointer statements. It does not enforce

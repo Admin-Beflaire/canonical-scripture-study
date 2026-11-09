@@ -60,6 +60,11 @@ resource "cloudflare_zero_trust_access_application" "host" {
       allow_any_on_localhost = false
       allow_any_on_loopback  = false
     }
+    # Hosts renew a short access token silently; the owner signs in again only after two weeks.
+    grant = {
+      session_duration      = "336h"
+      access_token_lifetime = "15m"
+    }
   }
 }
 # This more-specific path wins over the human Control application.

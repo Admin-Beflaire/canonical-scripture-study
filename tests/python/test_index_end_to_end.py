@@ -118,6 +118,7 @@ class IndexIntegratedStageFive(unittest.TestCase):
         self.blobs = records.blobs
         self.db = database()
         self.addCleanup(self.db.close)
+        self.selection_before = [tuple(row) for row in self.db.execute('SELECT * FROM release_selection')]
         save(records, self.db)  # in-memory D1 shape; no actual D1 writes
         self.outputs = decoded(self.db.execute('SELECT * FROM prepared_outputs').fetchall())
         self.artifacts = decoded(self.db.execute('SELECT * FROM artifacts').fetchall())
@@ -169,7 +170,8 @@ class IndexIntegratedStageFive(unittest.TestCase):
         self.assertEqual(self.db.execute(
             'SELECT COUNT(*) FROM span_segments WHERE span_id=?', (literary['id'],)
         ).fetchone()[0], 2)
-        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM release_selection').fetchone()[0], 0)
+        self.assertEqual([tuple(row) for row in self.db.execute('SELECT * FROM release_selection')],
+                         self.selection_before)
 
     def test_missing_analysis_rejects_word_reuse_without_hiding_source(self):
         [partial_word] = self._build_words(self.observations[:-1])

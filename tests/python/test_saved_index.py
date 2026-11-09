@@ -74,6 +74,35 @@ class SavedIndexStageFour(unittest.TestCase):
                                   self.bases[0].output_id))
         self.assertEqual(self.records.rows('artifact'), self.artifacts)
 
+    def test_reordered_dependencies_keep_same_immutable_coverage_and_reuse(self):
+        # OutputBasis IDs already ignore dependency tuple order. Saved coverage must too.
+        fixture = WordIndexStageTwo()
+        fixture.setUp()
+        [word_part] = fixture.build()
+        reversed_basis = replace(
+            word_part.basis, dependencies=tuple(reversed(word_part.basis.dependencies)))
+        self.assertGreater(len(word_part.basis.dependencies), 1)
+        self.assertNotEqual(word_part.basis.dependencies, reversed_basis.dependencies)
+        self.assertEqual(word_part.basis.output_id, reversed_basis.output_id)
+
+        original = build_index_files(word_part)
+        reordered = build_index_files(replace(word_part, basis=reversed_basis))
+        self.assertEqual(original.records.rows('prepared_output'),
+                         reordered.records.rows('prepared_output'))
+        self.assertEqual(original.records.rows('coverage'), reordered.records.rows('coverage'))
+        self.assertEqual(original.records.blobs, reordered.records.blobs)
+        self.assertEqual(
+            verify_saved_index(reversed_basis,
+                               next(row for row in self.outputs
+                                    if row['id'] == reversed_basis.output_id),
+                               self.artifacts, self.coverage, self.blobs),
+            self.word.manifest)
+        self.assertEqual(
+            reusable_index_ids((self.bases[0], self.bases[1], reversed_basis),
+                               self.outputs, self.artifacts, self.coverage, self.blobs,
+                               valid_external_dependencies=self.external),
+            tuple(basis.output_id for basis in self.bases))
+
     def test_wrong_basis_or_missing_registered_bytes_are_not_reused(self):
         saved = next(row for row in self.outputs if row['id'] == self.a.manifest['prepared_output_id'])
         wrong = {**saved, 'method_version': 'changed'}

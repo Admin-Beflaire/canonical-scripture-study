@@ -125,7 +125,7 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
                 or row['method_version'] != basis.method_version
                 or row['native_extent_json'] != manifest['native_extent']
                 or row['state'] != state or row['limitation'] != manifest['coverage']['limitation']
-                or row['dependencies_json'] != list(basis.dependencies)
+                or row['dependencies_json'] != sorted(basis.dependencies)
                 or row['index_artifact_id'] != manifest_id):
             raise RecordError(f'Incompatible saved coverage: {capability}')
 

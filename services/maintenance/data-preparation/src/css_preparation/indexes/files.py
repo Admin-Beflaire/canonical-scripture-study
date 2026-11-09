@@ -171,6 +171,6 @@ def build_index_files(partition: SourcePartition | WordPartition, *,
             'native_extent_json': {'unit_ids': list(units)},
             'capability': capability, 'state': partition.coverage_state,
             'method_version': basis.method_version, 'index_artifact_id': manifest_id,
-            'dependencies_json': list(basis.dependencies), 'limitation': partition.limitation,
+            'dependencies_json': sorted(basis.dependencies), 'limitation': partition.limitation,
         })
     return IndexFiles(manifest, records, posting_id, manifest_id)

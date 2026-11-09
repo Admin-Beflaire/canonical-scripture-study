@@ -108,6 +108,9 @@ def incorporate_statement(instruction: Mapping[str, str] | None, statements: Ite
         raise StatementError('Only an owner-approved statement version can be incorporated')
     if statement['owner_approval_ref'] != instruction['owner_approval_ref']:
         raise StatementError('The approval reference differs from the instruction')
+    if dict(basis.parameters).get('statement') != dict(instruction):
+        # The statement identity is part of the reuse basis, so another version never reuses this output.
+        raise StatementError('The output basis must name the instructed statement version')
     records = RecordSet()
     output_id = basis.output_id
     records.add('prepared_output', basis.row())

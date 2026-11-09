@@ -67,6 +67,7 @@ class NativeText:
     units: tuple[tuple[str, str], ...]
     complete: bool = True
     limitation: str | None = None
+    _index: dict[str, str] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         ids = [unit_id for unit_id, _ in self.units]
@@ -77,12 +78,13 @@ class NativeText:
                 raise RecordError(f'Invalid native unit {unit_id!r}')
         if not self.complete and not self.limitation:
             raise RecordError('Partial native text needs a stated limitation')
+        object.__setattr__(self, '_index', dict(self.units))
 
     def unit(self, unit_id: str) -> str:
-        for candidate, text in self.units:
-            if candidate == unit_id:
-                return text
-        raise RecordError(f'Unknown native unit {unit_id!r}')
+        try:
+            return self._index[unit_id]
+        except (KeyError, TypeError):
+            raise RecordError(f'Unknown native unit {unit_id!r}') from None
 
     def byte_bases(self) -> dict[str, int]:
         bases, offset = {}, 0

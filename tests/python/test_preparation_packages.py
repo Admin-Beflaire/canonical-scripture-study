@@ -21,7 +21,8 @@ STATEMENTS = [
      'scripture_basis': [reference('a', '1.1', 0, 8)], 'owner_approval_ref': None},
 ]
 INSTRUCTION = {'name': 'Synthetic statement fixture', 'version': '2', 'owner_approval_ref': 'synthetic:test-approval/2'}
-STATEMENT_BASIS = OutputBasis('character_statement', ('synthetic:statement:revision-2',), 'synthetic:statement/1', {}, {})
+STATEMENT_BASIS = OutputBasis('character_statement', ('synthetic:statement:revision-2',), 'synthetic:statement/1',
+                              {'statement': INSTRUCTION}, {})
 
 
 def package_specs():
@@ -100,6 +101,11 @@ class FlowTest(unittest.TestCase):
             incorporate_statement(INSTRUCTION, STATEMENTS + [STATEMENTS[1]], STATEMENT_BASIS)
         with self.assertRaises(StatementError):
             incorporate_statement(INSTRUCTION, STATEMENTS, replace(STATEMENT_BASIS, kind='evidence'))
+        version_1 = {**INSTRUCTION, 'version': '1', 'owner_approval_ref': 'synthetic:test-approval/1'}
+        with self.assertRaisesRegex(StatementError, 'output basis'):
+            incorporate_statement(version_1, STATEMENTS, STATEMENT_BASIS)
+        other = incorporate_statement(version_1, STATEMENTS, replace(STATEMENT_BASIS, parameters={'statement': version_1}))
+        self.assertNotEqual(other.output_ids(), records.output_ids())
 
     def test_correcting_a_source_rebuilds_its_dependents_and_keeps_unrelated_outputs(self):
         outputs = dependencies_of(self.rows('prepared_outputs'))

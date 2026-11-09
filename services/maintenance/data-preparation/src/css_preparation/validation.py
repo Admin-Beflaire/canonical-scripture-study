@@ -12,7 +12,7 @@ from typing import Any
 
 SCHEMAS = Path(__file__).resolve().parents[5] / 'schemas'
 _SUPPORTED = {'type', 'enum', 'const', 'pattern', 'minLength', 'maxLength', 'minimum', 'maximum', 'required',
-              'properties', 'additionalProperties', 'maxProperties', 'items', 'minItems', 'maxItems', '$ref',
+              'properties', 'additionalProperties', 'maxProperties', 'items', 'minItems', 'maxItems', 'uniqueItems', '$ref',
               'anyOf', 'oneOf', 'allOf', 'if', 'then', 'else'}
 # Annotations carry no validation meaning.
 _ANNOTATIONS = {'$schema', '$id', '$defs', 'title', 'description'}
@@ -144,6 +144,8 @@ class SchemaSubset:
             if 'maximum' in schema and value > schema['maximum']:
                 errors.append(f'{path}: above maximum')
         if actual == 'array':
+            if schema.get('uniqueItems') and len({json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(',', ':')) for item in value}) != len(value):
+                errors.append(f'{path}: array items must be unique')
             if 'minItems' in schema and len(value) < schema['minItems']:
                 errors.append(f'{path}: too few items')
             if 'maxItems' in schema and len(value) > schema['maxItems']:

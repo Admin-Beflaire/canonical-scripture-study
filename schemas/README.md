@@ -77,3 +77,12 @@ These fixtures neither apply a D1 migration nor access R2 or admit actual source
 
 Run `npm run check`. Provider deployment/configuration, real-source preparation,
 index encodings and application read/write behaviour are supplied separately.
+
+## Maintenance job envelopes
+
+`maintenance/jobs.v1.schema.json` defines the versioned job input and
+checkpoint/result envelopes exchanged between Maintenance Control and the
+preparation executor (`$defs/job_input`, `$defs/job_result`). Both sides validate
+the same keyword subset at runtime and reject unknown fields; artifact references
+carry registered identity, SHA-256 digest and size. Envelopes pass task IDs and
+registered references, never scripts, branches, URLs or object paths.

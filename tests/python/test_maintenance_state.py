@@ -49,7 +49,7 @@ class MaintenanceStateTest(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(insert, ('t1', 1, 'u1', 1, 'prepare', DIGEST, None, 'intended'))
         with self.assertRaises(sqlite3.IntegrityError):
-            self.db.execute(insert, ('t1', 1, 'u2', 1, 'prepare', DIGEST, None, 'running'))
+            self.db.execute(insert, ('t1', 1, 'u2', 1, 'prepare', DIGEST, None, 'running'))  # running needs a run
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(insert, ('missing', 1, 'u3', 1, 'prepare', DIGEST, None, 'intended'))
         self.db.execute("UPDATE maintenance_jobs SET run_id='r1', state='dispatched' WHERE unit_id='u1'")

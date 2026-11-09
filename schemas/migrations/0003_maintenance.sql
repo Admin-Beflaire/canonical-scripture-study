@@ -42,7 +42,7 @@ CREATE TABLE maintenance_jobs (
   checkpoint_ref TEXT CHECK (checkpoint_ref IS NULL OR length(checkpoint_ref) > 0),
   result_ref TEXT CHECK (result_ref IS NULL OR length(result_ref) > 0),
   PRIMARY KEY(task_id, unit_id, attempt),
-  CHECK (state = 'intended' OR run_id IS NOT NULL)
+  CHECK (state IN ('intended','cancelled') OR run_id IS NOT NULL)
 ) STRICT;
 CREATE TRIGGER maintenance_job_identity_stable BEFORE UPDATE OF task_id, task_revision, unit_id, attempt, kind, input_basis ON maintenance_jobs
 BEGIN SELECT RAISE(ABORT, 'Job identity is immutable'); END;

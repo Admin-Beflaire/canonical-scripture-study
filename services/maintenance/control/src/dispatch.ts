@@ -105,12 +105,16 @@ export async function acceptReceipt(db: D1Database, value: unknown, reportedComm
   if (['succeeded', 'failed', 'cancelled'].includes(job.state)) {
     return { status: 'rejected', reason: 'a different final result is already recorded' };
   }
-  // A late result for cancelled or superseded work is recorded as cancelled, never as success.
-  const state = live ? result.state : 'cancelled';
+  // Decide against the task state at the moment of writing: a late result for cancelled or
+  // superseded work is recorded as cancelled, never as success.
   const checkpoint = result.checkpoint_ref ? `${result.checkpoint_ref.artifact_id}@${result.checkpoint_ref.sha256}` : job.checkpoint_ref;
-  const update = await db.prepare(`UPDATE maintenance_jobs SET state = ?, checkpoint_ref = ?, result_ref = ?
+  const update = await db.prepare(`UPDATE maintenance_jobs SET
+      state = CASE WHEN (SELECT state FROM maintenance_tasks WHERE id = ?) IN ('cancelled','superseded') THEN 'cancelled' ELSE ? END,
+      checkpoint_ref = ?, result_ref = ?
     WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = ?`)
-    .bind(state, checkpoint, resultRef, job.task_id, job.unit_id, job.attempt, job.state).run();
+    .bind(job.task_id, result.state, checkpoint, resultRef, job.task_id, job.unit_id, job.attempt, job.state).run();
   if (!update.meta.changes) return { status: 'rejected', reason: 'the job changed while recording; resend the receipt' };
-  return { status: 'accepted', eligible: live && state === 'succeeded', state };
+  const state = (await db.prepare('SELECT state FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?')
+    .bind(job.task_id, job.unit_id, job.attempt).first<{ state: string }>())!.state;
+  return { status: 'accepted', eligible: state === 'succeeded', state };
 }

@@ -45,22 +45,40 @@ test('admission is required explicitly; an eligible admission or owner decision 
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM maintenance_tasks').get()!.n, 2);
 });
 
-test('repeating a request key returns the same task; a changed scope needs a new key and supersedes old work', async () => {
+test('repeating a request key returns the same task; a changed instruction names the task it supersedes', async () => {
   const db = localD1(); admitted(db); admitted(db, 'src-rev-3');
   const first = await requestTask(db, owner, prepare());
   assert.equal(first.status, 'created');
   const again = await requestTask(db, owner, prepare());
   assert.ok(again.status === 'existing' && first.status === 'created' && again.task.id === first.task.id);
-  const reused = await requestTask(db, owner, prepare({ extent: { books: ['EXO'] } }));
-  assert.equal(reused.status, 'conflict');
-  const other = await requestTask(db, owner, prepare({ request_key: 'unrelated', inputs: [{ kind: 'source_revision', id: 'src-rev-3' }] }));
-  const changed = await requestTask(db, owner, prepare({ request_key: 'prep-2', extent: { books: ['GEN', 'EXO'] } }));
-  assert.ok(changed.status === 'created' && first.status === 'created' && other.status === 'created');
-  assert.deepEqual(changed.superseded, [first.task.id]);
-  const report = await taskReport(db, owner, first.task.id);
-  assert.equal(report?.state, 'superseded');
-  assert.equal((await taskReport(db, owner, other.task.id))?.state, 'queued');
+  assert.equal((await requestTask(db, owner, prepare({ extent: { books: ['EXO'] } }))).status, 'conflict');
+  assert.ok(first.status === 'created');
+  // A new source revision for the same work: the old task is superseded only because it is named.
+  const unnamed = await requestTask(db, owner, prepare({ request_key: 'prep-2', inputs: [{ kind: 'source_revision', id: 'src-rev-3' }] }));
+  assert.ok(unnamed.status === 'created' && unnamed.superseded.length === 0);
+  const named = await requestTask(db, owner, prepare({ request_key: 'prep-3', inputs: [{ kind: 'source_revision', id: 'src-rev-3' }],
+    extent: { books: ['GEN', 'EXO'] }, supersedes: first.task.id }));
+  assert.ok(named.status === 'created');
+  assert.deepEqual(named.superseded, [first.task.id]);
+  assert.equal((await taskReport(db, owner, first.task.id))?.state, 'superseded');
+  assert.equal((await taskReport(db, owner, unnamed.task.id))?.state, 'queued');
+  assert.equal((await requestTask(db, owner, prepare({ request_key: 'prep-4', supersedes: first.task.id }))).status, 'needs_information');
   assert.equal(await taskReport(db, 'someone@example.invalid', first.task.id), null);
+});
+
+test('a cancel that loses the revision race changes no jobs', async () => {
+  const db = localD1(); admitted(db);
+  const created = await requestTask(db, owner, prepare());
+  assert.ok(created.status === 'created');
+  const id = created.task.id;
+  db.sqlite.exec(`INSERT INTO maintenance_jobs VALUES ('${id}',1,'u1',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`);
+  // Another change lands between this caller's read and its write.
+  const racing = { ...db, batch: async (statements: Parameters<typeof db.batch>[0]) => {
+    db.sqlite.exec(`UPDATE maintenance_tasks SET state = 'paused', revision = 2 WHERE id = '${id}'`);
+    return db.batch(statements);
+  } };
+  assert.equal((await controlTask(racing, owner, id, 1, 'cancel')).status, 'conflict');
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()!.state, 'intended');
 });
 
 test('pause, resume and cancel are revision guarded and keep truthful remaining scope', async () => {

@@ -12,6 +12,8 @@ export type DecisionRef = { kind: 'admission' | 'statement' | 'exclusion' | 'oth
 export interface TaskRequest {
   request_key: string; instruction: string; kind: TaskKind; inputs?: InputRef[]; operations?: string[];
   extent?: Record<string, unknown>; capabilities?: string[]; constraints?: Record<string, unknown>; decision_refs?: DecisionRef[];
+  /** Unfinished task this changed instruction replaces (from get_task). */
+  supersedes?: string;
 }
 export interface Scope {
   kind: TaskKind; inputs: InputRef[]; operations: string[]; extent: Record<string, unknown>;
@@ -83,7 +85,6 @@ export async function admissionGaps(db: D1Database, scope: Scope): Promise<strin
   return gaps;
 }
 
-const subjectOf = (scope: Scope) => canonicalJson([scope.kind, scope.inputs.map(ref => inputKey(ref))]);
 
 /** Create the task, or return the existing one for a repeated requester/key with the same scope. */
 export async function requestTask(db: D1Database, requester: string, request: TaskRequest): Promise<RequestResult> {
@@ -104,23 +105,27 @@ export async function requestTask(db: D1Database, requester: string, request: Ta
   const selection = await db.prepare('SELECT current_release_id FROM release_selection WHERE singleton_id = 1')
     .first<{ current_release_id: string | null }>();
   const outcome: Outcome = { completed_extent: {}, remaining_extent: scope.extent, limitations: [], selection: null };
-  // Changed inputs for the same work supersede older unfinished tasks.
-  const open = await db.prepare(`SELECT id, revision, scope_json, basis_digest FROM maintenance_tasks
-    WHERE requester = ? AND state IN ('queued','running','paused','blocked','checked')`).bind(requester)
-    .all<Pick<TaskRow, 'id' | 'revision' | 'scope_json' | 'basis_digest'>>();
-  const older = open.results.filter(row => row.basis_digest !== basis && subjectOf(JSON.parse(row.scope_json)) === subjectOf(scope));
+  // A changed instruction names the unfinished task it replaces; nothing is superseded by guesswork.
+  let replaced: Pick<TaskRow, 'id' | 'revision'> | null = null;
+  if (request.supersedes) {
+    replaced = await db.prepare(`SELECT id, revision FROM maintenance_tasks WHERE id = ? AND requester = ?
+      AND state IN ('queued','running','paused','blocked','checked')`).bind(request.supersedes, requester).first();
+    if (!replaced) return { status: 'needs_information', missing: [`supersedes: "${request.supersedes}" is not an unfinished task of this owner`] };
+  }
   const insert = db.prepare(`INSERT INTO maintenance_tasks(id, requester, request_key, instruction, scope_json, basis_digest,
       revision, state, base_release_id, outcome_json) VALUES (?, ?, ?, ?, ?, ?, 1, 'queued', ?, ?) ON CONFLICT DO NOTHING`)
     .bind(id, requester, request.request_key, request.instruction.trim(), canonicalJson(scope), basis,
       selection?.current_release_id ?? null, canonicalJson(outcome));
-  const [inserted] = await db.batch([insert, ...older.map(row => db.prepare(`UPDATE maintenance_tasks SET state = 'superseded', revision = revision + 1
-    WHERE id = ? AND revision = ?`).bind(row.id, row.revision))]);
+  const supersede = replaced ? [db.prepare(`UPDATE maintenance_tasks SET state = 'superseded', revision = revision + 1
+    WHERE id = ? AND revision = ? AND state IN ('queued','running','paused','blocked','checked')
+      AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = 1)`).bind(replaced.id, replaced.revision, id)] : [];
+  const [inserted, superseded] = await db.batch([insert, ...supersede]);
   const task = await db.prepare('SELECT * FROM maintenance_tasks WHERE id = ?').bind(id).first<TaskRow>();
   if (!task) throw new Error('Task was not recorded');
   if (task.basis_digest !== basis || task.request_key !== request.request_key) throw new Error('Task identity collision');
   // A concurrent identical request may have won the insert: report it as existing.
   if (!inserted.meta.changes) return { status: 'existing', task, superseded: [] };
-  return { status: 'created', task, superseded: older.map(row => row.id) };
+  return { status: 'created', task, superseded: replaced && superseded?.meta.changes ? [replaced.id] : [] };
 }
 
 export type ControlAction = 'pause' | 'cancel' | 'resume';
@@ -144,7 +149,8 @@ export async function controlTask(db: D1Database, requester: string, taskId: str
     const active = await db.prepare(`SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND state IN ('dispatched','running','checkpointed')`)
       .bind(task.id).all<{ run_id: string }>();
     outcome.cancel_requested_runs = active.results.map(row => row.run_id);
-    statements.push(db.prepare(`UPDATE maintenance_jobs SET state = 'cancelled' WHERE task_id = ? AND state = 'intended'`).bind(task.id));
+    statements.push(db.prepare(`UPDATE maintenance_jobs SET state = 'cancelled' WHERE task_id = ? AND state = 'intended'
+      AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND state = 'cancelled' AND revision = ?)`).bind(task.id, task.id, expectedRevision + 1));
   }
   const next: TaskState = action === 'pause' ? 'paused' : action === 'cancel' ? 'cancelled' : 'queued';
   const update = db.prepare(`UPDATE maintenance_tasks SET state = ?, revision = revision + 1, outcome_json = ?

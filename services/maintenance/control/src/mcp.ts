@@ -7,7 +7,7 @@ import { controlTask, listTasks, requestTask, taskReport, TASK_KINDS, type Contr
 export const CONTROL_INSTRUCTIONS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction.
 
 Workflow:
-1. request_task: send the owner's instruction in his own words plus the structured scope. Use a short request_key per instruction; repeating the same key with the same scope safely returns the same task. If the scope changes, use a new key (the old unfinished task is superseded).
+1. request_task: send the owner's instruction in his own words plus the structured scope. Use a short request_key per instruction; repeating the same key with the same scope safely returns the same task. If the instruction changes, use a new key and pass the old unfinished task's ID in supersedes.
 2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
@@ -35,6 +35,7 @@ const requestSchema = fromJsonSchema<TaskRequest>({
     capabilities: { type: 'array', maxItems: 32, items: id, description: 'Needed outputs, for example source_text or word_index.' },
     constraints: { type: 'object', maxProperties: 32 },
     decision_refs: { type: 'array', maxItems: 16, items: decisionRef, description: 'Owner decision references the owner supplied.' },
+    supersedes: { ...id, description: 'ID of the unfinished task this changed instruction replaces.' },
   },
 });
 const getSchema = fromJsonSchema<{ task_id?: string; cursor?: string }>({

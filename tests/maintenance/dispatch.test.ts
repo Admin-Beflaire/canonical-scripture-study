@@ -98,3 +98,13 @@ test('a run started while the task was cancelled is reported as orphaned, not di
   assert.ok(outcome.status === 'orphaned' && outcome.run_id === 'run-late');
   assert.equal((await taskReport(db, owner, task.id))?.state, 'cancelled');
 });
+
+test('a cancel that lands while a success receipt is being recorded makes it ineligible', async () => {
+  const { db, task } = await setup();
+  await dispatchUnit(db, transport(), task.id, 1, unit);
+  const racing = { ...db, prepare(sql: string) {
+    if (sql.includes('SET\n      state = CASE')) db.sqlite.exec(`UPDATE maintenance_tasks SET state = 'cancelled', revision = revision + 1 WHERE id = '${task.id}'`);
+    return db.prepare(sql);
+  } };
+  assert.deepEqual(await acceptReceipt(racing, result(task), commit, commit), { status: 'accepted', eligible: false, state: 'cancelled' });
+});

@@ -56,13 +56,3 @@ class ValidationTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-, [], {})
-        with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
-            RECORDS._check({'$ref': 'urn:css:absent:1'}, {}, '$', [], {})
-        with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
-            RECORDS._check({'$ref': 'urn:css:native-reference:1#/properties/absent'}, {}, '$', [], {})
-        self.assertIn('urn:css:native-reference:1', validation._identified())
-
-
-if __name__ == '__main__':
-    unittest.main()

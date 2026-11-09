@@ -91,6 +91,11 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
     if not text.complete and not text.limitation:
         raise RecordError('Partial native text needs a limitation')
     offsets = text.scalar_bases()
+    segments_by_unit: dict[str, list[tuple[int, int, int, str]]] = {}
+    for span in spans:
+        for ref in span['segments_json']:
+            segments_by_unit.setdefault(ref['unit_id'], []).append(
+                (ref['start'], ref['end'], span['native_order'], span['id']))
     results = []
     for group in _partitions(text, unit_ids, max_units, max_scalars):
         group_basis = OutputBasis('source_search', basis.input_revisions, basis.method_version,
@@ -113,11 +118,9 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
                 key = rules.normalize(body[start:end])
                 if not isinstance(key, str) or any(0xD800 <= ord(c) <= 0xDFFF for c in key):
                     raise RecordError('Normalizer returned invalid Unicode')
-                owners = [(segment_end - segment_start, span['native_order'], span['id'])
-                          for span in spans for ref in span['segments_json']
-                          if ref['unit_id'] == unit
-                          for segment_start, segment_end in [(ref['start'], ref['end'])]
-                          if segment_start <= start and end <= segment_end]
+                owners = [(seg_end - seg_start, span_order, span_id)
+                          for seg_start, seg_end, span_order, span_id in segments_by_unit.get(unit, ())
+                          if seg_start <= start and end <= seg_end]
                 if not owners:
                     raise RecordError(f'No retrievable span covers {unit}:{start}-{end}')
                 order = offsets[unit] + start

@@ -80,6 +80,7 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
     source_parts = tuple(source_partitions)
     if not source_parts:
         raise RecordError('Word index requires source search outputs first')
+    known_units = {unit_id for unit_id, _ in text.units}
     seen_units: set[str] = set()
     ordered_units: list[str] = []
     sources: dict[str, tuple[dict, SourcePartition]] = {}
@@ -91,7 +92,7 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
                 parent.parameters.get('tokenizer_version') != basis.parameters['tokenizer_version']):
             raise RecordError('Incompatible source-search dependency')
         units = parent.extent.get('unit_ids')
-        if not isinstance(units, list) or not units or any(u not in dict(text.units) or u in seen_units for u in units):
+        if not isinstance(units, list) or not units or any(u not in known_units or u in seen_units for u in units):
             raise RecordError('Overlapping or invalid source-search partition extent')
         seen_units.update(units)
         ordered_units.extend(units)

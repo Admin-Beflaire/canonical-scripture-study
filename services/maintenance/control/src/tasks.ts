@@ -112,20 +112,27 @@ export async function requestTask(db: D1Database, requester: string, request: Ta
       AND state IN ('queued','running','paused','blocked','checked')`).bind(request.supersedes, requester).first();
     if (!replaced) return { status: 'needs_information', missing: [`supersedes: "${request.supersedes}" is not an unfinished task of this owner`] };
   }
-  const insert = db.prepare(`INSERT INTO maintenance_tasks(id, requester, request_key, instruction, scope_json, basis_digest,
-      revision, state, base_release_id, outcome_json) VALUES (?, ?, ?, ?, ?, ?, 1, 'queued', ?, ?) ON CONFLICT DO NOTHING`)
-    .bind(id, requester, request.request_key, request.instruction.trim(), canonicalJson(scope), basis,
-      selection?.current_release_id ?? null, canonicalJson(outcome));
+  // All or nothing in one batch: the old task is superseded only if this request creates the new
+  // one, and the new one is created only if the named old task was superseded at the revision read.
   const supersede = replaced ? [db.prepare(`UPDATE maintenance_tasks SET state = 'superseded', revision = revision + 1
     WHERE id = ? AND revision = ? AND state IN ('queued','running','paused','blocked','checked')
-      AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = 1)`).bind(replaced.id, replaced.revision, id)] : [];
-  const [inserted, superseded] = await db.batch([insert, ...supersede]);
+      AND NOT EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ?)`).bind(replaced.id, replaced.revision, id)] : [];
+  const insert = db.prepare(`INSERT INTO maintenance_tasks(id, requester, request_key, instruction, scope_json, basis_digest,
+      revision, state, base_release_id, outcome_json)
+    SELECT ?, ?, ?, ?, ?, ?, 1, 'queued', ?, ? WHERE NOT EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ?)
+      AND (? IS NULL OR EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND state = 'superseded' AND revision = ?))`)
+    .bind(id, requester, request.request_key, request.instruction.trim(), canonicalJson(scope), basis,
+      selection?.current_release_id ?? null, canonicalJson(outcome), id,
+      replaced?.id ?? null, replaced?.id ?? null, replaced ? replaced.revision + 1 : null);
+  const results = await db.batch([...supersede, insert]);
+  const inserted = results[results.length - 1];
   const task = await db.prepare('SELECT * FROM maintenance_tasks WHERE id = ?').bind(id).first<TaskRow>();
-  if (!task) throw new Error('Task was not recorded');
+  if (!task) return { status: 'conflict', task_id: replaced!.id,
+    message: 'The task to supersede changed before the new task was recorded. Read it again; nothing was changed.' };
   if (task.basis_digest !== basis || task.request_key !== request.request_key) throw new Error('Task identity collision');
   // A concurrent identical request may have won the insert: report it as existing.
   if (!inserted.meta.changes) return { status: 'existing', task, superseded: [] };
-  return { status: 'created', task, superseded: replaced && superseded?.meta.changes ? [replaced.id] : [] };
+  return { status: 'created', task, superseded: replaced ? [replaced.id] : [] };
 }
 
 export type ControlAction = 'pause' | 'cancel' | 'resume';

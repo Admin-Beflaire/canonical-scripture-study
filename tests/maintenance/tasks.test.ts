@@ -66,6 +66,33 @@ test('repeating a request key returns the same task; a changed instruction names
   assert.equal(await taskReport(db, 'someone@example.invalid', first.task.id), null);
 });
 
+test('superseding is all or nothing under interleaving', async () => {
+  const db = localD1(); admitted(db);
+  const old = await requestTask(db, owner, prepare());
+  assert.ok(old.status === 'created');
+  const replacement = prepare({ request_key: 'prep-2', extent: { books: ['EXO'] }, supersedes: old.task.id });
+  // The named task changes after it was read: nothing is created and it stays open.
+  const changing = { ...db, batch: async (statements: Parameters<typeof db.batch>[0]) => {
+    db.sqlite.exec(`UPDATE maintenance_tasks SET state = 'paused', revision = 2 WHERE id = '${old.task.id}'`);
+    return db.batch(statements);
+  } };
+  assert.equal((await requestTask(changing, owner, replacement)).status, 'conflict');
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM maintenance_tasks').get()!.n, 1);
+  assert.equal((await taskReport(db, owner, old.task.id))?.state, 'paused');
+  // An identical concurrent request inserts first: this one supersedes nothing again.
+  const first = await requestTask(db, owner, replacement);
+  assert.ok(first.status === 'created' && first.superseded[0] === old.task.id);
+  const raced = { ...db, prepare(sql: string) {
+    if (sql.startsWith('SELECT * FROM maintenance_tasks WHERE requester')) return { ...db.prepare(sql), bind: () => ({ first: async () => null }) } as never;
+    return db.prepare(sql);
+  } };
+  const other = await requestTask(db, owner, prepare({ request_key: 'prep-3', extent: { books: ['LEV'] } }));
+  assert.ok(other.status === 'created');
+  const again = await requestTask(raced, owner, { ...replacement, supersedes: other.task.id });
+  assert.equal(again.status, 'existing');
+  assert.equal((await taskReport(db, owner, other.task.id))?.state, 'queued');
+});
+
 test('a cancel that loses the revision race changes no jobs', async () => {
   const db = localD1(); admitted(db);
   const created = await requestTask(db, owner, prepare());

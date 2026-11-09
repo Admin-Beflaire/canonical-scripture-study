@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPair, exportJWK, SignJWT, createLocalJWKSet } from 'jose';
 import { fromJsonSchema } from '@modelcontextprotocol/server';
-import { protectedWorker, platformServer, protocolHandler, LEGACY_VERSIONS, type AccessSettings } from '../../packages/shared/src/platform.ts';
+import { protectedWorker, platformServer, protocolHandler, prepareProtocolValidators, LEGACY_VERSIONS, type AccessSettings } from '../../packages/shared/src/platform.ts';
 
 const issuer = 'https://test-team.cloudflareaccess.com';
 const pair = await generateKeyPair('RS256');
@@ -109,5 +109,14 @@ test('modern enhancement is separate from the enabled legacy fallback', async ()
   }
   const legacy = await rpc(handler,{jsonrpc:'2.0',id:2,method:'initialize',params:{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'fixture',version:'1'}}});
   assert.equal(legacy.json.result.protocolVersion,'2025-03-26');
+  await handler.close();
+});
+
+test('protocol validators are prepared at module load without side effects', async () => {
+  // Already run once on import; repeating it must be harmless and change no handler behaviour.
+  prepareProtocolValidators();
+  const handler = fixture(false);
+  const { json } = await rpc(handler, {jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:LEGACY_VERSIONS[0],capabilities:{},clientInfo:{name:'fixture',version:'1'}}});
+  assert.equal(json.result.protocolVersion, LEGACY_VERSIONS[0]);
   await handler.close();
 });

@@ -46,7 +46,7 @@ class ValidationTest(unittest.TestCase):
 
     def test_unknown_keywords_and_references_fail_closed(self):
         with self.assertRaisesRegex(RuntimeError, 'Unsupported schema keyword'):
-            RECORDS._check({'contains': {'type': 'string'}}, [], '
+            RECORDS._check({'contains': {'type': 'string'}}, [], 'root', [], {})
         with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
             RECORDS._check({'$ref': 'urn:css:absent:1'}, {}, '$', [], {})
         with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):

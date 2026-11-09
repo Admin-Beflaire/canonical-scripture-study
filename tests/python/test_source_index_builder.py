@@ -104,6 +104,20 @@ class SourceIndexStageOne(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'invalid scalar offsets'):
             self.build(rules=replace(RULES,tokenize=lambda _: [(0,1_000_000)]))
 
+    def test_reject_indexed_segment_outside_native_text(self):
+        class CorruptEvidence:
+            def output_ids(inner):
+                return self.evidence.output_ids()
+
+            def rows(inner, kind):
+                rows = self.evidence.rows(kind)
+                if kind == 'native_span':
+                    rows[0]['segments_json'][0]['end'] = 10_000
+                return rows
+
+        with self.assertRaisesRegex(RecordError, 'outside its native unit'):
+            self.build(evidence=CorruptEvidence())
+
     def test_partial_state_is_not_lost(self):
         partial = NativeText(COORDINATES,self.text.units, complete=False,limitation='Synthetic source incomplete')
         from css_preparation.prepare.evidence import build_evidence

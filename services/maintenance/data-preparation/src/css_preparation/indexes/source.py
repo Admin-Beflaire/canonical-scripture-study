@@ -94,6 +94,9 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
     segments_by_unit: dict[str, list[tuple[int, int, int, str]]] = {}
     for span in spans:
         for ref in span['segments_json']:
+            if (ref['unit_id'] in covered and
+                    not 0 <= ref['start'] <= ref['end'] <= len(text.unit(ref['unit_id']))):
+                raise RecordError('Span segment is outside its native unit')
             segments_by_unit.setdefault(ref['unit_id'], []).append(
                 (ref['start'], ref['end'], span['native_order'], span['id']))
     results = []

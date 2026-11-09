@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping
 
-from ..prepare.evidence import NativeText, OutputBasis
+from ..prepare.evidence import NativeText, OutputBasis, canonical_digest
 from ..prepare.records import RecordError
 from .source import SourcePartition, MAX_SAFE_ORDER
 
@@ -193,8 +193,18 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
         extent = {**part.basis.extent, 'analysis_occurrence_ids': {
             rev: sorted(expected_by_revision[rev] & part_ids, key=lambda x: x.encode('utf-8'))
             for rev in admitted_analysis_revisions}}
+        # A later-arriving or corrected analysis under the same declared revision
+        # must never collide with the partial/older output's immutable identity.
+        received = [
+            {'occurrence_id': item['occurrence_id'], 'form_id': by_occurrence[item['occurrence_id']].form_id,
+             'form': by_occurrence[item['occurrence_id']].form,
+             'alternatives': [a.row() for a in sorted(by_occurrence[item['occurrence_id']].alternatives,
+                 key=lambda a: (a.analysis_revision_id.encode('utf-8'), a.analysis_id.encode('utf-8')))]}
+            for item in part.postings if item['occurrence_id'] in by_occurrence
+        ]
         word_basis = OutputBasis('word_index', basis.input_revisions, basis.method_version,
-                                 {**basis.parameters, 'partition_max_postings': max_postings},
+                                 {**basis.parameters, 'partition_max_postings': max_postings,
+                                  'received_analysis_sha256': canonical_digest(received)},
                                  extent, tuple(dict.fromkeys((*basis.dependencies, part.basis.output_id))))
         results.append(WordPartition(word_basis, tuple(rows), state, limitation if state == 'partial' else None))
     return tuple(results)

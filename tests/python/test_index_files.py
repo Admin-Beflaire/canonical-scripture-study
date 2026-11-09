@@ -81,6 +81,12 @@ class IndexFilesStageThree(unittest.TestCase):
         self.assertEqual([row['occurrence_id'] for row in decoded],
                          [row['occurrence_id'] for row in rows])
 
+    def test_manifest_schema_rejects_duplicate_coverage_capabilities(self):
+        built = build_index_files(self.parts[0])
+        invalid = {**built.manifest, 'coverage': {
+            **built.manifest['coverage'], 'capabilities': ['word_exact', 'word_exact']}}
+        self.assertTrue(_MANIFEST.document_errors(invalid))
+
     def test_reject_unrepresentable_lines_invalid_order_and_identity(self):
         base = self.parts[0]
         sample = base.postings[0]

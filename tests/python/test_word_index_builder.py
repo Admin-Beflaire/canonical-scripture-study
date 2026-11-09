@@ -109,6 +109,18 @@ class WordIndexStageTwo(unittest.TestCase):
             self.build(observations=(replace(self.observations[0],
                        alternatives=(alternatives(self.first)[0], alternatives(self.first)[0])),))
 
+    def test_later_received_analysis_changes_immutable_output_identity(self):
+        [complete] = self.build()
+        [partial] = self.build(observations=self.observations[:1])
+        self.assertNotEqual(complete.basis.output_id, partial.basis.output_id)
+        revised = replace(self.observations[0], alternatives=(
+            replace(self.observations[0].alternatives[0], basis='corrected receipt'),
+            self.observations[0].alternatives[1]))
+        [changed] = self.build(observations=(revised, self.observations[1]))
+        self.assertNotEqual(complete.basis.output_id, changed.basis.output_id)
+        self.assertEqual(complete.basis.output_id,
+                         self.build(observations=tuple(reversed(self.observations)))[0].basis.output_id)
+
     def test_dependency_basis_and_caps(self):
         [part] = self.build()
         self.assertNotEqual(part.basis.output_id, self.build(max_postings=9)[0].basis.output_id)

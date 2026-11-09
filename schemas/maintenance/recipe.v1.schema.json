@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:css:preparation-recipe:1",
+  "title": "Declarative preparation recipe",
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" },
+    "recipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recipe_version", "id", "revision", "adapter", "input_format", "parameters", "native_extent", "capabilities", "dependencies"],
+      "properties": {
+        "recipe_version": { "const": "preparation-recipe/1" },
+        "id": { "$ref": "#/$defs/id" },
+        "revision": { "$ref": "#/$defs/id" },
+        "adapter": {
+          "type": "object", "additionalProperties": false, "required": ["name", "method_version"],
+          "properties": { "name": { "$ref": "#/$defs/id" }, "method_version": { "$ref": "#/$defs/id" } }
+        },
+        "input_format": { "$ref": "#/$defs/id" },
+        "parameters": { "type": "object", "maxProperties": 32 },
+        "native_extent": { "type": "object", "maxProperties": 64 },
+        "capabilities": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/id" } },
+        "dependencies": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } }
+      }
+    }
+  }
+}

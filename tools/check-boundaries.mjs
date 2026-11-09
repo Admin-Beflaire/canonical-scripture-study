@@ -58,6 +58,9 @@ export function checkSource(root, file, source) {
     ts.forEachChild(node, visit);
   }
   visit(ast);
+  // Maintenance task state is private: Study and Shared never name its tables.
+  if ((from === "study" || from === "shared") && /\bmaintenance_(?:tasks|jobs|exclusions)\b/.test(source))
+    failures.push(`${file}: private Maintenance task state is not readable here`);
   if (ast.referencedFiles.length || ast.typeReferenceDirectives.length) failures.push(`${file}: triple-slash dependencies are not allowed`);
   return failures;
 }

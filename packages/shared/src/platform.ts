@@ -1,5 +1,25 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
-import { createMcpHandler, legacyStatelessFallback, McpServer, type McpServerFactory } from '@modelcontextprotocol/server';
+import {
+  createMcpHandler, isInitializeRequest, isJSONRPCErrorResponse, isJSONRPCNotification, isJSONRPCRequest,
+  isJSONRPCResultResponse, legacyStatelessFallback, McpServer, type McpServerFactory,
+} from '@modelcontextprotocol/server';
+
+/** The SDK's message schemas build their validators on first use, which made the
+ *  first request in every fresh isolate pay that cost (locally about 10 ms down to 6 ms).
+ *  Building them once at module load moves that work into Worker startup. Synchronous, no I/O. */
+export function prepareProtocolValidators() {
+  const messages: unknown[] = [
+    { jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: LEGACY_VERSIONS[0], capabilities: {}, clientInfo: { name: 'startup', version: '0' } } },
+    { jsonrpc: '2.0', id: 0, method: 'tools/call', params: { name: 'startup', arguments: {} } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+    { jsonrpc: '2.0', id: 0, result: {} },
+    { jsonrpc: '2.0', id: 0, error: { code: -32600, message: 'startup' } },
+  ];
+  for (const message of messages) {
+    isJSONRPCResultResponse(message); isJSONRPCErrorResponse(message);
+    isJSONRPCRequest(message); isJSONRPCNotification(message); isInitializeRequest(message);
+  }
+}
 
 /** Only authentication settings, not a duplicate of generated resource bindings. */
 export interface AccessSettings {
@@ -118,3 +138,5 @@ export function protectedWorker(role: ApplicationRole, options: {
     },
   };
 }
+
+prepareProtocolValidators();

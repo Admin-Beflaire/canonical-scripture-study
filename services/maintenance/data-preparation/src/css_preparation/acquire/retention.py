@@ -42,7 +42,8 @@ class InputRecord:
 
     def __post_init__(self):
         for value in (self.source_revision_id, self.component, self.origin):
-            if not ID.fullmatch(value):
+            # IDs become storage path segments: no empty, `.` or `..` parts.
+            if not ID.fullmatch(value) or any(part in ('', '.', '..') for part in value.split('/')):
                 raise BlockedInput(f'Unsafe identifier {value[:40]!r}')
         if not re.fullmatch(r'[0-9a-f]{64}', self.sha256) or self.byte_count < 0 or not self.upstream_basis:
             raise BlockedInput('Input needs exact bytes, digest and upstream basis')

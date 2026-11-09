@@ -41,8 +41,9 @@ class RetentionTest(unittest.TestCase):
         partial = InputRecord('src-rev-1', 'text', 'route-a', 'etag:"1"', 5, 'a' * 64, False, PROTECTED)
         with self.assertRaises(BlockedInput):
             storage_route(partial, 'x.txt')
-        with self.assertRaises(BlockedInput):
-            InputRecord('../src', 'text', 'route-a', 'etag', 5, 'a' * 64, True, PROTECTED)
+        for unsafe in ('../src', 'a/../../outside', 'a/./b', 'a//b', 'a/'):
+            with self.assertRaises(BlockedInput, msg=unsafe):
+                InputRecord(unsafe, 'text', 'route-a', 'etag', 5, 'a' * 64, True, PUBLIC)
 
     def test_reuse_needs_same_revision_and_coverage(self):
         record = self.supplied(coverage=('GEN', 'EXO'))

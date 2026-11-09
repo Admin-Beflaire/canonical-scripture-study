@@ -72,7 +72,8 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
     if state.exists() and partial.exists():
         try:
             saved = json.loads(state.read_text())
-            if not isinstance(saved, dict) or not isinstance(saved.get('basis'), str):
+            # A partial file from another URL is never continued, even with an equal ETag.
+            if not isinstance(saved, dict) or not isinstance(saved.get('basis'), str) or saved.get('url') != route.url:
                 saved = None
         except (OSError, ValueError):
             saved = None  # unusable state: start again from zero

@@ -14,6 +14,7 @@ SEEN = []
 
 class Handler(BaseHTTPRequestHandler):
     etag = '"v1"'
+    truncate = False  # next plain /file answer drops after 400 bytes
 
     def log_message(self, *args):
         pass
@@ -33,7 +34,8 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b'190\r\n' + BODY[:400] + b'\r\n')  # one chunk, then the connection drops
             self.close_connection = True
             return
-        if self.path == '/truncated':
+        if self.path == '/truncated' or (self.path == '/file' and Handler.truncate and not self.headers.get('Range')):
+            Handler.truncate = False
             self.send_response(200)
             self.send_header('Content-Length', str(len(BODY)))
             self.send_header('ETag', Handler.etag)
@@ -41,10 +43,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(BODY[:400])
             self.close_connection = True
             return
-        if self.path not in ('/file', '/big'):
+        if self.path not in ('/file', '/big', '/other'):
             self.send_error(404)
             return
-        body = BODY * 20 if self.path == '/big' else BODY
+        body = BODY * 20 if self.path == '/big' else BODY.upper().replace(b'0', b'X') if self.path == '/other' else BODY
         start = 0
         ranged = self.headers.get('Range')
         if ranged and self.headers.get('If-Range') == Handler.etag:
@@ -82,6 +84,7 @@ class TransferTest(unittest.TestCase):
         self.target = Path(self.directory.name) / 'original.bin'
         SEEN.clear()
         Handler.etag = '"v1"'
+        Handler.truncate = False
 
     def tearDown(self):
         self.directory.cleanup()
@@ -104,7 +107,8 @@ class TransferTest(unittest.TestCase):
         self.assertFalse(self.target.exists())
 
     def test_bad_saved_state_and_digest_mismatch_do_not_block_retries(self):
-        transfer(self.route('/truncated'), self.target)
+        Handler.truncate = True
+        transfer(self.route(), self.target)
         self.target.with_name('original.bin.basis').write_text('{trunc')
         self.assertTrue(transfer(self.route(), self.target).complete)
         other = Path(self.directory.name) / 'other.bin'
@@ -112,6 +116,12 @@ class TransferTest(unittest.TestCase):
             transfer(self.route(expected_sha256='0' * 64), other)
         self.assertFalse(other.with_name('other.bin.part').exists())
         self.assertTrue(transfer(self.route(), other).complete)
+
+    def test_partial_from_another_url_is_never_continued(self):
+        transfer(self.route('/truncated'), self.target)
+        result = transfer(self.route('/other'), self.target)  # same ETag, different resource
+        self.assertTrue(result.complete and not result.resumed)
+        self.assertEqual(self.target.read_bytes(), BODY.replace(b'0', b'X'))
 
     def test_https_is_required_by_default(self):
         with self.assertRaises(TransferError):
@@ -131,14 +141,16 @@ class TransferTest(unittest.TestCase):
         self.assertFalse(self.target.exists())
 
     def test_resume_only_with_the_same_basis(self):
-        partial = transfer(self.route('/truncated'), self.target)
+        Handler.truncate = True
+        partial = transfer(self.route(), self.target)
         self.assertFalse(partial.complete)
         resumed = transfer(self.route(), self.target)
         self.assertTrue(resumed.resumed and resumed.complete)
         self.assertEqual(self.target.read_bytes(), BODY)
         # The upstream changed while a partial file waited: start a distinct input from zero.
         self.target.unlink()
-        transfer(self.route('/truncated'), self.target)
+        Handler.truncate = True
+        transfer(self.route(), self.target)
         Handler.etag = '"v2"'
         fresh = transfer(self.route(), self.target)
         self.assertTrue(fresh.new_basis and not fresh.resumed and fresh.complete)

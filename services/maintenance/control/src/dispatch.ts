@@ -68,15 +68,16 @@ export async function dispatchUnit(db: D1Database, transport: WorkflowTransport,
     return { status: 'uncertain', attempt, message: 'The workflow did not confirm the dispatch. The saved intent is reconciled before any new attempt.' };
   }
   const [confirmed] = await db.batch([
-    db.prepare(`UPDATE maintenance_jobs SET run_id = ?, state = 'dispatched' WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = 'intended'`)
-      .bind(runId, task.id, unit.unit_id, attempt),
+    db.prepare(`UPDATE maintenance_jobs SET run_id = ?, state = 'dispatched' WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = 'intended'
+      AND (SELECT state FROM maintenance_tasks WHERE id = ?) NOT IN ('cancelled','superseded')`)
+      .bind(runId, task.id, unit.unit_id, attempt, task.id),
     db.prepare(`UPDATE maintenance_tasks SET state = 'running', revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'queued'`)
       .bind(task.id, task.revision),
   ]);
-  // The task was cancelled or changed while the workflow was starting: the run exists but
+  // The task was cancelled or superseded while the workflow was starting: the run exists but
   // has no job record, so the caller must ask the executor to cancel it.
   if (!confirmed.meta.changes)
-    return { status: 'orphaned', run_id: runId, attempt, message: 'The task changed during dispatch. Ask the executor to cancel this run.' };
+    return { status: 'orphaned', run_id: runId, attempt, message: 'The task was cancelled or superseded during dispatch. Ask the executor to cancel this run.' };
   return { status: 'dispatched', run_id: runId, attempt };
 }
 

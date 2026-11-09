@@ -108,3 +108,16 @@ test('a cancel that lands while a success receipt is being recorded makes it ine
   } };
   assert.deepEqual(await acceptReceipt(racing, result(task), commit, commit), { status: 'accepted', eligible: false, state: 'cancelled' });
 });
+
+test('a run started while the task was superseded is reported as orphaned', async () => {
+  const { db, task } = await setup();
+  const racing: WorkflowTransport = { async dispatch() {
+    const next = await requestTask(db, owner, { request_key: 'p2', instruction: 'Prepare Genesis and Exodus', kind: 'prepare',
+      inputs: [{ kind: 'acquisition', id: 'route-1' }], extent: { books: ['GEN', 'EXO'] }, capabilities: ['source_text'],
+      decision_refs: [{ kind: 'admission', ref: 'owner-decision:1', subject: 'route-1' }], supersedes: task.id });
+    assert.equal(next.status, 'created');
+    return { run_id: 'run-late' };
+  } };
+  assert.equal((await dispatchUnit(db, racing, task.id, 1, unit)).status, 'orphaned');
+  assert.equal((await taskReport(db, owner, task.id))?.state, 'superseded');
+});

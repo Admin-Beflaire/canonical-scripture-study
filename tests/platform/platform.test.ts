@@ -120,3 +120,14 @@ test('protocol validators are prepared at module load without side effects', asy
   assert.equal(json.result.protocolVersion, LEGACY_VERSIONS[0]);
   await handler.close();
 });
+
+test('the owning application receives only the verified identity', async () => {
+  const seen: unknown[] = [];
+  const worker = protectedWorker('control', { keys, host: async (_request, _settings, identity) => { seen.push(identity); return new Response('ok'); } });
+  assert.equal((await worker.fetch(request('/mcp', await sign('human-control')), settings)).status, 200);
+  const deployment = await new SignJWT({ common_name: settings.DEPLOYMENT_CLIENT_ID, email: 'spoof@example.invalid' }).setProtectedHeader({ alg: 'RS256', kid: 'test' })
+    .setIssuer(issuer).setAudience('human-control').setIssuedAt().setExpirationTime('5m').sign(pair.privateKey);
+  const rpc = new Request('https://control.example.invalid/mcp', { method: 'POST', headers: { 'Cf-Access-Jwt-Assertion': deployment }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+  assert.equal((await worker.fetch(rpc, settings)).status, 200);
+  assert.deepEqual(seen, [{ email: 'owner@example.invalid' }, { service: settings.DEPLOYMENT_CLIENT_ID }]);
+});

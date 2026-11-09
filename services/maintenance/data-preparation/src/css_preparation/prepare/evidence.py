@@ -259,6 +259,8 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
             'reading_kind': spec.reading_kind})
         native_order += 1
 
+    for row in navigation_rows(records.rows('native_span'), text):
+        records.add('span_segment', row)
     keys = {spec.key for spec in spec_list}
     for note in annotations:
         if note.span_key not in keys:
@@ -274,6 +276,24 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
         'method_version': basis.method_version, 'index_artifact_id': body_artifact if uses_body else None,
         'dependencies_json': sorted(basis.dependencies), 'limitation': None if text.complete else text.limitation})
     return records
+
+
+def navigation_rows(spans: Iterable[Mapping[str, Any]], text: NativeText) -> list[dict[str, Any]]:
+    """One `span_segments` row per native segment, as inclusive linear source-order intervals.
+
+    Source order counts Unicode scalars across the revision's units in native order, so
+    overlap queries work across unit boundaries. An empty segment marks its insertion point.
+    """
+    bases = text.scalar_bases()
+    rows = []
+    for span in spans:
+        for ordinal, segment in enumerate(span['segments_json']):
+            start = bases[segment['unit_id']] + segment['start']
+            end = bases[segment['unit_id']] + max(segment['end'] - 1, segment['start'])
+            rows.append({'span_id': span['id'], 'segment_ordinal': ordinal,
+                         'source_revision_id': span['source_revision_id'], 'kind': span['kind'],
+                         'start_order': start, 'end_order': end})
+    return rows
 
 
 def span_wording(span: Mapping[str, Any], payloads: Mapping[str, str], blobs: Mapping[str, bytes]) -> list[str]:

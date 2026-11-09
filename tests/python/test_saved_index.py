@@ -15,7 +15,8 @@ class SavedIndexStageFour(unittest.TestCase):
     def setUp(self):
         fixture = WordIndexStageTwo()
         fixture.setUp()
-        self.a = build_index_files(fixture.parts[0])
+        self.source_part = fixture.parts[0]
+        self.a = build_index_files(self.source_part)
         self.b = build_index_files(fixture.parts[1])
         self.word = build_index_files(fixture.build()[0])
         self.external = tuple(fixture.evidence.output_ids())
@@ -120,6 +121,46 @@ class SavedIndexStageFour(unittest.TestCase):
         altered.append(dict(altered[0]))
         with self.assertRaisesRegex(RecordError, 'Duplicate saved artifact'):
             self.check(self.a, artifacts=altered)
+
+    def test_reject_misordered_rows_even_with_recomputed_digests(self):
+        # One page, with every digest/registry/key range forged consistently.
+        from css_preparation.indexes.files import build_index_files
+        source_part = self.source_part
+        built = build_index_files(source_part, encoded_page_cap_bytes=10000)
+        original = built.records.blobs[built.postings_artifact_id]
+        lines = original.splitlines(keepends=True)
+        self.assertGreater(len(lines), 2)
+        shuffled = b''.join(reversed(lines))
+        manifest = deepcopy(built.manifest)
+        [file] = manifest['files']
+        [page] = file['pages']
+        body_sha = hashlib.sha256(shuffled).hexdigest()
+        old_posting = built.postings_artifact_id
+        new_posting = f"{source_part.basis.output_id}:postings:{body_sha[:20]}"
+        file.update(artifact_id=new_posting, sha256=body_sha)
+        page.update(sha256=body_sha, first_key=json.loads(lines[-1])['search_key'],
+                    last_key=json.loads(lines[0])['search_key'])
+        payload = json.dumps(manifest, sort_keys=True, ensure_ascii=False,
+                             separators=(',', ':')).encode('utf-8')
+        manifest_sha = hashlib.sha256(payload).hexdigest()
+        old_manifest = built.manifest_artifact_id
+        new_manifest = f"{source_part.basis.output_id}:manifest:{manifest_sha[:20]}"
+        artifacts = deepcopy(built.records.rows('artifact'))
+        for item in artifacts:
+            if item['id'] == old_posting:
+                item.update(id=new_posting, sha256=body_sha,
+                            registered_locator=f"prepared/{source_part.basis.output_id}/indexes/{body_sha}/postings.ndjson")
+            if item['id'] == old_manifest:
+                item.update(id=new_manifest, sha256=manifest_sha,
+                            byte_count=len(payload),
+                            registered_locator=f"prepared/{source_part.basis.output_id}/indexes/{manifest_sha}/manifest.json")
+        coverage = deepcopy(built.records.rows('coverage'))
+        for item in coverage:
+            item['index_artifact_id'] = new_manifest
+        blobs = {new_posting: shuffled, new_manifest: payload}
+        with self.assertRaisesRegex(RecordError, 'bytewise order'):
+            verify_saved_index(source_part.basis, built.records.rows('prepared_output')[0],
+                               artifacts, coverage, blobs, max_page_bytes=10000)
 
     def test_correction_and_removal_omit_dependents_keep_unrelated(self):
         # Part B is independent of part A; word depends on part A.

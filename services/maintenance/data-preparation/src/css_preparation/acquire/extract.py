@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
+import shutil
 import stat
 import tarfile
 import zipfile
@@ -97,7 +98,6 @@ def extract(archive: Path, destination: Path, limits: Limits = Limits()) -> list
     if any(destination.iterdir()):
         raise ExtractionError('Destination must be empty')
     root = destination.resolve()
-    written: list[Path] = []
     files: list[dict[str, object]] = []
     budget = [limits.max_total_bytes]
     try:
@@ -108,12 +108,12 @@ def extract(archive: Path, destination: Path, limits: Limits = Limits()) -> list
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
                 raise ExtractionError(f'Duplicate member {name[:60]!r}')
-            written.append(target)
             size, sha256 = _copy(source, target, limits.max_member_bytes, budget)
             files.append({'path': name, 'bytes': size, 'sha256': sha256})
-    except (ExtractionError, zipfile.BadZipFile, tarfile.TarError, OSError) as error:
-        for path in written:
-            path.unlink(missing_ok=True)
+    except Exception as error:  # corrupt streams raise many types (zlib, EOF, lzma, unsupported method)
+        # The destination was empty at the start: remove everything written, directories included.
+        for path in root.iterdir():
+            shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink(missing_ok=True)
         if isinstance(error, ExtractionError):
             raise
         raise ExtractionError('Archive could not be read safely') from None

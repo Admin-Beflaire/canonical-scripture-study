@@ -26,6 +26,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._redirect(f'http://localhost:{self.server.server_port}/file')
         if self.path == '/redirect-userinfo':
             return self._redirect(f'http://user:pw@127.0.0.1:{self.server.server_port}/file')
+        if self.path == '/chunked-drop':
+            self.send_response(200)
+            self.send_header('Transfer-Encoding', 'chunked')
+            self.end_headers()
+            self.wfile.write(b'190\r\n' + BODY[:400] + b'\r\n')  # one chunk, then the connection drops
+            self.close_connection = True
+            return
         if self.path == '/truncated':
             self.send_response(200)
             self.send_header('Content-Length', str(len(BODY)))
@@ -90,6 +97,21 @@ class TransferTest(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), BODY)
         with self.assertRaises(TransferError):
             transfer(self.route(expected_sha256='0' * 64), Path(self.directory.name) / 'other.bin')
+
+    def test_interrupted_transfer_of_unknown_length_is_not_complete(self):
+        result = transfer(self.route('/chunked-drop'), self.target)
+        self.assertFalse(result.complete)
+        self.assertFalse(self.target.exists())
+
+    def test_bad_saved_state_and_digest_mismatch_do_not_block_retries(self):
+        transfer(self.route('/truncated'), self.target)
+        self.target.with_name('original.bin.basis').write_text('{trunc')
+        self.assertTrue(transfer(self.route(), self.target).complete)
+        other = Path(self.directory.name) / 'other.bin'
+        with self.assertRaises(TransferError):
+            transfer(self.route(expected_sha256='0' * 64), other)
+        self.assertFalse(other.with_name('other.bin.part').exists())
+        self.assertTrue(transfer(self.route(), other).complete)
 
     def test_https_is_required_by_default(self):
         with self.assertRaises(TransferError):

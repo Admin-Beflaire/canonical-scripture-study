@@ -52,12 +52,12 @@ class ExtractTest(unittest.TestCase):
     def test_hostile_zip_members_are_refused_and_nothing_is_kept(self):
         link = zipfile.ZipInfo('link')
         link.external_attr = (stat.S_IFLNK | 0o777) << 16
-        for members in ([('../escape.txt', 'x')], [('/abs.txt', 'x')], [('C:/x.txt', 'x')], [('a\\b.txt', 'x')],
+        for members in ([('nested/dir/ok.txt', 'fine'), ('../escape.txt', 'x')], [('/abs.txt', 'x')], [('C:/x.txt', 'x')], [('a\\b.txt', 'x')],
                         [(link, 'target')], [('ok.txt', 'fine'), ('a/../../x', 'x')]):
             target = self.out()
             with self.assertRaises(ExtractionError, msg=str(members)):
                 extract(self.zip(members, name=f'z{len(list(self.root.iterdir()))}.zip'), target)
-            self.assertEqual([p for p in target.rglob('*') if p.is_file()], [])
+            self.assertEqual(list(target.iterdir()), [])
 
     def test_limits_are_counted_on_actual_bytes(self):
         bomb = self.zip([('zeros.bin', b'\0' * 2_000_000)])
@@ -93,6 +93,17 @@ class ExtractTest(unittest.TestCase):
         for index, add in enumerate((symlink, hardlink, device, traversal)):
             with self.assertRaises(ExtractionError):
                 extract(self.tar(add, f't{index}.tar'), self.out())
+
+    def test_corrupt_stream_is_an_extraction_error_and_cleans_up(self):
+        path = self.zip([('a/ok.txt', 'fine'), ('b/data.txt', 'x' * 5000)], 'corrupt.zip')
+        raw = bytearray(path.read_bytes())
+        start = raw.find(b'PK\x03\x04', 10) + 60  # inside the second member's compressed data
+        raw[start:start + 20] = b'\xff' * 20
+        path.write_bytes(bytes(raw))
+        target = self.out()
+        with self.assertRaises(ExtractionError):
+            extract(path, target, Limits(max_ratio=10_000))
+        self.assertEqual(list(target.iterdir()), [])
 
     def test_non_archive_and_non_empty_destination(self):
         plain = self.root / 'plain.txt'

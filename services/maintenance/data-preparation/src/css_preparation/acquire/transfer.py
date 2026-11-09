@@ -68,7 +68,14 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
     _check_url(route, route.url)
     destination = Path(destination)
     partial, state = destination.with_name(destination.name + '.part'), destination.with_name(destination.name + '.basis')
-    saved = json.loads(state.read_text()) if state.exists() and partial.exists() else None
+    saved = None
+    if state.exists() and partial.exists():
+        try:
+            saved = json.loads(state.read_text())
+            if not isinstance(saved, dict) or not isinstance(saved.get('basis'), str):
+                saved = None
+        except (OSError, ValueError):
+            saved = None  # unusable state: start again from zero
     offset = partial.stat().st_size if saved else 0
 
     request = urllib.request.Request(route.url, headers={'Accept-Encoding': 'identity'})
@@ -108,13 +115,14 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
         if not resumed:
             offset = 0
         state.write_text(json.dumps({'basis': basis, 'url': route.url}))
-        size = offset
+        size, interrupted = offset, False
         with partial.open('ab' if resumed else 'wb') as handle:
             while True:
                 try:
                     chunk = response.read(CHUNK)
                 except (http.client.IncompleteRead, OSError):
-                    break  # keep the partial bytes; a later run resumes with the same basis
+                    interrupted = True  # keep the partial bytes; a later run resumes with the same basis
+                    break
                 if not chunk:
                     break
                 size += len(chunk)
@@ -124,7 +132,7 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
                     state.unlink(missing_ok=True)
                     raise TransferError(f'{route.id}: larger than the declared limit')
                 handle.write(chunk)
-    complete = total is None or size == total
+    complete = not interrupted and (total is None or size == total)
     digest = hashlib.sha256()
     with partial.open('rb') as handle:
         while chunk := handle.read(CHUNK):
@@ -133,6 +141,8 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
     if not complete:
         return TransferResult(partial, size, sha256, basis, False, resumed, new_basis)
     if route.expected_sha256 and sha256 != route.expected_sha256:
+        partial.unlink(missing_ok=True)
+        state.unlink(missing_ok=True)
         raise TransferError(f'{route.id}: bytes differ from the expected revision')
     partial.replace(destination)
     state.unlink(missing_ok=True)

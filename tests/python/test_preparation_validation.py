@@ -46,7 +46,17 @@ class ValidationTest(unittest.TestCase):
 
     def test_unknown_keywords_and_references_fail_closed(self):
         with self.assertRaisesRegex(RuntimeError, 'Unsupported schema keyword'):
-            RECORDS._check({'uniqueItems': True}, [], '$', [], {})
+            RECORDS._check({'contains': {'type': 'string'}}, [], '
+        with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
+            RECORDS._check({'$ref': 'urn:css:absent:1'}, {}, '$', [], {})
+        with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
+            RECORDS._check({'$ref': 'urn:css:native-reference:1#/properties/absent'}, {}, '$', [], {})
+        self.assertIn('urn:css:native-reference:1', validation._identified())
+
+
+if __name__ == '__main__':
+    unittest.main()
+, [], {})
         with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):
             RECORDS._check({'$ref': 'urn:css:absent:1'}, {}, '$', [], {})
         with self.assertRaisesRegex(RuntimeError, 'Unknown schema reference'):

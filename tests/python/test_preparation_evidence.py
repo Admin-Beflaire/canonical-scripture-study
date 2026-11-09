@@ -7,6 +7,7 @@ import unittest
 
 from css_shared import extract_scalar_segments
 from css_preparation.prepare.evidence import (NativeText, SpanSpec, build_evidence, reusable, span_wording)
+from css_preparation.prepare.packages import holdings
 from css_preparation.prepare.records import RecordError, RecordSet, decoded
 
 from preparation_fixture import COORDINATES, DECOMPOSED, basis, database, evidence_a, identity, save, spans_a, text_a
@@ -89,6 +90,38 @@ class EvidenceTest(unittest.TestCase):
                         replace(basis(source), extent={'unit_ids': ['1.1']})):
             self.assertFalse(reusable(saved, changed))
             self.assertNotEqual(changed.output_id, saved['id'])
+
+    def test_coordinate_version_is_part_of_the_output_identity(self):
+        source = identity('a')
+        other = replace(basis(source), extent={**basis(source).extent, 'coordinate_version': 'synthetic:bytes/1'})
+        self.assertNotEqual(other.output_id, basis(source).output_id)
+        self.assertFalse(reusable(self.saved('prepared_outputs')[0], other))
+        with self.assertRaisesRegex(RecordError, 'coordinate version'):
+            build_evidence(source, text_a(), spans_a(), other, d1_body_max_bytes=24)
+        with self.assertRaisesRegex(RecordError, 'coordinate version'):
+            build_evidence(source, text_a(), spans_a(), replace(basis(source), extent={'unit_ids': ['1.1']}),
+                           d1_body_max_bytes=24)
+
+    def test_coverage_claims_only_units_whose_wording_a_span_exposes(self):
+        source = identity('a')
+        cases = {
+            'unspanned': [replace(s, parent_key=None) for s in spans_a() if s.key not in ('chapter-1', 'v1.3')],
+            'half': [replace(s, parent_key=None) for s in spans_a() if s.key not in ('chapter-1', 'v1.3')]
+                    + [SpanSpec('half', 'verse', '1:3a', (('1.3', 0, 10),), 'transcribed', {})],
+            'gap-only': [SpanSpec('gap', 'gap', 'gap', (('1.1', 0, 0),), 'gap', {})],
+        }
+        expected = {'unspanned': ('partial', ['1.1', '1.2', '2.1']), 'half': ('partial', ['1.1', '1.2', '2.1']),
+                    'gap-only': ('missing', [])}
+        for name, spans in cases.items():
+            [row] = build_evidence(source, text_a(), spans, basis(source), d1_body_max_bytes=24).rows('coverage')
+            self.assertEqual((row['state'], row['native_extent_json']['unit_ids']), expected[name], name)
+            self.assertIn('1.3', row['limitation'], name)
+        records = build_evidence(source, text_a(), cases['unspanned'], basis(source), d1_body_max_bytes=24)
+        held = holdings(records.rows('source_node'), records.rows('coverage'))
+        self.assertEqual(held[source.revision.id].unit_ids, {'1.1', '1.2', '2.1'})
+        partial = NativeText(COORDINATES, text_a().units, complete=False, limitation='Synthetic: chapter 3 not supplied')
+        [row] = build_evidence(source, partial, cases['unspanned'], basis(source), d1_body_max_bytes=24).rows('coverage')
+        self.assertTrue(row['limitation'].startswith('Synthetic: chapter 3 not supplied; 1 supplied unit'))
 
     def test_shared_identities_are_saved_once_and_conflicts_fail(self):
         source = identity('a')

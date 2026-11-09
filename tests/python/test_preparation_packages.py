@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 
 from css_preparation.prepare.evidence import NativeText, OutputBasis, build_evidence, span_wording
-from css_preparation.prepare.literary import mapping_relationships, span_index
+from css_preparation.prepare.literary import mapping_relationships
 from css_preparation.prepare.packages import (PackageSpec, StatementError, dependencies_of, holdings,
                                               incorporate_statement, rebuild_plan, refresh_packages)
 from css_preparation.prepare.records import RecordError, RecordSet, decoded
@@ -53,12 +53,11 @@ class FlowTest(unittest.TestCase):
         return decoded(self.db.execute(f'SELECT * FROM {table} {where}', params).fetchall())
 
     def build_mapping(self, dependencies, items=None):
-        index = span_index(self.rows('native_spans', 'WHERE output_id IN (%s)' % ','.join('?' * len(dependencies)),
-                                     dependencies))
+        spans = self.rows('native_spans', 'WHERE output_id IN (%s)' % ','.join('?' * len(dependencies)), dependencies)
         output = OutputBasis('versification_mapping', ('synthetic:map:revision-1',), 'synthetic:mapping/1', {}, {},
                              tuple(dependencies))
-        return mapping_relationships(items if items is not None else mappings(), index, output,
-                                     provider='Synthetic mapping table')
+        return mapping_relationships(items if items is not None else mappings(), spans, output,
+                                     provider='Synthetic mapping table', endpoint_kind='verse')
 
     def build_packages(self, current=None):
         current = current or self.a.output_ids() + self.b.output_ids()
@@ -123,7 +122,8 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM native_spans WHERE output_id=?', (a_output,)).fetchone()[0],
                          len(spans_a()))
         current = new_a.output_ids() + [b_output]
-        items = [dict(item, **{'from': {**item['from'], 'source_revision_id': source.revision.id}}) for item in mappings()]
+        items = [dict(item, **{'from': {**item['from'], 'source_revision_id': source.revision.id}})
+                 if item['from']['source_revision_id'] == 'synthetic:a:revision-1' else item for item in mappings()]
         new_mapping = self.build_mapping(current, items)
         save(new_mapping, self.db)
         new_packages, report = self.build_packages(current)

@@ -32,9 +32,11 @@ Every span gets `span_segments` rows: inclusive intervals in linear source order
 (Unicode scalars across the revision's units in native order).
 
 Output IDs derive from the complete reuse basis (inputs, method, parameters,
-extent, dependencies); reuse needs the whole basis to match. Mappings link spans
-only through admitted mapping rows, by exact native reference, never by verse
-number. Packages hold current source pointers only; a reference to a source that
+extent including the coordinate version, dependencies); reuse needs the whole
+basis to match. Source-context coverage claims only units whose whole wording a
+non-gap span exposes; anything else is reported as partial or missing. Mappings
+link spans of one stated kind (for example verses) only through admitted mapping
+rows, by exact native reference, never by verse number. Packages hold current source pointers only; a reference to a source that
 is no longer held is dropped and reported, and a package with no held source is
 omitted. Only the instructed owner-approved statement version is incorporated.
 

@@ -211,6 +211,9 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
     revision = source.revision.id
     if basis.input_revisions[:1] != (revision,):
         raise RecordError('The output basis must name this source revision first')
+    if basis.extent.get('coordinate_version') != text.coordinate_version:
+        # Coordinates are part of the reuse basis: other coordinates are never the same output.
+        raise RecordError('The output extent must record the native coordinate version')
     if d1_body_max_bytes < 0:
         raise RecordError('Body size limit must not be negative')
     records = RecordSet()
@@ -225,6 +228,7 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
     byte_bases = text.byte_bases()
     uses_body = False
     native_order = 0
+    reachable: dict[str, list[tuple[int, int]]] = {}
     spec_list = _ordered(spans)
     for spec in spec_list:
         if spec.reading_kind not in READING_KINDS:
@@ -237,15 +241,18 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                 raise RecordError(f'Gap span {spec.key} must not carry wording')
         elif not any(encoded):
             raise RecordError(f'Span {spec.key} has no wording; mark a missing reading as a gap')
-        elif len(encoded) == 1 and len(encoded[0]) <= d1_body_max_bytes:
-            content_id = hashlib.sha256(encoded[0]).hexdigest()
-            records.add('text_payload', {'content_id': content_id, 'exact_text': pieces[0]})
         else:
-            uses_body = True
-            for ordinal, ((unit_id, start, _), data) in enumerate(zip(spec.segments, encoded)):
-                offset = byte_bases[unit_id] + len(text.unit(unit_id)[:start].encode('utf-8'))
-                ranges.append({'segment_ordinal': ordinal, 'artifact_id': body_artifact, 'byte_offset': offset,
-                               'byte_length': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+            for unit_id, start, end in spec.segments:
+                reachable.setdefault(unit_id, []).append((start, end))
+            if len(encoded) == 1 and len(encoded[0]) <= d1_body_max_bytes:
+                content_id = hashlib.sha256(encoded[0]).hexdigest()
+                records.add('text_payload', {'content_id': content_id, 'exact_text': pieces[0]})
+            else:
+                uses_body = True
+                for ordinal, ((unit_id, start, _), data) in enumerate(zip(spec.segments, encoded)):
+                    offset = byte_bases[unit_id] + len(text.unit(unit_id)[:start].encode('utf-8'))
+                    ranges.append({'segment_ordinal': ordinal, 'artifact_id': body_artifact, 'byte_offset': offset,
+                                   'byte_length': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
         if uses_body and ranges and not any(row['id'] == body_artifact for row in records.rows('artifact')):
             records.add('artifact', {'id': body_artifact, 'source_revision_id': revision, 'output_id': output_id,
                                      'sha256': body_digest, 'byte_count': len(body_bytes), 'format': 'text/utf-8',
@@ -271,13 +278,28 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                                    'source_revision_id': revision, 'span_id': span_id(output_id, note.span_key),
                                    'kind': note.kind, 'provider': note.provider, 'basis_json': dict(note.basis),
                                    'details_json': dict(note.details)})
+    covered = [unit_id for unit_id, body in text.units if _fully_reached(len(body), reachable.get(unit_id, []))]
+    unreached = [unit_id for unit_id, _ in text.units if unit_id not in covered]
+    limitations = ([text.limitation] if not text.complete else []) + (
+        [f'{len(unreached)} supplied unit(s) not retrievable through any span: ' + ', '.join(unreached[:10])
+         + (' …' if len(unreached) > 10 else '')] if unreached else [])
+    state = 'missing' if not covered else 'partial' if limitations else 'available'
     records.add('coverage', {
-        'output_id': output_id, 'source_revision_id': revision,
-        'native_extent_json': {'unit_ids': [unit_id for unit_id, _ in text.units]},
-        'capability': 'source_context', 'state': 'available' if text.complete else 'partial',
+        'output_id': output_id, 'source_revision_id': revision, 'native_extent_json': {'unit_ids': covered},
+        'capability': 'source_context', 'state': state,
         'method_version': basis.method_version, 'index_artifact_id': body_artifact if uses_body else None,
-        'dependencies_json': sorted(basis.dependencies), 'limitation': None if text.complete else text.limitation})
+        'dependencies_json': sorted(basis.dependencies), 'limitation': '; '.join(limitations) or None})
     return records
+
+
+def _fully_reached(length: int, intervals: list[tuple[int, int]]) -> bool:
+    """Coverage claims a unit only when non-gap spans expose every scalar of its wording."""
+    position = 0
+    for start, end in sorted(intervals):
+        if start > position:
+            return False
+        position = max(position, end)
+    return position >= length
 
 
 def navigation_rows(spans: Iterable[Mapping[str, Any]], text: NativeText) -> list[dict[str, Any]]:

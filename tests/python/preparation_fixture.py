@@ -62,7 +62,7 @@ def spans_a():
 
 def basis(source, *, kind='evidence', parameters=None, dependencies=()):
     return OutputBasis(kind, (source.revision.id,), 'synthetic:native-text/1', parameters or {'d1_body_max_bytes': 24},
-                       {'unit_ids': ['1.1', '1.2', '1.3', '2.1']}, tuple(dependencies))
+                       {'coordinate_version': COORDINATES, 'unit_ids': ['1.1', '1.2', '1.3', '2.1']}, tuple(dependencies))
 
 
 def evidence_a(**changes):
@@ -85,7 +85,7 @@ def evidence_b():
     spans = [SpanSpec(f'v{unit}', 'verse', unit.replace('.', ':'), ((unit, 0, len(body)),), 'transcribed',
                       {'method': 'synthetic structure'}) for unit, body in text_b().units]
     output = OutputBasis('evidence', (source.revision.id,), 'synthetic:native-text/1', {'d1_body_max_bytes': 24},
-                         {'unit_ids': [unit for unit, _ in text_b().units]})
+                         {'coordinate_version': COORDINATES, 'unit_ids': [unit for unit, _ in text_b().units]})
     return build_evidence(source, text_b(), spans, output, d1_body_max_bytes=24)
 
 
@@ -102,6 +102,6 @@ def mappings():
         {'from': a('1.2', 12), 'to': [b('1.2', 9)], 'status': 'partial', 'basis': 'synthetic table row 2'},
         {'from': a('1.3', 34), 'to': [b('1.3', 9)], 'status': 'disputed', 'basis': 'synthetic table row 3'},
         {'from': a('2.1', 6), 'to': [b('1.4', 6)], 'status': 'exact', 'basis': 'synthetic table row 4'},
-        {'from': reference('a', '2.1', 6, 6), 'to': [], 'status': 'missing', 'basis': 'synthetic table row 5',
-         'gap_reason': 'Synthetic: witness b has no counterpart'},
+        {'from': b('2.1', 5), 'to': [], 'status': 'missing', 'basis': 'synthetic table row 5',
+         'gap_reason': 'Synthetic: source a has no counterpart'},
     ]

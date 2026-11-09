@@ -102,10 +102,10 @@ class LiteraryTest(unittest.TestCase):
                 literary_spans(text_a(), [unit])
 
     def mapping(self, items=None, dependencies=None):
-        index = span_index(decoded(self.db.execute('SELECT * FROM native_spans').fetchall()))
+        spans = decoded(self.db.execute('SELECT * FROM native_spans').fetchall())
         outputs = dependencies if dependencies is not None else self.a.output_ids() + self.b.output_ids()
-        return mapping_relationships(items if items is not None else mappings(), index, mapping_basis(outputs),
-                                     provider='Synthetic mapping table')
+        return mapping_relationships(items if items is not None else mappings(), spans, mapping_basis(outputs),
+                                     provider='Synthetic mapping table', endpoint_kind='verse')
 
     def test_admitted_mappings_keep_partial_disputed_and_missing_correspondence(self):
         records = self.mapping()
@@ -119,14 +119,38 @@ class LiteraryTest(unittest.TestCase):
         self.assertEqual(summary, [
             ('1:1', '1:1', 'supported', 'exact'), ('1:2', '1:2', 'supported', 'partial'),
             ('1:3', '1:3', 'disputed', 'unresolved'), ('2:1', '1:4', 'supported', 'exact'),
-            ('2:2', None, 'supported', 'missing')])
-        self.assertEqual(rows[-1]['gap_reason'], 'Synthetic: witness b has no counterpart')
+            ('2:1', None, 'supported', 'missing')])
+        self.assertEqual(rows[-1]['gap_reason'], 'Synthetic: source a has no counterpart')
+        self.assertEqual(json.loads(rows[0]['basis_json'])['endpoint_kind'], 'verse')
         self.assertEqual(json.loads(rows[0]['basis_json'])['provider'], 'Synthetic mapping table')
         # Same number, different verse: b's 2:1 is never linked to a's 2:1 without an admitted mapping.
-        [b21] = [s for s in self.spans('2:1') if s['source_revision_id'] == 'synthetic:b:revision-1']
-        self.assertEqual(self.db.execute('SELECT count(*) FROM relation_members WHERE span_id=?', (b21['id'],)).fetchone()[0], 0)
-        [coverage] = decoded(self.db.execute("SELECT * FROM coverage WHERE capability='versification_mapping'"))
-        self.assertEqual(coverage['native_extent_json'], {'unit_ids': ['1.1', '1.2', '1.3', '2.1']})
+        [a21, b21] = sorted(self.spans('2:1'), key=lambda span: span['source_revision_id'])
+        shared = self.db.execute('SELECT count(*) FROM relation_members x JOIN relation_members y '
+                                 'ON x.relationship_id=y.relationship_id WHERE x.span_id=? AND y.span_id=?',
+                                 (a21['id'], b21['id'])).fetchone()[0]
+        self.assertEqual(shared, 0)
+        coverage = {row['source_revision_id']: row['native_extent_json'] for row in
+                    decoded(self.db.execute("SELECT * FROM coverage WHERE capability='versification_mapping'"))}
+        self.assertEqual(coverage, {'synthetic:a:revision-1': {'unit_ids': ['1.1', '1.2', '1.3', '2.1']},
+                                    'synthetic:b:revision-1': {'unit_ids': ['2.1']}})
+
+    def test_a_verse_and_a_literary_unit_may_share_one_reference(self):
+        same = LiteraryUnit('one-verse-unit', 'One-verse unit', (('2.1', 0, 6),), 'Synthetic analyst', 'synthetic')
+        db = database()
+        self.addCleanup(db.close)
+        a = evidence_a(spans=spans_a() + literary_spans(text_a(), [same]))
+        save(a, db)
+        save(self.b, db)
+        spans = decoded(db.execute('SELECT * FROM native_spans').fetchall())
+        self.assertEqual((len(span_index(spans, 'verse')), len(span_index(spans, 'literary_unit'))), (9, 1))
+        records = mapping_relationships([mappings()[3]], spans, mapping_basis(a.output_ids() + self.b.output_ids()),
+                                        provider='Synthetic mapping table', endpoint_kind='verse')
+        [source] = [m for m in records.rows('relation_member') if m['role'] == 'from']
+        self.assertEqual(source['span_id'], next(s['id'] for s in spans if s['label'] == '2:1' and s['kind'] == 'verse'
+                                                 and s['source_revision_id'] == 'synthetic:a:revision-1'))
+        with self.assertRaisesRegex(RecordError, 'no prepared span'):
+            mapping_relationships([mappings()[3]], spans, mapping_basis(a.output_ids() + self.b.output_ids()),
+                                  provider='Synthetic mapping table', endpoint_kind='literary_unit')
 
     def test_composite_and_unresolved_targets(self):
         items = [{'from': mappings()[2]['from'], 'to': [mappings()[1]['to'][0], mappings()[2]['to'][0]],
@@ -150,7 +174,9 @@ class LiteraryTest(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'undeclared'):
             self.mapping(dependencies=self.a.output_ids())
         with self.assertRaisesRegex(RecordError, 'provider'):
-            mapping_relationships([], {}, mapping_basis([]), provider='')
+            mapping_relationships([], [], mapping_basis([]), provider='', endpoint_kind='verse')
+        with self.assertRaisesRegex(RecordError, 'endpoint span kind'):
+            mapping_relationships([], [], mapping_basis([]), provider='p', endpoint_kind='')
 
 
 if __name__ == '__main__':

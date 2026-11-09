@@ -80,28 +80,38 @@ def literary_spans(text: NativeText, units: Iterable[LiteraryUnit]) -> list[Span
     return specs
 
 
-def span_index(spans: Iterable[Mapping[str, Any]]) -> dict[str, tuple[str, str]]:
-    """Serialized native reference -> (span id, output id), for exact endpoint resolution."""
+def span_index(spans: Iterable[Mapping[str, Any]], kind: str) -> dict[str, tuple[str, str]]:
+    """Serialized native reference -> (span id, output id) for spans of one kind.
+
+    Spans of different kinds may share a reference (a one-verse literary unit and its verse);
+    mapping endpoints resolve within the kind the admitted mapping addresses.
+    """
     index: dict[str, tuple[str, str]] = {}
     for span in spans:
+        if span['kind'] != kind:
+            continue
         key = serialize_reference({'schema_version': 'native-reference/1',
                                    'source_revision_id': span['source_revision_id'],
                                    'coordinate_version': span['coordinate_version'], 'segments': span['segments_json']})
         found = (span['id'], span['output_id'])
         if index.setdefault(key, found) != found:
-            raise RecordError(f'Two spans share the native reference of {span["id"]}')
+            raise RecordError(f'Two {kind} spans share the native reference of {span["id"]}')
     return index
 
 
-def mapping_relationships(mappings: Iterable[Mapping[str, Any]], spans: Mapping[str, tuple[str, str]],
-                          basis: OutputBasis, *, provider: str, kind: str = 'versification_mapping') -> RecordSet:
+def mapping_relationships(mappings: Iterable[Mapping[str, Any]], spans: Iterable[Mapping[str, Any]],
+                          basis: OutputBasis, *, provider: str, endpoint_kind: str,
+                          kind: str = 'versification_mapping') -> RecordSet:
     """Attributed relationships from admitted mappings; partial, disputed and missing matches are kept.
 
-    `basis.input_revisions` starts with the admitted mapping revision; `basis.dependencies` must
-    name every output whose spans are endpoints, so changed sources rebuild their mappings.
+    Endpoints resolve among the prepared `spans` of `endpoint_kind` (for example verses) by exact
+    native reference. `basis.input_revisions` starts with the admitted mapping revision;
+    `basis.dependencies` must name every output whose spans are endpoints, so changed sources
+    rebuild their mappings.
     """
-    if not provider:
-        raise RecordError('Mappings need an attributed provider')
+    if not provider or not endpoint_kind:
+        raise RecordError('Mappings need an attributed provider and an endpoint span kind')
+    index = span_index(spans, endpoint_kind)
     records = RecordSet()
     output_id = basis.output_id
     records.add('prepared_output', basis.row())
@@ -109,7 +119,7 @@ def mapping_relationships(mappings: Iterable[Mapping[str, Any]], spans: Mapping[
     covered: dict[str, set[str]] = {}
 
     def endpoint(reference: Mapping[str, Any]) -> str:
-        found = spans.get(serialize_reference(dict(reference)))
+        found = index.get(serialize_reference(dict(reference)))
         if found is None:
             raise RecordError('Mapping endpoint has no prepared span with exactly that native reference')
         used_outputs.add(found[1])
@@ -120,7 +130,8 @@ def mapping_relationships(mappings: Iterable[Mapping[str, Any]], spans: Mapping[
         status, correspondence = _STATUS[checked['status']]
         relationship_id = f'{output_id}~{number}'
         relation_basis = {'provider': provider, 'mapping_revision': basis.input_revisions[0],
-                          'mapping_status': checked['status'], 'statement': checked['basis']}
+                          'endpoint_kind': endpoint_kind, 'mapping_status': checked['status'],
+                          'statement': checked['basis']}
         if checked.get('gap_reason'):
             relation_basis['gap_reason'] = checked['gap_reason']
         records.add('relationship', {'id': relationship_id, 'output_id': output_id, 'kind': kind,

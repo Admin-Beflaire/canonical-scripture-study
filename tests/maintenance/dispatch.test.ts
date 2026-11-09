@@ -86,3 +86,15 @@ test('paused work keeps arriving checkpoints but dispatches nothing new', async 
   const kept = await acceptReceipt(db, result(task, { state: 'checkpointed', checkpoint_ref: { artifact_id: 'ck-2', sha256: 'd'.repeat(64), byte_count: 4 } }), commit, commit);
   assert.equal(kept.status, 'accepted');
 });
+
+test('a run started while the task was cancelled is reported as orphaned, not dispatched', async () => {
+  const { db, task } = await setup();
+  const racing: WorkflowTransport = { async dispatch() {
+    assert.equal((await controlTask(db, owner, task.id, 1, 'cancel')).status, 'ok');
+    return { run_id: 'run-late' };
+  } };
+  const outcome = await dispatchUnit(db, racing, task.id, 1, unit);
+  assert.equal(outcome.status, 'orphaned');
+  assert.ok(outcome.status === 'orphaned' && outcome.run_id === 'run-late');
+  assert.equal((await taskReport(db, owner, task.id))?.state, 'cancelled');
+});

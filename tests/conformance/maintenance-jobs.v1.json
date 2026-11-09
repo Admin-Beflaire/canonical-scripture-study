@@ -604,6 +604,86 @@
     ],
     "checkpoint_ref": null,
     "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1\n",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
    }
   ],
   "job_result": [

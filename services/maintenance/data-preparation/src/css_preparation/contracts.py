@@ -64,7 +64,8 @@ def _check(schema: dict[str, Any], value: Any, path: str, errors: list[str]) -> 
             errors.append(f'{path}: too short')
         if 'maxLength' in schema and len(value) > schema['maxLength']:
             errors.append(f'{path}: too long')
-        if 'pattern' in schema and not re.search(schema['pattern'], value):
+        # Schema patterns are anchored; fullmatch also rejects a trailing newline, as JavaScript does.
+        if 'pattern' in schema and not re.fullmatch(schema['pattern'], value):
             errors.append(f'{path}: invalid format')
     if actual in ('integer', 'number') and 'minimum' in schema and value < schema['minimum']:
         errors.append(f'{path}: below minimum')

@@ -39,3 +39,9 @@ test("Python runtime homes and Data declarations cannot contain TypeScript runti
     assert.ok(checkSource(root, file, "").length);
   }
 });
+
+test("Study and Shared never name private Maintenance task tables", () => {
+  for (const file of ["services/study/src/index.ts", "packages/shared/src/index.ts"])
+    assert.ok(checkSource(root, file, 'const sql = "SELECT * FROM maintenance_tasks";').some(m => m.includes("private Maintenance")));
+  assert.deepEqual(checkSource(root, "services/maintenance/control/src/index.ts", 'const sql = "SELECT * FROM maintenance_tasks";'), []);
+});

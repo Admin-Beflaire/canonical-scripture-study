@@ -31,6 +31,8 @@ export interface AccessSettings {
   ENHANCEMENTS: boolean;
 }
 export type ApplicationRole = 'study' | 'control';
+/** Verified Access identity passed to the owning application: a person or a service token. */
+export interface AccessIdentity { email?: string; service?: string }
 export const LEGACY_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'];
 
 /** Signature and required temporal claims; no caller-controlled key URL. */
@@ -47,9 +49,10 @@ export function protocolHandler(factory: McpServerFactory, enhancements: boolean
 }
 
 /** Empty authenticated servers until owning packages supply domain operations. */
-export function platformServer(role: ApplicationRole, enhancements: boolean) {
+export function platformServer(role: ApplicationRole, enhancements: boolean, instructions?: string) {
   return new McpServer({ name: `canonical-scripture-${role}`, version: '0.1.0' }, {
     supportedProtocolVersions: enhancements ? ['2026-07-28', ...LEGACY_VERSIONS] : [...LEGACY_VERSIONS],
+    ...(instructions ? { instructions } : {}),
   });
 }
 
@@ -82,7 +85,7 @@ async function boundedRpc(request: Request): Promise<unknown> {
 /** Authenticate before invoking either host or job handler. No raw identity trust. */
 export function protectedWorker(role: ApplicationRole, options: {
   keys?: JWTVerifyGetKey;
-  host?: (request: Request, settings: AccessSettings) => Promise<Response>;
+  host?: (request: Request, settings: AccessSettings, identity: AccessIdentity) => Promise<Response>;
   job?: (request: Request, settings: AccessSettings) => Promise<Response>;
 } = {}) {
   // Cache only trusted issuer keys between requests, never request identity/state.
@@ -101,6 +104,7 @@ export function protectedWorker(role: ApplicationRole, options: {
       const audience = jobRoute ? settings.JOB_AUDIENCE : settings.HOST_AUDIENCE;
       if (!audience || (jobRoute && audience === settings.HOST_AUDIENCE)) return new Response('Unavailable', { status: 503 });
       const token = request.headers.get('Cf-Access-Jwt-Assertion');
+      let identity: AccessIdentity = {};
       if (!token || token.length > 16384) return new Response('Unauthorized', { status: 401 });
       try {
         if (!options.keys && cachedIssuer !== settings.ACCESS_ISSUER) {
@@ -110,6 +114,7 @@ export function protectedWorker(role: ApplicationRole, options: {
         }
         const claims = await verifyAccess(token, settings.ACCESS_ISSUER, audience, options.keys ?? cachedKeys);
         const service = claims.common_name;
+        identity = typeof service === 'string' ? { service } : { email: typeof claims.email === 'string' ? claims.email : undefined };
         if (jobRoute) {
           if (typeof service !== 'string' || !service.endsWith('.access') || service === settings.DEPLOYMENT_CLIENT_ID)
             return new Response('Forbidden', { status: 403 });
@@ -132,7 +137,7 @@ export function protectedWorker(role: ApplicationRole, options: {
       }
       catch { return new Response('Unauthorized', { status: 401 }); }
       if (jobRoute) return options.job ? options.job(request, settings) : new Response('Not implemented', { status: 501 });
-      if (options.host) return options.host(request, settings);
+      if (options.host) return options.host(request, settings, identity);
       const handler = protocolHandler(() => platformServer(role, settings.ENHANCEMENTS), settings.ENHANCEMENTS);
       return handler.fetch(request);
     },

@@ -1,0 +1,921 @@
+{
+ "fixture_version": "maintenance-jobs/1",
+ "valid": {
+  "job_input": [
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "quality",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "constraints": {}
+   }
+  ],
+  "job_result": [
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {
+     "books": [
+      "EXO"
+     ]
+    },
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "checkpointed",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   }
+  ]
+ },
+ "invalid": {
+  "job_input": [
+   {
+    "contract_version": "maintenance-job/2",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 0,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1.5,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "promote",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "url",
+      "id": "x"
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {},
+    "script": "rm -rf"
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "../escape",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "a",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": true,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1\n",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "kind": "prepare",
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+    "input_refs": [
+     {
+      "kind": "source_revision",
+      "id": "src-rev-1"
+     },
+     {
+      "kind": "artifact",
+      "id": "art-0",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "byte_count": 3
+     }
+    ],
+    "manifest_revision": "manifest-1",
+    "recipe_revision": "recipe-1",
+    "native_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "required_capabilities": [
+     "source_text"
+    ],
+    "dependency_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "checkpoint_ref": null,
+    "constraints": {}
+   }
+  ],
+  "job_result": [
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "promoted",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "a",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "byte_count": -1
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "x",
+      "message": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": {
+     "artifact_id": "a"
+    },
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "checkpoint_ref": {
+     "artifact_id": "art-1",
+     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "byte_count": 12
+    },
+    "quality_receipt_ref": null,
+    "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   }
+  ]
+ }
+}

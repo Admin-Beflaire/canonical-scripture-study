@@ -1,0 +1,37 @@
+{
+  "description": "Control internal job routes used by the preparation runner (GH-04). Control implements them in MC-02. Synthetic values only.",
+  "authentication": {
+    "access_application": "/internal/jobs/*",
+    "headers": ["CF-Access-Client-Id", "CF-Access-Client-Secret"],
+    "redirects": "refused"
+  },
+  "state": {
+    "method": "POST",
+    "path": "/internal/jobs/state",
+    "request": { "task_id": "task-wire-1", "unit_id": "unit-wire-1", "attempt": 1 },
+    "response_200": {
+      "task_id": "task-wire-1",
+      "task_revision": 2,
+      "task_state": "running",
+      "task_basis_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "unit_id": "unit-wire-1",
+      "attempt": 1,
+      "job_revision": 1,
+      "job_input_basis": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "run_id": "1234567890",
+      "job_state": "dispatched"
+    },
+    "response_404": "No recorded dispatch for this task, unit and attempt."
+  },
+  "result": {
+    "method": "POST",
+    "path": "/internal/jobs/result",
+    "request": { "result": "<maintenance-job/1 job_result>", "commit": "<40-character reviewed workflow commit>" },
+    "response_200": [
+      { "status": "accepted", "eligible": true, "state": "succeeded" },
+      { "status": "duplicate", "eligible": true, "state": "succeeded" },
+      { "status": "rejected", "reason": "run does not match the dispatch" }
+    ]
+  },
+  "run_id": "The GitHub Actions run ID that Control recorded at dispatch (github.run_id). A re-run attempt keeps the same run ID; Control treats a repeated identical result as a duplicate."
+}

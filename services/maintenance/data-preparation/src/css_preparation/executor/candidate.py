@@ -12,6 +12,7 @@ from typing import Any, Callable, Mapping
 
 from ..prepare.records import RecordError, RecordSet
 from . import ControlState, execute_unit
+from .basis import check_unit_records
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class CandidateStore:
     read_blob: Callable[[str], bytes]
     write_rows: Callable[[list[tuple[str, list[Any]]]], None]
     read_row: Callable[[str, str], Mapping[str, Any] | None]
+    read_rows: Callable[[str], list[dict[str, Any]]] | None = None
 
 
 @dataclass(frozen=True)
@@ -102,7 +104,9 @@ def run_candidate_unit(job_json: str, *, run_id: str,
     handlers = {'acquire': acquire, 'prepare': prepare, 'quality': quality}
 
     def run(job: dict[str, Any]) -> SavedCandidate:
-        return persist_candidate(handlers[job['kind']](job), storage)
+        records = handlers[job['kind']](job)
+        check_unit_records(job, records)
+        return persist_candidate(records, storage)
 
     return execute_unit(job_json, run_id=run_id, read_control=read_control,
                         registered=registered, process=run)

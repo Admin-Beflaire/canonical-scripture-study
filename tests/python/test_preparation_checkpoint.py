@@ -10,8 +10,8 @@ from css_preparation.executor.candidate import CandidateStore
 from css_preparation.executor.checkpoints import (
     CheckpointStore, RetryableUnitError, StopWork, run_checkpointed_unit,
 )
-from css_preparation.prepare.records import RecordError, decoded
-from preparation_fixture import database, evidence_a
+from css_preparation.prepare.records import RecordError, decoded, TABLES
+from preparation_fixture import COORDINATES, database, evidence_a, text_a
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[1] /
                      'conformance/maintenance-jobs.v1.json').read_text())
@@ -25,10 +25,13 @@ class CheckpointStageThree(unittest.TestCase):
         self.checkpoint_blobs = {}
         self.work_count = 0
         self.selection = [tuple(r) for r in self.db.execute('SELECT * FROM release_selection')]
-        self.storage = CandidateStore(self.put, self.read, self.write, self.find)
+        self.storage = CandidateStore(self.put, self.read, self.write, self.find, self.all_rows)
         self.checkpoints = CheckpointStore(self.save_checkpoint, self.load_checkpoint)
         self.state = None
         self.job = dict(FIXTURE['valid']['job_input'][0])
+        self.job['input_refs'] = [{'kind': 'source_revision', 'id': 'synthetic:a:revision-1'}]
+        self.job['native_extent'] = {'unit_ids': [u for u, _ in text_a().units],
+                                     'coordinate_version': COORDINATES}
 
     def put(self, key, data):
         if key in self.blobs and self.blobs[key] != data:
@@ -48,6 +51,9 @@ class CheckpointStageThree(unittest.TestCase):
         rows = decoded(self.db.execute(f'SELECT * FROM {table} WHERE id = ?',
                                        (identifier,)).fetchall())
         return rows[0] if rows else None
+
+    def all_rows(self, kind):
+        return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
 
     def save_checkpoint(self, content):
         sha = hashlib.sha256(content).hexdigest()
@@ -148,6 +154,26 @@ class CheckpointStageThree(unittest.TestCase):
         self.assertEqual(check.diagnostics, ('invalid_or_unavailable_output',))
         self.assertEqual([tuple(r) for r in self.db.execute('SELECT * FROM release_selection')],
                          self.selection)
+
+    def test_missing_saved_coverage_disables_replay(self):
+        result = self.invoke()
+        def incomplete(kind):
+            rows = self.all_rows(kind)
+            return [] if kind == 'coverage' else rows
+        self.storage = replace(self.storage, read_rows=incomplete)
+        replay = self.invoke(job={**self.job, 'checkpoint_ref': result.checkpoint_ref})
+        self.assertEqual(replay.state, 'failed')
+        self.assertEqual(replay.diagnostics, ('invalid_or_unavailable_output',))
+
+    def test_rejects_different_revision_or_extent_before_persistence(self):
+        changed = {**self.job, 'input_refs': [{'kind': 'source_revision', 'id': 'other-revision'}]}
+        rejected = self.invoke(job=changed)
+        self.assertEqual(rejected.state, 'failed')
+        self.assertEqual(rejected.completed_extent, {})
+        changed = {**self.job, 'native_extent': {'unit_ids': ['unrelated']}}
+        rejected = self.invoke(job=changed)
+        self.assertEqual(rejected.state, 'failed')
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
 
     def test_tampered_checkpoint_bytes_fail_closed(self):
         original = self.invoke()

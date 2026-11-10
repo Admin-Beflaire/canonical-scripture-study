@@ -15,6 +15,9 @@ from ..contracts import parse_job_input
 from ..prepare.records import RecordError, RecordSet
 from . import ControlState, UnitNotRunnable, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
+from .basis import check_unit_records, check_output_basis
+from ..prepare.evidence import OutputBasis
+from ..validate.saved import CandidateInventory, verify_candidate_inventory
 
 _FORMAT = 'preparation-checkpoint/1'
 _REF_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}')
@@ -108,6 +111,27 @@ def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | No
         if (not isinstance(data, bytes) or len(data) != reference['byte_count']
                 or _digest(data) != reference['sha256']):
             return None
+    if storage.read_rows is None:
+        return None  # Without saved scoped rows, replay cannot verify integrity.
+    bases = []
+    for output_id in outputs:
+        row = storage.read_row('prepared_output', output_id)
+        try:
+            bases.append(OutputBasis(row['kind'], tuple(row['input_revisions_json']),
+                                     row['method_version'], row['parameters_json'],
+                                     row['native_extent_json'],
+                                     tuple(row['validation_basis_json']['dependencies'])))
+        except (KeyError, TypeError, ValueError):
+            return None
+    try:
+        verified = verify_candidate_inventory(CandidateInventory(added=tuple(bases)),
+            read_rows=storage.read_rows, read_blob=storage.read_blob)
+    except RecordError:
+        return None
+    if (verified.output_ids != tuple(outputs) or
+            {tuple(sorted(ref.items())) for ref in verified.artifact_refs} !=
+            {tuple(sorted(ref.items())) for ref in references}):
+        return None
     return SavedCandidate(tuple(outputs), tuple(dict(ref) for ref in references))
 
 
@@ -186,13 +210,24 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
     def process(entry: dict[str, Any]) -> UnitProgress:
         resumed = _resume(entry, storage, checkpoints)
         if resumed is not None:
+            if storage.read_rows is None:
+                raise RecordError('Cannot verify candidate replay without saved rows')
+            rows = [storage.read_row('prepared_output', i) for i in resumed.saved.output_ids]
+            check_output_basis(entry, rows)
             return resumed
         records = handlers[entry['kind']](entry)
+        check_unit_records(entry, records)
         # If a long-running builder finished after pause/cancel/supersession,
         # do not begin candidate writes. Control owns late-result acceptance.
         execute_unit(job_json, run_id=run_id, read_control=read_control,
                      registered=registered, process=lambda _: None)
         saved = persist_candidate(records, storage)
+        if storage.read_rows is not None and saved.output_ids:
+            checked = _saved_candidate(
+                {'output_ids': list(saved.output_ids),
+                 'artifact_refs': list(saved.artifact_refs)}, storage)
+            if checked != saved:
+                raise RecordError('Saved candidate is incomplete; cannot checkpoint')
         return _save(entry, saved, checkpoints)
 
     for retry in range(max_retries + 1):

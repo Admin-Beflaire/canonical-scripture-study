@@ -146,8 +146,11 @@ def verify_candidate_inventory(
     segments = [r for r in data['span_segment'] if r.get('span_id') in spans]
     for row in segments:
         _schema('span_segment', row)
+    segments_by_span: dict[str, list[dict]] = {}
+    for row in segments:
+        segments_by_span.setdefault(row['span_id'], []).append(row)
     for span in selected_spans:
-        own = [r for r in segments if r['span_id'] == span['id']]
+        own = segments_by_span.get(span['id'], [])
         if len(own) != len(span['segments_json']) or sorted(
                 r['segment_ordinal'] for r in own) != list(range(len(own))):
             raise RecordError('Missing or duplicate saved navigation segment')
@@ -180,8 +183,9 @@ def verify_candidate_inventory(
     members = [r for r in data['relation_member'] if r.get('relationship_id') in relations]
     for row in members:
         _schema('relation_member', row)
+    member_relationship_ids = {m['relationship_id'] for m in members}
     for row in relations.values():
-        if not any(m['relationship_id'] == row['id'] for m in members):
+        if row['id'] not in member_relationship_ids:
             raise RecordError('Missing saved relationship members')
     for row in scoped['annotation']:
         if row['span_id'] not in spans:

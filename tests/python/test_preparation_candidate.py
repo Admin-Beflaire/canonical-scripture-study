@@ -56,6 +56,12 @@ class CandidateStageTwo(unittest.TestCase):
 
     def invoke(self, kind, handler, *, state_change=None, storage=None):
         job = dict(FIXTURE['valid']['job_input'][0], kind=kind)
+        if kind == 'prepare':
+            from preparation_fixture import COORDINATES
+            job['input_refs'] = [{'kind': 'source_revision',
+                                  'id': 'synthetic:a:revision-1'}]
+            job['native_extent'] = {'unit_ids': [u for u, _ in text_a().units],
+                                    'coordinate_version': COORDINATES}
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         state = ControlState(job['task_id'], job['task_revision'] + 1, 'running', job['basis_digest'],
                              job['unit_id'], job['attempt'], job['task_revision'],

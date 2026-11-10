@@ -76,6 +76,9 @@ class RunnerTest(unittest.TestCase):
         request = json.loads(body)
         if path == '/internal/jobs/state':
             job = json.loads(self.current)
+            # The run names itself and the digest of the exact bytes it holds.
+            self.assertEqual(request['run_id'], RUN_ID)
+            self.assertEqual(request['job_input_basis'], hashlib.sha256(self.current.encode('utf-8')).hexdigest())
             return 200, {'task_id': job['task_id'], 'task_revision': job['task_revision'] + 1,
                          'task_state': self.task_state, 'task_basis_digest': job['basis_digest'],
                          'unit_id': job['unit_id'], 'attempt': job['attempt'], 'job_revision': job['task_revision'],

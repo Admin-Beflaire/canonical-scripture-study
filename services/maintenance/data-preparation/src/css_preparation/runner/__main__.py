@@ -14,6 +14,7 @@ approves scope or selects data.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -87,14 +88,19 @@ def _inventory(job: dict[str, Any], storage: CloudflareStorage) -> CandidateInve
                               omitted=tuple(lists['omitted']))
 
 
-def run_job(job_json: str, kind: str, *, run_id: str, control: ControlClient, storage: CloudflareStorage,
+def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, storage: CloudflareStorage,
             recipes: Mapping[str, Recipe] = RECIPES) -> dict[str, Any]:
     """Execute one job and return its result envelope (not yet submitted)."""
+    job_json = job_text
     job = parse_job_input(job_json)
     if job['kind'] != kind:
         raise ContractError('Workflow job does not match the dispatched kind')
     recipe = recipes.get(job['recipe_revision'])
-    gate = dict(run_id=run_id, read_control=control.read_state, registered=storage.registered)
+    basis = hashlib.sha256(job_text.encode('utf-8')).hexdigest()
+
+    def read_control(task_id: str, unit_id: str, attempt: int):
+        return control.read_state(task_id, unit_id, attempt, run_id=run_id, job_input_basis=basis)
+    gate = dict(run_id=run_id, read_control=read_control, registered=storage.registered)
     try:
         if recipe is None:
             # Still confirm the dispatch, so a stale job is reported as not runnable.

@@ -34,6 +34,20 @@ class AdapterTest(unittest.TestCase):
             with self.assertRaises(RecipeError, msg=str(case)):
                 self.registry.resolve(case)
 
+    def test_recipe_partition_units_are_declarative_data(self):
+        units = [{'unit_id': 'acquire-1', 'kind': 'acquire', 'native_extent': {}, 'depends_on': []},
+                 {'unit_id': 'prepare-u1', 'kind': 'prepare', 'native_extent': {'units': ['u1']},
+                  'depends_on': ['acquire-1']},
+                 {'unit_id': 'quality', 'kind': 'quality', 'native_extent': {'units': ['u1']},
+                  'depends_on': ['prepare-u1'], 'required_capabilities': ['source_text']}]
+        self.assertIs(self.registry.resolve(recipe(manifest_revision='m1', units=units)), TEXT)
+        bad = [recipe(units=[]), recipe(units=[{**units[0], 'kind': 'deploy'}]),
+               recipe(units=[{**units[0], 'script': 'run'}]), recipe(units=[{'unit_id': 'x', 'kind': 'prepare'}]),
+               recipe(manifest_revision='../m')]
+        for case in bad:
+            with self.assertRaises(RecipeError, msg=str(case)):
+                self.registry.resolve(case)
+
 
 if __name__ == '__main__':
     unittest.main()

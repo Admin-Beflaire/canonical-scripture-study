@@ -50,10 +50,10 @@ class ControlClientTest(unittest.TestCase):
     def test_missing_dispatch_and_malformed_state(self):
         self.replies = [(404, {}), (200, {**WIRE['state']['response_200'], 'extra': 1}),
                         (200, {**WIRE['state']['response_200'], 'attempt': True})]
-        self.assertIsNone(self.client.read_state('t', 'u', 1))
+        self.assertIsNone(self.client.read_state('t', 'u', 1, run_id='1', job_input_basis='b' * 64))
         for _ in range(2):
             with self.assertRaises(ProviderError):
-                self.client.read_state('t', 'u', 1)
+                self.client.read_state('t', 'u', 1, run_id='1', job_input_basis='b' * 64)
 
     def test_result_submission_retries_transient_only(self):
         self.replies = [(503, {}), (200, WIRE['result']['response_200'][0])]
@@ -79,7 +79,7 @@ class ControlClientTest(unittest.TestCase):
     def test_redirect_never_forwards_service_token(self):
         self.api.redirect_once = True
         with self.assertRaisesRegex(ProviderError, 'Redirect refused'):
-            self.client.read_state('t', 'u', 1)
+            self.client.read_state('t', 'u', 1, run_id='1', job_input_basis='b' * 64)
         self.assertEqual(len(self.api.requests), 1)
         for value in ('', 'a b'):
             with self.assertRaises(ValueError):

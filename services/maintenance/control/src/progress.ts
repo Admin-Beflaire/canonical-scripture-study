@@ -1,7 +1,7 @@
 import { canonicalJson, type D1Database } from './d1.ts';
 import { recipeErrors, type ArtifactRef, type JobResult, type Recipe, type RecipeUnit } from './contracts.ts';
 import { dispatchUnit, type DispatchResult, type UnitPlan } from './dispatch.ts';
-import { FileEncodingError, GitHubError, type GitHubActions } from './github.ts';
+import { FileEncodingError, GitHubError, runTitle, type GitHubActions } from './github.ts';
 import type { Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
@@ -11,7 +11,7 @@ export const MAX_ATTEMPTS = 3;
 const ACTIVE = new Set(['intended', 'dispatched', 'running', 'checkpointed']);
 const RETRYABLE = new Set(['failed', 'cancelled']);
 
-interface JobView { unit_id: string; attempt: number; kind: string; state: string; run_id: string | null; result_json: string | null }
+interface JobView { unit_id: string; attempt: number; kind: string; state: string; run_id: string | null; result_json: string | null; input_basis?: string }
 export type Progress = { dispatched: string[]; state: string; limitation?: string };
 
 /** Read and check the recipe named in the task, from reviewed main. */
@@ -182,18 +182,20 @@ export async function reconcile(db: D1Database, github: GitHubActions | null, ta
   // For a cancelled or superseded task, unfinished runs are cancelled again on every check
   // until GitHub reports them finished; the job rows keep this durable.
   const stopped = row.state === 'cancelled' || row.state === 'superseded';
-  const jobs = (await db.prepare(`SELECT unit_id, attempt, kind, state, run_id, result_json FROM maintenance_jobs
+  const jobs = (await db.prepare(`SELECT unit_id, attempt, kind, state, run_id, result_json, input_basis FROM maintenance_jobs
     WHERE task_id = ? AND state IN ('intended','dispatched','running','checkpointed')`).bind(taskId).all<JobView>()).results;
   if (jobs.length === 0) return notes;
   if (!stopped && jobs.some(job => job.run_id === null)) {
-    let active: string[] | null = null;
-    try { active = await github.activeRunIds(); } catch { notes.push('GitHub was unavailable; unconfirmed dispatches are checked again later'); }
+    let active: Array<{ run_id: string; title: string }> | null = null;
+    try {
+      active = await github.activeRuns();
+      if (active === null) notes.push('The list of unfinished runs was incomplete; unconfirmed dispatches are checked again later');
+    } catch { notes.push('GitHub was unavailable; unconfirmed dispatches are checked again later'); }
     if (active) {
-    const bound = new Set((await db.prepare('SELECT run_id FROM maintenance_jobs WHERE run_id IS NOT NULL').all<{ run_id: string }>())
-      .results.map(row => row.run_id));
-    // An unclaimed unfinished run may still be ours: its runner confirms itself through the state route.
-    if (!active.some(run => !bound.has(run))) {
-      for (const job of jobs.filter(item => item.run_id === null)) {
+    // A dispatch is lost only when the complete list of unfinished runs has none titled with its
+    // input basis. Otherwise that run is still on its way and confirms itself through the state route.
+    {
+      for (const job of jobs.filter(item => item.run_id === null && !active!.some(run => run.title === runTitle(item.input_basis!)))) {
         const changed = await db.prepare(`UPDATE maintenance_jobs SET state = 'cancelled'
           WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = 'intended' AND run_id IS NULL`)
           .bind(taskId, job.unit_id, job.attempt).run();

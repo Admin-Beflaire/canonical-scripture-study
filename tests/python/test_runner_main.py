@@ -138,7 +138,8 @@ class RunnerTest(unittest.TestCase):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         event = Path(holder.name) / 'event.json'
-        event.write_text(json.dumps({'inputs': {'job': raw}}), encoding='utf-8')
+        event.write_text(json.dumps({'inputs': {'job': raw, 'dispatch_ref': hashlib.sha256(raw.encode('utf-8')).hexdigest()}}),
+                         encoding='utf-8')
         return {'GITHUB_EVENT_PATH': str(event), 'GITHUB_RUN_ID': RUN_ID, 'GITHUB_SHA': COMMIT,
                 'CONTROL_ORIGIN': self.api.origin, 'PREPARATION_ACCESS_CLIENT_ID': 'synthetic-id',
                 'PREPARATION_ACCESS_CLIENT_SECRET': 'synthetic-secret', 'CLOUDFLARE_ACCOUNT_ID': 'acct',
@@ -218,6 +219,15 @@ class RunnerTest(unittest.TestCase):
         code, status, _ = self.main(self.environ(self.job('quality')))  # kind mismatch with --kind prepare
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.assertEqual(self.results, [])
+        # The dispatch reference must be the digest of exactly this job text.
+        event = Path(environ['GITHUB_EVENT_PATH'])
+        event.write_text(json.dumps({'inputs': {'job': self.job(), 'dispatch_ref': 'b' * 64}}), encoding='utf-8')
+        code, status, _ = self.main(environ)
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        event.write_text(json.dumps({'inputs': {'job': self.job()}}), encoding='utf-8')
+        code, status, _ = self.main(environ, mode=['--validate'])
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        environ = self.environ(self.job())
         code, status, _ = self.main({**environ, 'GITHUB_EVENT_PATH': '/nonexistent/event.json'})
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.reply = (503, {})

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GitHubActions, GitHubError } from '../../services/maintenance/control/src/github.ts';
-import { canonicalJson } from '../../services/maintenance/control/src/d1.ts';
+import { GitHubActions, GitHubError, runTitle } from '../../services/maintenance/control/src/github.ts';
+import { canonicalJson, sha256 } from '../../services/maintenance/control/src/d1.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
 import { fakeGitHub } from './github.ts';
 
@@ -16,7 +16,10 @@ test('dispatch sends only the canonical job to prepare.yml on main and returns t
   const [sent] = gh.requests;
   assert.equal(sent.method, 'POST');
   assert.equal(sent.url, 'https://api.github.com/repos/owner/app/actions/workflows/prepare.yml/dispatches');
-  assert.deepEqual(sent.body, { ref: 'main', inputs: { job: canonicalJson(job) }, return_run_details: true });
+  const basis = await sha256(canonicalJson(job));
+  assert.deepEqual(sent.body, { ref: 'main', inputs: { job: canonicalJson(job), dispatch_ref: basis }, return_run_details: true });
+  // The run title GitHub records from the dispatch ties this run to these exact job bytes.
+  assert.equal((await actions.run('1000')).title, runTitle(basis));
   assert.equal(sent.headers.authorization, 'Bearer synthetic-token');
   assert.ok(!sent.url.includes('synthetic-token'));
 });
@@ -39,10 +42,10 @@ test('active runs, cancellation, recipes and refusals', async () => {
   const actions = new GitHubActions({ repository: 'owner/app', token: 't' }, gh.fetcher);
   const a = (await actions.dispatch(job)).run_id;
   const b = (await actions.dispatch(job)).run_id;
-  assert.deepEqual(new Set(await actions.activeRunIds()), new Set([a, b]));
+  assert.deepEqual(new Set((await actions.activeRuns())!.map(run => run.run_id)), new Set([a, b]));
   assert.equal(await actions.cancel(a), true);
   assert.equal(await actions.cancel(a), false);
-  assert.deepEqual(await actions.activeRunIds(), [b]);
+  assert.deepEqual((await actions.activeRuns())!.map(run => run.run_id), [b]);
   assert.equal(await actions.readFile('collection/recipes/r.json'), '{"id":"r"}');
   assert.equal(await actions.readFile('collection/recipes/missing.json'), null);
   await assert.rejects(actions.readFile('.github/workflows/prepare.yml'), GitHubError);
@@ -50,4 +53,20 @@ test('active runs, cancellation, recipes and refusals', async () => {
   await assert.rejects(actions.dispatch(job), GitHubError);
   assert.throws(() => new GitHubActions({ repository: 'owner/app/x', token: 't' }, gh.fetcher));
   assert.throws(() => new GitHubActions({ repository: 'owner/app', token: '' }, gh.fetcher));
+});
+
+test('active runs are listed per status across all pages; a listing that may be incomplete is null', async () => {
+  const gh = fakeGitHub();
+  const actions = new GitHubActions({ repository: 'owner/app', token: 't' }, gh.fetcher);
+  const older = (await actions.dispatch(job)).run_id; // stays queued
+  for (let i = 0; i < 150; i++) {
+    const { run_id } = await actions.dispatch(job);
+    Object.assign(gh.runs.get(Number(run_id))!, { status: 'completed', conclusion: 'success' });
+  }
+  for (let i = 0; i < 120; i++) Object.assign(gh.runs.get(Number((await actions.dispatch(job)).run_id))!, { status: 'in_progress' });
+  const active = (await actions.activeRuns())!;
+  assert.equal(active.length, 121, 'the older queued run is found behind 150 newer finished runs and two pages of in-progress runs');
+  assert.ok(active.some(run => run.run_id === older));
+  for (let i = 0; i < 1000; i++) Object.assign(gh.runs.get(Number((await actions.dispatch(job)).run_id))!, { status: 'waiting' });
+  assert.equal(await actions.activeRuns(), null, 'more than ten pages: treated as incomplete');
 });

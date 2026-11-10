@@ -1,6 +1,6 @@
 import type { D1Database } from './d1.ts';
 import { acceptReceipt } from './dispatch.ts';
-import type { GitHubActions } from './github.ts';
+import { runTitle, type GitHubActions } from './github.ts';
 import { advance } from './progress.ts';
 
 /** Control's internal job routes for the preparation runner (tests/conformance/internal-jobs.v1.json).
@@ -48,11 +48,13 @@ async function state(db: D1Database, github: GitHubActions | null, input: Record
   let job = await read();
   if (!job || job.input_basis !== job_input_basis) return json(404, { error: 'no_dispatch' });
   if (job.run_id === null) {
-    // The dispatch response was lost. Bind only a verified, unfinished run of the fixed workflow
-    // that holds the exact job bytes and is not already bound to another job.
+    // The dispatch response was lost. Bind only an unfinished run of the fixed workflow whose
+    // GitHub-recorded title carries this job's input basis: GitHub set that title from the
+    // dispatch itself, so it proves this run received this job. Nothing else is accepted.
     if (job.state !== 'intended' || !github) return json(404, { error: 'no_dispatch' });
     try {
-      if ((await github.run(run_id)).status === 'completed') return json(404, { error: 'no_dispatch' });
+      const run = await github.run(run_id);
+      if (run.status === 'completed' || run.title !== runTitle(job.input_basis)) return json(404, { error: 'no_dispatch' });
     } catch { return json(404, { error: 'no_dispatch' }); }
     await db.batch([
       db.prepare(`UPDATE maintenance_jobs SET run_id = ?, state = 'dispatched'

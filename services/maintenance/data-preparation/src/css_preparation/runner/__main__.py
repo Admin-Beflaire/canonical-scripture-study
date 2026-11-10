@@ -139,9 +139,13 @@ def read_job(environ: Mapping[str, str]) -> str:
             event = json.load(stream)
     except (KeyError, OSError, UnicodeError, ValueError):
         raise ContractError('Dispatch event is unreadable') from None
-    job = event.get('inputs', {}).get('job') if isinstance(event, dict) and isinstance(event.get('inputs'), dict) else None
+    inputs = event.get('inputs') if isinstance(event, dict) else None
+    job = inputs.get('job') if isinstance(inputs, dict) else None
     if not isinstance(job, str):
         raise ContractError('Dispatch event has no job input')
+    # The run title GitHub recorded is built from dispatch_ref; it must name exactly these bytes.
+    if inputs.get('dispatch_ref') != hashlib.sha256(job.encode('utf-8')).hexdigest():
+        raise ContractError('Dispatch reference does not match the job')
     return job
 
 

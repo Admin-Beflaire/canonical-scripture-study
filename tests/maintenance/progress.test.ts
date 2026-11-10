@@ -398,3 +398,44 @@ test('a recipe that is not valid UTF-8 blocks the task as a recipe problem, not 
   assert.equal(progress.state, 'blocked');
   assert.match(progress.limitation ?? '', /not valid UTF-8/);
 });
+
+test('R22-6: only the run GitHub titled with this job can claim a lost dispatch', async () => {
+  const context = await setup();
+  const { db, gh, task, post } = context;
+  gh.state.loseNextDispatchResponse = true;
+  await advance(db, context.github, task.id);
+  const intended = dispatched(gh, 'acquire');
+  // Another unbound, unfinished prepare.yml run on main (a different job) tries to claim the intent
+  // with the right job digest: GitHub's title for that run names a different job, so it is refused.
+  const other = await context.github.dispatch({ ...intended.job, unit_id: 'someone-else' });
+  const claim = (runId: string) => post('/internal/jobs/state', { task_id: task.id, unit_id: 'acquire', attempt: 1,
+    run_id: runId, job_input_basis: sha(intended.text) });
+  assert.equal((await claim(other.run_id)).status, 404);
+  assert.equal(db.sqlite.prepare('SELECT run_id FROM maintenance_jobs').get()?.run_id, null);
+  // The run that really received the job still confirms itself.
+  const confirmed = await claim(String(intended.run.id));
+  assert.equal(confirmed.status, 200);
+  assert.equal(confirmed.body.run_id, String(intended.run.id));
+});
+
+test('R22-7: a lost dispatch is never retried on a partial run listing', async () => {
+  const context = await setup();
+  const { db, gh, task } = context;
+  gh.state.loseNextDispatchResponse = true;
+  await advance(db, context.github, task.id);
+  // 150 newer finished runs push the intended (still queued) run off the newest page.
+  for (let i = 0; i < 150; i++) {
+    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'acquire').job, unit_id: `noise-${i}` });
+    Object.assign(gh.runs.get(Number(run_id))!, { status: 'completed', conclusion: 'success' });
+  }
+  assert.deepEqual(await reconcile(db, context.github, task.id), []);
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.state, 'intended');
+  // A listing too long to be complete leaves the intent unresolved, with a note.
+  for (let i = 0; i < 1001; i++) {
+    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'acquire').job, unit_id: `wait-${i}` });
+    Object.assign(gh.runs.get(Number(run_id))!, { status: 'waiting' });
+  }
+  assert.deepEqual(await reconcile(db, context.github, task.id),
+    ['The list of unfinished runs was incomplete; unconfirmed dispatches are checked again later']);
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.state, 'intended');
+});

@@ -1,7 +1,7 @@
 import { canonicalJson } from '../../services/maintenance/control/src/d1.ts';
 
 /** In-memory stand-in for the GitHub REST endpoints Control uses. Synthetic only. */
-export interface FakeRun { id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; job: string }
+export interface FakeRun { id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; job: string; display_title: string }
 
 export function fakeGitHub(options: { commit?: string; recipes?: Record<string, unknown> } = {}) {
   const commit = options.commit ?? 'a'.repeat(40);
@@ -29,8 +29,9 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
     if (method === 'POST' && path === '/actions/workflows/prepare.yml/dispatches') {
       if (state.failDispatch) return json(422, {});
       const id = next++;
+      // GitHub records the run title from run-name, which prepare.yml builds from dispatch_ref.
       runs.set(id, { id, path: '.github/workflows/prepare.yml', event: 'workflow_dispatch', head_branch: body.ref,
-        head_sha: commit, status: 'queued', conclusion: null, job: body.inputs.job });
+        head_sha: commit, status: 'queued', conclusion: null, job: body.inputs.job, display_title: `Preparation ${body.inputs.dispatch_ref}` });
       await state.onDispatch?.(runs.get(id)!);
       if (state.loseNextDispatchResponse) { state.loseNextDispatchResponse = false; throw new TypeError('connection reset'); }
       return json(200, { workflow_run_id: id, run_url: `x/${id}`, html_url: `y/${id}` });
@@ -48,7 +49,12 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
       return json(202, {});
     }
     if (method === 'GET' && path.startsWith('/actions/workflows/prepare.yml/runs?')) {
-      return json(200, { workflow_runs: [...runs.values()].reverse() });
+      const query = new URL(`https://x${path}`).searchParams;
+      const status = query.get('status');
+      const perPage = Number(query.get('per_page') ?? 30);
+      const page = Number(query.get('page') ?? 1);
+      const matching = [...runs.values()].reverse().filter(run => !status || run.status === status || run.conclusion === status);
+      return json(200, { total_count: matching.length, workflow_runs: matching.slice((page - 1) * perPage, page * perPage) });
     }
     match = /^\/contents\/(collection\/recipes\/[^?]+)\?ref=main$/.exec(path);
     if (method === 'GET' && match) {

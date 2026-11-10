@@ -50,7 +50,8 @@ def _partitions(text: NativeText, units: tuple[str, ...], max_units: int,
 
 
 def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBasis, rules: TextRules, *,
-                          max_units: int, max_scalars: int, max_occurrences: int) -> tuple[SourcePartition, ...]:
+                          max_units: int, max_scalars: int, max_occurrences: int,
+                          encoded_page_cap_bytes: int = 2048) -> tuple[SourcePartition, ...]:
     """Turn indexed native units into exact-referenced source postings, partitioned by recipe limits.
 
     Each partition has its own complete immutable reuse basis. Stage 3 serializes the
@@ -67,6 +68,8 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
         raise RecordError('Named tokenizer and normalization versions are required')
     if type(max_occurrences) is not int or max_occurrences < 1:
         raise RecordError('Occurrence limit must be a positive integer')
+    if type(encoded_page_cap_bytes) is not int or not 1 <= encoded_page_cap_bytes <= MAX_SAFE_ORDER:
+        raise RecordError('Encoded page cap must be a positive safe integer')
     if basis.parameters.get('tokenizer_version') != rules.tokenizer_version or basis.parameters.get('normalization_rule') != rules.normalization_rule:
         raise RecordError('Rule identities must match the recorded reuse parameters')
     if len(set(basis.dependencies)) != len(basis.dependencies):
@@ -104,7 +107,8 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
         group_basis = OutputBasis('source_search', basis.input_revisions, basis.method_version,
                                   {**basis.parameters, 'partition_max_units': max_units,
                                    'partition_max_scalars': max_scalars,
-                                   'partition_max_occurrences': max_occurrences},
+                                   'partition_max_occurrences': max_occurrences,
+                                   'encoded_page_cap_bytes': encoded_page_cap_bytes},
                                   {**basis.extent, 'unit_ids': list(group)}, basis.dependencies)
         postings = []
         for unit in group:

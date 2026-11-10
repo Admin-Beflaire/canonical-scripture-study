@@ -13,7 +13,7 @@ from typing import Iterable, Mapping
 from ..prepare.evidence import OutputBasis, reusable
 from ..prepare.records import RecordError
 from ..validation import SchemaSubset
-from .files import _bytes
+from .files import _bytes, _object_key
 
 _MANIFEST = SchemaSubset('indexes/manifest.v1.schema.json')
 _POSTING = SchemaSubset('indexes/posting.v1.schema.json')
@@ -49,9 +49,9 @@ def _checked_artifact(row: Mapping, blobs: Mapping[str, bytes],
     if _digest(content) != row['sha256']:
         raise RecordError(f'Saved artifact digest mismatch: {artifact_id}')
     # The Stage-3 writer uses portable, content-addressed private-R2 keys.
-    if row['registered_locator'] != (
-            f"prepared/{output_id}/indexes/{row['sha256']}/"
-            f"{'manifest.json' if row['format'] == 'application/json' else 'postings.ndjson'}"):
+    if row['registered_locator'] != _object_key(
+            output_id, row['sha256'],
+            'manifest.json' if row['format'] == 'application/json' else 'postings.ndjson'):
         raise RecordError('Saved artifact has an incompatible object key or format')
     return content
 
@@ -112,8 +112,8 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
             or manifest['normalization_rule'] != basis.parameters.get('normalization_rule')):
         raise RecordError('Saved index manifest does not match its complete reuse basis')
     cap = manifest['encoded_page_cap_bytes']
-    if cap > max_page_bytes:
-        raise RecordError('Saved index page cap exceeds configured limit')
+    if cap != basis.parameters.get('encoded_page_cap_bytes') or cap > max_page_bytes:
+        raise RecordError('Saved index page cap disagrees with reuse basis or configured limit')
     state = manifest['coverage']['state']
     if state != 'available' or manifest['coverage']['limitation'] is not None:
         raise RecordError('Incomplete saved index coverage cannot be reused')

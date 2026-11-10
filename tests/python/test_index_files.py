@@ -23,7 +23,9 @@ class IndexFilesStageThree(unittest.TestCase):
                                            max_units=2, max_scalars=64, max_occurrences=20)
 
     def test_exact_page_offsets_digests_and_registered_coverage(self):
-        part = self.parts[0]
+        part = replace(self.parts[0], basis=replace(
+            self.parts[0].basis, parameters={**self.parts[0].basis.parameters,
+                                             'encoded_page_cap_bytes': 700}))
         result = build_index_files(part, encoded_page_cap_bytes=700)
         self.assertEqual(_MANIFEST.document_errors(result.manifest), [])
         records = result.records
@@ -71,7 +73,10 @@ class IndexFilesStageThree(unittest.TestCase):
                       'occurrence_id': f'synthetic-{i}'} for i in range(5))
         line_bytes = len(json.dumps(rows[0], sort_keys=True, ensure_ascii=False,
                                     separators=(',', ':')).encode('utf-8')) + 1
-        result = build_index_files(replace(base, postings=rows), encoded_page_cap_bytes=line_bytes + 10)
+        part = replace(base, postings=rows, basis=replace(
+            base.basis, parameters={**base.basis.parameters,
+                                    'encoded_page_cap_bytes': line_bytes + 10}))
+        result = build_index_files(part, encoded_page_cap_bytes=line_bytes + 10)
         pages = result.manifest['files'][0]['pages']
         self.assertEqual(len(pages), 5)
         self.assertEqual({p['first_key'] for p in pages}, {sample['search_key']})
@@ -80,6 +85,21 @@ class IndexFilesStageThree(unittest.TestCase):
         decoded = [json.loads(line) for line in body.splitlines()]
         self.assertEqual([row['occurrence_id'] for row in decoded],
                          [row['occurrence_id'] for row in rows])
+
+    def test_page_cap_changes_immutable_output_and_coverage_identity(self):
+        normal = self.parts[0]
+        compact = replace(normal, basis=replace(
+            normal.basis, parameters={**normal.basis.parameters, 'encoded_page_cap_bytes': 700}))
+        a = build_index_files(normal)
+        b = build_index_files(compact, encoded_page_cap_bytes=700)
+        self.assertNotEqual(normal.basis.output_id, compact.basis.output_id)
+        self.assertNotEqual(a.manifest['prepared_output_id'], b.manifest['prepared_output_id'])
+        self.assertNotEqual(a.manifest_artifact_id, b.manifest_artifact_id)
+        self.assertNotEqual(a.postings_artifact_id, b.postings_artifact_id)
+        self.assertEqual(a.records.blobs[a.postings_artifact_id],
+                         b.records.blobs[b.postings_artifact_id])
+        self.assertNotEqual(a.records.rows('coverage')[0]['output_id'],
+                            b.records.rows('coverage')[0]['output_id'])
 
     def test_manifest_schema_rejects_duplicate_coverage_capabilities(self):
         built = build_index_files(self.parts[0])
@@ -91,7 +111,11 @@ class IndexFilesStageThree(unittest.TestCase):
         base = self.parts[0]
         sample = base.postings[0]
         with self.assertRaisesRegex(RecordError, 'exceeds encoded page cap'):
-            build_index_files(replace(base, postings=(sample,)), encoded_page_cap_bytes=8)
+            small = replace(base, postings=(sample,), basis=replace(
+                base.basis, parameters={**base.basis.parameters, 'encoded_page_cap_bytes': 8}))
+            build_index_files(small, encoded_page_cap_bytes=8)
+        with self.assertRaisesRegex(RecordError, 'cap differs from immutable'):
+            build_index_files(base, encoded_page_cap_bytes=700)
         with self.assertRaisesRegex(RecordError, 'bytewise'):
             build_index_files(replace(base, postings=tuple(reversed(base.postings))))
         with self.assertRaisesRegex(RecordError, 'Duplicate'):

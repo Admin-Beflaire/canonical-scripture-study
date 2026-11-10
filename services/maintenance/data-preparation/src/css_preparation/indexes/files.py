@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 
 from ..prepare.records import RecordError, RecordSet
 from ..validation import SchemaSubset
@@ -36,6 +37,14 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _object_key(output_id: str, sha256: str, filename: str) -> str:
+    """Portable R2 key: split immutable kind/digest identity into safe directories."""
+    identity = re.fullmatch(r'(source_search|word_index):([0-9a-f]{32})', output_id)
+    if identity is None:
+        raise RecordError('Invalid index output identity for artifact key')
+    return f'prepared/{identity[1]}/{identity[2]}/indexes/{sha256}/{filename}'
+
+
 def build_index_files(partition: SourcePartition | WordPartition, *,
                       encoded_page_cap_bytes: int = 2048) -> IndexFiles:
     """Turn one bounded source/word partition into one registered file and manifest.
@@ -51,6 +60,8 @@ def build_index_files(partition: SourcePartition | WordPartition, *,
     basis = partition.basis
     if basis.kind != ('word_index' if word else 'source_search') or not basis.input_revisions:
         raise RecordError('Invalid index output identity')
+    if basis.parameters.get('encoded_page_cap_bytes') != encoded_page_cap_bytes:
+        raise RecordError('Encoded page cap differs from immutable output basis')
     if (word and len(basis.input_revisions) < 2) or (not word and len(basis.input_revisions) != 1):
         raise RecordError('Incompatible source or analysis revisions')
     units = basis.extent.get('unit_ids')
@@ -162,7 +173,7 @@ def build_index_files(partition: SourcePartition | WordPartition, *,
         records.add('artifact', {
             'id': artifact_id, 'source_revision_id': basis.input_revisions[0],
             'output_id': output_id, 'sha256': sha, 'byte_count': len(data),
-            'format': kind, 'registered_locator': f'prepared/{output_id}/indexes/{sha}/{filename}',
+            'format': kind, 'registered_locator': _object_key(output_id, sha, filename),
         })
         records.add_blob(artifact_id, data)
     for capability in manifest['coverage']['capabilities']:

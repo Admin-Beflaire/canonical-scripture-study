@@ -5,7 +5,7 @@ import hashlib
 import json
 import unittest
 
-from css_preparation.indexes.files import build_index_files
+from css_preparation.indexes.files import build_index_files, _object_key
 from css_preparation.indexes.saved import verify_saved_index, reusable_index_ids
 from css_preparation.prepare.records import RecordError, RecordSet
 from test_word_index_builder import WordIndexStageTwo
@@ -54,7 +54,7 @@ class SavedIndexStageFour(unittest.TestCase):
         for row in artifacts:
             if row['id'] == old_id:
                 row.update(id=new_id, sha256=digest, byte_count=len(content),
-                           registered_locator=f"prepared/{row['output_id']}/indexes/{digest}/manifest.json")
+                           registered_locator=_object_key(row['output_id'], digest, 'manifest.json'))
         coverage = deepcopy(self.coverage)
         for row in coverage:
             if row['index_artifact_id'] == old_id:
@@ -102,6 +102,20 @@ class SavedIndexStageFour(unittest.TestCase):
                                self.outputs, self.artifacts, self.coverage, self.blobs,
                                valid_external_dependencies=self.external),
             tuple(basis.output_id for basis in self.bases))
+
+    def test_portable_object_keys_and_wrong_cap_rejected(self):
+        built = self.a
+        for artifact in built.records.rows('artifact'):
+            self.assertNotIn(':', artifact['registered_locator'])
+            self.assertNotIn('\\', artifact['registered_locator'])
+            self.assertTrue(artifact['registered_locator'].startswith('prepared/source_search/'))
+        wrong = replace(self.bases[0], parameters={**self.bases[0].parameters,
+                                                    'encoded_page_cap_bytes': 700})
+        self.assertNotEqual(wrong.output_id, self.bases[0].output_id)
+        with self.assertRaisesRegex(RecordError, 'reuse basis'):
+            verify_saved_index(wrong, self.a.records.rows('prepared_output')[0],
+                               self.a.records.rows('artifact'),
+                               self.a.records.rows('coverage'), self.a.records.blobs)
 
     def test_wrong_basis_or_missing_registered_bytes_are_not_reused(self):
         saved = next(row for row in self.outputs if row['id'] == self.a.manifest['prepared_output_id'])
@@ -154,7 +168,9 @@ class SavedIndexStageFour(unittest.TestCase):
     def test_reject_misordered_rows_even_with_recomputed_digests(self):
         # One page, with every digest/registry/key range forged consistently.
         from css_preparation.indexes.files import build_index_files
-        source_part = self.source_part
+        source_part = replace(self.source_part, basis=replace(
+            self.source_part.basis, parameters={**self.source_part.basis.parameters,
+                                                'encoded_page_cap_bytes': 10000}))
         built = build_index_files(source_part, encoded_page_cap_bytes=10000)
         original = built.records.blobs[built.postings_artifact_id]
         lines = original.splitlines(keepends=True)
@@ -178,11 +194,11 @@ class SavedIndexStageFour(unittest.TestCase):
         for item in artifacts:
             if item['id'] == old_posting:
                 item.update(id=new_posting, sha256=body_sha,
-                            registered_locator=f"prepared/{source_part.basis.output_id}/indexes/{body_sha}/postings.ndjson")
+                            registered_locator=_object_key(source_part.basis.output_id, body_sha, 'postings.ndjson'))
             if item['id'] == old_manifest:
                 item.update(id=new_manifest, sha256=manifest_sha,
                             byte_count=len(payload),
-                            registered_locator=f"prepared/{source_part.basis.output_id}/indexes/{manifest_sha}/manifest.json")
+                            registered_locator=_object_key(source_part.basis.output_id, manifest_sha, 'manifest.json'))
         coverage = deepcopy(built.records.rows('coverage'))
         for item in coverage:
             item['index_artifact_id'] = new_manifest

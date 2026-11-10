@@ -52,7 +52,7 @@ class WordIndexStageTwo(unittest.TestCase):
                                    self.observations if observations is None else observations,
                                    self.expected if expected is None else expected,
                                    (A, B), self.basis if basis is None else basis,
-                                   normalize=RULES.normalize,
+                                   normalize=kwargs.pop('normalize', RULES.normalize),
                                    grammar_keys=kwargs.pop('grammar_keys',
                                        lambda a: ('grammar:' + a.grammar['part_of_speech'],)),
                                    max_postings=kwargs.pop('max_postings', 20), **kwargs)
@@ -124,6 +124,8 @@ class WordIndexStageTwo(unittest.TestCase):
     def test_dependency_basis_and_caps(self):
         [part] = self.build()
         self.assertNotEqual(part.basis.output_id, self.build(max_postings=9)[0].basis.output_id)
+        self.assertNotEqual(part.basis.output_id,
+                            self.build(encoded_page_cap_bytes=700)[0].basis.output_id)
         changed = replace(self.basis, method_version='synthetic:word/2')
         self.assertNotEqual(part.basis.output_id, self.build(basis=changed)[0].basis.output_id)
         with self.assertRaisesRegex(RecordError, 'posting limit'):
@@ -132,6 +134,8 @@ class WordIndexStageTwo(unittest.TestCase):
             altered = replace(self.parts[0], basis=replace(self.parts[0].basis,
                       parameters={**self.parts[0].basis.parameters, 'normalization_rule': 'wrong'}))
             self.build(parts=(altered,*self.parts[1:]))
+        with self.assertRaisesRegex(RecordError, 'normalization disagrees'):
+            self.build(normalize=lambda text: text)
         with self.assertRaisesRegex(RecordError, 'grammar lookup key'):
             self.build(grammar_keys=lambda _: ['unexpected:grammar'])
 

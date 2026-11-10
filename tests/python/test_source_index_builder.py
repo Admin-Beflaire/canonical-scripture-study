@@ -41,11 +41,13 @@ class SourceIndexStageOne(unittest.TestCase):
         self.evidence = evidence_a()
         self.basis = configured_basis(self.evidence, self.text)
 
-    def build(self, *, max_units=2, max_scalars=64, max_occurrences=20, **changes):
+    def build(self, *, max_units=2, max_scalars=64, max_occurrences=20,
+              encoded_page_cap_bytes=2048, **changes):
         return build_source_postings(changes.get('text', self.text), changes.get('evidence', self.evidence),
                                      changes.get('basis', self.basis), changes.get('rules', RULES),
                                      max_units=max_units, max_scalars=max_scalars,
-                                     max_occurrences=max_occurrences)
+                                     max_occurrences=max_occurrences,
+                                     encoded_page_cap_bytes=encoded_page_cap_bytes)
 
     def test_partition_order_determinism_and_schema(self):
         first = self.build()
@@ -77,6 +79,8 @@ class SourceIndexStageOne(unittest.TestCase):
     def test_full_basis_and_partition_limits_change_id(self):
         first = self.build()
         self.assertNotEqual(first[0].basis.output_id, self.build(max_units=1)[0].basis.output_id)
+        self.assertNotEqual(first[0].basis.output_id,
+                            self.build(encoded_page_cap_bytes=700)[0].basis.output_id)
         self.assertNotEqual(first[0].basis.output_id, self.build(basis=replace(self.basis,method_version='v2'))[0].basis.output_id)
         self.assertNotEqual(first[0].basis.output_id,
                             self.build(basis=replace(self.basis,dependencies=self.basis.dependencies + ('extra',)))[0].basis.output_id)

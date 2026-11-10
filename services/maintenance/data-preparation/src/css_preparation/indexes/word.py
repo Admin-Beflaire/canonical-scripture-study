@@ -54,7 +54,7 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
                         admitted_analysis_revisions: tuple[str, ...], basis: OutputBasis, *,
                         normalize: Callable[[str], str],
                         grammar_keys: Callable[[AnalysisAlternative], Iterable[str]],
-                        max_postings: int) -> tuple[WordPartition, ...]:
+                        max_postings: int, encoded_page_cap_bytes: int = 2048) -> tuple[WordPartition, ...]:
     """Build deterministic lookup rows over the exact Stage 1 occurrences.
 
     expected_by_revision is the admitted adapter's declared native-occurrence
@@ -76,6 +76,8 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
         raise RecordError('Word lookup rules need named versions in their reuse parameters')
     if type(max_postings) is not int or max_postings < 1:
         raise RecordError('Posting limit must be a positive integer')
+    if type(encoded_page_cap_bytes) is not int or not 1 <= encoded_page_cap_bytes <= MAX_SAFE_ORDER:
+        raise RecordError('Encoded page cap must be a positive safe integer')
 
     source_parts = tuple(source_partitions)
     if not source_parts:
@@ -166,6 +168,8 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
             normalized = normalize(observation.form)
             if not isinstance(normalized, str) or any(0xD800 <= ord(c) <= 0xDFFF for c in normalized):
                 raise RecordError('Invalid normalized form search key')
+            if normalized != source_posting['search_key']:
+                raise RecordError('Word normalization disagrees with source index')
             keys: set[tuple[str, str]] = {('form', 'form:' + normalized)}
             for alt in ordered:
                 keys.add(('lemma', 'lemma:' + alt.lemma_id))
@@ -204,6 +208,7 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
         ]
         word_basis = OutputBasis('word_index', basis.input_revisions, basis.method_version,
                                  {**basis.parameters, 'partition_max_postings': max_postings,
+                                  'encoded_page_cap_bytes': encoded_page_cap_bytes,
                                   'received_analysis_sha256': canonical_digest(received)},
                                  extent, tuple(dict.fromkeys((*basis.dependencies, part.basis.output_id))))
         results.append(WordPartition(word_basis, tuple(rows), state, limitation if state == 'partial' else None))

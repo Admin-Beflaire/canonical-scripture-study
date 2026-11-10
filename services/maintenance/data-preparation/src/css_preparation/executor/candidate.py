@@ -65,7 +65,15 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
         if (not isinstance(saved, bytes) or saved != records.blobs[artifact['id']]):
             raise RecordError('Saved artifact bytes differ from the candidate')
 
-    storage.write_rows(records.statements())
+    # Retry after a saved candidate but before its checkpoint/report: only exact
+    # complete atomic row sets may be acknowledged again. Never overwrite identities.
+    saved_outputs = [storage.read_row('prepared_output', row['id']) for row in outputs]
+    saved_artifacts = [storage.read_row('artifact', row['id']) for row in artifacts]
+    if any(row is not None for row in saved_outputs + saved_artifacts):
+        if (saved_outputs != outputs or saved_artifacts != artifacts):
+            raise RecordError('Existing candidate metadata is incomplete or different')
+    else:
+        storage.write_rows(records.statements())
     for output in outputs:
         if storage.read_row('prepared_output', output['id']) != output:
             raise RecordError('Saved candidate output identity differs')

@@ -1,5 +1,6 @@
 """DP-04 Stage 1: synthetic gates before a single preparation unit executes."""
 from dataclasses import replace
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -28,7 +29,8 @@ class ExecutorEntryTests(unittest.TestCase):
 
     def invoke(self, job=None, state=None, run_id='run-9', registered=None):
         self.observed = []
-        return execute_unit(json.dumps(self.job if job is None else job), run_id=run_id,
+        return execute_unit(json.dumps(self.job if job is None else job, sort_keys=True, ensure_ascii=False,
+                                       separators=(',', ':')), run_id=run_id,
                             read_control=lambda *_: self.state if state is None else state,
                             registered=registered or (lambda ref: self.observed.append(ref['id']) or True),
                             process=lambda entry: self.observed.append('processed') or entry['kind'])
@@ -79,10 +81,32 @@ class ExecutorEntryTests(unittest.TestCase):
             self.invoke(job=modified)
         self.assertEqual(self.observed, [])
 
+    def test_input_digest_uses_controls_exact_canonical_json_bytes(self):
+        job = deepcopy(self.job)
+        job['constraints'] = {'limit': 0.000001}
+        # JSON.stringify writes 0.000001; Python json.dumps writes 1e-06.
+        raw = json.dumps(job, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+        self.assertIn('1e-06', raw)
+        control_bytes = raw.replace('1e-06', '0.000001')
+        digest = hashlib.sha256(control_bytes.encode('utf-8')).hexdigest()
+        seen = []
+        result = execute_unit(control_bytes, run_id='run-9',
+                              read_control=lambda *_: replace(self.state, job_input_basis=digest),
+                              registered=lambda ref: True,
+                              process=lambda entry: seen.append(entry['kind']) or entry['kind'])
+        self.assertEqual(result, 'prepare')
+        self.assertEqual(seen, ['prepare'])
+        # A differently serialized payload, even with the same fields, was not dispatched.
+        with self.assertRaisesRegex(UnitNotRunnable, 'inputs changed'):
+            execute_unit(raw, run_id='run-9',
+                         read_control=lambda *_: replace(self.state, job_input_basis=digest),
+                         registered=lambda ref: True,
+                         process=lambda entry: self.fail('modified wire input ran'))
+
     def test_missing_registered_refs_prevent_processing(self):
         for rejected_id in ('src-rev-1', 'art-0', 'art-1'):
             with self.subTest(rejected_id=rejected_id), self.assertRaises(UnitNotRunnable):
-                self.invoke(registered=lambda ref: ref['id'] != rejected_id)
+                self.invoke(registered=lambda ref, rid=rejected_id: ref['id'] != rid)
             self.assertNotIn('processed', self.observed)
 
     def test_checkpoint_registration_is_required(self):

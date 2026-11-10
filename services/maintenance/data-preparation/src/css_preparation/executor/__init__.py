@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import json
 import re
 from typing import Any, Callable, TypeVar
 
@@ -71,9 +70,9 @@ def execute_unit(job_json: str, *, run_id: str,
             state.job_state not in _ACTIVE_JOBS):
         raise UnitNotRunnable('Control task or job is not runnable')
 
-    # Same canonical key ordering as Control's canonicalJson() / input_basis.
-    exact_basis = hashlib.sha256(json.dumps(job, sort_keys=True, ensure_ascii=False,
-                                          separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
+    # Control hashes canonicalJson(job) and sends those exact UTF-8 JSON bytes.
+    # Do not parse/serialize again: Python and JavaScript format some numbers differently.
+    exact_basis = hashlib.sha256(job_json.encode('utf-8')).hexdigest()
     if exact_basis != state.job_input_basis:
         raise UnitNotRunnable('Dispatched job inputs changed')
 

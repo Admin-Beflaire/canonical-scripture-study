@@ -35,8 +35,9 @@ jobs:
         run: |
           set -uo pipefail
           status="$RUNNER_TEMP/preparation-status.txt"
-          python3 -m css_preparation.runner --validate --status "$status" > /dev/null 2>&1
-          code=$?
+          # GitHub runs bash with -e: capture the exit code so the status line is still printed.
+          code=0
+          python3 -m css_preparation.runner --validate --status "$status" > /dev/null 2>&1 || code=$?
           cat "$status" 2>/dev/null || echo "Preparation job input refused; no work started."
           exit "$code"
 
@@ -69,8 +70,9 @@ jobs:
           set -uo pipefail
           umask 077
           status="$RUNNER_TEMP/preparation-status.txt"
-          python3 -m css_preparation.runner --kind acquire --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1
-          code=$?
+          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
+          code=0
+          python3 -m css_preparation.runner --kind acquire --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
@@ -104,8 +106,9 @@ jobs:
           set -uo pipefail
           umask 077
           status="$RUNNER_TEMP/preparation-status.txt"
-          python3 -m css_preparation.runner --kind prepare --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1
-          code=$?
+          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
+          code=0
+          python3 -m css_preparation.runner --kind prepare --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
@@ -139,8 +142,9 @@ jobs:
           set -uo pipefail
           umask 077
           status="$RUNNER_TEMP/preparation-status.txt"
-          python3 -m css_preparation.runner --kind quality --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1
-          code=$?
+          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
+          code=0
+          python3 -m css_preparation.runner --kind quality --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"

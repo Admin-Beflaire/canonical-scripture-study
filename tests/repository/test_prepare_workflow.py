@@ -1,6 +1,10 @@
 """GH-04: static properties of the protected preparation workflow (no Actions run needed)."""
 from pathlib import Path
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,6 +71,73 @@ class PrepareWorkflowTests(unittest.TestCase):
             self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")
         self.assertEqual(WORKFLOW.count("persist-credentials: false"), WORKFLOW.count("actions/checkout@"))
         self.assertEqual(WORKFLOW.count("python-version-file: .python-version"), 4)
+
+
+def run_script(name):
+    """The job's single `run: |` block, exactly as written in the workflow."""
+    block = job_block(name)
+    match = re.search(r"(?ms)^        run: \|\n(.*?)(?=^      - |\Z)", block)
+    assert match, name
+    return textwrap.dedent(match.group(1))
+
+
+class FailurePathTests(unittest.TestCase):
+    """Run each step script as GitHub does (bash -e -o pipefail) with a stand-in runner."""
+
+    def run_step(self, name, exit_code, write_status=True):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir, temp = root / "bin", root / "runner-temp"
+            bin_dir.mkdir()
+            temp.mkdir()
+            summary = root / "summary.md"
+            # Stand-in python3: writes the fixed status line, leaks text to stdout/stderr, then exits.
+            fake = bin_dir / "python3"
+            fake.write_text(textwrap.dedent(f"""\
+                #!/bin/bash
+                status=""
+                while [[ $# -gt 0 ]]; do [[ "$1" == --status ]] && status="$2"; shift; done
+                {'echo "Preparation unit finished: failed." > "$status"' if write_status else ''}
+                echo "PRIVATE-MARKER stdout"; echo "PRIVATE-MARKER stderr" >&2
+                exit {exit_code}
+                """))
+            fake.chmod(0o755)
+            script = root / "step.sh"
+            script.write_text(run_script(name))
+            env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "RUNNER_TEMP": str(temp),
+                   "GITHUB_STEP_SUMMARY": str(summary)}
+            completed = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
+                                       env=env, capture_output=True, text=True, timeout=30)
+            leftover = sorted(p.name for p in temp.iterdir())
+            summary_text = summary.read_text() if summary.exists() else ""
+            return completed, leftover, summary_text
+
+    def test_failed_runner_still_publishes_status_and_removes_private_log(self):
+        for name in RUN_JOBS:
+            completed, leftover, summary = self.run_step(name, 1)
+            self.assertEqual(completed.returncode, 1, name)
+            self.assertEqual(completed.stdout, "Preparation unit finished: failed.\n")
+            self.assertEqual(summary, "Preparation unit finished: failed.\n")
+            self.assertNotIn("PRIVATE-MARKER", completed.stdout + completed.stderr + summary)
+            self.assertNotIn("preparation-private.log", leftover)
+
+    def test_runner_without_status_reports_fixed_line(self):
+        for name in RUN_JOBS:
+            completed, leftover, _ = self.run_step(name, 3, write_status=False)
+            self.assertEqual(completed.returncode, 3)
+            self.assertIn("Control reconciles this run.", completed.stdout)
+            self.assertNotIn("preparation-private.log", leftover)
+
+    def test_successful_runner_exits_zero(self):
+        completed, leftover, _ = self.run_step("prepare", 0)
+        self.assertEqual(completed.returncode, 0)
+        self.assertNotIn("preparation-private.log", leftover)
+
+    def test_failed_validation_prints_fixed_status(self):
+        completed, _, _ = self.run_step("validate", 1)
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, "Preparation unit finished: failed.\n")
+        self.assertNotIn("PRIVATE-MARKER", completed.stdout + completed.stderr)
 
 
 if __name__ == "__main__":

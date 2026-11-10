@@ -80,6 +80,11 @@ class SavedInventoryStageFour(unittest.TestCase):
         self.assertTrue(self.rows('prepared_output')[-1]['id'] in unrelated.output_ids())
         self.assert_no_selection_change()
 
+    def test_invalid_basis_input_returns_record_error(self):
+        with self.assertRaisesRegex(RecordError, 'exact output bases'):
+            self.check(inventory=CandidateInventory(added=(object(),)))
+        self.assert_no_selection_change()
+
     def test_omitted_dependency_and_incompatible_reused_output_fail(self):
         evidence_basis, index_basis = self.inventory.added
         with self.assertRaisesRegex(RecordError, 'missing or omitted dependency'):

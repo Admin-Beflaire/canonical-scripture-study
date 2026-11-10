@@ -68,14 +68,14 @@ def verify_candidate_inventory(
     routine has no provider calls, release selection, or source admission logic.
     """
     bases = (*inventory.added, *inventory.reused)
+    if any(type(b) is not OutputBasis for b in bases):
+        raise RecordError('Candidate needs exact output bases')
     output_ids = tuple(b.output_id for b in bases)
     included = set(output_ids)
     omitted = set(inventory.omitted)
     if (not bases or len(included) != len(bases)
             or len(omitted) != len(inventory.omitted) or included & omitted):
         raise RecordError('Candidate has duplicate, empty or contradictory membership')
-    if any(type(b) is not OutputBasis for b in bases):
-        raise RecordError('Candidate needs exact output bases')
     for basis in bases:
         if not set(basis.dependencies).issubset(included):
             raise RecordError('Included output has a missing or omitted dependency')

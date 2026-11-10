@@ -38,6 +38,8 @@ export function jobInput(task: TaskRow, unit: UnitPlan, attempt: number): JobInp
     checkpoint_ref: unit.checkpoint_ref ?? null, constraints: scope.constraints,
   };
   assertJobInput(input);
+  if (input.kind === 'quality' && input.required_capabilities.length === 0)
+    throw new Error('Quality job must require at least one capability');
   return input;
 }
 

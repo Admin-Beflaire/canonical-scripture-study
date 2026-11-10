@@ -27,6 +27,20 @@ function result(task: TaskRow, overrides: Record<string, unknown> = {}) {
     coverage_refs: [], checkpoint_ref: null, quality_receipt_ref: null, state: 'succeeded', diagnostics: [], ...overrides };
 }
 
+test('quality jobs cannot dispatch without a required capability', async () => {
+  const { db, task } = await setup();
+  const sent = transport();
+  const quality: UnitPlan = { ...unit, kind: 'quality', required_capabilities: [] };
+  await assert.rejects(() => dispatchUnit(db, sent, task.id, 1, quality),
+    /Quality job must require at least one capability/);
+  assert.equal(sent.sent.length, 0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) AS n FROM maintenance_jobs').get()?.n, 0);
+  assert.equal((await taskReport(db, owner, task.id))?.state, 'queued');
+  const allowed = await dispatchUnit(db, sent, task.id, 1,
+    { ...quality, required_capabilities: ['source_text'] });
+  assert.equal(allowed.status, 'dispatched');
+});
+
 test('intent is saved before dispatch and a repeated dispatch never creates a duplicate run', async () => {
   const { db, task } = await setup();
   const wire = transport();

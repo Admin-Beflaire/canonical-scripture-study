@@ -113,24 +113,43 @@ def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | No
             return None
     if storage.read_rows is None:
         return None  # Without saved scoped rows, replay cannot verify integrity.
-    bases = []
-    for output_id in outputs:
-        row = storage.read_row('prepared_output', output_id)
+    # Verify this unit together with the saved transitive output dependencies.
+    # Index units commonly depend on an evidence output produced by another
+    # unit. Omitting that parent from inventory would falsely reject replay.
+    bases_by_id = {}
+    pending = list(outputs)
+    while pending:
+        current = pending.pop(0)
+        if current in bases_by_id:
+            continue
+        row = storage.read_row('prepared_output', current)
         try:
-            bases.append(OutputBasis(row['kind'], tuple(row['input_revisions_json']),
-                                     row['method_version'], row['parameters_json'],
-                                     row['native_extent_json'],
-                                     tuple(row['validation_basis_json']['dependencies'])))
+            basis = OutputBasis(row['kind'], tuple(row['input_revisions_json']),
+                                row['method_version'], row['parameters_json'],
+                                row['native_extent_json'],
+                                tuple(row['validation_basis_json']['dependencies']))
         except (KeyError, TypeError, ValueError):
             return None
+        if basis.output_id != current:
+            return None
+        bases_by_id[current] = basis
+        pending.extend(basis.dependencies)
     try:
-        verified = verify_candidate_inventory(CandidateInventory(added=tuple(bases)),
+        verified = verify_candidate_inventory(
+            CandidateInventory(added=tuple(bases_by_id[key] for key in outputs),
+                               reused=tuple(b for key, b in bases_by_id.items()
+                                            if key not in outputs)),
             read_rows=storage.read_rows, read_blob=storage.read_blob)
     except RecordError:
         return None
-    if (verified.output_ids != tuple(outputs) or
-            {tuple(sorted(ref.items())) for ref in verified.artifact_refs} !=
-            {tuple(sorted(ref.items())) for ref in references}):
+    current_refs = {
+        (row['id'], row['sha256'], row['byte_count'])
+        for row in storage.read_rows('artifact') if row.get('output_id') in outputs
+    }
+    expected_refs = {(ref['artifact_id'], ref['sha256'], ref['byte_count'])
+                     for ref in references}
+    if (tuple(verified.output_ids[:len(outputs)]) != tuple(outputs)
+            or current_refs != expected_refs):
         return None
     return SavedCandidate(tuple(outputs), tuple(dict(ref) for ref in references))
 

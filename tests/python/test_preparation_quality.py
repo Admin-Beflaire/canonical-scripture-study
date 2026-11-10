@@ -43,7 +43,8 @@ class CandidateQualityStageFive(unittest.TestCase):
     def load(self, ref):
         return self.received[ref['artifact_id']]
 
-    def invoke(self, *, job=None, rows=None, native=None, receipts=None, inventory=None):
+    def invoke(self, *, job=None, rows=None, native=None, receipts=None, inventory=None,
+               control=None, read_blob=None):
         job = dict(job or self.job)
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         state = ControlState(
@@ -51,12 +52,13 @@ class CandidateQualityStageFive(unittest.TestCase):
             job['unit_id'], job['attempt'], job['task_revision'],
             hashlib.sha256(raw.encode()).hexdigest(), 'quality-5', 'dispatched')
         self.raw = raw
+        self.state = state
         return check_candidate_quality(
-            raw, run_id='quality-5', read_control=lambda *_: state,
+            raw, run_id='quality-5', read_control=control or (lambda *_: state),
             registered=lambda _: True,
             inventory=inventory or self.saved.inventory,
             read_rows=rows or self.saved.rows,
-            read_blob=self.saved.blobs.__getitem__,
+            read_blob=read_blob or self.saved.blobs.__getitem__,
             read_source=native or (lambda _: text_a()),
             receipts=receipts or self.receipts)
 
@@ -157,6 +159,42 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed['state'], 'failed')
         self.assertIsNone(failed['quality_receipt_ref'])
         self.saved.assert_no_selection_change()
+
+    def test_receipt_is_identical_when_database_row_order_changes(self):
+        first = self.invoke()
+        self.assertEqual(first['state'], 'succeeded')
+        second = self.invoke(rows=lambda kind: list(reversed(self.saved.rows(kind))))
+        self.assertEqual(second['state'], 'succeeded')
+        self.assertEqual(first['quality_receipt_ref'], second['quality_receipt_ref'])
+        self.assertEqual(first['coverage_refs'], second['coverage_refs'])
+
+    def test_cancelled_mid_quality_never_emits_receipt(self):
+        from css_preparation.executor import UnitNotRunnable
+        calls = [0]
+        def reader(*_):
+            calls[0] += 1
+            return (self.state if calls[0] == 1 else
+                    replace(self.state, task_state='cancelled', task_revision=3))
+        with self.assertRaises(UnitNotRunnable):
+            self.invoke(control=reader)
+        self.assertEqual(calls[0], 2)
+        self.assertEqual(self.received, {})
+
+    def test_saved_object_changed_between_integrity_and_semantic_read_fails(self):
+        row = self.saved.records.rows('artifact')[0]
+        locator = row['registered_locator']
+        read_count = [0]
+        def changing(key):
+            if key == locator:
+                read_count[0] += 1
+                if read_count[0] > 1:
+                    return b'changed-after-validation'
+            return self.saved.blobs[key]
+        result = self.invoke(read_blob=changing)
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['completed_extent'], {})
+        self.assertIsNone(result['quality_receipt_ref'])
+        self.assertEqual(self.received, {})
 
     def test_changed_job_input_produces_distinct_immutable_receipt(self):
         first = self.invoke()

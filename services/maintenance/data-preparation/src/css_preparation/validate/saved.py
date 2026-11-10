@@ -199,4 +199,4 @@ def verify_candidate_inventory(
             checked_indexes.append(basis.output_id)
     return SavedInventory(output_ids, tuple({
         'artifact_id': r['id'], 'sha256': r['sha256'], 'byte_count': r['byte_count']
-    } for r in artifacts.values()), tuple(checked_indexes))
+    } for r in sorted(artifacts.values(), key=lambda row: row['id'])), tuple(checked_indexes))

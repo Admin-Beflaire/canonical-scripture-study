@@ -10,7 +10,7 @@ from ..prepare.evidence import NativeText
 from ..prepare.records import RecordError
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
-from . import ControlState, execute_unit
+from . import ControlState, UnitNotRunnable, execute_unit
 from .checkpoints import CheckpointStore, _check_ref
 
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}')
@@ -91,7 +91,9 @@ def check_candidate_quality(
             return result('succeeded', completed_extent=dict(entry['native_extent']),
                 remaining_extent={}, output_refs=list(evidence.saved.artifact_refs),
                 coverage_refs=coverage_refs, quality_receipt_ref=reference)
-        except (RecordError, KeyError, ValueError, UnicodeError, OSError):
+        except UnitNotRunnable:
+            raise  # A late cancellation is not a failed quality check.
+        except (RecordError, KeyError, ValueError, UnicodeError):
             return result('failed', diagnostics=[{
                 'code': 'quality_failed', 'message': 'Saved candidate failed quality checks'}])
 

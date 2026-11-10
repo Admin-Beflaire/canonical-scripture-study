@@ -46,7 +46,15 @@ def check_saved_semantics(
         raise RecordError('Candidate inputs disagree with dispatched registered sources')
     rows = {kind: [dict(row) for row in read_rows(kind)] for kind in ORDER}
     artifacts = {r['id']: r for r in rows['artifact'] if r['output_id'] in included}
-    blobs = {key: read_blob(row['registered_locator']) for key, row in artifacts.items()}
+    blobs = {}
+    for key, row in artifacts.items():
+        data = read_blob(row['registered_locator'])
+        # The saved-inventory check performed an earlier read; fail closed if
+        # an object changes between validation and semantic inspection.
+        if (not isinstance(data, bytes) or len(data) != row['byte_count']
+                or hashlib.sha256(data).hexdigest() != row['sha256']):
+            raise RecordError('Saved artifact changed during semantic validation')
+        blobs[key] = data
     texts = {r['content_id']: r['exact_text'] for r in rows['text_payload']}
     spans = {r['id']: r for r in rows['native_span'] if r['output_id'] in included}
     segments = {(r['span_id'], r['segment_ordinal']): r for r in rows['span_segment']
@@ -98,8 +106,11 @@ def check_saved_semantics(
         if span['reading_kind'] == 'gap' and any(piece for piece in wording):
             raise RecordError('Saved gap contains wording')
 
+    members_by_relation: dict[str, list[dict]] = {}
+    for member in rows['relation_member']:
+        members_by_relation.setdefault(member['relationship_id'], []).append(member)
     for relation in (r for r in rows['relationship'] if r['output_id'] in included):
-        members = [r for r in rows['relation_member'] if r['relationship_id'] == relation['id']]
+        members = members_by_relation.get(relation['id'], [])
         for member in members:
             endpoint = member['span_id']
             if endpoint is not None and endpoint not in spans:
@@ -120,7 +131,11 @@ def check_saved_semantics(
                     posting = json.loads(line)
                 except (ValueError, UnicodeError) as error:
                     raise RecordError('Saved native posting is malformed') from error
-                ref = posting['native_reference']
+                if not isinstance(posting, dict):
+                    raise RecordError('Saved native posting is not an object')
+                ref = posting.get('native_reference')
+                if not isinstance(ref, dict) or not isinstance(ref.get('segments'), list) or not ref['segments']:
+                    raise RecordError('Saved native posting has no segments')
                 pieces = []
                 for segment in ref['segments']:
                     body = text.unit(segment['unit_id'])
@@ -144,7 +159,8 @@ def check_saved_semantics(
                 if posting['posting_kind'] == 'word' and posting['form'] not in ''.join(pieces):
                     raise RecordError('Saved word form disagrees with source wording')
 
-    coverage = tuple(dict(row) for row in rows['coverage'] if row['output_id'] in included)
+    coverage = tuple(sorted((dict(row) for row in rows['coverage'] if row['output_id'] in included),
+                            key=lambda row: (row['output_id'], row['source_revision_id'], row['capability'])))
     required_units = job['native_extent'].get('unit_ids')
     if not isinstance(required_units, list) or not required_units:
         raise RecordError('Quality job requires explicit native unit scope')

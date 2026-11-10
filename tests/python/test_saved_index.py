@@ -116,6 +116,20 @@ class SavedIndexStageFour(unittest.TestCase):
             verify_saved_index(wrong, self.a.records.rows('prepared_output')[0],
                                self.a.records.rows('artifact'),
                                self.a.records.rows('coverage'), self.a.records.blobs)
+        # A forged manifest can have correct SHA-256 yet contradict its output basis.
+        artifacts, coverage, blobs = self.mutate_manifest(
+            self.a, lambda manifest: manifest.update(encoded_page_cap_bytes=700))
+        with self.assertRaisesRegex(RecordError, 'page cap disagrees'):
+            self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+        # A path from the retired colon-containing form must not be reused.
+        legacy = deepcopy(self.artifacts)
+        for row in legacy:
+            if row['id'] == built.postings_artifact_id:
+                row['registered_locator'] = (
+                    f"prepared/{row['output_id']}/indexes/{row['sha256']}/postings.ndjson")
+        with self.assertRaisesRegex(RecordError, 'incompatible object key'):
+            self.check(self.a, artifacts=legacy)
+
 
     def test_wrong_basis_or_missing_registered_bytes_are_not_reused(self):
         saved = next(row for row in self.outputs if row['id'] == self.a.manifest['prepared_output_id'])

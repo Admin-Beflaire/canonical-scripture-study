@@ -1,7 +1,9 @@
 import { fromJsonSchema } from '@modelcontextprotocol/server';
 import { platformServer } from '../../../../packages/shared/src/platform.ts';
 import type { D1Database } from './d1.ts';
-import { controlTask, listTasks, requestTask, taskReport, TASK_KINDS, type ControlAction, type TaskRequest } from './tasks.ts';
+import type { GitHubActions } from './github.ts';
+import { advance, reconcile } from './progress.ts';
+import { controlTask, listTasks, requestTask, taskReport, TASK_KINDS, type ControlAction, type Outcome, type TaskRequest } from './tasks.ts';
 
 /** Essential guidance sent to both hosts on initialize, so no separate skill is needed. */
 export const CONTROL_INSTRUCTIONS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction.
@@ -11,6 +13,8 @@ Workflow:
 2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
+
+Preparation runs by itself in GitHub Actions: a task that names a reviewed recipe in constraints.recipe dispatches its units in order, each unit's result starts the next, and failed units are retried up to three times. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units; cancel also stops running ones; resume continues only unfinished units.
 
 Kinds: prepare (includes acquisition and index rebuilds), correct, replace, remove, package (source references only, never answers), incorporate_statement (needs the owner's named and versioned approval), rollback, validate_restore.
 Report to the owner plainly: received, prepared, checked, partial or current. Work continues without an open chat; check back with get_task.`;
@@ -53,7 +57,7 @@ const reply = (summary: string, data: unknown, isError = false) => ({
 });
 
 /** The single Maintenance MCP server for one authenticated request. */
-export function controlServer(db: D1Database, requester: string | undefined, enhancements: boolean) {
+export function controlServer(db: D1Database, requester: string | undefined, enhancements: boolean, github: GitHubActions | null = null) {
   const server = platformServer('control', enhancements, CONTROL_INSTRUCTIONS);
   const owner = () => {
     if (!requester) throw new Error('Task tools need the authenticated owner.');
@@ -66,15 +70,22 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
     const result = await requestTask(db, owner(), request);
     if (result.status === 'needs_information') return reply('More information is needed from the owner before this task can start.', result);
     if (result.status === 'conflict') return reply(result.message, result, true);
-    const { task } = result;
-    return reply(`Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}.`,
-      { status: result.status, task_id: task.id, state: task.state, revision: task.revision, superseded: result.superseded });
+    const progress = await advance(db, github, result.task.id);
+    const task = (await taskReport(db, owner(), result.task.id))!;
+    return reply(`Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${progress.dispatched.length ? `; dispatched ${progress.dispatched.join(', ')}` : ''}.`,
+      { status: result.status, task_id: task.id, state: task.state, revision: task.revision, superseded: result.superseded,
+        dispatched: progress.dispatched, limitations: task.limitations });
   });
   server.registerTool('get_task', {
     description: 'Without task_id: list open and recent tasks (newest first, bounded pages). With task_id: requested, completed and remaining scope, jobs, checks, selection and limitations.',
     inputSchema: getSchema,
   }, async ({ task_id, cursor }) => {
     if (task_id) {
+      if (await taskReport(db, owner(), task_id)) {
+        // Reconcile interrupted work and continue progression before reporting.
+        await reconcile(db, github, task_id);
+        await advance(db, github, task_id);
+      }
       const report = await taskReport(db, owner(), task_id);
       if (!report) return reply('No task with this ID.', { task_id }, true);
       return reply(`Task ${report.id} is ${report.state} (revision ${report.revision}); data ${report.data_current ? 'became current' : 'is not current from this task'}.`, report);
@@ -88,8 +99,18 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
   }, async ({ task_id, expected_revision, action }) => {
     const result = await controlTask(db, owner(), task_id, expected_revision, action);
     if (result.status !== 'ok') return reply(result.message, { status: result.status, state: result.task?.state, revision: result.task?.revision }, true);
-    return reply(`Task ${result.task.id} is now ${result.task.state} (revision ${result.task.revision}).`,
-      { status: 'ok', state: result.task.state, revision: result.task.revision });
+    let cancelled: string[] = [];
+    if (action === 'cancel' && github) {
+      const runs = (JSON.parse(result.task.outcome_json) as Outcome).cancel_requested_runs ?? [];
+      cancelled = (await Promise.all(runs.map(async run => (await github.cancel(run)) ? run : null))).filter((run): run is string => run !== null);
+    }
+    if (action === 'resume') {
+      await reconcile(db, github, task_id);
+      await advance(db, github, task_id);
+    }
+    const task = (await taskReport(db, owner(), task_id))!;
+    return reply(`Task ${task.id} is now ${task.state} (revision ${task.revision}).`,
+      { status: 'ok', state: task.state, revision: task.revision, ...(action === 'cancel' ? { runs_cancelled: cancelled } : {}) });
   });
   return server;
 }

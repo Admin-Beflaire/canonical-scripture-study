@@ -13,6 +13,8 @@ export interface UnitPlan {
   unit_id: string; kind: JobInput['kind']; manifest_revision: string; recipe_revision: string;
   native_extent: Record<string, unknown>; required_capabilities?: string[]; dependency_refs?: ArtifactRef[];
   checkpoint_ref?: ArtifactRef | null;
+  /** Unit-specific constraints, for example the quality unit's candidate output IDs. */
+  constraints?: Record<string, unknown>;
 }
 interface JobRow {
   task_id: string; task_revision: number; unit_id: string; attempt: number; kind: string; input_basis: string;
@@ -35,7 +37,7 @@ export function jobInput(task: TaskRow, unit: UnitPlan, attempt: number): JobInp
     kind: unit.kind, basis_digest: task.basis_digest, input_refs: scope.inputs, manifest_revision: unit.manifest_revision,
     recipe_revision: unit.recipe_revision, native_extent: unit.native_extent,
     required_capabilities: unit.required_capabilities ?? scope.capabilities, dependency_refs: unit.dependency_refs ?? [],
-    checkpoint_ref: unit.checkpoint_ref ?? null, constraints: scope.constraints,
+    checkpoint_ref: unit.checkpoint_ref ?? null, constraints: { ...scope.constraints, ...(unit.constraints ?? {}) },
   };
   assertJobInput(input);
   if (input.kind === 'quality' && input.required_capabilities.length === 0)
@@ -113,9 +115,9 @@ export async function acceptReceipt(db: D1Database, value: unknown, reportedComm
   const checkpoint = result.checkpoint_ref ? `${result.checkpoint_ref.artifact_id}@${result.checkpoint_ref.sha256}` : job.checkpoint_ref;
   const update = await db.prepare(`UPDATE maintenance_jobs SET
       state = CASE WHEN (SELECT state FROM maintenance_tasks WHERE id = ?) IN ('cancelled','superseded') THEN 'cancelled' ELSE ? END,
-      checkpoint_ref = ?, result_ref = ?
+      checkpoint_ref = ?, result_ref = ?, result_json = ?
     WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = ?`)
-    .bind(job.task_id, result.state, checkpoint, resultRef, job.task_id, job.unit_id, job.attempt, job.state).run();
+    .bind(job.task_id, result.state, checkpoint, resultRef, canonicalJson(result), job.task_id, job.unit_id, job.attempt, job.state).run();
   if (!update.meta.changes) return { status: 'rejected', reason: 'the job changed while recording; resend the receipt' };
   const state = (await db.prepare('SELECT state FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?')
     .bind(job.task_id, job.unit_id, job.attempt).first<{ state: string }>())!.state;

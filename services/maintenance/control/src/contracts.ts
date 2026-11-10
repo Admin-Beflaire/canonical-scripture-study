@@ -1,4 +1,5 @@
 import jobsSchema from '../../../../schemas/maintenance/jobs.v1.schema.json' with { type: 'json' };
+import recipeSchema from '../../../../schemas/maintenance/recipe.v1.schema.json' with { type: 'json' };
 
 /** Versioned job envelopes shared with the Python executor. Workers cannot compile
  *  schemas at runtime, so this validates the small keyword subset the schema uses and
@@ -6,8 +7,10 @@ import jobsSchema from '../../../../schemas/maintenance/jobs.v1.schema.json' wit
  *  single source of truth. */
 type Schema = Record<string, unknown>;
 const SUPPORTED = new Set(['type', 'enum', 'const', 'pattern', 'minLength', 'maxLength', 'minimum', 'required',
-  'properties', 'additionalProperties', 'maxProperties', 'items', 'maxItems', '$ref']);
-const defs = (jobsSchema as { $defs: Record<string, Schema> }).$defs;
+  'properties', 'additionalProperties', 'maxProperties', 'items', 'minItems', 'maxItems', '$ref', 'description']);
+type Defs = Record<string, Schema>;
+const defs = (jobsSchema as { $defs: Defs }).$defs;
+const recipeDefs = (recipeSchema as { $defs: Defs }).$defs;
 
 function typeOf(value: unknown) {
   if (value === null) return 'null';
@@ -16,12 +19,12 @@ function typeOf(value: unknown) {
   return typeof value;
 }
 
-function check(schema: Schema, value: unknown, path: string, errors: string[]) {
+function check(schema: Schema, value: unknown, path: string, errors: string[], from: Defs = defs) {
   for (const key of Object.keys(schema)) if (!SUPPORTED.has(key)) throw new Error(`Unsupported schema keyword ${key}`);
   if (typeof schema.$ref === 'string') {
     const name = /^#\/\$defs\/([a-z_]+)$/.exec(schema.$ref)?.[1];
-    if (!name || !defs[name]) throw new Error(`Unknown schema reference ${schema.$ref}`);
-    check(defs[name], value, path, errors);
+    if (!name || !from[name]) throw new Error(`Unknown schema reference ${schema.$ref}`);
+    check(from[name], value, path, errors, from);
     return;
   }
   const actual = typeOf(value);
@@ -43,7 +46,8 @@ function check(schema: Schema, value: unknown, path: string, errors: string[]) {
   if (actual === 'array') {
     const items = value as unknown[];
     if (typeof schema.maxItems === 'number' && items.length > schema.maxItems) errors.push(`${path}: too many items`);
-    if (schema.items) items.forEach((item, index) => check(schema.items as Schema, item, `${path}[${index}]`, errors));
+    if (typeof schema.minItems === 'number' && items.length < schema.minItems) errors.push(`${path}: too few items`);
+    if (schema.items) items.forEach((item, index) => check(schema.items as Schema, item, `${path}[${index}]`, errors, from));
   }
   if (actual === 'object') {
     const object = value as Record<string, unknown>;
@@ -51,7 +55,7 @@ function check(schema: Schema, value: unknown, path: string, errors: string[]) {
     if (typeof schema.maxProperties === 'number' && Object.keys(object).length > schema.maxProperties) errors.push(`${path}: too many fields`);
     for (const name of (schema.required ?? []) as string[]) if (!Object.hasOwn(object, name)) errors.push(`${path}.${name}: required`);
     for (const [name, item] of Object.entries(object)) {
-      if (Object.hasOwn(properties, name)) check(properties[name], item, `${path}.${name}`, errors);
+      if (Object.hasOwn(properties, name)) check(properties[name], item, `${path}.${name}`, errors, from);
       else if (schema.additionalProperties === false) errors.push(`${path}.${name}: not allowed`);
     }
   }
@@ -81,6 +85,16 @@ export function contractErrors(name: 'job_input' | 'job_result', value: unknown)
   check(defs[name], value, '$', errors);
   return errors;
 }
+/** Problems with a preparation recipe (schemas/maintenance/recipe.v1.schema.json). */
+export function recipeErrors(value: unknown): string[] {
+  const errors: string[] = [];
+  check(recipeDefs.recipe, value, '$', errors, recipeDefs);
+  return errors;
+}
+export interface RecipeUnit {
+  unit_id: string; kind: JobInput['kind']; native_extent: Record<string, unknown>; depends_on: string[]; required_capabilities?: string[];
+}
+export interface Recipe { id: string; revision: string; manifest_revision?: string; units?: RecipeUnit[] }
 export function assertJobInput(value: unknown): asserts value is JobInput {
   const errors = contractErrors('job_input', value);
   if (errors.length) throw new Error(`Invalid job input: ${errors.slice(0, 5).join('; ')}`);

@@ -98,7 +98,7 @@ test('a cancel that loses the revision race changes no jobs', async () => {
   const created = await requestTask(db, owner, prepare());
   assert.ok(created.status === 'created');
   const id = created.task.id;
-  db.sqlite.exec(`INSERT INTO maintenance_jobs VALUES ('${id}',1,'u1',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`);
+  db.sqlite.exec(`INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, checkpoint_ref, result_ref) VALUES ('${id}',1,'u1',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`);
   // Another change lands between this caller's read and its write.
   const racing = { ...db, batch: async (statements: Parameters<typeof db.batch>[0]) => {
     db.sqlite.exec(`UPDATE maintenance_tasks SET state = 'paused', revision = 2 WHERE id = '${id}'`);
@@ -113,7 +113,7 @@ test('pause, resume and cancel are revision guarded and keep truthful remaining 
   const created = await requestTask(db, owner, prepare());
   assert.ok(created.status === 'created');
   const id = created.task.id;
-  db.sqlite.exec(`INSERT INTO maintenance_jobs VALUES ('${id}',1,'u-sent',1,'prepare','${'a'.repeat(64)}','run-7','running','ckpt-1',NULL),
+  db.sqlite.exec(`INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, checkpoint_ref, result_ref) VALUES ('${id}',1,'u-sent',1,'prepare','${'a'.repeat(64)}','run-7','running','ckpt-1',NULL),
     ('${id}',1,'u-unsent',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`);
   assert.equal((await controlTask(db, owner, id, 2, 'pause')).status, 'conflict');
   assert.equal((await controlTask(db, owner, id, 1, 'resume')).status, 'not_allowed');

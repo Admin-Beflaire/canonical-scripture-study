@@ -78,10 +78,16 @@ export async function dispatchUnit(db: D1Database, transport: WorkflowTransport,
     db.prepare(`UPDATE maintenance_tasks SET state = 'running', revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'queued'`)
       .bind(task.id, task.revision),
   ]);
-  // The task was cancelled or superseded while the workflow was starting: the run exists but
-  // has no job record, so the caller must ask the executor to cancel it.
-  if (!confirmed.meta.changes)
+  if (!confirmed.meta.changes) {
+    // The run may already have confirmed itself through the state route while GitHub's reply was
+    // on its way: that is the same, successful dispatch.
+    const bound = await db.prepare('SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?')
+      .bind(task.id, unit.unit_id, attempt).first<{ run_id: string | null }>();
+    if (bound?.run_id === runId) return { status: 'dispatched', run_id: runId, attempt };
+    // The task was cancelled or superseded while the workflow was starting: the run exists but
+    // has no job record, so the caller must ask the executor to cancel it.
     return { status: 'orphaned', run_id: runId, attempt, message: 'The task was cancelled or superseded during dispatch. Ask the executor to cancel this run.' };
+  }
   return { status: 'dispatched', run_id: runId, attempt };
 }
 

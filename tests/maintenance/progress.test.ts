@@ -351,3 +351,50 @@ function mcpCaller(db: ReturnType<typeof localD1>, github: GitHubActions) {
     return JSON.parse(text.startsWith('{') ? text : text.split('\n').find(line => line.startsWith('data: '))!.slice(6));
   };
 }
+
+test('R22-4: a run that confirms itself before GitHub replies is the same dispatch, not an orphan', async () => {
+  const context = await setup();
+  const { db, gh, task, post } = context;
+  context.gh.state.onDispatch = async run => {
+    // The runner starts and reads its state while Control still awaits the dispatch reply.
+    const confirmed = await post('/internal/jobs/state', { task_id: task.id, unit_id: 'acquire', attempt: 1,
+      run_id: String(run.id), job_input_basis: sha(run.job) });
+    assert.equal(confirmed.status, 200);
+  };
+  const progress = await advance(db, context.github, task.id);
+  assert.deepEqual(progress.dispatched, ['acquire']);
+  const run = [...gh.runs.values()][0];
+  assert.equal(run.conclusion, null, 'the legitimately claimed run is not cancelled');
+  assert.ok(!gh.requests.some(request => request.url.endsWith('/cancel')));
+  const job = db.sqlite.prepare('SELECT state, run_id FROM maintenance_jobs').get() as Record<string, unknown>;
+  assert.deepEqual([job.state, job.run_id], ['dispatched', String(run.id)]);
+  assert.equal((await taskReport(db, owner, task.id))?.state, 'running');
+});
+
+test('R22-5: a losing first advance never dispatches under a recipe revision other than the saved pin', async () => {
+  const context = await setup();
+  const { db, gh, task } = context;
+  gh.state.onRecipeRead = () => {
+    // A concurrent first advance pins revision r2 while this one still holds r1.
+    gh.state.onRecipeRead = undefined;
+    const row = db.sqlite.prepare('SELECT outcome_json FROM maintenance_tasks WHERE id = ?').get(task.id) as { outcome_json: string };
+    const outcome = { ...JSON.parse(row.outcome_json), recipe_revision: 'synthetic-r2' };
+    db.sqlite.prepare('UPDATE maintenance_tasks SET revision = revision + 1, outcome_json = ? WHERE id = ?').run(JSON.stringify(outcome), task.id);
+  };
+  const progress = await advance(db, context.github, task.id);
+  assert.deepEqual(progress.dispatched, []);
+  assert.equal(gh.runs.size, 0, 'nothing dispatched under r1');
+  // The next advance sees the saved pin r2 differ from main's r1 and blocks with the reason.
+  const next = await advance(db, context.github, task.id);
+  assert.equal(next.state, 'blocked');
+  assert.ok(next.limitation?.includes('recipe changed from synthetic-r2 to synthetic-r1'));
+  assert.equal(gh.runs.size, 0);
+});
+
+test('a recipe that is not valid UTF-8 blocks the task as a recipe problem, not an outage', async () => {
+  const context = await setup();
+  context.gh.state.rawRecipes.set('collection/recipes/synthetic.json', new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]));
+  const progress = await advance(context.db, context.github, context.task.id);
+  assert.equal(progress.state, 'blocked');
+  assert.match(progress.limitation ?? '', /not valid UTF-8/);
+});

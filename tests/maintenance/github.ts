@@ -10,7 +10,8 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
   const requests: Array<{ method: string; url: string; headers: Record<string, string>; body: unknown }> = [];
   let next = 1000;
   const state = { loseNextDispatchResponse: false, failDispatch: false, redirect: false, down: false, offline: false,
-    failCancel: false, onDispatch: undefined as undefined | (() => void) };
+    failCancel: false, onDispatch: undefined as undefined | ((run: FakeRun) => void | Promise<void>),
+    onRecipeRead: undefined as undefined | (() => void | Promise<void>), rawRecipes: new Map<string, Uint8Array>() };
 
   const fetcher: typeof fetch = async (input, init = {}) => {
     const url = String(input);
@@ -30,7 +31,7 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
       const id = next++;
       runs.set(id, { id, path: '.github/workflows/prepare.yml', event: 'workflow_dispatch', head_branch: body.ref,
         head_sha: commit, status: 'queued', conclusion: null, job: body.inputs.job });
-      state.onDispatch?.();
+      await state.onDispatch?.(runs.get(id)!);
       if (state.loseNextDispatchResponse) { state.loseNextDispatchResponse = false; throw new TypeError('connection reset'); }
       return json(200, { workflow_run_id: id, run_url: `x/${id}`, html_url: `y/${id}` });
     }
@@ -51,6 +52,9 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
     }
     match = /^\/contents\/(collection\/recipes\/[^?]+)\?ref=main$/.exec(path);
     if (method === 'GET' && match) {
+      await state.onRecipeRead?.();
+      const raw = state.rawRecipes.get(match[1]);
+      if (raw) return json(200, { encoding: 'base64', content: btoa(String.fromCharCode(...raw)) });
       const recipe = recipes.get(match[1]);
       if (recipe === undefined) return json(404, {});
       return json(200, { encoding: 'base64', content: btoa(String.fromCharCode(...new TextEncoder().encode(canonicalJson(recipe)))) });

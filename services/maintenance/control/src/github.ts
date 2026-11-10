@@ -13,6 +13,9 @@ const ACTIVE = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pendin
 export interface GitHubSettings { repository: string; token: string }
 export interface RunInfo { run_id: string; head_sha: string; status: string; conclusion: string | null }
 
+/** A reviewed file exists but is not valid UTF-8: a recipe problem, not an outage. */
+export class FileEncodingError extends Error {}
+
 export class GitHubError extends Error {
   readonly status?: number;
   constructor(message: string, status?: number) { super(message); this.status = status; }
@@ -36,13 +39,19 @@ export class GitHubActions implements WorkflowTransport {
   }
 
   private async call(method: string, path: string, body?: unknown): Promise<unknown> {
-    const response = await this.fetcher(`${API}/repos/${this.settings.repository}${path}`, {
-      method, redirect: 'error', headers: body === undefined ? this.headers : { ...this.headers, 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let text: string;
+    let response: Response;
+    try {
+      response = await this.fetcher(`${API}/repos/${this.settings.repository}${path}`, {
+        method, redirect: 'error', headers: body === undefined ? this.headers : { ...this.headers, 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (response.ok) text = await response.text();
+    } catch {
+      throw new GitHubError(`GitHub ${method} request did not complete`);
+    }
     if (!response.ok) throw new GitHubError(`GitHub ${method} refused with HTTP ${response.status}`, response.status);
-    const text = await response.text();
-    return text ? JSON.parse(text) : null;
+    try { return text! ? JSON.parse(text!) : null; } catch { throw new GitHubError('GitHub reply was not JSON'); }
   }
 
   /** Dispatch one unit. The job input is Control's canonical JSON text: the exact bytes it hashed. */
@@ -85,8 +94,11 @@ export class GitHubActions implements WorkflowTransport {
     try {
       const reply = await this.call('GET', `/contents/${path}?ref=${BRANCH}`) as { encoding?: string; content?: string };
       if (reply.encoding !== 'base64' || typeof reply.content !== 'string') return null;
-      const bytes = Uint8Array.from(atob(reply.content.replace(/\s/g, '')), c => c.charCodeAt(0));
-      return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+      let bytes: Uint8Array;
+      try { bytes = Uint8Array.from(atob(reply.content.replace(/\s/g, '')), c => c.charCodeAt(0)); }
+      catch { throw new GitHubError('GitHub file content was not base64'); }
+      try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes); }
+      catch { throw new FileEncodingError(`${path} is not valid UTF-8`); }
     } catch (error) {
       if (error instanceof GitHubError && error.status === 404) return null;
       throw error;

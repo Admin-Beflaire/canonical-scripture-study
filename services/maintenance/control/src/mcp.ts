@@ -79,7 +79,7 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
     const progress = await progressSafely(() => advance(db, github, result.task.id));
     const task = (await taskReport(db, owner(), result.task.id))!;
     const dispatched = progress?.dispatched ?? [];
-    return reply(`Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${dispatched.length ? `; dispatched ${dispatched.join(', ')}` : ''}${progress === null || progress.limitation === 'github_unavailable' ? '; dispatch postponed, it continues on the next check' : ''}.`,
+    return reply(`Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${dispatched.length ? `; dispatched ${dispatched.join(', ')}` : ''}${progress === null ? '; the progression check did not complete, it continues on the next check' : progress.limitation === 'github_unavailable' ? '; dispatch postponed (GitHub unavailable), it continues on the next check' : ''}.`,
       { status: result.status, task_id: task.id, state: task.state, revision: task.revision, superseded: result.superseded,
         dispatched, limitations: task.limitations });
   });
@@ -92,9 +92,10 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
       if (await taskReport(db, owner(), task_id)) {
         // Reconcile interrupted work and continue progression before reporting. A GitHub outage
         // only postpones this; the saved status is still reported.
-        notes = (await progressSafely(() => reconcile(db, github, task_id))) ?? ['GitHub was unavailable; checked again later'];
+        notes = (await progressSafely(() => reconcile(db, github, task_id))) ?? ['The reconciliation check did not complete; it runs again on the next check.'];
         const progress = await progressSafely(() => advance(db, github, task_id));
-        if (progress === null || progress.limitation === 'github_unavailable') notes.push('Dispatch postponed: GitHub was unavailable; it continues on the next check.');
+        if (progress === null) notes.push('The progression check did not complete; it continues on the next check.');
+        else if (progress.limitation === 'github_unavailable') notes.push('Dispatch postponed: GitHub was unavailable; it continues on the next check.');
       }
       const report = await taskReport(db, owner(), task_id);
       if (!report) return reply('No task with this ID.', { task_id }, true);

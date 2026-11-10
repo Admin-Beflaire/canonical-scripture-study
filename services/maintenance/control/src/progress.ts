@@ -1,7 +1,7 @@
 import { canonicalJson, type D1Database } from './d1.ts';
 import { recipeErrors, type ArtifactRef, type JobResult, type Recipe, type RecipeUnit } from './contracts.ts';
 import { dispatchUnit, type DispatchResult, type UnitPlan } from './dispatch.ts';
-import { GitHubError, type GitHubActions } from './github.ts';
+import { FileEncodingError, GitHubError, type GitHubActions } from './github.ts';
 import type { Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
@@ -17,7 +17,12 @@ export type Progress = { dispatched: string[]; state: string; limitation?: strin
 /** Read and check the recipe named in the task, from reviewed main. */
 export async function loadRecipe(github: GitHubActions, id: unknown): Promise<{ recipe?: Recipe; problem?: string }> {
   if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(id)) return { problem: 'constraints.recipe must name a reviewed recipe' };
-  const text = await github.readFile(`collection/recipes/${id}.json`);
+  let text: string | null;
+  try { text = await github.readFile(`collection/recipes/${id}.json`); }
+  catch (error) {
+    if (error instanceof FileEncodingError) return { problem: `recipe ${id} is not valid UTF-8` };
+    throw error;
+  }
   if (text === null) return { problem: `recipe ${id} is not on main` };
   let value: unknown;
   try { value = JSON.parse(text); } catch { return { problem: `recipe ${id} is not valid JSON` }; }
@@ -71,7 +76,7 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   try { loaded = await loadRecipe(github, scope.constraints.recipe); }
   catch (error) {
     // A temporary GitHub failure postpones progression; it never blocks the task.
-    if (error instanceof GitHubError || error instanceof TypeError) return { dispatched: [], state: row.state, limitation: 'github_unavailable' };
+    if (error instanceof GitHubError) return { dispatched: [], state: row.state, limitation: 'github_unavailable' };
     throw error;
   }
   const { recipe, problem } = loaded;
@@ -83,6 +88,11 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     return { dispatched: [], state: 'blocked', limitation: problem ?? changed };
   }
   if (!pinned) await setOutcome(db, row, outcome => { outcome.recipe_revision = recipe!.revision; });
+  // Dispatch only under the pin that is actually saved: a concurrent first advance may have
+  // pinned a different recipe revision. The pin is checked again before every dispatch.
+  const pinnedNow = (current: TaskRow) => (JSON.parse(current.outcome_json) as { recipe_revision?: string }).recipe_revision === recipe!.revision;
+  row = (await task(db, taskId))!;
+  if (!pinnedNow(row)) return { dispatched: [], state: row.state };
 
   const jobs = (await db.prepare('SELECT unit_id, attempt, kind, state, run_id, result_json FROM maintenance_jobs WHERE task_id = ? ORDER BY unit_id, attempt')
     .bind(taskId).all<JobView>()).results;
@@ -114,7 +124,7 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
       return { dispatched, state: 'blocked', limitation: plan.problem };
     }
     row = (await task(db, taskId))!;
-    if (!['queued', 'running'].includes(row.state)) break;
+    if (!['queued', 'running'].includes(row.state) || !pinnedNow(row)) break;
     const result: DispatchResult = await dispatchUnit(db, github, taskId, row.revision, plan);
     if (result.status === 'dispatched') dispatched.push(unit.unit_id);
     // The task stopped while the run was starting: it has no job record, so stop it now. If that

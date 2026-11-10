@@ -35,7 +35,7 @@ def check_output_basis(job: dict[str, Any], rows: list[dict[str, Any]]) -> None:
                     and extent.get('coordinate_version') != job['native_extent']['coordinate_version'])):
             raise RecordError('Output source or native extent differs from dispatched unit')
         dependencies = set(row['validation_basis_json'].get('dependencies', []))
-        known = ids | {ref['id'] for ref in job['dependency_refs']}
+        known = ids | {ref['artifact_id'] for ref in job['dependency_refs']}
         if not dependencies.issubset(known):
             raise RecordError('Output has an undeclared or missing dependency')
 

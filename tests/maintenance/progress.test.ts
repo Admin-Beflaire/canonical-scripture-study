@@ -266,3 +266,88 @@ test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to s
   assert.deepEqual(body.runs_cancelled, [String([...gh.runs.keys()][0])]);
   assert.equal([...gh.runs.values()][0].conclusion, 'cancelled');
 });
+
+test('R22-1: a GitHub outage postpones progression but never breaks or blocks the task tools', async () => {
+  for (const mode of ['down', 'offline'] as const) {
+    const db = localD1();
+    const gh = fakeGitHub({ recipes: { 'collection/recipes/synthetic.json': recipe } });
+    const github = new GitHubActions({ repository: 'owner/app', token: 't' }, gh.fetcher);
+    const call = mcpCaller(db, github);
+    await call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } });
+    gh.state[mode] = true;
+    const created = await call('tools/call', { name: 'request_task', arguments: requestArguments });
+    assert.equal(created.result.isError, undefined, mode);
+    assert.match(created.result.content[0].text, /dispatch postponed/);
+    const body = JSON.parse(created.result.content[0].text.split('\n\n')[1]);
+    assert.equal(body.state, 'queued');
+    const report = await call('tools/call', { name: 'get_task', arguments: { task_id: body.task_id } });
+    assert.equal(report.result.isError, undefined);
+    const saved = JSON.parse(report.result.content[0].text.split('\n\n')[1]);
+    assert.equal(saved.state, 'queued', 'a temporary outage never blocks');
+    assert.ok(saved.reconciliation.some((note: string) => note.includes('GitHub was unavailable')));
+    // Once GitHub answers again, the next check continues the work.
+    gh.state[mode] = false;
+    await call('tools/call', { name: 'get_task', arguments: { task_id: body.task_id } });
+    assert.equal(gh.runs.size, 1);
+    assert.equal((await taskReport(db, owner, body.task_id))?.state, 'running');
+  }
+  // Reconcile alone: an outage while looking for unclaimed runs changes nothing.
+  const context = await setup();
+  context.gh.state.loseNextDispatchResponse = true;
+  await advance(context.db, context.github, context.task.id);
+  context.gh.state.down = true;
+  assert.deepEqual(await reconcile(context.db, context.github, context.task.id),
+    ['GitHub was unavailable; unconfirmed dispatches are checked again later']);
+  assert.equal(context.db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()?.state, 'intended');
+});
+
+test('R22-2: failed cancellations are reported and retried; an orphaned run is cancelled', async () => {
+  const db = localD1();
+  const gh = fakeGitHub({ recipes: { 'collection/recipes/synthetic.json': recipe } });
+  const github = new GitHubActions({ repository: 'owner/app', token: 't' }, gh.fetcher);
+  const call = mcpCaller(db, github);
+  await call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } });
+  const created = JSON.parse((await call('tools/call', { name: 'request_task', arguments: requestArguments })).result.content[0].text.split('\n\n')[1]);
+  const run = [...gh.runs.values()][0];
+  gh.state.failCancel = true;
+  const report = await taskReport(db, owner, created.task_id);
+  const cancelled = await call('tools/call', { name: 'control_task', arguments: { task_id: created.task_id, expected_revision: report!.revision, action: 'cancel' } });
+  assert.match(cancelled.result.content[0].text, /did not go through; get_task requests it again/);
+  const body = JSON.parse(cancelled.result.content[0].text.split('\n\n')[1]);
+  assert.deepEqual([body.runs_cancelled, body.cancel_failed], [[], [String(run.id)]]);
+  assert.equal(run.status, 'queued');
+  // The next check asks again; when GitHub reports the run finished, the job is closed as cancelled.
+  gh.state.failCancel = false;
+  const again = JSON.parse((await call('tools/call', { name: 'get_task', arguments: { task_id: created.task_id } })).result.content[0].text.split('\n\n')[1]);
+  assert.ok(again.reconciliation.some((note: string) => note.includes('cancellation requested again')));
+  assert.equal(run.conclusion, 'cancelled');
+  await call('tools/call', { name: 'get_task', arguments: { task_id: created.task_id } });
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()?.state, 'cancelled');
+
+  // Orphan: the task is cancelled while GitHub is starting the run.
+  const context = await setup();
+  context.gh.state.onDispatch = () => {
+    context.db.sqlite.prepare(`UPDATE maintenance_tasks SET state = 'cancelled', revision = revision + 1 WHERE id = ?`).run(context.task.id);
+    context.gh.state.onDispatch = undefined;
+  };
+  assert.deepEqual((await advance(context.db, context.github, context.task.id)).dispatched, []);
+  const orphan = [...context.gh.runs.values()][0];
+  assert.equal(orphan.conclusion, 'cancelled', 'the orphaned run was cancelled');
+  assert.ok(context.gh.requests.some(request => request.url.endsWith(`/actions/runs/${orphan.id}/cancel`)));
+});
+
+const requestArguments = { request_key: 'p1', instruction: 'Prepare it', kind: 'prepare', inputs: [{ kind: 'acquisition', id: 'route-1' }],
+  extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'], constraints: { recipe: 'synthetic' },
+  decision_refs: [{ kind: 'admission', ref: 'owner-decision:1', subject: 'route-1' }] };
+
+function mcpCaller(db: ReturnType<typeof localD1>, github: GitHubActions) {
+  const handler = protocolHandler(() => controlServer(db, owner, false, github), false);
+  let id = 0;
+  return async (method: string, params: Record<string, unknown> = {}) => {
+    const response = await handler.fetch(new Request('https://control.example.invalid/mcp', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-06-18' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) }));
+    const text = await response.text();
+    return JSON.parse(text.startsWith('{') ? text : text.split('\n').find(line => line.startsWith('data: '))!.slice(6));
+  };
+}

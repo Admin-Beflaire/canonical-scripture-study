@@ -1,7 +1,7 @@
 import { canonicalJson, type D1Database } from './d1.ts';
 import { recipeErrors, type ArtifactRef, type JobResult, type Recipe, type RecipeUnit } from './contracts.ts';
 import { dispatchUnit, type DispatchResult, type UnitPlan } from './dispatch.ts';
-import type { GitHubActions } from './github.ts';
+import { GitHubError, type GitHubActions } from './github.ts';
 import type { Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
@@ -67,7 +67,14 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     await setOutcome(db, row, outcome => addLimitation(outcome, 'Preparation dispatch is not configured for Control.'));
     return { dispatched: [], state: row.state, limitation: 'dispatch_not_configured' };
   }
-  const { recipe, problem } = await loadRecipe(github, scope.constraints.recipe);
+  let loaded: Awaited<ReturnType<typeof loadRecipe>>;
+  try { loaded = await loadRecipe(github, scope.constraints.recipe); }
+  catch (error) {
+    // A temporary GitHub failure postpones progression; it never blocks the task.
+    if (error instanceof GitHubError || error instanceof TypeError) return { dispatched: [], state: row.state, limitation: 'github_unavailable' };
+    throw error;
+  }
+  const { recipe, problem } = loaded;
   const pinned = (JSON.parse(row.outcome_json) as { recipe_revision?: string }).recipe_revision;
   const changed = recipe && pinned && pinned !== recipe.revision
     ? `recipe changed from ${pinned} to ${recipe.revision}; start a new task for the changed recipe` : undefined;
@@ -110,6 +117,9 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     if (!['queued', 'running'].includes(row.state)) break;
     const result: DispatchResult = await dispatchUnit(db, github, taskId, row.revision, plan);
     if (result.status === 'dispatched') dispatched.push(unit.unit_id);
+    // The task stopped while the run was starting: it has no job record, so stop it now. If that
+    // fails, the runner still refuses at its first Control check because no dispatch is recorded.
+    if (result.status === 'orphaned') await github.cancel(result.run_id);
     if (result.status === 'uncertain' || result.status === 'not_dispatchable' || result.status === 'orphaned') break;
   }
 
@@ -157,11 +167,18 @@ async function unitPlan(db: D1Database, recipe: Recipe, unit: RecipeUnit, succee
 export async function reconcile(db: D1Database, github: GitHubActions | null, taskId: string): Promise<string[]> {
   if (!github) return [];
   const notes: string[] = [];
+  const row = await task(db, taskId);
+  if (!row) return notes;
+  // For a cancelled or superseded task, unfinished runs are cancelled again on every check
+  // until GitHub reports them finished; the job rows keep this durable.
+  const stopped = row.state === 'cancelled' || row.state === 'superseded';
   const jobs = (await db.prepare(`SELECT unit_id, attempt, kind, state, run_id, result_json FROM maintenance_jobs
     WHERE task_id = ? AND state IN ('intended','dispatched','running','checkpointed')`).bind(taskId).all<JobView>()).results;
   if (jobs.length === 0) return notes;
-  if (jobs.some(job => job.run_id === null)) {
-    const active = await github.activeRunIds();
+  if (!stopped && jobs.some(job => job.run_id === null)) {
+    let active: string[] | null = null;
+    try { active = await github.activeRunIds(); } catch { notes.push('GitHub was unavailable; unconfirmed dispatches are checked again later'); }
+    if (active) {
     const bound = new Set((await db.prepare('SELECT run_id FROM maintenance_jobs WHERE run_id IS NOT NULL').all<{ run_id: string }>())
       .results.map(row => row.run_id));
     // An unclaimed unfinished run may still be ours: its runner confirms itself through the state route.
@@ -173,15 +190,19 @@ export async function reconcile(db: D1Database, github: GitHubActions | null, ta
         if (changed.meta.changes) notes.push(`unit ${job.unit_id} attempt ${job.attempt}: dispatch was not confirmed by any run`);
       }
     }
+    }
   }
   for (const job of jobs.filter(item => item.run_id !== null)) {
     let status: string;
     try { status = (await github.run(job.run_id!)).status; } catch { continue; }
-    if (status !== 'completed') continue;
-    const changed = await db.prepare(`UPDATE maintenance_jobs SET state = 'failed'
+    if (status !== 'completed') {
+      if (stopped) notes.push(`unit ${job.unit_id} attempt ${job.attempt}: ${await github.cancel(job.run_id!) ? 'cancellation requested again' : 'cancellation request failed; retried on the next check'}`);
+      continue;
+    }
+    const changed = await db.prepare(`UPDATE maintenance_jobs SET state = ?
       WHERE task_id = ? AND unit_id = ? AND attempt = ? AND run_id = ? AND state IN ('dispatched','running','checkpointed')`)
-      .bind(taskId, job.unit_id, job.attempt, job.run_id).run();
-    if (changed.meta.changes) notes.push(`unit ${job.unit_id} attempt ${job.attempt}: run ended without a result`);
+      .bind(stopped ? 'cancelled' : 'failed', taskId, job.unit_id, job.attempt, job.run_id).run();
+    if (changed.meta.changes) notes.push(`unit ${job.unit_id} attempt ${job.attempt}: run ended ${stopped ? 'after cancellation' : 'without a result'}`);
   }
   return notes;
 }

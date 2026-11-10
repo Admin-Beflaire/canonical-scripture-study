@@ -9,7 +9,8 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
   const recipes = new Map(Object.entries(options.recipes ?? {}));
   const requests: Array<{ method: string; url: string; headers: Record<string, string>; body: unknown }> = [];
   let next = 1000;
-  const state = { loseNextDispatchResponse: false, failDispatch: false, redirect: false };
+  const state = { loseNextDispatchResponse: false, failDispatch: false, redirect: false, down: false, offline: false,
+    failCancel: false, onDispatch: undefined as undefined | (() => void) };
 
   const fetcher: typeof fetch = async (input, init = {}) => {
     const url = String(input);
@@ -19,14 +20,17 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
     requests.push({ method, url, headers, body });
     if (init.redirect !== 'error') throw new Error('redirects must be refused');
     if (state.redirect) throw new TypeError('redirect refused');
+    if (state.offline) throw new TypeError('network unreachable');
     const json = (status: number, value?: unknown) =>
       new Response(value === undefined ? null : JSON.stringify(value), { status });
+    if (state.down) return json(503, {});
     const path = url.replace('https://api.github.com/repos/owner/app', '');
     if (method === 'POST' && path === '/actions/workflows/prepare.yml/dispatches') {
       if (state.failDispatch) return json(422, {});
       const id = next++;
       runs.set(id, { id, path: '.github/workflows/prepare.yml', event: 'workflow_dispatch', head_branch: body.ref,
         head_sha: commit, status: 'queued', conclusion: null, job: body.inputs.job });
+      state.onDispatch?.();
       if (state.loseNextDispatchResponse) { state.loseNextDispatchResponse = false; throw new TypeError('connection reset'); }
       return json(200, { workflow_run_id: id, run_url: `x/${id}`, html_url: `y/${id}` });
     }
@@ -38,7 +42,7 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
     match = /^\/actions\/runs\/(\d+)\/cancel$/.exec(path);
     if (method === 'POST' && match) {
       const run = runs.get(Number(match[1]));
-      if (!run || run.status === 'completed') return json(409, {});
+      if (!run || run.status === 'completed' || state.failCancel) return json(409, {});
       run.status = 'completed'; run.conclusion = 'cancelled';
       return json(202, {});
     }

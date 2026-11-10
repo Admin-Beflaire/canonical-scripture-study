@@ -146,6 +146,27 @@ class CandidateStageTwo(unittest.TestCase):
             self.invoke('prepare', lambda _: 'not records')
         self.assertEqual(self.puts, [])
 
+    def test_external_dependency_uses_saved_output_identity_not_artifact_id(self):
+        from css_preparation.executor.basis import (
+            check_output_basis, registered_dependency_outputs,
+        )
+        output = evidence_a().rows('prepared_output')[0]
+        output['validation_basis_json'] = {
+            **output['validation_basis_json'], 'dependencies': ['upstream:output']}
+        job = dict(FIXTURE['valid']['job_input'][0], kind='prepare',
+            input_refs=[{'kind': 'source_revision', 'id': 'synthetic:a:revision-1'}],
+            native_extent={'unit_ids': [unit for unit, _ in text_a().units]})
+        job['dependency_refs'] = [{'artifact_id': 'upstream:artifact',
+                                   'sha256': 'a' * 64, 'byte_count': 12}]
+        candidate = replace(self.store, read_row=lambda kind, identity:
+            {'id': identity, 'output_id': 'upstream:output',
+             'sha256': 'a' * 64, 'byte_count': 12} if kind == 'artifact' else None)
+        resolved = registered_dependency_outputs(job, candidate)
+        self.assertEqual(resolved, {'upstream:output'})
+        check_output_basis(job, [output], resolved)
+        with self.assertRaisesRegex(RecordError, 'undeclared'):
+            check_output_basis(job, [output], set())
+
     def test_gated_out_runs_do_not_write_or_invoke_handler(self):
         with self.assertRaises(UnitNotRunnable):
             self.invoke('prepare', lambda _: self.fail('Processing should not begin'),

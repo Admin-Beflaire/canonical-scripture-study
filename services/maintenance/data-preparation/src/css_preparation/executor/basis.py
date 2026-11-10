@@ -10,7 +10,8 @@ from typing import Any
 from ..prepare.records import RecordError, RecordSet
 
 
-def check_output_basis(job: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+def check_output_basis(job: dict[str, Any], rows: list[dict[str, Any]],
+                       external_output_ids: set[str] | None = None) -> None:
     if job['kind'] != 'prepare':
         if rows:
             raise RecordError('Only a prepare job can return prepared outputs')
@@ -24,6 +25,7 @@ def check_output_basis(job: dict[str, Any], rows: list[dict[str, Any]]) -> None:
             or len(set(requested)) != len(requested)):
         raise RecordError('Prepare job needs explicit source revision and native unit scope')
     ids = {row['id'] for row in rows}
+    known = ids | (external_output_ids or set())
     for row in rows:
         revisions = row['input_revisions_json']
         extent = row['native_extent_json']
@@ -35,12 +37,25 @@ def check_output_basis(job: dict[str, Any], rows: list[dict[str, Any]]) -> None:
                     and extent.get('coordinate_version') != job['native_extent']['coordinate_version'])):
             raise RecordError('Output source or native extent differs from dispatched unit')
         dependencies = set(row['validation_basis_json'].get('dependencies', []))
-        known = ids | {ref['artifact_id'] for ref in job['dependency_refs']}
         if not dependencies.issubset(known):
             raise RecordError('Output has an undeclared or missing dependency')
 
 
-def check_unit_records(job: dict[str, Any], records: RecordSet) -> None:
+def registered_dependency_outputs(job: dict[str, Any], storage: Any) -> set[str]:
+    """Map registered artifact references to their actual saved output identities."""
+    ids: set[str] = set()
+    for ref in job['dependency_refs']:
+        row = storage.read_row('artifact', ref['artifact_id'])
+        if (row is not None and row.get('sha256') == ref['sha256']
+                and row.get('byte_count') == ref['byte_count']
+                and isinstance(row.get('output_id'), str)):
+            ids.add(row['output_id'])
+    return ids
+
+
+def check_unit_records(job: dict[str, Any], records: RecordSet,
+                       storage: Any = None) -> None:
     if not isinstance(records, RecordSet):
         raise RecordError('Preparation module must return a RecordSet')
-    check_output_basis(job, records.rows('prepared_output'))
+    external = registered_dependency_outputs(job, storage) if storage is not None else set()
+    check_output_basis(job, records.rows('prepared_output'), external)

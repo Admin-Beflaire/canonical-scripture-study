@@ -105,7 +105,7 @@ def run_candidate_unit(job_json: str, *, run_id: str,
 
     def run(job: dict[str, Any]) -> SavedCandidate:
         records = handlers[job['kind']](job)
-        check_unit_records(job, records)
+        check_unit_records(job, records, storage)
         return persist_candidate(records, storage)
 
     return execute_unit(job_json, run_id=run_id, read_control=read_control,

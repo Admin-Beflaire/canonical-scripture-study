@@ -15,7 +15,7 @@ from ..contracts import parse_job_input
 from ..prepare.records import RecordError, RecordSet
 from . import ControlState, UnitNotRunnable, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
-from .basis import check_unit_records, check_output_basis
+from .basis import check_unit_records, check_output_basis, registered_dependency_outputs
 from ..prepare.evidence import OutputBasis
 from ..validate.saved import CandidateInventory, verify_candidate_inventory
 
@@ -213,10 +213,10 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             if storage.read_rows is None:
                 raise RecordError('Cannot verify candidate replay without saved rows')
             rows = [storage.read_row('prepared_output', i) for i in resumed.saved.output_ids]
-            check_output_basis(entry, rows)
+            check_output_basis(entry, rows, registered_dependency_outputs(entry, storage))
             return resumed
         records = handlers[entry['kind']](entry)
-        check_unit_records(entry, records)
+        check_unit_records(entry, records, storage)
         # If a long-running builder finished after pause/cancel/supersession,
         # do not begin candidate writes. Control owns late-result acceptance.
         execute_unit(job_json, run_id=run_id, read_control=read_control,

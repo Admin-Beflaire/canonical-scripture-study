@@ -48,7 +48,10 @@ def check_saved_semantics(
     artifacts = {r['id']: r for r in rows['artifact'] if r['output_id'] in included}
     blobs = {}
     for key, row in artifacts.items():
-        data = read_blob(row['registered_locator'])
+        try:
+            data = read_blob(row['registered_locator'])
+        except (KeyError, OSError) as error:
+            raise RecordError('Saved artifact missing during semantic validation') from error
         # The saved-inventory check performed an earlier read; fail closed if
         # an object changes between validation and semantic inspection.
         if (not isinstance(data, bytes) or len(data) != row['byte_count']

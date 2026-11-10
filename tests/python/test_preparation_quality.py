@@ -196,6 +196,27 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertIsNone(result['quality_receipt_ref'])
         self.assertEqual(self.received, {})
 
+    def test_saved_artifact_disappears_between_reads_returns_failed_result(self):
+        locator = self.saved.records.rows('artifact')[0]['registered_locator']
+        for error_class in (KeyError, OSError):
+            with self.subTest(error=error_class.__name__):
+                calls = [0]
+                def disappearing(key):
+                    if key == locator:
+                        calls[0] += 1
+                        if calls[0] > 1:
+                            raise error_class('synthetic storage disappearance')
+                    return self.saved.blobs[key]
+                result = self.invoke(read_blob=disappearing)
+                self.assertEqual(result['state'], 'failed')
+                self.assertEqual(result['diagnostics'][0]['code'], 'quality_failed')
+                self.assertEqual(result['completed_extent'], {})
+                self.assertEqual(result['remaining_extent'], self.job['native_extent'])
+                self.assertIsNone(result['quality_receipt_ref'])
+                self.assertGreaterEqual(calls[0], 2)
+                self.assertEqual(self.received, {})
+        self.saved.assert_no_selection_change()
+
     def test_changed_job_input_produces_distinct_immutable_receipt(self):
         first = self.invoke()
         self.assertEqual(first['state'], 'succeeded')

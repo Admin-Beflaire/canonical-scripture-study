@@ -54,7 +54,7 @@ class CandidateStageTwo(unittest.TestCase):
                                            max_units=2, max_scalars=64, max_occurrences=20)
         return RecordSet().merge(evidence).merge(build_index_files(part).records)
 
-    def run(self, kind, handler, *, state_change=None, storage=None):
+    def invoke(self, kind, handler, *, state_change=None, storage=None):
         job = dict(FIXTURE['valid']['job_input'][0], kind=kind)
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         state = ControlState(job['task_id'], job['task_revision'] + 1, 'running', job['basis_digest'],
@@ -68,7 +68,7 @@ class CandidateStageTwo(unittest.TestCase):
                                   registered=lambda _: True, storage=storage or self.store, **handlers)
 
     def test_preparation_and_source_index_saved_with_exact_refs(self):
-        saved = self.run('prepare', lambda _: self.candidate())
+        saved = self.invoke('prepare', lambda _: self.candidate())
         self.assertEqual(len(saved.output_ids), 2)
         self.assertGreaterEqual(len(saved.artifact_refs), 2)
         self.assertEqual({r['artifact_id'] for r in saved.artifact_refs},
@@ -96,7 +96,7 @@ class CandidateStageTwo(unittest.TestCase):
                 called.append(('acquire', source.sha256))
                 # Retention of originals is owned by the acquisition module.
                 return RecordSet()
-            result = self.run('acquire', acquisition)
+            result = self.invoke('acquire', acquisition)
             self.assertEqual(result.output_ids, ())
             self.assertEqual(result.artifact_refs, ())
             self.assertEqual(called[0][0], 'acquire')
@@ -104,7 +104,7 @@ class CandidateStageTwo(unittest.TestCase):
             called.append(('quality', 'synthetic'))
             # Saved-inventory checking and receipts are Stage 4/5, not a Stage 2 success claim.
             return RecordSet()
-        result = self.run('quality', quality)
+        result = self.invoke('quality', quality)
         self.assertEqual((result.output_ids, result.artifact_refs), ((), ()))
         self.assertEqual(called[-1][0], 'quality')
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
@@ -114,35 +114,35 @@ class CandidateStageTwo(unittest.TestCase):
         artifact = records.rows('artifact')[0]
         self.blobs[artifact['registered_locator']] = b'preexisting different bytes'
         with self.assertRaises(RecordError):
-            self.run('prepare', lambda _: records)
+            self.invoke('prepare', lambda _: records)
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
         self.blobs.clear()
         corrupt = replace(self.store, read_blob=lambda _: b'corrupt')
         with self.assertRaisesRegex(RecordError, 'differ'):
-            self.run('prepare', lambda _: records, storage=corrupt)
+            self.invoke('prepare', lambda _: records, storage=corrupt)
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
         def failed_write(_):
             raise RuntimeError('synthetic D1 unavailable')
         with self.assertRaisesRegex(RuntimeError, 'unavailable'):
-            self.run('prepare', lambda _: records, storage=replace(self.store, write_rows=failed_write))
+            self.invoke('prepare', lambda _: records, storage=replace(self.store, write_rows=failed_write))
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
         with self.assertRaisesRegex(RecordError, 'identity differs'):
-            self.run('prepare', lambda _: records, storage=replace(self.store, read_row=lambda *_: None))
+            self.invoke('prepare', lambda _: records, storage=replace(self.store, read_row=lambda *_: None))
         self.assertEqual(list(self.db.execute('SELECT * FROM release_selection')), self.saved_selection)
 
     def test_missing_artifact_metadata_bytes_and_invalid_module_result(self):
         records = self.candidate()
         records.blobs.pop(next(iter(records.blobs)))
         with self.assertRaisesRegex(RecordError, 'bytes and metadata'):
-            self.run('prepare', lambda _: records)
+            self.invoke('prepare', lambda _: records)
         self.assertEqual(self.puts, [])
         with self.assertRaisesRegex(RecordError, 'RecordSet'):
-            self.run('prepare', lambda _: 'not records')
+            self.invoke('prepare', lambda _: 'not records')
         self.assertEqual(self.puts, [])
 
     def test_gated_out_runs_do_not_write_or_invoke_handler(self):
         with self.assertRaises(UnitNotRunnable):
-            self.run('prepare', lambda _: self.fail('Processing should not begin'),
+            self.invoke('prepare', lambda _: self.fail('Processing should not begin'),
                      state_change={'task_state': 'paused'})
         self.assertEqual(self.puts, [])
 

@@ -132,12 +132,16 @@ class RunnerTest(unittest.TestCase):
             self.assertEqual(result['state'], 'failed')
 
     def environ(self, raw):
-        return {'PREPARATION_JOB': raw, 'GITHUB_RUN_ID': RUN_ID, 'GITHUB_SHA': COMMIT,
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        event = Path(holder.name) / 'event.json'
+        event.write_text(json.dumps({'inputs': {'job': raw}}), encoding='utf-8')
+        return {'GITHUB_EVENT_PATH': str(event), 'GITHUB_RUN_ID': RUN_ID, 'GITHUB_SHA': COMMIT,
                 'CONTROL_ORIGIN': self.api.origin, 'PREPARATION_ACCESS_CLIENT_ID': 'synthetic-id',
                 'PREPARATION_ACCESS_CLIENT_SECRET': 'synthetic-secret', 'CLOUDFLARE_ACCOUNT_ID': 'acct',
                 'D1_DATABASE_ID': 'db', 'R2_BUCKET': 'bucket', 'PREPARATION_CLOUDFLARE_TOKEN': 'synthetic-token'}
 
-    def main(self, environ, kind='prepare'):
+    def main(self, environ, kind='prepare', mode=None):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
             status = Path(directory) / 'status.txt'
@@ -145,8 +149,21 @@ class RunnerTest(unittest.TestCase):
             with mock.patch.object(runner, 'CloudflareConfig', config), \
                     mock.patch.dict(RECIPES, {'recipe-1': self.recipe}), \
                     contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                code = runner.main(['--kind', kind, '--status', str(status)], environ)
+                code = runner.main((mode or ['--kind', kind]) + ['--status', str(status)], environ)
             return code, status.read_text(encoding='utf-8'), out.getvalue() + err.getvalue()
+
+    def test_validate_routes_only_the_enumerated_kind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'output.txt'
+            environ = {'GITHUB_EVENT_PATH': self.environ(self.job('quality'))['GITHUB_EVENT_PATH'],
+                       'GITHUB_OUTPUT': str(output)}
+            code, status, printed = self.main(environ, mode=['--validate'])
+            self.assertEqual((code, output.read_text()), (0, 'kind=quality\n'))
+            self.assertEqual(status, 'Preparation job accepted for the quality job.\n')
+            self.assertEqual(printed, '')
+            bad = {**environ, 'GITHUB_EVENT_PATH': self.environ('{"kind":"prepare; rm -rf /"}')['GITHUB_EVENT_PATH']}
+            code, status, _ = self.main(bad, mode=['--validate'])
+            self.assertEqual((code, status, output.read_text()), (1, runner.PUBLIC['invalid'] + '\n', 'kind=quality\n'))
 
     def test_main_submits_result_and_prints_only_fixed_status(self):
         code, status, printed = self.main(self.environ(self.job()))
@@ -170,6 +187,17 @@ class RunnerTest(unittest.TestCase):
             self.assertNotIn('synthetic-token', public)
         self.assertIn(MARKER, json.dumps(self.results[0]['result']))  # private Control record only
 
+    def test_unexpected_crash_is_reported_privately(self):
+        def crash(job, storage):
+            raise RuntimeError(MARKER)
+        self.recipe = Recipe(prepare=crash)
+        code, status, printed = self.main(self.environ(self.job()))
+        self.assertEqual(code, 1)
+        self.assertNotIn(MARKER, status + printed)
+        [sent] = self.results
+        self.assertEqual(sent['result']['state'], 'failed')
+        self.assertEqual(sent['result']['diagnostics'][0]['code'], 'runner_error')
+
     def test_configuration_invalid_job_and_undelivered_result(self):
         environ = self.environ(self.job())
         for missing in runner.REQUIRED:
@@ -177,7 +205,9 @@ class RunnerTest(unittest.TestCase):
             self.assertEqual((code, status), (1, runner.PUBLIC['config'] + '\n'))
         code, status, _ = self.main({**environ, 'GITHUB_SHA': 'main'})
         self.assertEqual(status, runner.PUBLIC['config'] + '\n')
-        code, status, _ = self.main({**environ, 'PREPARATION_JOB': '{"script":"rm -rf /"}'})
+        code, status, _ = self.main(self.environ('{"script":"rm -rf /"}'))
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        code, status, _ = self.main({**environ, 'GITHUB_EVENT_PATH': '/nonexistent/event.json'})
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.reply = (503, {})
         code, status, _ = self.main(environ)

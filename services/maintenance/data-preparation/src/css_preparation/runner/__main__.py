@@ -1,16 +1,20 @@
 """Run one Control-dispatched preparation job inside GitHub Actions.
 
 Usage: python -m css_preparation.runner --kind {acquire,prepare,quality} --status FILE
+       python -m css_preparation.runner --validate --status FILE
 
-The job arrives in the PREPARATION_JOB environment variable as Control's exact
-canonical JSON bytes; it is never interpolated into a shell. Public output is limited
-to the fixed status lines written to FILE. Detailed diagnostics go only into the
+The job is the `job` input of the workflow_dispatch event, read from the event file
+(GITHUB_EVENT_PATH) as Control's exact canonical JSON text. It is never placed in a
+step environment (GitHub prints those in public logs) or interpolated into a shell.
+Configuration comes from masked environment secrets. Public output is limited to the
+fixed status lines written to FILE. Detailed diagnostics go only into the
 private result that Control records. Nothing here merges software, deploys,
 approves scope or selects data.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -31,7 +35,7 @@ from .web import Origin, ProviderError
 KINDS = ('acquire', 'prepare', 'quality')
 _RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
 _COMMIT = re.compile(r'[0-9a-f]{40}')
-REQUIRED = ('PREPARATION_JOB', 'GITHUB_RUN_ID', 'GITHUB_SHA', 'CONTROL_ORIGIN', 'PREPARATION_ACCESS_CLIENT_ID',
+REQUIRED = ('GITHUB_EVENT_PATH', 'GITHUB_RUN_ID', 'GITHUB_SHA', 'CONTROL_ORIGIN', 'PREPARATION_ACCESS_CLIENT_ID',
             'PREPARATION_ACCESS_CLIENT_SECRET', 'CLOUDFLARE_ACCOUNT_ID', 'D1_DATABASE_ID', 'R2_BUCKET',
             'PREPARATION_CLOUDFLARE_TOKEN')
 
@@ -122,6 +126,19 @@ def run_job(job_json: str, kind: str, *, run_id: str, control: ControlClient, st
         return _result(job, run_id, 'failed', diagnostics=_diagnostic('runner_failed', error))
 
 
+def read_job(environ: Mapping[str, str]) -> str:
+    """The dispatched job text, exactly as Control sent it."""
+    try:
+        with open(environ['GITHUB_EVENT_PATH'], encoding='utf-8') as stream:
+            event = json.load(stream)
+    except (KeyError, OSError, UnicodeError, ValueError):
+        raise ContractError('Dispatch event is unreadable') from None
+    job = event.get('inputs', {}).get('job') if isinstance(event, dict) and isinstance(event.get('inputs'), dict) else None
+    if not isinstance(job, str):
+        raise ContractError('Dispatch event has no job input')
+    return job
+
+
 PUBLIC = {
     'config': 'Preparation runner configuration incomplete; no work started.',
     'invalid': 'Preparation job input refused; no work started.',
@@ -131,12 +148,29 @@ PUBLIC = {
 
 def main(argv: list[str], environ: Mapping[str, str]) -> int:
     parser = argparse.ArgumentParser(prog='css_preparation.runner')
-    parser.add_argument('--kind', choices=KINDS, required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--kind', choices=KINDS)
+    mode.add_argument('--validate', action='store_true')
     parser.add_argument('--status', required=True)
     args = parser.parse_args(argv)
     lines: list[str] = []
     code = 1
     try:
+        if args.validate:
+            # Route the run to one fixed job; only the enumerated kind leaves this step.
+            try:
+                kind = parse_job_input(read_job(environ))['kind']
+            except ContractError:
+                lines.append(PUBLIC['invalid'])
+                return code
+            if kind not in KINDS or not environ.get('GITHUB_OUTPUT'):
+                lines.append(PUBLIC['invalid'])
+                return code
+            with open(environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                stream.write(f'kind={kind}\n')
+            lines.append(f'Preparation job accepted for the {kind} job.')
+            code = 0
+            return code
         if any(not environ.get(name) for name in REQUIRED) or not _RUN_ID.fullmatch(environ['GITHUB_RUN_ID']) \
                 or not _COMMIT.fullmatch(environ['GITHUB_SHA']):
             lines.append(PUBLIC['config'])
@@ -151,11 +185,14 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
             lines.append(PUBLIC['config'])
             return code
         try:
-            result = run_job(environ['PREPARATION_JOB'], args.kind, run_id=environ['GITHUB_RUN_ID'],
-                             control=control, storage=storage)
+            job_text = read_job(environ)
+            result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control, storage=storage)
         except ContractError:
             lines.append(PUBLIC['invalid'])
             return code
+        except Exception as error:  # noqa: BLE001 - unexpected: record privately, print nothing
+            result = _result(parse_job_input(job_text), environ['GITHUB_RUN_ID'], 'failed',
+                             diagnostics=_diagnostic('runner_error', error))
         lines.append(f"Preparation {args.kind} unit finished: {result['state']}.")
         try:
             reply = control.submit_result(result, environ['GITHUB_SHA'])

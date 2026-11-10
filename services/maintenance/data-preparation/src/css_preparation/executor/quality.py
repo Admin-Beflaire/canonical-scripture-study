@@ -44,6 +44,8 @@ def check_candidate_quality(
 
     def process(entry: dict[str, Any]) -> dict[str, Any]:
         try:
+            if not entry['required_capabilities']:
+                raise RecordError('Quality job must require at least one capability')
             evidence = check_saved_semantics(entry, inventory, read_rows=read_rows,
                 read_blob=read_blob, read_source=read_source,
                 max_page_bytes=max_page_bytes)

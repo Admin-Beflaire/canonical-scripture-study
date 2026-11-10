@@ -29,6 +29,13 @@ class CandidateStore:
     read_row: Callable[[str, str], Mapping[str, Any] | None]
     read_rows: Callable[[str], list[dict[str, Any]]] | None = None
 
+    def optional_row(self, kind: str, identity: str) -> Mapping[str, Any] | None:
+        """Missing D1 identity is None; tolerate KeyError-style adapters safely."""
+        try:
+            return self.read_row(kind, identity)
+        except KeyError:
+            return None
+
 
 @dataclass(frozen=True)
 class SavedCandidate:
@@ -69,7 +76,7 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
 
     # Retry after a saved candidate but before its checkpoint/report: only exact
     # complete atomic row sets may be acknowledged again. Never overwrite identities.
-    saved_outputs = [storage.read_row('prepared_output', row['id']) for row in outputs]
+    saved_outputs = [storage.optional_row('prepared_output', row['id']) for row in outputs]
     saved_artifacts = [storage.read_row('artifact', row['id']) for row in artifacts]
     if any(row is not None for row in saved_outputs + saved_artifacts):
         if (saved_outputs != outputs or saved_artifacts != artifacts):
@@ -97,9 +104,9 @@ def run_candidate_unit(job_json: str, *, run_id: str,
                        storage: CandidateStore) -> SavedCandidate:
     """Use the Stage 1 gate, then call only the requested module and save its rows.
 
-    Handlers bind the existing acquisition, preparation/index or validation
-    functions for an explicitly instructed unit. Quality results and durable
-    checkpoints are intentionally not claimed by this Stage 2 entry.
+    Handlers bind existing acquisition, preparation/index or validation
+    functions for an explicitly instructed unit. This entry returns only saved
+    candidate identities; checkpoint and quality receipt paths are separate.
     """
     handlers = {'acquire': acquire, 'prepare': prepare, 'quality': quality}
 

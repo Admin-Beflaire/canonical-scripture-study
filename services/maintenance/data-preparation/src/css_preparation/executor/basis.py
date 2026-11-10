@@ -45,10 +45,7 @@ def registered_dependency_outputs(job: dict[str, Any], storage: Any) -> set[str]
     """Map registered artifact references to their actual saved output identities."""
     ids: set[str] = set()
     for ref in job['dependency_refs']:
-        try:
-            row = storage.read_row('artifact', ref['artifact_id'])
-        except KeyError:
-            row = None
+        row = storage.optional_row('artifact', ref['artifact_id'])
         if (row is not None and row.get('sha256') == ref['sha256']
                 and row.get('byte_count') == ref['byte_count']
                 and isinstance(row.get('output_id'), str)):

@@ -2,7 +2,7 @@
 
 New and reused outputs receive the same checks. Omitted outputs may still exist
 in storage, but are never inspected as included output or chosen for a release.
-Source fidelity, semantic relationships and the quality receipt are Stage 5.
+Source fidelity and semantic relationships are checked by semantic quality.
 """
 from __future__ import annotations
 

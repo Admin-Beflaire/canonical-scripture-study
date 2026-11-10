@@ -1,7 +1,7 @@
 """One-unit Python preparation entry, using Control's existing job contract.
 
 Control supplies a read-only snapshot of its recorded task and dispatched job;
-Stage 2 will provide the actual module callbacks and registered-input reader.
+Callers inject module callbacks and a registered-input reader.
 This module performs no storage, provider, admission or release-selection work.
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ def execute_unit(job_json: str, *, run_id: str,
     run_id comes from the trusted runner, not the job envelope. read_control
     reads the Control task and saved dispatch together; registered checks an
     exact source/acquisition/artifact reference against the candidate registry.
-    Later stages supply those adapters without changing the versioned wire format.
+    The runner supplies these adapters without changing the versioned wire format.
     """
     job = parse_job_input(job_json)
     if not isinstance(run_id, str) or not _ID.fullmatch(run_id):

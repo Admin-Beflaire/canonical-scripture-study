@@ -146,6 +146,12 @@ class CandidateStageTwo(unittest.TestCase):
             self.invoke('prepare', lambda _: 'not records')
         self.assertEqual(self.puts, [])
 
+    def test_missing_d1_identity_is_none_for_keyerror_adapter(self):
+        empty = replace(self.store, read_row=lambda *_: (_ for _ in ()).throw(KeyError('missing')))
+        self.assertIsNone(empty.optional_row('prepared_output', 'absent'))
+        self.assertIsNone(self.store.optional_row('prepared_output', 'absent'))
+        self.assertIsNone(self.store.optional_row('artifact', 'absent'))
+
     def test_external_dependency_uses_saved_output_identity_not_artifact_id(self):
         from css_preparation.executor.basis import (
             check_output_basis, registered_dependency_outputs,

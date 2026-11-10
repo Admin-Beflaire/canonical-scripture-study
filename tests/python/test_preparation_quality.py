@@ -83,6 +83,15 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(doc['limitations'], [])
         self.saved.assert_no_selection_change()
 
+    def test_empty_required_capabilities_cannot_claim_full_success(self):
+        failed = self.invoke(job={**self.job, 'required_capabilities': []})
+        self.assertEqual(failed['state'], 'failed')
+        self.assertEqual(failed['completed_extent'], {})
+        self.assertEqual(failed['remaining_extent'], self.job['native_extent'])
+        self.assertIsNone(failed['quality_receipt_ref'])
+        self.assertEqual(self.received, {})
+        self.saved.assert_no_selection_change()
+
     def test_missing_native_source_does_not_issue_success_receipt(self):
         failed = self.invoke(native=lambda _: None)
         self.assertEqual(failed['state'], 'failed')

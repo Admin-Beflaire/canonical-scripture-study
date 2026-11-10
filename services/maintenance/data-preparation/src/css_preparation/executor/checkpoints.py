@@ -92,7 +92,7 @@ def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | No
             or len(set(outputs)) != len(outputs)):
         return None
     for output_id in outputs:
-        row = storage.read_row('prepared_output', output_id)
+        row = storage.optional_row('prepared_output', output_id)
         if row is None or row.get('id') != output_id:
             return None
     for reference in references:

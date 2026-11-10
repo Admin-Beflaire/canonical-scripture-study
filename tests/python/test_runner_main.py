@@ -161,9 +161,11 @@ class RunnerTest(unittest.TestCase):
             self.assertEqual((code, output.read_text()), (0, 'kind=quality\n'))
             self.assertEqual(status, 'Preparation job accepted for the quality job.\n')
             self.assertEqual(printed, '')
-            bad = {**environ, 'GITHUB_EVENT_PATH': self.environ('{"kind":"prepare; rm -rf /"}')['GITHUB_EVENT_PATH']}
-            code, status, _ = self.main(bad, mode=['--validate'])
-            self.assertEqual((code, status, output.read_text()), (1, runner.PUBLIC['invalid'] + '\n', 'kind=quality\n'))
+            for text in ('{"kind":"prepare; rm -rf /"}', 'not json at all'):
+                bad = {**environ, 'GITHUB_EVENT_PATH': self.environ(text)['GITHUB_EVENT_PATH']}
+                code, status, _ = self.main(bad, mode=['--validate'])
+                self.assertEqual((code, status, output.read_text()),
+                                 (1, runner.PUBLIC['invalid'] + '\n', 'kind=quality\n'))
 
     def test_main_submits_result_and_prints_only_fixed_status(self):
         code, status, printed = self.main(self.environ(self.job()))
@@ -207,6 +209,12 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(status, runner.PUBLIC['config'] + '\n')
         code, status, _ = self.main(self.environ('{"script":"rm -rf /"}'))
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        for text in ('not json at all', '{"truncated": ', ''):
+            code, status, _ = self.main(self.environ(text))
+            self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        code, status, _ = self.main(self.environ(self.job('quality')))  # kind mismatch with --kind prepare
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        self.assertEqual(self.results, [])
         code, status, _ = self.main({**environ, 'GITHUB_EVENT_PATH': '/nonexistent/event.json'})
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.reply = (503, {})

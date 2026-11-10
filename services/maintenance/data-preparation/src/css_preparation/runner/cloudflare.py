@@ -97,7 +97,9 @@ class CloudflareStorage:
     def _object(self, key: str) -> str:
         if not isinstance(key, str) or not key or len(key) > 1024 or key.startswith('/') or '..' in key.split('/'):
             raise ProviderError('Invalid object key')
-        return self._r2 + urllib.parse.quote(key, safe='')
+        # Cloudflare's object API requires slashes in the key to stay literal (never %2F);
+        # every other reserved character is percent-encoded.
+        return self._r2 + urllib.parse.quote(key, safe='/')
 
     def read_blob(self, key: str) -> bytes:
         data = self._config.api.request('GET', self._object(key), self._headers, allow_missing=True)
@@ -106,7 +108,15 @@ class CloudflareStorage:
         return data
 
     def put_blob(self, key: str, data: bytes) -> None:
-        """Write once: identical bytes at an existing key are kept; different bytes are refused."""
+        """Write once: identical bytes at an existing key are kept; different bytes are refused.
+
+        Keys must be content-addressed (the bytes' SHA-256 is a path segment or `<sha256>.json`).
+        Two writers racing on one key therefore always write identical bytes, so the
+        check-then-put sequence cannot replace stored content with different bytes.
+        """
+        digest = hashlib.sha256(data).hexdigest()
+        if digest not in key.split('/') and f'{digest}.json' not in key.split('/'):
+            raise ProviderError('Object key is not addressed by its content digest')
         path = self._object(key)
         existing = self._config.api.request('GET', path, self._headers, allow_missing=True)
         if existing is not None:

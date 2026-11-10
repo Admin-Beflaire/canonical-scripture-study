@@ -160,7 +160,7 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
             # Route the run to one fixed job; only the enumerated kind leaves this step.
             try:
                 kind = parse_job_input(read_job(environ))['kind']
-            except ContractError:
+            except (ContractError, ValueError):  # ValueError covers text that is not JSON
                 lines.append(PUBLIC['invalid'])
                 return code
             if kind not in KINDS or not environ.get('GITHUB_OUTPUT'):
@@ -186,13 +186,16 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
             return code
         try:
             job_text = read_job(environ)
-            result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control, storage=storage)
-        except ContractError:
+            job = parse_job_input(job_text)
+            if job['kind'] != args.kind:
+                raise ContractError('Workflow job does not match the dispatched kind')
+        except (ContractError, ValueError):  # ValueError covers text that is not JSON
             lines.append(PUBLIC['invalid'])
             return code
+        try:
+            result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control, storage=storage)
         except Exception as error:  # noqa: BLE001 - unexpected: record privately, print nothing
-            result = _result(parse_job_input(job_text), environ['GITHUB_RUN_ID'], 'failed',
-                             diagnostics=_diagnostic('runner_error', error))
+            result = _result(job, environ['GITHUB_RUN_ID'], 'failed', diagnostics=_diagnostic('runner_error', error))
         lines.append(f"Preparation {args.kind} unit finished: {result['state']}.")
         try:
             reply = control.submit_result(result, environ['GITHUB_SHA'])

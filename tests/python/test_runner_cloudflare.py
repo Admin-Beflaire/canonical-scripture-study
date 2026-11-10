@@ -35,6 +35,17 @@ class CloudflareStorageTest(unittest.TestCase):
         persist_candidate(records, self.storage.candidate_store())
         self.assertEqual(len(self.api.batches), 1)
 
+    def test_object_key_slashes_stay_literal_in_request_path(self):
+        records = evidence_a()
+        persist_candidate(records, self.storage.candidate_store())
+        locator = records.rows('artifact')[0]['registered_locator']
+        self.assertIn('/', locator)
+        raw = [path for method, path, _ in self.api.requests if method == 'PUT']
+        self.assertEqual(raw, [f'/client/v4/accounts/acct/r2/buckets/bucket/objects/{locator}'])
+        self.assertNotIn('%2F', ''.join(path for _, path, _ in self.api.requests))
+        self.storage.put_blob(f'prepared/{hashlib.sha256(b"x").hexdigest()}/a b#c?.txt', b'x')
+        self.assertTrue(self.api.requests[-1][1].endswith('/a%20b%23c%3F.txt'))
+
     def test_paged_reads_return_every_row(self):
         records = evidence_a()
         persist_candidate(records, self.storage.candidate_store())
@@ -60,12 +71,20 @@ class CloudflareStorageTest(unittest.TestCase):
         with self.assertRaises(ProviderError):
             self.storage.write_rows([])
 
-    def test_immutable_objects_and_missing_reads(self):
-        self.storage.put_blob('prepared/x/a.bin', b'one')
-        self.storage.put_blob('prepared/x/a.bin', b'one')
+    def test_immutable_content_addressed_objects_and_missing_reads(self):
+        one = hashlib.sha256(b'one').hexdigest()
+        key = f'prepared/{one}/body.txt'
+        self.storage.put_blob(key, b'one')
+        self.storage.put_blob(key, b'one')
+        self.assertEqual(self.storage.read_blob(key), b'one')
+        # Different bytes can never target the same key: the key must carry their digest.
+        with self.assertRaisesRegex(ProviderError, 'content digest'):
+            self.storage.put_blob(key, b'two')
+        with self.assertRaisesRegex(ProviderError, 'content digest'):
+            self.storage.put_blob('prepared/x/a.bin', b'one')
+        self.api.objects[key] = b'tampered'
         with self.assertRaisesRegex(ProviderError, 'different bytes'):
-            self.storage.put_blob('prepared/x/a.bin', b'two')
-        self.assertEqual(self.storage.read_blob('prepared/x/a.bin'), b'one')
+            self.storage.put_blob(key, b'one')
         with self.assertRaises(KeyError):
             self.storage.read_blob('prepared/x/missing.bin')
         for key in ('', '/abs', 'a/../b'):

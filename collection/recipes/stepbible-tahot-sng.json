@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-sng",
+  "revision": "stepbible-tahot-sng/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-job-sng",
+    "path": "Translators Amalgamated OT+NT/TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "e0416880bb78f46715bb17ce526b623c3051da0ef83f7bf83beaad350e6272e8",
+    "byte_count": 9540663
+  },
+  "native_extent": {
+    "book": "Sng",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-job-sng"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-job-sng"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Sng.1.1", "Sng.1.2", "Sng.1.3", "Sng.1.4", "Sng.1.5", "Sng.1.6", "Sng.1.7", "Sng.1.8", "Sng.1.9", "Sng.1.10", "Sng.1.11", "Sng.1.12", "Sng.1.13", "Sng.1.14", "Sng.1.15", "Sng.1.16", "Sng.1.17", "Sng.2.1", "Sng.2.2", "Sng.2.3", "Sng.2.4", "Sng.2.5", "Sng.2.6", "Sng.2.7", "Sng.2.8", "Sng.2.9", "Sng.2.10", "Sng.2.11", "Sng.2.12", "Sng.2.13", "Sng.2.14", "Sng.2.15", "Sng.2.16", "Sng.2.17", "Sng.3.1", "Sng.3.2", "Sng.3.3", "Sng.3.4", "Sng.3.5", "Sng.3.6", "Sng.3.7", "Sng.3.8", "Sng.3.9", "Sng.3.10", "Sng.3.11", "Sng.4.1", "Sng.4.2", "Sng.4.3", "Sng.4.4", "Sng.4.5", "Sng.4.6", "Sng.4.7", "Sng.4.8", "Sng.4.9", "Sng.4.10", "Sng.4.11", "Sng.4.12", "Sng.4.13", "Sng.4.14", "Sng.4.15", "Sng.4.16", "Sng.5.1", "Sng.5.2", "Sng.5.3", "Sng.5.4", "Sng.5.5", "Sng.5.6", "Sng.5.7", "Sng.5.8", "Sng.5.9", "Sng.5.10", "Sng.5.11", "Sng.5.12", "Sng.5.13", "Sng.5.14", "Sng.5.15", "Sng.5.16", "Sng.6.1", "Sng.6.2", "Sng.6.3", "Sng.6.4", "Sng.6.5", "Sng.6.6", "Sng.6.7", "Sng.6.8", "Sng.6.9", "Sng.6.10", "Sng.6.11", "Sng.6.12", "Sng.7.1", "Sng.7.2", "Sng.7.3", "Sng.7.4", "Sng.7.5", "Sng.7.6", "Sng.7.7", "Sng.7.8", "Sng.7.9", "Sng.7.10", "Sng.7.11", "Sng.7.12", "Sng.7.13", "Sng.7.14", "Sng.8.1", "Sng.8.2", "Sng.8.3", "Sng.8.4", "Sng.8.5", "Sng.8.6", "Sng.8.7", "Sng.8.8", "Sng.8.9", "Sng.8.10", "Sng.8.11", "Sng.8.12", "Sng.8.13", "Sng.8.14"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Sng.1.1", "Sng.1.2", "Sng.1.3", "Sng.1.4", "Sng.1.5", "Sng.1.6", "Sng.1.7", "Sng.1.8", "Sng.1.9", "Sng.1.10", "Sng.1.11", "Sng.1.12", "Sng.1.13", "Sng.1.14", "Sng.1.15", "Sng.1.16", "Sng.1.17", "Sng.2.1", "Sng.2.2", "Sng.2.3", "Sng.2.4", "Sng.2.5", "Sng.2.6", "Sng.2.7", "Sng.2.8", "Sng.2.9", "Sng.2.10", "Sng.2.11", "Sng.2.12", "Sng.2.13", "Sng.2.14", "Sng.2.15", "Sng.2.16", "Sng.2.17", "Sng.3.1", "Sng.3.2", "Sng.3.3", "Sng.3.4", "Sng.3.5", "Sng.3.6", "Sng.3.7", "Sng.3.8", "Sng.3.9", "Sng.3.10", "Sng.3.11", "Sng.4.1", "Sng.4.2", "Sng.4.3", "Sng.4.4", "Sng.4.5", "Sng.4.6", "Sng.4.7", "Sng.4.8", "Sng.4.9", "Sng.4.10", "Sng.4.11", "Sng.4.12", "Sng.4.13", "Sng.4.14", "Sng.4.15", "Sng.4.16", "Sng.5.1", "Sng.5.2", "Sng.5.3", "Sng.5.4", "Sng.5.5", "Sng.5.6", "Sng.5.7", "Sng.5.8", "Sng.5.9", "Sng.5.10", "Sng.5.11", "Sng.5.12", "Sng.5.13", "Sng.5.14", "Sng.5.15", "Sng.5.16", "Sng.6.1", "Sng.6.2", "Sng.6.3", "Sng.6.4", "Sng.6.5", "Sng.6.6", "Sng.6.7", "Sng.6.8", "Sng.6.9", "Sng.6.10", "Sng.6.11", "Sng.6.12", "Sng.7.1", "Sng.7.2", "Sng.7.3", "Sng.7.4", "Sng.7.5", "Sng.7.6", "Sng.7.7", "Sng.7.8", "Sng.7.9", "Sng.7.10", "Sng.7.11", "Sng.7.12", "Sng.7.13", "Sng.7.14", "Sng.8.1", "Sng.8.2", "Sng.8.3", "Sng.8.4", "Sng.8.5", "Sng.8.6", "Sng.8.7", "Sng.8.8", "Sng.8.9", "Sng.8.10", "Sng.8.11", "Sng.8.12", "Sng.8.13", "Sng.8.14"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

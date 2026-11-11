@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tagnt-col",
+  "revision": "stepbible-tagnt-col/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tagnt",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tagnt-act-rev",
+    "path": "Translators Amalgamated OT+NT/TAGNT Act-Rev - Translators Amalgamated Greek NT - STEPBible.org CC-BY.txt",
+    "sha256": "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968",
+    "byte_count": 15938967
+  },
+  "native_extent": {
+    "book": "Col",
+    "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tagnt-act-rev"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tagnt-act-rev"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Col.1.1", "Col.1.2", "Col.1.3", "Col.1.4", "Col.1.5", "Col.1.6", "Col.1.7", "Col.1.8", "Col.1.9", "Col.1.10", "Col.1.11", "Col.1.12", "Col.1.13", "Col.1.14", "Col.1.15", "Col.1.16", "Col.1.17", "Col.1.18", "Col.1.19", "Col.1.20", "Col.1.21", "Col.1.22", "Col.1.23", "Col.1.24", "Col.1.25", "Col.1.26", "Col.1.27", "Col.1.28", "Col.1.29", "Col.2.1", "Col.2.2", "Col.2.3", "Col.2.4", "Col.2.5", "Col.2.6", "Col.2.7", "Col.2.8", "Col.2.9", "Col.2.10", "Col.2.11", "Col.2.12", "Col.2.13", "Col.2.14", "Col.2.15", "Col.2.16", "Col.2.17", "Col.2.18", "Col.2.19", "Col.2.20", "Col.2.21", "Col.2.22", "Col.2.23", "Col.3.1", "Col.3.2", "Col.3.3", "Col.3.4", "Col.3.5", "Col.3.6", "Col.3.7", "Col.3.8", "Col.3.9", "Col.3.10", "Col.3.11", "Col.3.12", "Col.3.13", "Col.3.14", "Col.3.15", "Col.3.16", "Col.3.17", "Col.3.18", "Col.3.19", "Col.3.20", "Col.3.21", "Col.3.22", "Col.3.23", "Col.3.24", "Col.3.25", "Col.4.1", "Col.4.2", "Col.4.3", "Col.4.4", "Col.4.5", "Col.4.6", "Col.4.7", "Col.4.8", "Col.4.9", "Col.4.10", "Col.4.11", "Col.4.12", "Col.4.13", "Col.4.14", "Col.4.15", "Col.4.16", "Col.4.17", "Col.4.18"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Col.1.1", "Col.1.2", "Col.1.3", "Col.1.4", "Col.1.5", "Col.1.6", "Col.1.7", "Col.1.8", "Col.1.9", "Col.1.10", "Col.1.11", "Col.1.12", "Col.1.13", "Col.1.14", "Col.1.15", "Col.1.16", "Col.1.17", "Col.1.18", "Col.1.19", "Col.1.20", "Col.1.21", "Col.1.22", "Col.1.23", "Col.1.24", "Col.1.25", "Col.1.26", "Col.1.27", "Col.1.28", "Col.1.29", "Col.2.1", "Col.2.2", "Col.2.3", "Col.2.4", "Col.2.5", "Col.2.6", "Col.2.7", "Col.2.8", "Col.2.9", "Col.2.10", "Col.2.11", "Col.2.12", "Col.2.13", "Col.2.14", "Col.2.15", "Col.2.16", "Col.2.17", "Col.2.18", "Col.2.19", "Col.2.20", "Col.2.21", "Col.2.22", "Col.2.23", "Col.3.1", "Col.3.2", "Col.3.3", "Col.3.4", "Col.3.5", "Col.3.6", "Col.3.7", "Col.3.8", "Col.3.9", "Col.3.10", "Col.3.11", "Col.3.12", "Col.3.13", "Col.3.14", "Col.3.15", "Col.3.16", "Col.3.17", "Col.3.18", "Col.3.19", "Col.3.20", "Col.3.21", "Col.3.22", "Col.3.23", "Col.3.24", "Col.3.25", "Col.4.1", "Col.4.2", "Col.4.3", "Col.4.4", "Col.4.5", "Col.4.6", "Col.4.7", "Col.4.8", "Col.4.9", "Col.4.10", "Col.4.11", "Col.4.12", "Col.4.13", "Col.4.14", "Col.4.15", "Col.4.16", "Col.4.17", "Col.4.18"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

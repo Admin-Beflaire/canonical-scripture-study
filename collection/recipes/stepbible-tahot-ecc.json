@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-ecc",
+  "revision": "stepbible-tahot-ecc/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-job-sng",
+    "path": "Translators Amalgamated OT+NT/TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "e0416880bb78f46715bb17ce526b623c3051da0ef83f7bf83beaad350e6272e8",
+    "byte_count": 9540663
+  },
+  "native_extent": {
+    "book": "Ecc",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-job-sng"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-job-sng"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Ecc.1.1", "Ecc.1.2", "Ecc.1.3", "Ecc.1.4", "Ecc.1.5", "Ecc.1.6", "Ecc.1.7", "Ecc.1.8", "Ecc.1.9", "Ecc.1.10", "Ecc.1.11", "Ecc.1.12", "Ecc.1.13", "Ecc.1.14", "Ecc.1.15", "Ecc.1.16", "Ecc.1.17", "Ecc.1.18", "Ecc.2.1", "Ecc.2.2", "Ecc.2.3", "Ecc.2.4", "Ecc.2.5", "Ecc.2.6", "Ecc.2.7", "Ecc.2.8", "Ecc.2.9", "Ecc.2.10", "Ecc.2.11", "Ecc.2.12", "Ecc.2.13", "Ecc.2.14", "Ecc.2.15", "Ecc.2.16", "Ecc.2.17", "Ecc.2.18", "Ecc.2.19", "Ecc.2.20", "Ecc.2.21", "Ecc.2.22", "Ecc.2.23", "Ecc.2.24", "Ecc.2.25", "Ecc.2.26", "Ecc.3.1", "Ecc.3.2", "Ecc.3.3", "Ecc.3.4", "Ecc.3.5", "Ecc.3.6", "Ecc.3.7", "Ecc.3.8", "Ecc.3.9", "Ecc.3.10", "Ecc.3.11", "Ecc.3.12", "Ecc.3.13", "Ecc.3.14", "Ecc.3.15", "Ecc.3.16", "Ecc.3.17", "Ecc.3.18", "Ecc.3.19", "Ecc.3.20", "Ecc.3.21", "Ecc.3.22", "Ecc.4.1", "Ecc.4.2", "Ecc.4.3", "Ecc.4.4", "Ecc.4.5", "Ecc.4.6", "Ecc.4.7", "Ecc.4.8", "Ecc.4.9", "Ecc.4.10", "Ecc.4.11", "Ecc.4.12", "Ecc.4.13", "Ecc.4.14", "Ecc.4.15", "Ecc.4.16", "Ecc.4.17", "Ecc.5.1", "Ecc.5.2", "Ecc.5.3", "Ecc.5.4", "Ecc.5.5", "Ecc.5.6", "Ecc.5.7", "Ecc.5.8", "Ecc.5.9", "Ecc.5.10", "Ecc.5.11", "Ecc.5.12", "Ecc.5.13", "Ecc.5.14", "Ecc.5.15", "Ecc.5.16", "Ecc.5.17", "Ecc.5.18", "Ecc.5.19", "Ecc.6.1", "Ecc.6.2", "Ecc.6.3", "Ecc.6.4", "Ecc.6.5", "Ecc.6.6", "Ecc.6.7", "Ecc.6.8", "Ecc.6.9", "Ecc.6.10", "Ecc.6.11", "Ecc.6.12", "Ecc.7.1", "Ecc.7.2", "Ecc.7.3", "Ecc.7.4", "Ecc.7.5", "Ecc.7.6", "Ecc.7.7", "Ecc.7.8", "Ecc.7.9", "Ecc.7.10", "Ecc.7.11", "Ecc.7.12", "Ecc.7.13", "Ecc.7.14", "Ecc.7.15", "Ecc.7.16", "Ecc.7.17", "Ecc.7.18", "Ecc.7.19", "Ecc.7.20", "Ecc.7.21", "Ecc.7.22", "Ecc.7.23", "Ecc.7.24", "Ecc.7.25", "Ecc.7.26", "Ecc.7.27", "Ecc.7.28", "Ecc.7.29", "Ecc.8.1", "Ecc.8.2", "Ecc.8.3", "Ecc.8.4", "Ecc.8.5", "Ecc.8.6", "Ecc.8.7", "Ecc.8.8", "Ecc.8.9", "Ecc.8.10", "Ecc.8.11", "Ecc.8.12", "Ecc.8.13", "Ecc.8.14", "Ecc.8.15", "Ecc.8.16", "Ecc.8.17", "Ecc.9.1", "Ecc.9.2", "Ecc.9.3", "Ecc.9.4", "Ecc.9.5", "Ecc.9.6", "Ecc.9.7", "Ecc.9.8", "Ecc.9.9", "Ecc.9.10", "Ecc.9.11", "Ecc.9.12", "Ecc.9.13", "Ecc.9.14", "Ecc.9.15", "Ecc.9.16", "Ecc.9.17", "Ecc.9.18", "Ecc.10.1", "Ecc.10.2", "Ecc.10.3", "Ecc.10.4", "Ecc.10.5", "Ecc.10.6", "Ecc.10.7", "Ecc.10.8", "Ecc.10.9", "Ecc.10.10", "Ecc.10.11", "Ecc.10.12", "Ecc.10.13", "Ecc.10.14", "Ecc.10.15", "Ecc.10.16", "Ecc.10.17", "Ecc.10.18", "Ecc.10.19", "Ecc.10.20", "Ecc.11.1", "Ecc.11.2", "Ecc.11.3", "Ecc.11.4", "Ecc.11.5", "Ecc.11.6", "Ecc.11.7", "Ecc.11.8", "Ecc.11.9", "Ecc.11.10", "Ecc.12.1", "Ecc.12.2", "Ecc.12.3", "Ecc.12.4", "Ecc.12.5", "Ecc.12.6", "Ecc.12.7", "Ecc.12.8", "Ecc.12.9", "Ecc.12.10", "Ecc.12.11", "Ecc.12.12", "Ecc.12.13", "Ecc.12.14"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Ecc.1.1", "Ecc.1.2", "Ecc.1.3", "Ecc.1.4", "Ecc.1.5", "Ecc.1.6", "Ecc.1.7", "Ecc.1.8", "Ecc.1.9", "Ecc.1.10", "Ecc.1.11", "Ecc.1.12", "Ecc.1.13", "Ecc.1.14", "Ecc.1.15", "Ecc.1.16", "Ecc.1.17", "Ecc.1.18", "Ecc.2.1", "Ecc.2.2", "Ecc.2.3", "Ecc.2.4", "Ecc.2.5", "Ecc.2.6", "Ecc.2.7", "Ecc.2.8", "Ecc.2.9", "Ecc.2.10", "Ecc.2.11", "Ecc.2.12", "Ecc.2.13", "Ecc.2.14", "Ecc.2.15", "Ecc.2.16", "Ecc.2.17", "Ecc.2.18", "Ecc.2.19", "Ecc.2.20", "Ecc.2.21", "Ecc.2.22", "Ecc.2.23", "Ecc.2.24", "Ecc.2.25", "Ecc.2.26", "Ecc.3.1", "Ecc.3.2", "Ecc.3.3", "Ecc.3.4", "Ecc.3.5", "Ecc.3.6", "Ecc.3.7", "Ecc.3.8", "Ecc.3.9", "Ecc.3.10", "Ecc.3.11", "Ecc.3.12", "Ecc.3.13", "Ecc.3.14", "Ecc.3.15", "Ecc.3.16", "Ecc.3.17", "Ecc.3.18", "Ecc.3.19", "Ecc.3.20", "Ecc.3.21", "Ecc.3.22", "Ecc.4.1", "Ecc.4.2", "Ecc.4.3", "Ecc.4.4", "Ecc.4.5", "Ecc.4.6", "Ecc.4.7", "Ecc.4.8", "Ecc.4.9", "Ecc.4.10", "Ecc.4.11", "Ecc.4.12", "Ecc.4.13", "Ecc.4.14", "Ecc.4.15", "Ecc.4.16", "Ecc.4.17", "Ecc.5.1", "Ecc.5.2", "Ecc.5.3", "Ecc.5.4", "Ecc.5.5", "Ecc.5.6", "Ecc.5.7", "Ecc.5.8", "Ecc.5.9", "Ecc.5.10", "Ecc.5.11", "Ecc.5.12", "Ecc.5.13", "Ecc.5.14", "Ecc.5.15", "Ecc.5.16", "Ecc.5.17", "Ecc.5.18", "Ecc.5.19", "Ecc.6.1", "Ecc.6.2", "Ecc.6.3", "Ecc.6.4", "Ecc.6.5", "Ecc.6.6", "Ecc.6.7", "Ecc.6.8", "Ecc.6.9", "Ecc.6.10", "Ecc.6.11", "Ecc.6.12", "Ecc.7.1", "Ecc.7.2", "Ecc.7.3", "Ecc.7.4", "Ecc.7.5", "Ecc.7.6", "Ecc.7.7", "Ecc.7.8", "Ecc.7.9", "Ecc.7.10", "Ecc.7.11", "Ecc.7.12", "Ecc.7.13", "Ecc.7.14", "Ecc.7.15", "Ecc.7.16", "Ecc.7.17", "Ecc.7.18", "Ecc.7.19", "Ecc.7.20", "Ecc.7.21", "Ecc.7.22", "Ecc.7.23", "Ecc.7.24", "Ecc.7.25", "Ecc.7.26", "Ecc.7.27", "Ecc.7.28", "Ecc.7.29", "Ecc.8.1", "Ecc.8.2", "Ecc.8.3", "Ecc.8.4", "Ecc.8.5", "Ecc.8.6", "Ecc.8.7", "Ecc.8.8", "Ecc.8.9", "Ecc.8.10", "Ecc.8.11", "Ecc.8.12", "Ecc.8.13", "Ecc.8.14", "Ecc.8.15", "Ecc.8.16", "Ecc.8.17", "Ecc.9.1", "Ecc.9.2", "Ecc.9.3", "Ecc.9.4", "Ecc.9.5", "Ecc.9.6", "Ecc.9.7", "Ecc.9.8", "Ecc.9.9", "Ecc.9.10", "Ecc.9.11", "Ecc.9.12", "Ecc.9.13", "Ecc.9.14", "Ecc.9.15", "Ecc.9.16", "Ecc.9.17", "Ecc.9.18", "Ecc.10.1", "Ecc.10.2", "Ecc.10.3", "Ecc.10.4", "Ecc.10.5", "Ecc.10.6", "Ecc.10.7", "Ecc.10.8", "Ecc.10.9", "Ecc.10.10", "Ecc.10.11", "Ecc.10.12", "Ecc.10.13", "Ecc.10.14", "Ecc.10.15", "Ecc.10.16", "Ecc.10.17", "Ecc.10.18", "Ecc.10.19", "Ecc.10.20", "Ecc.11.1", "Ecc.11.2", "Ecc.11.3", "Ecc.11.4", "Ecc.11.5", "Ecc.11.6", "Ecc.11.7", "Ecc.11.8", "Ecc.11.9", "Ecc.11.10", "Ecc.12.1", "Ecc.12.2", "Ecc.12.3", "Ecc.12.4", "Ecc.12.5", "Ecc.12.6", "Ecc.12.7", "Ecc.12.8", "Ecc.12.9", "Ecc.12.10", "Ecc.12.11", "Ecc.12.12", "Ecc.12.13", "Ecc.12.14"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

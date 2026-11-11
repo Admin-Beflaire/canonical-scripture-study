@@ -62,11 +62,18 @@ class SourceIdentity:
 
 @dataclass(frozen=True)
 class NativeText:
-    """Exact unit texts in native order, addressed by Unicode-scalar offsets of one coordinate version."""
+    """Exact unit texts in native order, addressed by Unicode-scalar offsets of one coordinate version.
+
+    `order_bases` optionally gives each unit's first position in the revision's linear source
+    order, when this text holds only part of a revision whose coordinate version defines that
+    order (for example a book offset plus scalars within the book). Without it, the order
+    counts scalars across exactly these units.
+    """
     coordinate_version: str
     units: tuple[tuple[str, str], ...]
     complete: bool = True
     limitation: str | None = None
+    order_bases: tuple[int, ...] | None = None
     _index: dict[str, str] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -78,6 +85,16 @@ class NativeText:
                 raise RecordError(f'Invalid native unit {unit_id!r}')
         if not self.complete and not self.limitation:
             raise RecordError('Partial native text needs a stated limitation')
+        if self.order_bases is not None:
+            bases = self.order_bases
+            if (not isinstance(bases, tuple) or len(bases) != len(self.units)
+                    or any(type(base) is not int or not 0 <= base <= 2**53 - 1 for base in bases)):
+                raise RecordError('Order bases must be one safe non-negative integer per unit')
+            for (_, text), base, following in zip(self.units, bases, bases[1:]):
+                if base + len(text) > following:
+                    raise RecordError('Order bases must follow native order without overlapping units')
+            if bases[-1] + len(self.units[-1][1]) > 2**53 - 1:
+                raise RecordError('Order bases exceed the safe integer range')
         object.__setattr__(self, '_index', dict(self.units))
 
     def unit(self, unit_id: str) -> str:
@@ -95,6 +112,8 @@ class NativeText:
 
     def scalar_bases(self) -> dict[str, int]:
         """Linear source order of each unit's first scalar, for navigation intervals."""
+        if self.order_bases is not None:
+            return {unit_id: base for (unit_id, _), base in zip(self.units, self.order_bases)}
         bases, offset = {}, 0
         for unit_id, text in self.units:
             bases[unit_id] = offset
@@ -305,8 +324,8 @@ def _fully_reached(length: int, intervals: list[tuple[int, int]]) -> bool:
 def navigation_rows(spans: Iterable[Mapping[str, Any]], text: NativeText) -> list[dict[str, Any]]:
     """One `span_segments` row per native segment, as inclusive linear source-order intervals.
 
-    Source order counts Unicode scalars across the revision's units in native order, so
-    overlap queries work across unit boundaries. An empty segment marks its insertion point.
+    Source order counts Unicode scalars across the revision's units in native order (or follows
+    the text's declared `order_bases`), so overlap queries work across unit boundaries. An empty segment marks its insertion point.
     """
     bases = text.scalar_bases()
     rows = []

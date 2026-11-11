@@ -50,7 +50,7 @@ and quality checks.
 `.github/workflows/prepare.yml` runs one job per dispatch on reviewed `main`: a
 validate job routes the envelope to one fixed `acquire`, `prepare` or `quality`
 job in the `preparation` environment. The runner reads the job from the event file,
-never from a step environment or shell. It writes D1 candidate rows through the
+never from a step environment or shell. Control also sends `dispatch_ref`, the job's SHA-256, which becomes the run title, and the runner refuses a job that does not match it. It writes D1 candidate rows through the
 Cloudflare REST API (one batch per unit) and immutable private R2 objects, keeps
 checkpoints under `prepared/checkpoints/` and quality receipts under
 `prepared/receipts/`, and submits the result to Control

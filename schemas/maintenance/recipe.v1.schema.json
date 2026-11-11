@@ -20,7 +20,24 @@
         "parameters": { "type": "object", "maxProperties": 32 },
         "native_extent": { "type": "object", "maxProperties": 64 },
         "capabilities": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/id" } },
-        "dependencies": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } }
+        "dependencies": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+        "manifest_revision": { "$ref": "#/$defs/id" },
+        "units": {
+          "description": "Partition rule: the bounded units Control dispatches, in native order. Data Preparation sizes them; Control only reads them.",
+          "type": "array", "minItems": 1, "maxItems": 512, "items": { "$ref": "#/$defs/unit" }
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "kind", "native_extent", "depends_on"],
+      "properties": {
+        "unit_id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["acquire", "prepare", "quality"] },
+        "native_extent": { "type": "object", "maxProperties": 64 },
+        "depends_on": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/id" } },
+        "required_capabilities": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/id" } }
       }
     }
   }

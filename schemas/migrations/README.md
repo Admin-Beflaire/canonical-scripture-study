@@ -24,3 +24,6 @@ provider execution contract. Local SQLite checks do not establish deployed D1 be
 `0002_span_navigation.sql` adds ordered native-segment navigation and its
 source/kind/start-order index. It extends the same migration sequence and preserves
 selected-output immutability; preparation must verify complete segment coverage.
+
+`0004_job_results.sql` adds `maintenance_jobs.result_json`, the accepted result envelope
+Control uses to pass dependency outputs to later units and the candidate to quality.

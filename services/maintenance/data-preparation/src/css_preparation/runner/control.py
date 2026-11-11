@@ -56,10 +56,16 @@ class ControlClient:
                 self._sleep(2 ** attempt)
         raise AssertionError('unreachable')
 
-    def read_state(self, task_id: str, unit_id: str, attempt: int) -> ControlState | None:
-        """Control's recorded task and dispatch for this attempt, or None when none exists."""
+    def read_state(self, task_id: str, unit_id: str, attempt: int, *, run_id: str,
+                   job_input_basis: str) -> ControlState | None:
+        """Control's recorded task and dispatch for this attempt, or None when none exists.
+
+        The run identifies itself and the digest of the exact job bytes it received, so
+        Control can confirm a dispatch whose response was lost (internal-jobs fixture).
+        """
         try:
-            reply = self._post(STATE_PATH, {'task_id': task_id, 'unit_id': unit_id, 'attempt': attempt})
+            reply = self._post(STATE_PATH, {'task_id': task_id, 'unit_id': unit_id, 'attempt': attempt,
+                                            'run_id': run_id, 'job_input_basis': job_input_basis})
         except ProviderError as error:
             if error.status == 404:
                 return None

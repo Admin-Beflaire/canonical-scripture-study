@@ -1,4 +1,7 @@
 name: Preparation unit
+# The title GitHub records for each run carries the SHA-256 of its job, so Control can match a run
+# to its dispatch independently (a content digest, not an identifier).
+run-name: Preparation ${{ inputs.dispatch_ref }}
 # Control dispatches one fixed job envelope per unit on reviewed main (Platform GitHub To-Be §2–3).
 # The job stays in the event file: it is never placed in a step environment or a shell command,
 # because public run logs show step environments. Detailed diagnostics go only to Control's
@@ -8,6 +11,10 @@ on:
     inputs:
       job:
         description: Control's canonical maintenance-job/1 envelope (Control sets this)
+        required: true
+        type: string
+      dispatch_ref:
+        description: SHA-256 of the job text (Control sets this; the runner refuses a mismatch)
         required: true
         type: string
 permissions:

@@ -76,6 +76,9 @@ class RunnerTest(unittest.TestCase):
         request = json.loads(body)
         if path == '/internal/jobs/state':
             job = json.loads(self.current)
+            # The run names itself and the digest of the exact bytes it holds.
+            self.assertEqual(request['run_id'], RUN_ID)
+            self.assertEqual(request['job_input_basis'], hashlib.sha256(self.current.encode('utf-8')).hexdigest())
             return 200, {'task_id': job['task_id'], 'task_revision': job['task_revision'] + 1,
                          'task_state': self.task_state, 'task_basis_digest': job['basis_digest'],
                          'unit_id': job['unit_id'], 'attempt': job['attempt'], 'job_revision': job['task_revision'],
@@ -135,7 +138,8 @@ class RunnerTest(unittest.TestCase):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         event = Path(holder.name) / 'event.json'
-        event.write_text(json.dumps({'inputs': {'job': raw}}), encoding='utf-8')
+        event.write_text(json.dumps({'inputs': {'job': raw, 'dispatch_ref': hashlib.sha256(raw.encode('utf-8')).hexdigest()}}),
+                         encoding='utf-8')
         return {'GITHUB_EVENT_PATH': str(event), 'GITHUB_RUN_ID': RUN_ID, 'GITHUB_SHA': COMMIT,
                 'CONTROL_ORIGIN': self.api.origin, 'PREPARATION_ACCESS_CLIENT_ID': 'synthetic-id',
                 'PREPARATION_ACCESS_CLIENT_SECRET': 'synthetic-secret', 'CLOUDFLARE_ACCOUNT_ID': 'acct',
@@ -215,6 +219,15 @@ class RunnerTest(unittest.TestCase):
         code, status, _ = self.main(self.environ(self.job('quality')))  # kind mismatch with --kind prepare
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.assertEqual(self.results, [])
+        # The dispatch reference must be the digest of exactly this job text.
+        event = Path(environ['GITHUB_EVENT_PATH'])
+        event.write_text(json.dumps({'inputs': {'job': self.job(), 'dispatch_ref': 'b' * 64}}), encoding='utf-8')
+        code, status, _ = self.main(environ)
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        event.write_text(json.dumps({'inputs': {'job': self.job()}}), encoding='utf-8')
+        code, status, _ = self.main(environ, mode=['--validate'])
+        self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
+        environ = self.environ(self.job())
         code, status, _ = self.main({**environ, 'GITHUB_EVENT_PATH': '/nonexistent/event.json'})
         self.assertEqual((code, status), (1, runner.PUBLIC['invalid'] + '\n'))
         self.reply = (503, {})

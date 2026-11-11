@@ -31,7 +31,9 @@ class PrepareWorkflowTests(unittest.TestCase):
     def test_job_input_never_reaches_environment_or_shell(self):
         # Step environments are printed in public logs; the runner reads the event file instead.
         self.assertNotRegex(WORKFLOW, r"inputs\.job|github\.event\.inputs|toJSON\(")
-        self.assertNotRegex(WORKFLOW, r"\$\{\{[^}]*inputs")
+        # The only input expression is the run title: the job's SHA-256, never the job itself.
+        self.assertEqual(re.findall(r"\$\{\{[^}]*inputs[^}]*\}\}", WORKFLOW), ["${{ inputs.dispatch_ref }}"])
+        self.assertIn("\nrun-name: Preparation ${{ inputs.dispatch_ref }}\n", WORKFLOW)
         self.assertNotIn("set -x", WORKFLOW)
         self.assertNotIn("ACTIONS_STEP_DEBUG", WORKFLOW)
 

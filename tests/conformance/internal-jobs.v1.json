@@ -8,7 +8,11 @@
   "state": {
     "method": "POST",
     "path": "/internal/jobs/state",
-    "request": { "task_id": "task-wire-1", "unit_id": "unit-wire-1", "attempt": 1 },
+    "request": {
+      "task_id": "task-wire-1", "unit_id": "unit-wire-1", "attempt": 1, "run_id": "1234567890",
+      "job_input_basis": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "binding": "run_id is the calling run (github.run_id); job_input_basis is the SHA-256 of the exact job bytes it received. When the dispatch response was lost (job still 'intended' without a run), Control binds this run to the job only if job_input_basis equals the recorded input basis and GitHub confirms the run is an unfinished workflow_dispatch of prepare.yml on main whose recorded title is 'Preparation <input basis>' (run-name from the dispatch_ref input). Otherwise the reply is 404.",
     "response_200": {
       "task_id": "task-wire-1",
       "task_revision": 2,

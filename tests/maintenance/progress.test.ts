@@ -19,9 +19,9 @@ const recipe = {
   native_extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'], dependencies: [],
   units: [
     { unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
-    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { units: ['u1'] }, depends_on: ['acquire'] },
-    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { units: ['u2'] }, depends_on: ['acquire'] },
-    { unit_id: 'quality', kind: 'quality', native_extent: { units: ['u1', 'u2'] }, depends_on: ['prepare-u1', 'prepare-u2'],
+    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { unit_ids: ['u1'] }, depends_on: ['acquire'] },
+    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { unit_ids: ['u2'] }, depends_on: ['acquire'] },
+    { unit_id: 'quality', kind: 'quality', native_extent: { unit_ids: ['u1', 'u2'] }, depends_on: ['prepare-u1', 'prepare-u2'],
       required_capabilities: ['source_text'] },
   ],
 };

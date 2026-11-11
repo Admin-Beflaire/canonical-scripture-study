@@ -71,7 +71,8 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   const scope = JSON.parse(row.scope_json) as Scope;
   if (scope.constraints.recipe === undefined) {
     // Removal, rollback and restore validation prepare nothing: they go straight to the checks and gate.
-    if (DIRECT.has(scope.kind) && row.state !== 'checked') {
+    // A removal whose selection guard failed stays checked and is rebuilt here from the new current.
+    if (DIRECT.has(scope.kind) && (row.state !== 'checked' || scope.kind === 'remove')) {
       const selected = await selectDirect(db, objects, row);
       return { dispatched: [], state: selected.state, ...(selected.limitation ? { limitation: selected.limitation } : {}) };
     }
@@ -164,6 +165,10 @@ const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
 function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
   if (recipe.native_extent && canonicalJson(scope.extent) !== canonicalJson(recipe.native_extent))
     return `the task extent must be the recipe's extent ${canonicalJson(recipe.native_extent)}`;
+  // The scope check compares outputs with these unit lists; other extent shapes are refused up front.
+  for (const unit of recipe.units ?? [])
+    if (unit.kind !== 'acquire' && !(Array.isArray(unit.native_extent.unit_ids) && unit.native_extent.unit_ids.length))
+      return `recipe unit ${unit.unit_id} must list its native unit_ids`;
   const offered = new Set(recipe.capabilities ?? []);
   const extra = scope.capabilities.filter(capability => !offered.has(capability));
   if (extra.length) return `the recipe does not provide ${extra.join(', ')}`;

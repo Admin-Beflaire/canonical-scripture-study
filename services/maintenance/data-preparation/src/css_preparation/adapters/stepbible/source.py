@@ -27,14 +27,11 @@ LICENCE = 'CC BY 4.0'
 _COMMIT = re.compile(r'[0-9a-f]{40}')
 _COMPONENT = re.compile(r'(tahot|tagnt)-[a-z0-9]+-[a-z0-9]+')
 _HEX = re.compile(r'[0-9a-f]{64}')
-# Book order of each source; the ordinal fixes the book's place in the linear order. TAHOT
-# follows the Tanakh (Torah, Prophets, Writings ending with Chronicles, as in printed Jewish
-# Bibles), not the English order of STEPBible's files.
+# Book order of each source's files; the ordinal fixes the book's place in the linear order.
 BOOKS = {
-    'tahot': ('Gen', 'Exo', 'Lev', 'Num', 'Deu',
-              'Jos', 'Jdg', '1Sa', '2Sa', '1Ki', '2Ki', 'Isa', 'Jer', 'Ezk',
-              'Hos', 'Jol', 'Amo', 'Oba', 'Jon', 'Mic', 'Nam', 'Hab', 'Zep', 'Hag', 'Zec', 'Mal',
-              'Psa', 'Pro', 'Job', 'Sng', 'Rut', 'Lam', 'Ecc', 'Est', 'Dan', 'Ezr', 'Neh', '1Ch', '2Ch'),
+    'tahot': ('Gen', 'Exo', 'Lev', 'Num', 'Deu', 'Jos', 'Jdg', 'Rut', '1Sa', '2Sa', '1Ki', '2Ki', '1Ch', '2Ch',
+              'Ezr', 'Neh', 'Est', 'Job', 'Psa', 'Pro', 'Ecc', 'Sng', 'Isa', 'Jer', 'Lam', 'Ezk', 'Dan', 'Hos',
+              'Jol', 'Amo', 'Oba', 'Jon', 'Mic', 'Nam', 'Hab', 'Zep', 'Hag', 'Zec', 'Mal'),
     'tagnt': ('Mat', 'Mrk', 'Luk', 'Jhn', 'Act', 'Rom', '1Co', '2Co', 'Gal', 'Eph', 'Php', 'Col', '1Th', '2Th',
               '1Ti', '2Ti', 'Tit', 'Phm', 'Heb', 'Jas', '1Pe', '2Pe', '1Jn', '2Jn', '3Jn', 'Jud', 'Rev'),
 }

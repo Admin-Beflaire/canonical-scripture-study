@@ -33,8 +33,7 @@ one uncompressed R2 artifact per output. The size limit is a recipe parameter.
 Every span gets `span_segments` rows: inclusive intervals in linear source order
 (Unicode scalars across the revision's units in native order, or the order bases an
 adapter declares for part of a revision; STEPBible uses book ordinal × 2^32 plus scalars
-within the book, so one book is placed without reading the others; TAHOT books follow
-the Tanakh order, ending with Chronicles).
+within the book, so one book is placed without reading the others).
 
 Output IDs derive from the complete reuse basis (inputs, method, parameters,
 extent including the coordinate version, dependencies); reuse needs the whole

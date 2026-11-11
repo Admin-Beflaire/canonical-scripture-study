@@ -7,7 +7,8 @@ manuscript transcription are marked:
 
 - TAHOT words of type R (restored) and X (reconstructed from the Septuagint) get their own
   word spans with those reading kinds; Qere words get a word span that says so.
-- Ketiv, other-edition words and recorded variants become attributed annotations on the verse.
+- TAHOT's Ketiv and recorded variants, and TAGNT's words found only in other editions (such as
+  the TR) and recorded variants, become attributed annotations on the verse.
 - A verse with no base wording (for example a verse absent from NA28) is a gap with its
   other-edition words in an annotation.
 """

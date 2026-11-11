@@ -77,10 +77,10 @@ posted elsewhere). Prepare units of at most 300 verses each produce the verse ev
 source search and word/lemma/grammar indexes in one D1 batch:
 
 - Base text: TAHOT's translators' text (Leningrad following the Qere, with restored
-  `R` and LXX-based `X` words as `restored` and `reconstructed` word spans); for TAGNT
-  the words whose editions include NA28. Ketiv, other editions' words and recorded
-  variants are attributed `textual_variants` annotations; a verse without base words
-  is a gap.
+  `R` and LXX-based `X` words as `restored` and `reconstructed` word spans); the Ketiv
+  and recorded variants are attributed `textual_variants` annotations. TAGNT: the words
+  whose editions include NA28; words found only in other editions (such as the TR) and
+  recorded variants are `textual_variants` annotations. A verse without base words is a gap.
 - Wording joins the word cells (STEPBible's `/` and `\` separators removed) with one
   space, except after a Hebrew maqaf. Search keys: Hebrew without accents, meteg and
   puncta; Greek case- and accent-folded. Paragraph markers and punctuation are kept in

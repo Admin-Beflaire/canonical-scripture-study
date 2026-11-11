@@ -19,8 +19,10 @@ export function fakeGitHub(options: { commit?: string; recipes?: Record<string, 
     const headers = Object.fromEntries(Object.entries(init.headers ?? {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
     const body = init.body ? JSON.parse(String(init.body)) : undefined;
     requests.push({ method, url, headers, body });
-    if (init.redirect !== 'error') throw new Error('redirects must be refused');
-    if (state.redirect) throw new TypeError('redirect refused');
+    // Like Cloudflare Workers: redirect 'error' is not implemented and throws before sending.
+    if (init.redirect === 'error') throw new TypeError('Invalid redirect value, must be one of "follow" or "manual"');
+    if (init.redirect !== 'manual') throw new Error('redirects must not be followed');
+    if (state.redirect) return new Response(null, { status: 302, headers: { location: 'https://evil.example.invalid/' } });
     if (state.offline) throw new TypeError('network unreachable');
     const json = (status: number, value?: unknown) =>
       new Response(value === undefined ? null : JSON.stringify(value), { status });

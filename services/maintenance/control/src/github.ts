@@ -48,7 +48,9 @@ export class GitHubActions implements WorkflowTransport {
     let response: Response;
     try {
       response = await this.fetcher(`${API}/repos/${this.settings.repository}${path}`, {
-        method, redirect: 'error', headers: body === undefined ? this.headers : { ...this.headers, 'Content-Type': 'application/json' },
+        // Workers do not implement redirect: 'error' (it throws before sending). 'manual' returns
+        // any redirect unfollowed, and a redirect is refused below like any other non-2xx reply.
+        method, redirect: 'manual', headers: body === undefined ? this.headers : { ...this.headers, 'Content-Type': 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       if (response.ok) text = await response.text();

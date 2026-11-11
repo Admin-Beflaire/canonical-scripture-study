@@ -70,3 +70,13 @@ test('active runs are listed per status across all pages; a listing that may be 
   for (let i = 0; i < 1000; i++) Object.assign(gh.runs.get(Number((await actions.dispatch(job)).run_id))!, { status: 'waiting' });
   assert.equal(await actions.activeRuns(), null, 'more than ten pages: treated as incomplete');
 });
+
+test('requests use a redirect mode Workers support and refuse redirects unfollowed', async () => {
+  const gh = fakeGitHub({ recipes: { 'collection/recipes/r.json': { id: 'r' } } });
+  const actions = new GitHubActions({ repository: 'owner/app', token: 't' }, gh.fetcher);
+  assert.equal(await actions.readFile('collection/recipes/r.json'), JSON.stringify({ id: 'r' }));
+  gh.state.redirect = true;
+  await assert.rejects(actions.readFile('collection/recipes/r.json'), (error: GitHubError) => error.status === 302);
+  await assert.rejects(actions.dispatch(job), GitHubError);
+  assert.ok(gh.requests.every(request => !request.url.startsWith('https://evil.')), 'the redirect target is never requested');
+});

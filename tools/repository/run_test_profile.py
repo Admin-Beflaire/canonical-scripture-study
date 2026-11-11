@@ -14,7 +14,7 @@ PROFILES = ("typescript", "python", "repository")
 def select_profiles(paths):
     selected = set()
     for path in paths:
-        typescript_home = path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/"))
+        typescript_home = path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/", "tests/study/"))
         python_home = path.startswith(("services/maintenance/data-preparation/", "packages/shared-python/", "tests/python/"))
         suffix = Path(path).suffix
         if ((typescript_home and suffix == ".py") or
@@ -23,7 +23,7 @@ def select_profiles(paths):
             continue
         if path.startswith(("schemas/", "tests/conformance/")):
             selected.update(("typescript", "python"))
-        elif path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/")):
+        elif path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/", "tests/study/")):
             selected.add("typescript")
         elif path.startswith(("services/maintenance/data-preparation/", "packages/shared-python/", "tests/python/")) or path == ".python-version":
             selected.add("python")

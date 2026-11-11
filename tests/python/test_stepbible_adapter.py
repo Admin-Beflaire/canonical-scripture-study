@@ -125,7 +125,24 @@ class PrepareTest(unittest.TestCase):
         records = prepare_unit(raw, component, 'Exo', ['Exo.1.3'])
         words = {row['form']: row for row in self._postings(records, 'word_index') if row['lookup_kind'] == 'lemma'}
         self.assertEqual(set(words), {'יָכ', 'בָּא', 'גָד'})
-        self.assertEqual({a['lemma_id'] for a in words['גָד']['analyses']}, {'H0935G', 'H1409'})
+        # Each word keeps only its own morphemes: no lemma or grammar of the other word.
+        self.assertEqual([(a['lemma_id'], a['grammar']['morphology']) for a in words['בָּא']['analyses']],
+                         [('H0935G', 'Vqp3ms')])
+        self.assertEqual([(a['lemma_id'], a['grammar']['morphology']) for a in words['גָד']['analyses']],
+                         [('H1409', 'Ncmsa')])
+        lemma_forms = {row['search_key']: row['form'] for row in self._postings(records, 'word_index')
+                       if row['lookup_kind'] == 'lemma'}
+        self.assertEqual((lemma_forms['lemma:H0935G'], lemma_forms['lemma:H1409']), ('בָּא', 'גָד'))
+
+    def test_one_word_split_by_a_maqaf_keeps_its_one_analysis(self):
+        lines = fixture.tahot_lines()
+        lines[-1] = fixture.row('Exo.1.2(1.3)#03=L', 'כְּדָרְ\\־לָעֹמֶר', 'kedorlaomer', 'Kedorlaomer',
+                                '{H3540}\\H9014', 'HNpm')
+        component, raw = fixture.component('tahot', lines)
+        records = prepare_unit(raw, component, 'Exo', ['Exo.1.3'])
+        forms = {row['form']: row for row in self._postings(records, 'word_index') if row['lookup_kind'] == 'lemma'
+                 and row['search_key'] == 'lemma:H3540'}
+        self.assertEqual(set(forms), {'כְּדָרְ', 'לָעֹמֶר'})
 
     def test_untagged_word_is_reported_as_partial_word_coverage(self):
         lines = fixture.tagnt_lines()

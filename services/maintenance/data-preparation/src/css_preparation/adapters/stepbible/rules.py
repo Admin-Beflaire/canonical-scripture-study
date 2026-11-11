@@ -12,7 +12,7 @@ from typing import Iterable
 
 from ...indexes.source import TextRules
 from ...indexes.word import AnalysisAlternative
-from .format import Language, TaggedWord
+from .format import Language, TaggedWord, native_form
 
 # Hebrew letters, points, cantillation, dagesh/shin/sin dots and qamats qatan; not maqaf
 # (U+05BE), paseq (U+05C0), sof pasuq (U+05C3) or nun hafukha (U+05C6).
@@ -59,12 +59,32 @@ _LANGUAGES = {'H': 'hebrew', 'A': 'aramaic'}
 _PUNCTUATION = frozenset(f'H90{n}' for n in range(14, 20))
 
 
-def _hebrew_parts(word: TaggedWord) -> list[tuple[str, dict[str, str]]]:
+def _hebrew_pieces(word: TaggedWord) -> list[tuple[int, int]] | None:
+    """Range of each `/`-separated piece of the Hebrew cell within the word's wording.
+
+    The pieces line up one to one with the dStrongs pieces. An empty piece between two
+    pieces is the `//` word break (one space in the wording). None if the cell does not
+    rebuild the wording exactly.
+    """
+    pieces = word.cell.split('/')
+    text, ranges = '', []
+    for index, piece in enumerate(pieces):
+        part = ' ' if piece == '' and 0 < index < len(pieces) - 1 else piece.replace('\\', '')
+        ranges.append((len(text), len(text) + len(part)))
+        text += part
+    lead = len(text) - len(text.lstrip())
+    if text.strip() != native_form(word, 'hebrew'):
+        return None
+    return [(start - lead, end - lead) for start, end in ranges]
+
+
+def _hebrew_parts(word: TaggedWord, within: tuple[int, int] | None) -> list[tuple[str, dict[str, str]]]:
     """(lemma, grammar) per tagged morpheme, aligning the dStrongs and Grammar cells.
 
     `/` separates morphemes, `//` a second word in the same row, and `\\` precedes a
     punctuation tag that has no morphology. The first grammar code carries the language
-    letter (H Hebrew, A Aramaic) for the whole row.
+    letter (H Hebrew, A Aramaic) for the whole row. `within` (a range of the row's wording)
+    keeps only the morphemes written there, so each word of a two-word row gets its own.
     """
     tags = word.cells[3].split('/') if word.cells[3] else []
     codes = word.cells[4].split('/') if word.cells[4] else []
@@ -72,9 +92,14 @@ def _hebrew_parts(word: TaggedWord) -> list[tuple[str, dict[str, str]]]:
         return []
     language = _LANGUAGES[codes[0][0]]
     codes[0] = codes[0][1:]
+    pieces = _hebrew_pieces(word) if within is not None else None
+    if pieces is not None and len(pieces) != len(tags):
+        pieces = None
     pairs = []
     aligned = len(tags) == len(codes)
     for index, tag in enumerate(tags):
+        if pieces is not None and not (pieces[index][0] < within[1] and within[0] < pieces[index][1]):
+            continue
         tag = tag.strip().split('\\')[0]
         match = _HEBREW_TAG.fullmatch(tag)
         if match is None or match[1] in _PUNCTUATION:
@@ -97,13 +122,14 @@ def _greek_parts(word: TaggedWord) -> list[tuple[str, dict[str, str]]]:
 
 
 def analyses(word: TaggedWord, language: Language, occurrence_id: str, analysis_revision_id: str,
-             provider: str, basis: str) -> tuple[AnalysisAlternative, ...]:
-    """The row's attributed analyses: one per tagged morpheme (Hebrew) or component (Greek).
+             provider: str, basis: str, within: tuple[int, int] | None = None) -> tuple[AnalysisAlternative, ...]:
+    """The attributed analyses of one word: one per tagged morpheme (Hebrew) or component (Greek).
 
     A Hebrew word with a prefix, or a Greek crasis such as κἀγώ, has several parts; each
     is one attributed analysis with its own lemma, so searching any of the lemmas finds it.
+    `within` is the word's range in the row's wording (Hebrew rows may hold two words).
     """
-    parts = _hebrew_parts(word) if language == 'hebrew' else _greek_parts(word)
+    parts = _hebrew_parts(word, within) if language == 'hebrew' else _greek_parts(word)
     return tuple(AnalysisAlternative(f'{occurrence_id}:{index + 1}', analysis_revision_id, lemma,
                                      grammar, provider, basis)
                  for index, (lemma, grammar) in enumerate(parts))

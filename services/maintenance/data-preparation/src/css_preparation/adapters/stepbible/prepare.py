@@ -175,12 +175,13 @@ def _observations(text: NativeText, verses: Sequence[Verse], postings: Iterable[
         [segment] = posting['native_reference']['segments']
         unit, start, end = segment['unit_id'], segment['start'], segment['end']
         verse = rows[unit]
-        owner = [word for word, span in zip(verse.words, verse.ranges)
+        owner = [(word, span) for word, span in zip(verse.words, verse.ranges)
                  if span is not None and span[0] <= start and end <= span[1]]
         if len(owner) != 1:
             raise RecordError(f'Token {posting["occurrence_id"]} is not inside exactly one word row')
-        alternatives = analyses(owner[0], language, posting['occurrence_id'], component.analysis_revision_id,
-                                PROVIDER, component.source.analysis_basis)
+        word, span = owner[0]
+        alternatives = analyses(word, language, posting['occurrence_id'], component.analysis_revision_id,
+                                PROVIDER, component.source.analysis_basis, (start - span[0], end - span[0]))
         if alternatives:
             form = text.unit(unit)[start:end]
             result.append(WordObservation(posting['occurrence_id'], f'{language}:{form}', form, alternatives))

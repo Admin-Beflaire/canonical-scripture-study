@@ -11,7 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/prepare.yml").read_text(encoding="utf-8")
 RUN_JOBS = ("acquire", "prepare", "quality")
 SECRETS = ("PREPARATION_ACCESS_CLIENT_SECRET", "PREPARATION_CLOUDFLARE_TOKEN")
-VARIABLES = ("CONTROL_ORIGIN", "PREPARATION_ACCESS_CLIENT_ID", "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "R2_BUCKET")
+VARIABLES = ("CONTROL_ORIGIN", "PREPARATION_ACCESS_CLIENT_ID", "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "R2_BUCKET",
+             "R2_ACCESS_KEY_ID")
 
 
 def job_block(name):

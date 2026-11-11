@@ -9,15 +9,19 @@ from css_preparation.runner import cloudflare
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.web import Origin, ProviderError
 from preparation_fixture import evidence_a
-from runner_doubles import LoopbackApi
+from runner_doubles import TOKEN_ID, LoopbackApi
+
+
+def storage(api, token):
+    return CloudflareStorage(CloudflareConfig('acct', 'db', 'bucket', token, TOKEN_ID, api=Origin(api.origin),
+                                              r2_origin=Origin(api.origin)))
 
 
 class CloudflareStorageTest(unittest.TestCase):
     def setUp(self):
         self.api = LoopbackApi().__enter__()
         self.addCleanup(self.api.__exit__, None, None, None)
-        self.storage = CloudflareStorage(CloudflareConfig('acct', 'db', 'bucket', 'synthetic-token',
-                                                          Origin(self.api.origin)))
+        self.storage = storage(self.api, 'synthetic-token')
 
     def test_candidate_unit_saved_in_one_batch_and_read_back(self):
         records = evidence_a()
@@ -27,24 +31,30 @@ class CloudflareStorageTest(unittest.TestCase):
         for artifact in records.rows('artifact'):
             self.assertEqual(self.api.objects[artifact['registered_locator']], records.blobs[artifact['id']])
             self.assertEqual(self.storage.read_row('artifact', artifact['id']), artifact)
-        # Every provider call carries the token only in its header.
+        # D1 calls carry the token as a bearer header; R2 calls are SigV4-signed and never carry it.
         for _, path, headers in self.api.requests:
-            self.assertEqual(headers['Authorization'], 'Bearer synthetic-token')
             self.assertNotIn('synthetic-token', path)
+            if path.startswith('/bucket/'):
+                self.assertTrue(headers['Authorization'].startswith(f'AWS4-HMAC-SHA256 Credential={TOKEN_ID}/'))
+                self.assertNotIn('synthetic-token', headers['Authorization'])
+            else:
+                self.assertEqual(headers['Authorization'], 'Bearer synthetic-token')
         # A retry of the same unit acknowledges the identical saved rows without a second write.
         persist_candidate(records, self.storage.candidate_store())
         self.assertEqual(len(self.api.batches), 1)
 
-    def test_object_key_slashes_stay_literal_in_request_path(self):
+    def test_r2_objects_use_the_s3_api_with_literal_key_slashes_and_atomic_create(self):
         records = evidence_a()
         persist_candidate(records, self.storage.candidate_store())
         locator = records.rows('artifact')[0]['registered_locator']
         self.assertIn('/', locator)
-        raw = [path for method, path, _ in self.api.requests if method == 'PUT']
-        self.assertEqual(raw, [f'/client/v4/accounts/acct/r2/buckets/bucket/objects/{locator}'])
+        puts = [(method, path, headers) for method, path, headers in self.api.requests if method == 'PUT']
+        self.assertEqual([path for _, path, _ in puts], [f'/bucket/{locator}'])
+        self.assertEqual({k.lower(): v for k, v in puts[0][2].items()}.get('if-none-match'), '*')
         self.assertNotIn('%2F', ''.join(path for _, path, _ in self.api.requests))
         self.storage.put_blob(f'prepared/{hashlib.sha256(b"x").hexdigest()}/a b#c?.txt', b'x')
-        self.assertTrue(self.api.requests[-1][1].endswith('/a%20b%23c%3F.txt'))
+        self.assertTrue(self.api.signed_paths[-1][1].endswith('/a%20b%23c%3F.txt'))
+        self.assertNotIn('/client/v4/accounts/acct/r2/', ''.join(path for _, path, _ in self.api.requests))
 
     def test_paged_reads_return_every_row(self):
         records = evidence_a()
@@ -124,11 +134,16 @@ class CloudflareStorageTest(unittest.TestCase):
         self.assertEqual(len(self.api.requests), 1)
 
     def test_wrong_token_and_invalid_configuration(self):
-        bad = CloudflareStorage(CloudflareConfig('acct', 'db', 'bucket', 'wrong', Origin(self.api.origin)))
+        bad = storage(self.api, 'wrong')
         with self.assertRaises(ProviderError) as caught:
             bad.read_row('artifact', 'synthetic:x')
         self.assertNotIn('wrong', str(caught.exception))
-        for args in (('acct/x', 'db', 'bucket', 't'), ('acct', 'db', 'bucket', ''), ('acct', 'db', 'bucket', 'a b')):
+        # A wrong token also derives the wrong S3 secret: the signature is refused.
+        with self.assertRaises(ProviderError) as caught:
+            bad.read_blob('prepared/x/a.bin')
+        self.assertEqual(caught.exception.status, 403)
+        for args in (('acct/x', 'db', 'bucket', 't', TOKEN_ID), ('acct', 'db', 'bucket', '', TOKEN_ID),
+                     ('acct', 'db', 'bucket', 'a b', TOKEN_ID), ('acct', 'db', 'bucket', 't', 'not-a-token-id')):
             with self.assertRaises(ValueError):
                 CloudflareConfig(*args)
         for origin in ('http://example.com', 'https://user:pw@example.com', 'https://example.com/'):

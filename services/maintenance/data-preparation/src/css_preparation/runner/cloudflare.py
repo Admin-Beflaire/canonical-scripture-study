@@ -1,9 +1,10 @@
-"""Candidate D1 rows and private R2 objects through the Cloudflare REST API.
+"""Candidate D1 rows (Cloudflare REST API) and private R2 objects (R2's S3-compatible API).
 
-One preparation API token (D1 write and R2 write on the project's database and
-bucket) is enough; no S3 signing library is needed. These adapters supply DP-04's
-storage boundaries. They never write release rows or `release_selection`: the
-statements come from `RecordSet`, which has no release tables.
+One preparation API token is enough: D1 write on the account, and R2 object read/write on
+the project's bucket only. R2 object access uses the S3-compatible API with credentials
+derived from that token (see `r2.py`), because the REST API rejects bucket-scoped tokens
+for objects. These adapters supply DP-04's storage boundaries. They never write release
+rows or `release_selection`: the statements come from `RecordSet`, which has no release tables.
 """
 from __future__ import annotations
 
@@ -11,11 +12,11 @@ from dataclasses import dataclass
 import hashlib
 import re
 from typing import Any
-import urllib.parse
 
 from ..executor.candidate import CandidateStore
 from ..executor.checkpoints import CheckpointStore
 from ..prepare.records import KEYS, TABLES, decoded
+from .r2 import R2Objects
 from .web import Origin, ProviderError
 
 _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}')
@@ -30,7 +31,9 @@ class CloudflareConfig:
     database_id: str
     bucket: str
     token: str
+    r2_access_key_id: str
     api: Origin = Origin('https://api.cloudflare.com')
+    r2_origin: Origin | None = None  # Default: https://<account>.r2.cloudflarestorage.com
 
     def __post_init__(self) -> None:
         for value in (self.account_id, self.database_id, self.bucket):
@@ -38,6 +41,8 @@ class CloudflareConfig:
                 raise ValueError('Invalid Cloudflare resource identifier')
         if not isinstance(self.token, str) or not self.token or any(c.isspace() for c in self.token):
             raise ValueError('Missing preparation API token')
+        if not isinstance(self.r2_access_key_id, str) or not re.fullmatch(r'[0-9a-f]{32}', self.r2_access_key_id):
+            raise ValueError('R2 access key ID must be the preparation token ID')
 
 
 class CloudflareStorage:
@@ -47,7 +52,7 @@ class CloudflareStorage:
         self._config = config
         self._headers = {'Authorization': f'Bearer {config.token}'}
         self._d1 = f'/client/v4/accounts/{config.account_id}/d1/database/{config.database_id}/query'
-        self._r2 = f'/client/v4/accounts/{config.account_id}/r2/buckets/{config.bucket}/objects/'
+        self._objects = R2Objects(config.account_id, config.bucket, config.r2_access_key_id, config.token, config.r2_origin)
 
     # D1 -----------------------------------------------------------------
     def _query(self, body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -94,15 +99,14 @@ class CloudflareStorage:
                 return rows
 
     # R2 -----------------------------------------------------------------
-    def _object(self, key: str) -> str:
+    @staticmethod
+    def _key(key: str) -> str:
         if not isinstance(key, str) or not key or len(key) > 1024 or key.startswith('/') or '..' in key.split('/'):
             raise ProviderError('Invalid object key')
-        # Cloudflare's object API requires slashes in the key to stay literal (never %2F);
-        # every other reserved character is percent-encoded.
-        return self._r2 + urllib.parse.quote(key, safe='/')
+        return key
 
     def read_blob(self, key: str) -> bytes:
-        data = self._config.api.request('GET', self._object(key), self._headers, allow_missing=True)
+        data = self._objects.get(self._key(key))
         if data is None:
             raise KeyError('Saved object is missing')
         return data
@@ -110,20 +114,17 @@ class CloudflareStorage:
     def put_blob(self, key: str, data: bytes) -> None:
         """Write once: identical bytes at an existing key are kept; different bytes are refused.
 
-        Keys must be content-addressed (the bytes' SHA-256 is a path segment or `<sha256>.json`).
-        Two writers racing on one key therefore always write identical bytes, so the
-        check-then-put sequence cannot replace stored content with different bytes.
+        Keys must be content-addressed (the bytes' SHA-256 is a path segment or `<sha256>.json`),
+        and the write is an atomic create (`If-None-Match: *`), so stored content is never replaced.
         """
         digest = hashlib.sha256(data).hexdigest()
         if digest not in key.split('/') and f'{digest}.json' not in key.split('/'):
             raise ProviderError('Object key is not addressed by its content digest')
-        path = self._object(key)
-        existing = self._config.api.request('GET', path, self._headers, allow_missing=True)
-        if existing is not None:
-            if existing != data:
-                raise ProviderError('Immutable object already holds different bytes')
+        if self._objects.create(self._key(key), data):
             return
-        self._config.api.request('PUT', path, {**self._headers, 'Content-Type': 'application/octet-stream'}, data)
+        # The key already exists (atomic create refused): accept identical bytes only.
+        if self._objects.get(key) != data:
+            raise ProviderError('Immutable object already holds different bytes')
 
     # Boundaries for DP-04 -------------------------------------------------
     def candidate_store(self) -> CandidateStore:

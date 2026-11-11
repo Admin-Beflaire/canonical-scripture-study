@@ -60,8 +60,17 @@ registered in `runner/recipes.py`; until source adapters are registered, jobs
 end as `failed` with `no_registered_recipe`. A quality job names its candidate
 in `constraints.candidate` (`added`, `reused`, `omitted` output IDs).
 
-The `preparation` environment needs two secrets, `PREPARATION_ACCESS_CLIENT_SECRET`
-and `PREPARATION_CLOUDFLARE_TOKEN` (D1 write, and R2 read and write on the project's
-bucket only), and five plain variables: `CONTROL_ORIGIN`, `PREPARATION_ACCESS_CLIENT_ID`,
-`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` and `R2_BUCKET`. The variables are not
-secret and appear in run logs.
+The `preparation` environment needs two secrets and six plain variables.
+
+- Secret `PREPARATION_CLOUDFLARE_TOKEN`: one Cloudflare API token with **D1 Write** on the
+  account (D1 cannot be scoped per database) and **Workers R2 Storage Bucket Item Read** and
+  **Write** on the project's bucket only. D1 queries use the Cloudflare REST API. R2 objects use
+  R2's S3-compatible API (`https://<account>.r2.cloudflarestorage.com`), signed with credentials
+  derived from this token: access key ID = token ID, secret access key = SHA-256 of the token
+  value. The REST API's R2 object endpoints would reject a bucket-scoped token (HTTP 403) and
+  are rate limited per account, so the runner does not use them.
+- Secret `PREPARATION_ACCESS_CLIENT_SECRET`: the Access service token admitted by Control's
+  `/internal/jobs/*` application.
+- Variables (not secret; they appear in run logs): `CONTROL_ORIGIN`,
+  `PREPARATION_ACCESS_CLIENT_ID`, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`, `R2_BUCKET` and
+  `R2_ACCESS_KEY_ID` (the token ID; update it whenever the token is replaced).

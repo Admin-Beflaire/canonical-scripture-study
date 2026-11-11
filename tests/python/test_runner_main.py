@@ -18,7 +18,7 @@ from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.recipes import RECIPES, Recipe
 from css_preparation.runner.web import Origin
 from preparation_fixture import evidence_a, text_a
-from runner_doubles import LoopbackApi
+from runner_doubles import TOKEN_ID, LoopbackApi
 
 ROOT = Path(__file__).resolve().parents[2]
 WIRE = json.loads((ROOT / 'tests/conformance/dp04-control-wire.v1.json').read_text(encoding='utf-8'))
@@ -51,8 +51,8 @@ class RunnerTest(unittest.TestCase):
         self.results = []
         self.reply = (200, {'status': 'accepted', 'eligible': True, 'state': 'succeeded'})
         self.api.control_handler = self.control
-        self.storage = CloudflareStorage(CloudflareConfig('acct', 'db', 'bucket', 'synthetic-token',
-                                                          Origin(self.api.origin)))
+        self.storage = CloudflareStorage(CloudflareConfig('acct', 'db', 'bucket', 'synthetic-token', TOKEN_ID,
+                                                          api=Origin(self.api.origin), r2_origin=Origin(self.api.origin)))
         self.client = ControlClient(ControlConfig(Origin(self.api.origin), 'synthetic-id', 'synthetic-secret'),
                                     sleep=lambda _: None)
         self.initial_selection = self.selection()
@@ -143,13 +143,14 @@ class RunnerTest(unittest.TestCase):
         return {'GITHUB_EVENT_PATH': str(event), 'GITHUB_RUN_ID': RUN_ID, 'GITHUB_SHA': COMMIT,
                 'CONTROL_ORIGIN': self.api.origin, 'PREPARATION_ACCESS_CLIENT_ID': 'synthetic-id',
                 'PREPARATION_ACCESS_CLIENT_SECRET': 'synthetic-secret', 'CLOUDFLARE_ACCOUNT_ID': 'acct',
-                'D1_DATABASE_ID': 'db', 'R2_BUCKET': 'bucket', 'PREPARATION_CLOUDFLARE_TOKEN': 'synthetic-token'}
+                'D1_DATABASE_ID': 'db', 'R2_BUCKET': 'bucket', 'R2_ACCESS_KEY_ID': TOKEN_ID,
+                'PREPARATION_CLOUDFLARE_TOKEN': 'synthetic-token'}
 
     def main(self, environ, kind='prepare', mode=None):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
             status = Path(directory) / 'status.txt'
-            config = functools.partial(CloudflareConfig, api=Origin(self.api.origin))
+            config = functools.partial(CloudflareConfig, api=Origin(self.api.origin), r2_origin=Origin(self.api.origin))
             with mock.patch.object(runner, 'CloudflareConfig', config), \
                     mock.patch.dict(RECIPES, {'recipe-1': self.recipe}), \
                     contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

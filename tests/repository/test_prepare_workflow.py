@@ -10,8 +10,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/prepare.yml").read_text(encoding="utf-8")
 RUN_JOBS = ("acquire", "prepare", "quality")
-SECRETS = ("CONTROL_ORIGIN", "PREPARATION_ACCESS_CLIENT_ID", "PREPARATION_ACCESS_CLIENT_SECRET",
-           "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "R2_BUCKET", "PREPARATION_CLOUDFLARE_TOKEN")
+SECRETS = ("PREPARATION_ACCESS_CLIENT_SECRET", "PREPARATION_CLOUDFLARE_TOKEN")
+VARIABLES = ("CONTROL_ORIGIN", "PREPARATION_ACCESS_CLIENT_ID", "CLOUDFLARE_ACCOUNT_ID", "D1_DATABASE_ID", "R2_BUCKET",
+             "R2_ACCESS_KEY_ID")
 
 
 def job_block(name):
@@ -45,6 +46,7 @@ class PrepareWorkflowTests(unittest.TestCase):
         validate = job_block("validate")
         self.assertNotIn("environment:", validate)
         self.assertNotIn("secrets.", validate)
+        self.assertNotIn("vars.", validate)
         for name in RUN_JOBS:
             block = job_block(name)
             self.assertIn("environment: preparation", block)
@@ -52,9 +54,12 @@ class PrepareWorkflowTests(unittest.TestCase):
             self.assertIn(f"needs.validate.outputs.kind == '{name}'", block)
             self.assertIn(f"--kind {name} ", block)
             for secret in SECRETS:
-                # Configuration is masked as secrets so identifiers stay out of public logs.
+                # Credentials are masked secrets.
                 self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", block)
-            self.assertNotRegex(block, r"\$\{\{\s*vars\.")
+            for variable in VARIABLES:
+                # Plain, non-secret settings are environment variables (shown in run logs).
+                self.assertIn(f"{variable}: ${{{{ vars.{variable} }}}}", block)
+            self.assertEqual(len(re.findall(r"\$\{\{\s*(?:secrets|vars)\.", block)), len(SECRETS) + len(VARIABLES))
 
     def test_runner_output_captured_and_only_fixed_status_published(self):
         for name in RUN_JOBS:

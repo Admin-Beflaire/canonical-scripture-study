@@ -5,6 +5,8 @@ migrations) and a dictionary of objects. No real provider is contacted.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import re
@@ -13,6 +15,9 @@ import threading
 import urllib.parse
 
 from css_preparation.prepare.records import migrations
+from css_preparation.runner.r2 import sign_v4
+
+TOKEN_ID = '0123456789abcdef0123456789abcdef'
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -42,22 +47,44 @@ class _Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path.startswith('/internal/jobs/'):
             return api.control(self, method, path, self._body())
+        match = re.fullmatch(r'/bucket/(.+)', path)
+        if match:
+            return self._s3(method, path, urllib.parse.unquote(match[1]))
         if self.headers.get('Authorization') != f'Bearer {api.token}':
             return self._send(403, b'{"success":false}')
         match = re.fullmatch(r'/client/v4/accounts/acct/d1/database/db/query', path)
         if match and method == 'POST':
             return self._d1(json.loads(self._body()))
-        match = re.fullmatch(r'/client/v4/accounts/acct/r2/buckets/bucket/objects/(.+)', path)
-        if match:
-            key = urllib.parse.unquote(match[1])
-            if method == 'GET':
-                if key not in api.objects:
-                    return self._send(404, b'{"success":false}')
-                return self._send(200, api.objects[key], 'application/octet-stream')
-            if method == 'PUT':
-                api.objects[key] = self._body()
-                return self._send(200, b'{"success":true,"result":{}}')
         return self._send(404, b'{}')
+
+    def _s3(self, method, path, key):
+        """R2's S3-compatible API: SigV4 with credentials derived from the token; atomic create."""
+        api = self.server
+        body = self._body() if method == 'PUT' else b''
+        auth = self.headers.get('Authorization', '')
+        match = re.fullmatch(r'AWS4-HMAC-SHA256 Credential=(\w+)/\d{8}/auto/s3/aws4_request, '
+                             r'SignedHeaders=([a-z0-9;-]+), Signature=[0-9a-f]{64}', auth)
+        if not match or match[1] != TOKEN_ID or self.headers.get('x-amz-content-sha256') != hashlib.sha256(body).hexdigest():
+            return self._send(403, b'<Error><Code>AccessDenied</Code></Error>', 'application/xml')
+        names = match[2].split(';')
+        extra = {name: self.headers[name] for name in names if name not in ('host', 'x-amz-date')}
+        now = datetime.strptime(self.headers['x-amz-date'], '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc)
+        expected = sign_v4(method, self.headers['Host'], path, extra, hashlib.sha256(body).hexdigest(),
+                           access_key=TOKEN_ID, secret_key=hashlib.sha256(api.token.encode()).hexdigest(),
+                           region='auto', service='s3', now=now)['Authorization']
+        if expected != auth:
+            return self._send(403, b'<Error><Code>SignatureDoesNotMatch</Code></Error>', 'application/xml')
+        api.signed_paths.append((method, path))
+        if method == 'GET':
+            if key not in api.objects:
+                return self._send(404, b'<Error><Code>NoSuchKey</Code></Error>', 'application/xml')
+            return self._send(200, api.objects[key], 'application/octet-stream')
+        if method == 'PUT':
+            if self.headers.get('If-None-Match') == '*' and key in api.objects:
+                return self._send(412, b'<Error><Code>PreconditionFailed</Code></Error>', 'application/xml')
+            api.objects[key] = body
+            return self._send(200, b'')
+        return self._send(405, b'')
 
     def _d1(self, body):
         api = self.server
@@ -101,6 +128,7 @@ class LoopbackApi(HTTPServer):
         self.requests: list = []
         self.batches: list[int] = []
         self.redirect_once = False
+        self.signed_paths: list = []
         self.control_handler = None
         self._thread = threading.Thread(target=self.serve_forever, daemon=True)
 

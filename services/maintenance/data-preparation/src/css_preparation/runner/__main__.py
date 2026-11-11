@@ -38,7 +38,7 @@ _RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
 _COMMIT = re.compile(r'[0-9a-f]{40}')
 REQUIRED = ('GITHUB_EVENT_PATH', 'GITHUB_RUN_ID', 'GITHUB_SHA', 'CONTROL_ORIGIN', 'PREPARATION_ACCESS_CLIENT_ID',
             'PREPARATION_ACCESS_CLIENT_SECRET', 'CLOUDFLARE_ACCOUNT_ID', 'D1_DATABASE_ID', 'R2_BUCKET',
-            'PREPARATION_CLOUDFLARE_TOKEN')
+            'R2_ACCESS_KEY_ID', 'PREPARATION_CLOUDFLARE_TOKEN')
 
 
 def _diagnostic(code: str, error: BaseException | None = None) -> list[dict[str, str]]:
@@ -190,7 +190,8 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
                                                   environ['PREPARATION_ACCESS_CLIENT_ID'],
                                                   environ['PREPARATION_ACCESS_CLIENT_SECRET']))
             storage = CloudflareStorage(CloudflareConfig(environ['CLOUDFLARE_ACCOUNT_ID'], environ['D1_DATABASE_ID'],
-                                                         environ['R2_BUCKET'], environ['PREPARATION_CLOUDFLARE_TOKEN']))
+                                                         environ['R2_BUCKET'], environ['PREPARATION_CLOUDFLARE_TOKEN'],
+                                                         environ['R2_ACCESS_KEY_ID']))
         except ValueError:
             lines.append(PUBLIC['config'])
             return code

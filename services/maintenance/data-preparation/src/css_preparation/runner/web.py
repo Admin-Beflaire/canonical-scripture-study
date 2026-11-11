@@ -30,6 +30,10 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
+# The zone's Browser Integrity Check blocks urllib's default agent (Python-urllib/x.y)
+# with a 403 before Access or the Worker sees the request. Name the project instead.
+USER_AGENT = 'canonical-scripture-study-preparation'
+
 
 @dataclass(frozen=True)
 class Origin:
@@ -49,7 +53,8 @@ class Origin:
                 *, allow_missing: bool = False) -> bytes | None:
         if not path.startswith('/'):
             raise ValueError('Request path must be absolute')
-        request = urllib.request.Request(self.base + path, data=body, method=method, headers=headers)
+        request = urllib.request.Request(self.base + path, data=body, method=method,
+                                         headers={'User-Agent': USER_AGENT, **headers})
         try:
             with _OPENER.open(request, timeout=self.timeout) as response:
                 return response.read()

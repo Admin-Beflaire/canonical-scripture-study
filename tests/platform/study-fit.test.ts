@@ -1,49 +1,58 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import fixture from '../conformance/indexes/fixture.json' with { type: 'json' };
+import { localD1 } from '../maintenance/d1.ts';
+import { MemoryBucket } from '../study/fixture.ts';
+import { buildFitFixture, FIT_RELEASE } from '../../tools/cloudflare/study-fit-fixture.ts';
 import { runStudyFit } from '../../tools/cloudflare/study-fit.ts';
+import { clearSearchCache } from '../../services/study/src/read/search.ts';
 
-function bindings({ selected = true, corruptPostings = false } = {}) {
-  const artifacts = fixture.evidence_delta.artifact.filter(row =>
-    row.id === 'ix-source-manifest' || row.id === 'ix-source-postings' || row.id === 'ix-source-directory');
-  const reads: string[] = [];
-  const DATA_DB = {
-    prepare: () => ({
-      bind: (...values: string[]) => ({
-        async all<T>() {
-          assert.equal(values[0], 'ix-release');
-          const results = !selected ? [] : values[1] === 'ix-passage'
-            ? [{ exact_text: fixture.native_units['index-unit'] }] : artifacts;
-          return { results: results as T[], meta: {} };
-        },
-      }),
-    }),
-  };
-  const PRIVATE_OBJECTS = {
-    async get(key: string, options?: { range: { offset: number; length: number } }) {
-      reads.push(key);
-      const artifact = artifacts.find(row => row.registered_locator === key);
-      assert.ok(artifact);
-      const filename = fixture.artifact_files[artifact.id as keyof typeof fixture.artifact_files];
-      const data = await readFile(new URL('../conformance/indexes/' + filename, import.meta.url));
-      const { offset, length } = options?.range ?? { offset: 0, length: data.length };
-      const bytes = Uint8Array.from(data.subarray(offset, offset + length));
-      if (corruptPostings && options && artifact.id === 'ix-source-postings') bytes[0] ^= 1;   // postings only, not the directory
-      return { arrayBuffer: async () => bytes.buffer };
-    },
-  };
-  return { DATA_DB, PRIVATE_OBJECTS, reads };
+async function staged({ selectFixture = false } = {}) {
+  const fixture = await buildFitFixture();
+  const db = localD1();
+  for (const sql of fixture.insertSql) db.sqlite.exec(sql);
+  // A different, real-looking release stays current throughout.
+  db.sqlite.exec(`INSERT INTO releases VALUES ('current-release','m','r','{"evidence_records":"1"}','c','q','s')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id = '${selectFixture ? FIT_RELEASE : 'current-release'}'`);
+  const bucket = new MemoryBucket();
+  for (const object of fixture.objects) bucket.objects.set(object.key, object.bytes);
+  return { fixture, db, bucket, env: { DATA_DB: db, PRIVATE_OBJECTS: bucket, MAX_PAGE_BYTES: 65536, REQUEST_BYTES: 262144, MAX_D1_CALLS: 25, MAX_SUBREQUESTS: 40 } };
 }
 
-test('Study fit reads the selected fixture and rejects a corrupt postings range', async () => {
-  const result = await runStudyFit(bindings());
-  assert.deepEqual(result.matches.map(row => row.occurrence_id), fixture.expected_source_occurrences);
-  await assert.rejects(runStudyFit(bindings({ corruptPostings: true })), /Fixture object digest mismatch/);
+test('fit fixture: 16 KB pages, a key spanning several pages, a small manifest', async () => {
+  const fixture = await buildFitFixture();
+  const [postings, directory, manifest] = fixture.objects;
+  assert.ok(postings.bytes.length > 4 * fixture.pageCap);
+  assert.ok(manifest.bytes.length <= fixture.pageCap && directory.bytes.length <= fixture.pageCap * 2);
+  assert.equal(fixture.occurrences.length, 120);
+  assert.ok(fixture.objects.every(o => o.key.startsWith('synthetic/fit/')));
+  assert.ok(fixture.deleteSql.every(sql => sql.startsWith('DELETE FROM ') && /'fit[-:]/.test(sql)));
 });
 
-test('Study fit refuses an unselected fixture before reading R2', async () => {
-  const instance = bindings({ selected: false });
-  await assert.rejects(runStudyFit(instance), /Selected fixture unavailable/);
-  assert.deepEqual(instance.reads, []);
+test('fit search runs the real Study adapter on the unselected fixture and continues to the end', async () => {
+  clearSearchCache();
+  const { fixture, env, db } = await staged();
+  const seen: string[] = [];
+  let continuation: string | null = null;
+  for (let i = 0; i < 50; i++) {
+    const result = await runStudyFit(env, continuation) as { occurrences: string[]; continuation: string | null; usage: { d1Calls: number; r2Reads: number; r2Bytes: number }; release_id: string };
+    assert.equal(result.release_id, FIT_RELEASE);
+    assert.ok(result.usage.d1Calls <= 2 && result.usage.r2Reads <= 4 && result.usage.r2Bytes <= 65536, JSON.stringify(result.usage));
+    seen.push(...result.occurrences);
+    continuation = result.continuation;
+    if (!continuation) break;
+  }
+  assert.deepEqual(seen, fixture.occurrences);
+  assert.equal(db.sqlite.prepare('SELECT current_release_id FROM release_selection').get()?.current_release_id, 'current-release');
+  for (const sql of fixture.deleteSql) db.sqlite.exec(sql);
+  for (const table of ['release_outputs', 'releases', 'coverage', 'artifacts', 'prepared_outputs', 'source_nodes'])
+    assert.equal(db.sqlite.prepare(`SELECT count(*) AS n FROM ${table} WHERE ${table === 'releases' ? 'id' : table === 'release_outputs' ? 'release_id' : table === 'source_nodes' ? 'id' : table === 'prepared_outputs' ? 'id' : 'output_id'} LIKE 'fit%'`).get()?.n, 0, table);
+});
+
+test('fit search reports a corrupt staged object instead of hits', async () => {
+  clearSearchCache();
+  const { fixture, env, bucket } = await staged();
+  bucket.corrupt.add(fixture.objects[0].key);
+  const result = await runStudyFit(env, null) as { hits: number; limitations: { state: string }[] };
+  assert.equal(result.hits, 0);
+  assert.deepEqual(result.limitations.map(l => l.state), ['corrupt']);
 });

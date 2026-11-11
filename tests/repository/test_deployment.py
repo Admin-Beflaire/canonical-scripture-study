@@ -155,10 +155,17 @@ class DeploymentTests(unittest.TestCase):
                 api.assert_not_called()
                 run.assert_not_called()
             env["APPROVAL"] = "DEPLOY-FIT"
-            with patch.dict(os.environ, env), patch.object(d, "selection", return_value="other") as selection, patch.object(d, "run") as run:
-                with self.assertRaisesRegex(d.DeploymentError, "Selected synthetic fixture required"):
+            unstaged = [{"success": True, "results": []}]
+            with patch.dict(os.environ, env), patch.object(d, "selection", return_value="other") as selection, \
+                    patch.object(d, "api", return_value=unstaged), patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "Staged synthetic fixture required"):
                     d.deploy(root, root, root, "study")
-                self.assertEqual(selection.call_args.args[1]["index_manifest"], ["1"])
+                self.assertNotIn("index_manifest", selection.call_args.args[1])
+                run.assert_not_called()
+            with patch.dict(os.environ, env), patch.object(d, "selection", return_value=d.FIT_RELEASE), \
+                    patch.object(d, "api", return_value=[{"success": True, "results": [{"staged": 1}]}]), patch.object(d, "run") as run:
+                with self.assertRaisesRegex(d.DeploymentError, "Staged synthetic fixture required"):
+                    d.deploy(root, root, root, "study")   # the fixture must never be the selected release
                 run.assert_not_called()
 
     def test_diagnostics_capacity_blocks_before_any_upload(self):

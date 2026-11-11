@@ -6,7 +6,7 @@ import { fakeGitHub } from './github.ts';
 import { GitHubActions } from '../../services/maintenance/control/src/github.ts';
 import { jobRoutes } from '../../services/maintenance/control/src/jobs.ts';
 import { advance } from '../../services/maintenance/control/src/progress.ts';
-import { membership, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { membership, selectDirect, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
 import { controlTask, requestTask, taskReport, type TaskRequest } from '../../services/maintenance/control/src/tasks.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
 
@@ -77,7 +77,7 @@ function source(db: World['db'], revision: string, eligible = 1) {
 
 /** What Preparation saves for one prepare unit: an evidence output with a body artifact in the
  *  bucket, and an index output depending on it, with available coverage. */
-type Damage = { format?: string; skipWordCoverage?: string };
+type Damage = { format?: string; skipWordCoverage?: string; noManifest?: boolean };
 function savePrepared(w: World, revision: string, unit: string, units: string[], tag = '', damage: Damage = {}) {
   const extent = JSON.stringify({ coordinate_version: C, unit_ids: units });
   const evidence = `evidence:${sha(revision + unit + tag).slice(0, 32)}`;
@@ -86,12 +86,13 @@ function savePrepared(w: World, revision: string, unit: string, units: string[],
   insert.run(evidence, 'evidence', JSON.stringify([revision]), 'm1', '{}', extent, JSON.stringify({ reuse_basis: 'x', dependencies: [] }));
   insert.run(index, 'source_search', JSON.stringify([revision]), 'm1', '{}', extent, JSON.stringify({ reuse_basis: 'y', dependencies: [evidence] }));
   const refs = [];
-  for (const [output, format] of [[evidence, 'text/utf-8'], [index, damage.format ?? 'application/x-ndjson']]) {
-    const digest = sha(output);
+  for (const [output, format, name] of [[evidence, 'text/utf-8', 'body'], [index, damage.format ?? 'application/x-ndjson', 'postings'],
+    ...(damage.noManifest ? [] : [[index, 'application/json', 'manifest']])]) {
+    const digest = sha(output + name);
     const locator = `prepared/${digest}/file`;
-    w.db.sqlite.prepare('INSERT INTO artifacts VALUES (?, ?, ?, ?, 10, ?, ?)').run(`artifact-${output}`, revision, output, digest, format, locator);
+    w.db.sqlite.prepare('INSERT INTO artifacts VALUES (?, ?, ?, ?, 10, ?, ?)').run(`artifact-${output}-${name}`, revision, output, digest, format, locator);
     w.objects.sizes.set(locator, 10);
-    refs.push({ artifact_id: `artifact-${output}`, sha256: digest, byte_count: 10 });
+    refs.push({ artifact_id: `artifact-${output}-${name}`, sha256: digest, byte_count: 10 });
   }
   const coverage = w.db.sqlite.prepare(`INSERT INTO coverage VALUES (?, ?, ?, ?, 'available', 'm1', NULL, '[]', NULL)`);
   coverage.run(evidence, revision, extent, 'source_context');
@@ -337,7 +338,9 @@ test('rollback without an eligible previous release reports a limitation and cha
   await runBook(w, prepareTask('gen', 'g1'));
   await runBook(w, prepareTask('exo', 'e1'));
   const before = selected(w);
-  for (const key of [...w.objects.sizes.keys()].filter(key => membersOf(w, before.previous_release_id).some(id => key.includes(sha(id))))) w.objects.sizes.delete(key);
+  for (const id of membersOf(w, before.previous_release_id))
+    for (const row of w.db.sqlite.prepare('SELECT registered_locator FROM artifacts WHERE output_id = ?').all(id) as Array<{ registered_locator: string }>)
+      w.objects.sizes.delete(row.registered_locator);
   const created = await requestTask(w.db, owner, { request_key: 'rb1', instruction: 'Roll back', kind: 'rollback' });
   const id = (created as { task: { id: string } }).task.id;
   await advance(w.db, w.github, id, w.objects);
@@ -598,13 +601,92 @@ test('R25-6: restored tasks whose revision moves are read again and blocked; one
       } };
     } };
   };
+  await runBook(w, prepareTask('exo', 'e1'));
   const before = selected(w);
+  // The previous release is saved and eligible: only the unblocked task prevents its selection.
   const second = await requestTask(w.db, owner, { request_key: 'vr2', instruction: 'Check and select', kind: 'validate_restore',
-    constraints: { select_release: 'release-none' } });
+    constraints: { select_release: before.previous_release_id } });
   const secondId = (second as { task: { id: string } }).task.id;
   await advance(w.db, w.github, secondId, w.objects);
   const report2 = (await taskReport(w.db, owner, secondId))!;
   assert.equal(report2.data_current, false);
   assert.ok(report2.limitations.some(text => text.includes(`task ${openNow} could not be blocked`)));
   assert.deepEqual(selected(w), before);
+});
+
+test('R25-7: an index output without its postings and manifest files makes a release ineligible', async () => {
+  const w = world();
+  await runBook(w, prepareTask('gen', 'g1'));
+  const partial = savePrepared(w, 'rev-1', 'partial', ['Gen.1.1'], 'partial', { noManifest: true });
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-partial', 'm', 'r', '{}', 'c', 'q', 's')`);
+  for (const output of partial.outputs) w.db.sqlite.prepare(`INSERT INTO release_outputs VALUES ('release-partial', ?)`).run(output);
+  w.db.sqlite.exec(`UPDATE release_selection SET previous_release_id = 'release-partial'`);
+  const created = await requestTask(w.db, owner, { request_key: 'rb1', instruction: 'Roll back', kind: 'rollback' });
+  const id = (created as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, id, w.objects);
+  const task = (await taskReport(w.db, owner, id))!;
+  assert.equal(task.data_current, false);
+  assert.ok(task.limitations.some(text => text.includes('has no application/json file')));
+});
+
+test('R25-8: removal checks what stays against its new exclusions, and a stale check never replays exclusion writes', async () => {
+  const w = world();
+  source(w.db, 'rev-2');
+  await runBook(w, prepareTask('gen', 'g1'));
+  await runBook(w, prepareTask('exo', 'e1', { inputs: [{ kind: 'source_revision', id: 'rev-2' }] }), 'rev-2');
+  const before = selected(w);
+  // The exclusion subject is an ancestor of rev-1, which would stay selected: refused.
+  const wide = await requestTask(w.db, owner, { request_key: 'rm1', instruction: 'Remove rev-2', kind: 'remove',
+    inputs: [{ kind: 'source_revision', id: 'rev-2' }], decision_refs: [{ kind: 'exclusion', ref: 'owner-decision:w', subject: 'rev-1:work' }] });
+  const wideId = (wide as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, wideId, w.objects);
+  const refused = (await taskReport(w.db, owner, wideId))!;
+  assert.equal(refused.state, 'blocked');
+  assert.ok(refused.limitations.some(text => text.includes('excluded by the owner (rev-1:work)')));
+  assert.deepEqual(selected(w), before);
+  assert.equal(w.db.sqlite.prepare('SELECT COUNT(*) AS n FROM maintenance_exclusions').get()?.n, 0);
+
+  // A no-op removal that records an exclusion, checked twice from the same stale read.
+  const noop = await requestTask(w.db, owner, { request_key: 'rm2', instruction: 'Exclude rev-3', kind: 'remove',
+    inputs: [{ kind: 'source_revision', id: 'rev-3' }], decision_refs: [{ kind: 'exclusion', ref: 'owner-decision:3', subject: 'rev-3' }] });
+  const noopId = (noop as { task: { id: string } }).task.id;
+  const stale = w.db.sqlite.prepare('SELECT * FROM maintenance_tasks WHERE id = ?').get(noopId) as never;
+  assert.equal((await selectDirect(w.db, w.objects, stale)).state, 'completed');
+  w.db.sqlite.exec(`UPDATE maintenance_exclusions SET active = 0, revision = 9 WHERE source_or_component_id = 'rev-3'`); // a later lift
+  await selectDirect(w.db, w.objects, stale);
+  assert.equal(w.db.sqlite.prepare(`SELECT active FROM maintenance_exclusions WHERE source_or_component_id = 'rev-3'`).get()?.active, 0,
+    'the stale check did not re-activate the lifted exclusion');
+});
+
+test('R25-9: a passed quality check is reported as passed when the scope check fails', async () => {
+  const w = world();
+  const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { damage: { skipWordCoverage: 'Gen.1.3' } });
+  const task = (await taskReport(w.db, owner, taskId))!;
+  assert.equal(task.state, 'blocked');
+  assert.equal(task.checks.quality, 'passed');
+  assert.ok(task.checks.quality_receipt?.startsWith('receipt:'));
+  assert.equal(task.checks.scope, 'failed');
+});
+
+test('R25-10: a checked task whose recipe changes is saved as blocked with the reason', async () => {
+  const w = world();
+  const batch = w.db.batch.bind(w.db);
+  let interfered = false;
+  w.db.batch = async statements => {
+    const row = w.db.sqlite.prepare(`SELECT state FROM maintenance_tasks WHERE request_key = 'g1'`).get() as { state: string } | undefined;
+    if (!interfered && row?.state === 'checked') {
+      interfered = true;
+      w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
+        UPDATE release_selection SET current_release_id = 'release-other'`);
+    }
+    return batch(statements);
+  };
+  const { taskId } = await runBook(w, prepareTask('gen', 'g1'));
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
+  w.gh.recipes.set('collection/recipes/gen.json', { ...recipeFor('gen', [['Gen.1.1', 'Gen.1.2'], ['Gen.1.3']]), revision: 'gen/r2' });
+  const progress = await advance(w.db, w.github, taskId, w.objects);
+  assert.equal(progress.state, 'blocked');
+  const task = (await taskReport(w.db, owner, taskId))!;
+  assert.equal(task.state, 'blocked');
+  assert.ok(task.limitations.some(text => text.includes('recipe changed')));
 });

@@ -54,7 +54,7 @@ async function setOutcome(db: D1Database, row: TaskRow, change: (outcome: Outcom
   const text = canonicalJson(outcome);
   if (!state && text === canonicalJson(JSON.parse(row.outcome_json))) return;
   const sql = state
-    ? `UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1, outcome_json = ? WHERE id = ? AND revision = ? AND state IN ('queued','running')`
+    ? `UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1, outcome_json = ? WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`
     : `UPDATE maintenance_tasks SET revision = revision + 1, outcome_json = ? WHERE id = ? AND revision = ?`;
   await db.prepare(sql).bind(text, row.id, row.revision).run();
 }

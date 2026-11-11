@@ -28,6 +28,8 @@ export interface Outcome {
   scope_report?: { problems?: string[] } & Record<string, unknown>;
   removal_report?: Record<string, unknown>;
   restore_report?: Record<string, unknown>;
+  /** Token of the invocation that completed the task; exclusion changes are tied to it. */
+  completion?: string;
 }
 export interface TaskRow {
   id: string; requester: string; request_key: string; instruction: string; scope_json: string; basis_digest: string;

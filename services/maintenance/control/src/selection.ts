@@ -20,6 +20,9 @@ const SCHEMA_VERSIONS = { job_contract: CONTRACT_VERSION, quality_receipt: 'prep
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;
+const INDEX_FILES: Record<string, string[]> = {
+  source_search: ['application/x-ndjson', 'application/json'], word_index: ['application/x-ndjson', 'application/json'],
+};
 
 interface OutputRow { id: string; kind: string; input_revisions_json: string; native_extent_json: string; validation_basis_json: string }
 export interface Output { id: string; kind: string; revisions: string[]; extent: Record<string, unknown>; dependencies: string[] }
@@ -92,7 +95,7 @@ const storageProblem = (stored: Stored) => stored === 'no_binding' ? 'stored obj
  *  closure, stored artifacts with recorded sizes and supported formats, admission for both
  *  hosts, active exclusions and statements. Promotion, removal, rollback and restore all use it. */
 export async function validateMembers(db: D1Database, stored: Stored, items: Output[],
-  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string> } = {}): Promise<Check> {
+  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string>; adding?: Set<string> } = {}): Promise<Check> {
   const problems: string[] = [];
   const notes: string[] = [];
   const ids = items.map(item => item.id);
@@ -104,6 +107,12 @@ export async function validateMembers(db: D1Database, stored: Stored, items: Out
 
   const artifacts = await inChunks<ArtifactRow>(db, marks => `SELECT id, output_id, sha256, byte_count, format, registered_locator
     FROM artifacts WHERE output_id IN (${marks})`, ids);
+  // Index outputs live only in their stored files: each needs its postings and its manifest.
+  // Evidence may keep its wording in D1, so it needs no artifact.
+  for (const item of items.filter(output => INDEX_FILES[output.kind])) {
+    const formats = new Set(artifacts.filter(artifact => artifact.output_id === item.id).map(artifact => artifact.format));
+    for (const format of INDEX_FILES[item.kind]) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
+  }
   for (const artifact of artifacts) if (!FORMATS.has(artifact.format)) problems.push(`artifact ${artifact.id} has unsupported format ${artifact.format}`);
   if (artifacts.length) {
     const problem = storageProblem(stored);
@@ -149,7 +158,7 @@ export async function validateMembers(db: D1Database, stored: Stored, items: Out
   // An owner exclusion decision on a task that adds data lifts that exclusion.
   const excluded = new Set((await db.prepare('SELECT source_or_component_id FROM maintenance_exclusions WHERE active = 1')
     .all<{ source_or_component_id: string }>()).results.map(row => row.source_or_component_id)
-    .filter(id => !options.lifted?.has(id)));
+    .filter(id => !options.lifted?.has(id)).concat([...(options.adding ?? [])]));
   if (excluded.size) for (const revision of sourceRevisions) {
     const related = await db.prepare(`WITH RECURSIVE up(id, parent) AS (SELECT id, parent_id FROM source_nodes WHERE id = ?
         UNION SELECT s.id, s.parent_id FROM source_nodes s JOIN up ON s.id = up.parent)
@@ -272,8 +281,13 @@ const liftedBy = (scope: Scope) => scope.kind === 'remove' ? []
   : scope.decision_refs.filter(ref => ref.kind === 'exclusion' && ref.subject).map(ref => ref.subject!);
 const recordedBy = (scope: Scope) => scope.kind === 'remove' ? scope.decision_refs.filter(ref => ref.kind === 'exclusion' && ref.subject) : [];
 
-/** Exclusion changes the task makes, applied only when its selection (or completion) commits. */
-function exclusionChanges(db: D1Database, scope: Scope, taskId: string, revision: number, guard: string, guardValues: unknown[]) {
+/** Exclusion changes the task makes. They are written only after this very invocation completed
+ *  the task: the guard matches the completion token it wrote, so a stale or repeated check whose
+ *  own update failed can never replay them (for example after a later lift). */
+function exclusionChanges(db: D1Database, scope: Scope, taskId: string, revision: number, token: string) {
+  const guard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'completed'
+    AND json_extract(outcome_json, '$.completion') = ?)`;
+  const guardValues = [taskId, revision + 1, token];
   return [
     ...recordedBy(scope).map(ref => db.prepare(`INSERT INTO maintenance_exclusions(source_or_component_id, decision_ref, task_id, revision, active)
       SELECT ?, ?, ?, ?, 1 WHERE ${guard} ON CONFLICT(source_or_component_id, decision_ref) DO UPDATE SET active = 1, revision = excluded.revision`)
@@ -310,7 +324,8 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
     return { state: now?.state ?? 'unknown' };
   }
   const revision = task.revision + 1;
-  const done: Outcome = { ...checked, selection: { current_release_id: releaseId, became_current: true } };
+  const token = crypto.randomUUID();
+  const done: Outcome = { ...checked, completion: token, selection: { current_release_id: releaseId, became_current: true } };
   const selected = `(SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`;
   try {
     await db.batch([
@@ -319,9 +334,10 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
           AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)
           AND ${EXCLUSION_STATE} = ?`)
         .bind(releaseId, release.base, releaseId, task.id, revision, releaseId, release.exclusions),
-      ...exclusionChanges(db, scope, task.id, revision, selected, [releaseId]),
       db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
-        WHERE id = ? AND revision = ? AND state = 'checked' AND ${selected}`).bind(canonicalJson(done), task.id, revision, releaseId),
+        WHERE id = ? AND revision = ? AND state = 'checked' AND ${selected} AND ${EXCLUSION_STATE} = ?`)
+        .bind(canonicalJson(done), task.id, revision, releaseId, release.exclusions),
+      ...exclusionChanges(db, scope, task.id, revision, token),
     ]);
   } catch { /* A lost response: the read below decides. */ }
   const now = await db.prepare('SELECT state FROM maintenance_tasks WHERE id = ?').bind(task.id).first<{ state: string }>();
@@ -330,26 +346,32 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
     limitation: 'The current release or the exclusions changed before selection; the next check rebuilds the release.' };
 }
 
-async function block(db: D1Database, task: TaskRow, outcome: Outcome, problems: string[], report?: unknown): Promise<SelectResult> {
+/** Block with the reasons. A quality check that passed is recorded as passed, with its receipt,
+ *  even when the scope check fails. */
+async function block(db: D1Database, task: TaskRow, outcome: Outcome, problems: string[], report?: unknown,
+  quality?: string | null): Promise<SelectResult> {
   const next: Outcome = { ...outcome, limitations: [...new Set([...outcome.limitations, ...problems.slice(0, 20)])],
-    checks: { ...outcome.checks, scope: 'failed' }, ...(report ? { scope_report: report as Outcome['scope_report'] } : {}) };
-  await db.prepare(`UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1, outcome_json = ?
-    WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`).bind(canonicalJson(next), task.id, task.revision).run();
+    checks: { ...outcome.checks, ...(quality ? { quality: 'passed' as const } : {}), scope: 'failed' },
+    ...(report ? { scope_report: report as Outcome['scope_report'] } : {}) };
+  await db.prepare(`UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1, outcome_json = ?,
+      quality_ref = COALESCE(?, quality_ref) WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
+    .bind(canonicalJson(next), quality ?? null, task.id, task.revision).run();
   return { state: 'blocked', limitation: problems[0] };
 }
 
 /** Finish without a selection change. The task's exclusion changes commit with it, and only if
  *  the exclusion state the task read is unchanged. */
-async function complete(db: D1Database, task: TaskRow, outcome: Outcome, change: Partial<Outcome>, exclusions: string): Promise<SelectResult> {
+async function complete(db: D1Database, task: TaskRow, outcome: Outcome, change: Partial<Outcome>, exclusions: string,
+  current: string | null): Promise<SelectResult> {
   const scope = JSON.parse(task.scope_json) as Scope;
-  const revision = task.revision + 1;
+  const token = crypto.randomUUID();
   try {
     await db.batch([
       db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
-        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked') AND ${EXCLUSION_STATE} = ?`)
-        .bind(canonicalJson({ ...outcome, ...change }), task.id, task.revision, exclusions),
-      ...exclusionChanges(db, scope, task.id, revision,
-        `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'completed')`, [task.id, revision]),
+        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked') AND ${EXCLUSION_STATE} = ?
+          AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ?`)
+        .bind(canonicalJson({ ...outcome, ...change, completion: token }), task.id, task.revision, exclusions, current),
+      ...exclusionChanges(db, scope, task.id, task.revision, token),
     ]);
   } catch { /* A lost response: the read below decides. */ }
   const now = await db.prepare('SELECT state FROM maintenance_tasks WHERE id = ?').bind(task.id).first<{ state: string }>();
@@ -377,11 +399,13 @@ export async function checkAndSelect(db: D1Database, objects: ObjectStore | null
   const problems = [...new Set([...checked.problems, ...built.problems, ...whole.problems])];
   const report = { ...checked.report, base_release_id: current.current_release_id, members: built.ids.length, dropped: built.dropped,
     notes: whole.notes, problems };
-  if (problems.length) return block(db, task, outcome, problems, report);
+  const quality = checked.receipt && !checked.problems.some(text => text.includes('quality receipt'))
+    ? `${checked.receipt.artifact_id}@${checked.receipt.sha256}` : null;
+  if (problems.length) return block(db, task, outcome, problems, report, quality);
   const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
   const coverage = `sha256:${await sha256(canonicalJson(checked.coverage.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
   return promote(db, task, { members: built.ids, manifest: recipe.manifest_revision!, recipe: recipe.revision,
-    quality: `${checked.receipt!.artifact_id}@${checked.receipt!.sha256}`, scope: scopeRef, coverage, base: current.current_release_id, exclusions },
+    quality: quality!, scope: scopeRef, coverage, base: current.current_release_id, exclusions },
   { ...outcome, checks: { ...outcome.checks, quality: 'passed' }, scope_report: report });
 }
 
@@ -427,19 +451,22 @@ export async function selectDirect(db: D1Database, objects: ObjectStore | null, 
   const current = await selection(db);
   const unchanged = (limitation: string, extra: Partial<Outcome> = {}) => complete(db, task, outcome, {
     ...extra, limitations: [...(extra.limitations ?? outcome.limitations), limitation],
-    selection: { current_release_id: current.current_release_id, became_current: false } }, exclusions);
+    selection: { current_release_id: current.current_release_id, became_current: false } }, exclusions, current.current_release_id);
 
   if (scope.kind === 'remove') {
     // The owner's exclusions are recorded even when the current release holds none of the sources,
     // so a later rollback or task cannot bring them back.
     const removes = new Set(scope.inputs.filter(ref => ref.kind === 'source_revision').map(ref => ref.id));
+    const adding = new Set(recordedBy(scope).map(ref => ref.subject!));
     const base = await members(db, current.current_release_id);
     const built = membership(base, [], new Set(), removes);
-    if (!built.dropped.length) return unchanged(current.current_release_id ? 'The current release holds none of the named sources.'
-      : 'Nothing is current, so nothing was removed.');
-    const whole = await validateMembers(db, await storedSizes(objects), built.all);
+    // What stays selected must not fall under the exclusions this removal records (a subject
+    // may be an ancestor or component of another revision).
+    const whole = await validateMembers(db, await storedSizes(objects), built.all, { adding });
     const problems = [...built.problems, ...whole.problems];
     if (problems.length) return block(db, task, outcome, problems);
+    if (!built.dropped.length) return unchanged(current.current_release_id ? 'The current release holds none of the named sources.'
+      : 'Nothing is current, so nothing was removed.');
     const report = { task_id: task.id, task_revision: task.revision, removed: built.dropped, members: built.ids.length,
       base_release_id: current.current_release_id };
     const digest = `sha256:${await sha256(canonicalJson(report))}`;

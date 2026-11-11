@@ -169,9 +169,9 @@ export function buildFixture({ pageCap = 2048, commonCount = 24 } = {}): Fixture
     segments_json: [{ unit_id: 'u1', start: 0, end: 5 }, { unit_id: 'u2', start: 0, end: 5 }], content_id: payload('alphaalpha'), basis_json: { receipt: 'syn', disputed: true } });
   const body = enc.encode(BODY);
   const bodyId = 'syn-body';
-  const [s0, s1] = [[0, 10], [28, 33]];
+  const [s0, s1] = [[0, 10], [BODY.indexOf('alpha'), BODY.indexOf('alpha') + 5]];
   span({ id: 'a-comment', output_id: 'syn-ev', source_revision_id: A, kind: 'commentary', label: 'A comment', native_order: 3,
-    segments_json: [{ unit_id: 'c1', start: 0, end: 10 }, { unit_id: 'c1', start: 28, end: 33 }], reading_kind: 'extracted',
+    segments_json: [{ unit_id: 'c1', start: 0, end: 10 }, { unit_id: 'c1', start: s1[0], end: s1[1] }], reading_kind: 'extracted',
     body_ranges_json: [s0, s1].map(([start, end], i) => ({ segment_ordinal: i, artifact_id: bodyId, byte_offset: start, byte_length: end - start, sha256: sha(body.subarray(start, end)) })) });
   span({ id: 'a-gap', output_id: 'syn-ev', source_revision_id: A, kind: 'verse', label: 'A gap', native_order: 4, segments_json: [{ unit_id: 'u9', start: 0, end: 0 }], reading_kind: 'gap' });
   span({ id: 'a-old', output_id: 'syn-ev-old', source_revision_id: A, kind: 'verse', label: 'A 1 (old wording)', native_order: 0, segments_json: [{ unit_id: 'u1', start: 0, end: 5 }], content_id: payload('OLD wording') });

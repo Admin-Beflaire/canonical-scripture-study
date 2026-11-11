@@ -11,6 +11,7 @@ export type ReadState =
   | 'corrupt'                // stored bytes or records fail their checks; withheld
   | 'temporary_failure'      // a provider read failed; retry may succeed
   | 'budget'                 // the request allowance is used; continue in another request
+  | 'exceeds_limits'         // one stored item is larger than any request may read; withheld
   | 'invalid_request';       // malformed input or continuation
 
 export class ReadError extends Error {

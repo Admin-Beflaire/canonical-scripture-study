@@ -2,7 +2,7 @@ import { compareUtf8 } from '../read/bytes.ts';
 import { checkRequest, type SearchAdapter, type SearchPosition } from '../read/search.ts';
 import type { ReadSession } from '../read/session.ts';
 import { ReadError } from '../read/states.ts';
-import { assembleBatch, type Batch, type EvidenceItem } from './batch.ts';
+import { ENVELOPE_RESERVE, assembleBatch, type Batch, type EvidenceItem } from './batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from './continuation.ts';
 
 /** The search part of a Study workload, as an operator supplies it. */
@@ -36,8 +36,10 @@ export async function searchBatch(session: ReadSession, adapter: SearchAdapter, 
     const state = await resumeContinuation(continuation, normalized, SEARCH_CHECKS);
     position = { ...(state.pos as Omit<SearchPosition, 'after'>), after: state.key as SearchPosition['after'] };
   }
+  // Keep room for the envelope; the adapter charges each hit as the batch wraps it (`hitBytes`).
+  session.budget.spendResult(ENVELOPE_RESERVE);
   const result = await adapter.search(session, { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources, position });
-  const evidence: EvidenceItem[] = result.hits.map(hit => ({ kind: 'search_hit', hit, lookup: result.lookup, key: result.key }));
+  const evidence: EvidenceItem[] = result.hits.map(hit => ({ kind: 'search_hit', hit }));
   const next = result.remaining ? await encodeContinuation(normalized, { op: 'search',
     pos: { source: result.remaining.source, output: result.remaining.output, file: result.remaining.file, page: result.remaining.page },
     key: result.remaining.after }) : null;

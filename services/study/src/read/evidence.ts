@@ -78,11 +78,11 @@ async function bodyText(session: ReadSession, row: Record<string, unknown>, segm
     if (!isObject(range) || range.segment_ordinal !== i) throw new ReadError('corrupt', 'Body ranges out of native segment order');
   });
   const total = ranges.reduce((n, r) => n + r.byte_length, 0);
-  if (session.budget.usage().r2Reads + ranges.length > session.budget.limits.r2Reads
-      || session.budget.usage().r2Bytes + total > session.budget.limits.r2Bytes) {
-    if (ranges.some(r => r.byte_length > session.budget.limits.pageBytes)) throw new ReadError('exceeds_limits', 'A body range exceeds the configured cap');
-    return null;
-  }
+  const { r2Reads, r2Bytes, pageBytes } = session.budget.limits;
+  // A span that no fresh request could read is withheld, not left remaining for ever.
+  if (ranges.length > r2Reads || total > r2Bytes || ranges.some(r => r.byte_length > pageBytes))
+    throw new ReadError('exceeds_limits', 'This span needs more than one request may read');
+  if (session.budget.usage().r2Reads + ranges.length > r2Reads || session.budget.usage().r2Bytes + total > r2Bytes) return null;
   const text: string[] = [];
   for (const range of ranges) {
     const artifact = artifacts.get(range.artifact_id);

@@ -62,6 +62,7 @@ test('a key spanning many pages is enumerated across bounded requests without du
   assert.ok(run.results.length > 2, 'the key spans several requests');
   assert.ok(run.results.slice(0, -1).every(r => r.state === 'continues' && r.remaining), 'no request before the last claims exhaustion');
   assert.equal(run.results.at(-1)!.state, 'complete');
+  assert.ok(run.results.every(r => r.state !== 'no_match'), 'a resumed search that ends without new hits is complete, not no_match');
   for (const u of run.usage) {
     assert.ok(u.d1Calls <= 2 && u.r2Reads <= 4 && u.r2Bytes <= STARTING_LIMITS.r2Bytes, JSON.stringify(u));
   }

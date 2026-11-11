@@ -49,8 +49,15 @@ test('provider failure is temporary; budget leaves spans remaining, never partia
   let result = await readSpans(await ReadSession.open(fixture.env, roomy), ['a-comment']);
   assert.deepEqual(result.limitations.map(l => l.state), ['temporary_failure']);
   fixture.bucket.failing.clear();
-  result = await readSpans(await ReadSession.open(fixture.env, { ...roomy, r2Reads: 1 }), ['a-comment', 'a-u1']);
+  const partlyUsed = await ReadSession.open(fixture.env, { ...roomy, r2Reads: 2 });
+  partlyUsed.budget.spendRead(10);   // a fresh request could still read both ranges
+  result = await readSpans(partlyUsed, ['a-comment', 'a-u1']);
   assert.deepEqual([result.spans.map(s => s.span_id), result.remaining], [['a-u1'], ['a-comment']]);
+  // A span that no fresh request could read is withheld instead of remaining for ever.
+  for (const limits of [{ ...roomy, r2Reads: 1 }, { ...roomy, r2Bytes: 12 }]) {
+    result = await readSpans(await ReadSession.open(fixture.env, limits), ['a-comment']);
+    assert.deepEqual([result.remaining, result.limitations.map(l => l.state)], [[], ['exceeds_limits']]);
+  }
   result = await readSpans(await ReadSession.open(fixture.env, { ...roomy, d1Calls: 1 }), ['a-u1']);
   assert.deepEqual(result.remaining, ['a-u1']);
 });

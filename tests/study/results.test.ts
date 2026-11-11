@@ -5,7 +5,7 @@ import { ReadSession } from '../../services/study/src/read/session.ts';
 import { STARTING_LIMITS, RequestBudget } from '../../services/study/src/read/budget.ts';
 import { readSpans } from '../../services/study/src/read/evidence.ts';
 import { compareUtf8 } from '../../services/study/src/read/bytes.ts';
-import { PagedIndexSearch, checkRequest, clearSearchCache, type SearchAdapter, type SearchHit, type SearchRequest, type SearchResult } from '../../services/study/src/read/search.ts';
+import { PagedIndexSearch, checkRequest, clearSearchCache, hitBytes, type SearchAdapter, type SearchHit, type SearchRequest, type SearchResult } from '../../services/study/src/read/search.ts';
 import { ReadError } from '../../services/study/src/read/states.ts';
 import { assembleBatch, type Batch } from '../../services/study/src/results/batch.ts';
 import { encodeContinuation, resumeContinuation } from '../../services/study/src/results/continuation.ts';
@@ -59,15 +59,17 @@ test('a search batch continues to completion; every continuation resolves curren
     assert.ok(Object.hasOwn(batches[0], key), key);
 });
 
-test('a continuation from one release keeps working after promotion, against the new current release', async () => {
+test('after promotion or rollback a continuation resolves current anew and rejects a stale anchor', async () => {
   clearSearchCache();
   const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
   const first = await searchBatch(await ReadSession.open(fixture.env, STARTING_LIMITS), new PagedIndexSearch(), workload, null, 'g/1');
-  fixture.select('rel-1', 'rel-2');   // promotion/rollback between batches
-  const next = await searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, first.continuation, 'g/1');
-  assert.equal(next.release_id, 'rel-1');
-  assert.equal(next.evidence.length, 0, 'the old release has no such key; no hits are carried over');
-  assert.equal(next.continuation, null);
+  fixture.select('rel-1', 'rel-2');   // the anchored index output is no longer selected
+  await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, first.continuation, 'g/1'),
+    (e: unknown) => e instanceof ReadError && e.state === 'invalid_request' && /start the search again/.test(e.message));
+  fixture.select('rel-2', 'rel-1');   // selected again: the same continuation is valid
+  const next = await searchBatch(await ReadSession.open(fixture.env, STARTING_LIMITS), new PagedIndexSearch(), workload, first.continuation, 'g/1');
+  assert.equal(next.release_id, 'rel-2');
+  assert.ok(next.evidence.length > 0);
 });
 
 test('tampered continuation positions cannot escape the workload or the index bounds', async () => {
@@ -82,10 +84,23 @@ test('tampered continuation positions cannot escape the workload or the index bo
     const token = await encodeContinuation(workload, { op: 'search', pos, key: null });
     await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, token, 'g/1'), state('invalid_request'), JSON.stringify(pos));
   }
-  // An unknown output name is not an escape: it only restarts within the workload's selected outputs.
-  const odd = await encodeContinuation(workload, { op: 'search', pos: { source: A, output: '../x', file: 0, page: 0 }, key: null });
-  const restarted = await searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, odd, 'g/1');
-  assert.ok(restarted.evidence.every(e => e.kind === 'search_hit' && e.hit.source_revision_id === A && e.key === 'common'));
+  // Invented anchors: an unselected or high output name, a mid-output page without an order key,
+  // and order keys on a real candidate page that are not postings there (past the end, or in range).
+  const directory = JSON.parse(new TextDecoder().decode(fixture.indexes['syn-src-1'].manifest)).files[0].pages as { first_key: string; last_key: string }[];
+  const first = directory.findIndex(p => p.first_key <= 'common' && 'common' <= p.last_key);
+  const real = fixture.postings['syn-src-1'].filter(p => p.search_key === 'common')[0];
+  const forged = [
+    { pos: { source: A, output: '../x', file: 0, page: 0 }, key: null },
+    { pos: { source: A, output: 'zzz-after-everything', file: 0, page: 0 }, key: null },
+    { pos: { source: A, output: 'syn-src-1', file: 0, page: first + 1 }, key: null },
+    { pos: { source: A, output: 'syn-src-1', file: 0, page: first }, key: [9_000_000, 'occ-x'] },
+    { pos: { source: A, output: 'syn-src-1', file: 0, page: first }, key: [real.native_order, `${real.occurrence_id}-forged`] },
+  ];
+  for (const { pos, key } of forged) {
+    const token = await encodeContinuation(workload, { op: 'search', pos, key });
+    await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, token, 'g/1'),
+      state('invalid_request'), JSON.stringify(pos));
+  }
   assert.equal(SEARCH_CHECKS.search({ source: A, output: 'syn-src-1', file: 0, page: 0 }, [1, 'occ'], workload), true);
   assert.equal(SEARCH_CHECKS.search({ source: A, output: 'syn-src-1', file: 0, page: 0 }, [-1, 'occ'], workload), false);
 });
@@ -148,11 +163,11 @@ class MemorySearch implements SearchAdapter {
     const after = request.position?.after;
     const start = after ? all.findIndex(h => h.native_order > after[0] || (h.native_order === after[0] && compareUtf8(h.occurrence_id, after[1]) > 0)) : 0;
     const slice = (start < 0 ? [] : all.slice(start)).slice(0, this.perRequest);
-    for (const hit of slice) session.budget.spendResult(JSON.stringify(hit).length);
+    for (const hit of slice) session.budget.spendResult(hitBytes(hit));
     const rest = start >= 0 && start + slice.length < all.length;
     const last = slice.at(-1);
     return { ...base, hits: slice, state: rest ? 'continues' : slice.length ? 'complete' : 'no_match',
-      searched: request.sources.map(s => ({ source_revision_id: s, capability: 'word_exact', coverage_state: 'available', unit_ids: ['u1', 'u2'], normalization_rule: 'syn:identity/1', complete: !rest })),
+      searched: request.sources.map(s => ({ source_revision_id: s, capability: 'word_exact', coverage_state: 'available', unit_ids: ['u1', 'u2'], normalization_rule: 'syn:identity/1', complete: !rest, resumed_after: request.position?.after ?? null })),
       remaining: rest && last ? { source: last.source_revision_id, output: 'memory', file: 0, page: 0, after: [last.native_order, last.occurrence_id] } : null };
   }
 }
@@ -170,4 +185,30 @@ test('a contract-faithful replacement adapter yields the same hits through the s
   assert.deepEqual(Object.keys(memory[0]).sort(), Object.keys(paged[0]).sort());
   const unsupported = await searchBatch(await ReadSession.open(fixture.env, roomy), new MemorySearch({}, 5), { ...workload, lookup: 'phrase' }, null, 'g/1');
   assert.deepEqual(unsupported.limitations.map(l => l.state), ['unsupported_capability']);
+});
+
+test('every batch, envelope included, fits the result allowance', async () => {
+  clearSearchCache();
+  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const batches = await drain(fixture, new PagedIndexSearch(), workload);
+  for (const batch of batches) assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= STARTING_LIMITS.resultBytes);
+  assert.equal(batches.at(-1)!.remaining, null);
+});
+
+test('a large envelope defers uncharged evidence instead of exceeding the allowance', async () => {
+  const fixture = buildFixture();
+  const session = await ReadSession.open(fixture.env, roomy);
+  const read = await readSpans(session, ['a-u1', 'a-u2']);
+  const many = Array.from({ length: 30 }, (_, i) => ({ state: 'missing_index' as const, scope: `source-${i}`, detail: 'synthetic limitation text' }));
+  const base = { release_id: 'rel-2', mode: 'passage', depth: 'standard', delivered_scope: null, context_scope: null, citations: [],
+    searched_scope: [], coverage: [], limitations: many, remaining: null, continuation: null, guidance_version: 'g/1' };
+  const items = read.spans.map(span => ({ kind: 'source_text' as const, span }));
+  // Room for the envelope and the first item only; per-item charging alone would admit both.
+  const cap = Buffer.byteLength(JSON.stringify({ ...base, evidence: [items[0]] })) + 200;
+  const { batch, deferred } = assembleBatch({ ...base, evidence: items }, new RequestBudget({ ...roomy, resultBytes: cap }));
+  assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= cap);
+  assert.ok(deferred.length >= 1);
+  assert.throws(() => assembleBatch({ release_id: 'rel-2', mode: 'passage', depth: 'standard', delivered_scope: null, context_scope: null,
+    evidence: [], citations: [], searched_scope: [], coverage: [], limitations: many, remaining: null, continuation: null, guidance_version: 'g/1' },
+    new RequestBudget({ ...roomy, resultBytes: 500 })), state('exceeds_limits'));
 });

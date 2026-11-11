@@ -2,12 +2,12 @@ import { canonicalJson, utf8Length } from '../read/bytes.ts';
 import type { RequestBudget } from '../read/budget.ts';
 import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
 import type { SearchedScope, SearchHit } from '../read/search.ts';
-import { limitation, type Limitation } from '../read/states.ts';
+import { ReadError, limitation, type Limitation } from '../read/states.ts';
 
 /** One attributed piece of evidence. Equal wording from different sources stays separate. */
 export type EvidenceItem =
   | { kind: 'source_text'; span: SpanEvidence }
-  | { kind: 'search_hit'; hit: SearchHit; lookup: string; key: string };
+  | { kind: 'search_hit'; hit: SearchHit };
 
 export interface Citation { source_revision_id: string; span_id: string; coordinate_version: string; segments: NativeSegment[]; quote?: string }
 
@@ -50,8 +50,15 @@ function supported(citation: Citation, evidence: EvidenceItem[]): boolean {
   });
 }
 
-/** Builds a batch within the result allowance. Evidence that does not fit is returned in
- *  `deferred` (never silently dropped) so the caller can continue it. */
+/** Room kept for everything in a batch except evidence: scopes, coverage, limitations,
+ *  citations and the continuation. Callers that charge evidence early reserve it first. */
+export const ENVELOPE_RESERVE = 4096;
+
+const serialized = (batch: Batch) => utf8Length(JSON.stringify(batch));
+
+/** Builds a batch whose complete serialized form fits `resultBytes`. Evidence that does not fit
+ *  is returned in `deferred` (never silently dropped) so the caller can continue it. Charged
+ *  evidence is never deferred; if the batch still cannot fit, nothing is returned. */
 export function assembleBatch(input: BatchInput, budget: RequestBudget): { batch: Batch; deferred: EvidenceItem[] } {
   const evidence: EvidenceItem[] = [];
   const deferred: EvidenceItem[] = [];
@@ -66,6 +73,16 @@ export function assembleBatch(input: BatchInput, budget: RequestBudget): { batch
   const citations = input.citations.filter(c => supported(c, evidence));
   if (citations.length !== input.citations.length)
     limitations.push(limitation('invalid_request', 'citations', `${input.citations.length - citations.length} citation(s) did not match supplied evidence and were removed`));
-  const { charged: _charged, ...rest } = input;
-  return { batch: { ...rest, evidence, citations, limitations }, deferred };
+  const { charged, ...rest } = input;
+  const batch: Batch = { ...rest, evidence, citations, limitations };
+  // Final guard on the whole envelope, not only on evidence items.
+  while (serialized(batch) > budget.limits.resultBytes) {
+    const at = batch.evidence.findLastIndex(item => !charged?.has(item));
+    if (at < 0) throw new ReadError('exceeds_limits', 'The batch envelope does not fit the result allowance');
+    deferred.unshift(...batch.evidence.splice(at));
+    batch.citations = batch.citations.filter(c => supported(c, batch.evidence));
+    if (!batch.limitations.some(l => l.state === 'budget' && l.scope === 'evidence'))
+      batch.limitations.push(limitation('budget', 'evidence', 'Some items continue in the next batch'));
+  }
+  return { batch, deferred };
 }

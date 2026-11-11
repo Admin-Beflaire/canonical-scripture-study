@@ -22,9 +22,11 @@ export interface SearchHit {
   form?: string; analyses?: unknown[];
 }
 
+/** What this request searched. `complete` covers the stated extent from `resumed_after`
+ *  (exclusive) onwards; occurrences up to it were delivered by earlier batches. */
 export interface SearchedScope {
   source_revision_id: string; capability: string; coverage_state: string; unit_ids: string[];
-  normalization_rule: string; complete: boolean;
+  normalization_rule: string; complete: boolean; resumed_after: [number, string] | null;
 }
 
 /** `complete`: every selected candidate page was read and no gaps were found.
@@ -89,7 +91,7 @@ export class PagedIndexSearch implements SearchAdapter {
     const capability = CAPABILITY[request.lookup];
     const searchKey = request.lookup === 'word' ? request.key : `${request.lookup}:${request.key}`;
     const start = request.position ?? { source: request.sources[0], output: '', file: 0, page: 0, after: null };
-    if (!session.canQuery()) return finish(result, start);
+    if (!session.canQuery()) return finish(result, start, request.position !== null);
     const { rows, more } = await session.query('index_files', { source_revision_ids: request.sources, capability, after: [start.source, start.output] });
     const groups = groupRows(rows);
     let next: Group | undefined;
@@ -97,6 +99,11 @@ export class PagedIndexSearch implements SearchAdapter {
       next = groups.pop();
       if (!next) throw new ReadError('exceeds_limits', 'One index output has more registered files than a query may return');
     }
+    // A resume anchor must name an index output selected now; a stale or invented output is
+    // rejected instead of silently skipping to whatever sorts after it.
+    const anchor = groups[0] ?? next;
+    if (start.output !== '' && (!anchor || anchor.source !== start.source || anchor.output !== start.output))
+      throw new ReadError('invalid_request', 'Continuation does not match the selected index; start the search again');
     const seen = new Set(groups.map(g => g.source));
     for (const source of request.sources) {
       // Sources before the resume point, or a resumed source past its first output, were reported earlier.
@@ -108,9 +115,9 @@ export class PagedIndexSearch implements SearchAdapter {
     for (const group of groups) {
       const resume = group.source === start.source && group.output === start.output ? start : null;
       const stop = await this.searchGroup(session, group, capability, searchKey, resume, result);
-      if (stop) return finish(result, stop);
+      if (stop) return finish(result, stop, request.position !== null);
     }
-    return finish(result, next ? { source: next.source, output: next.output, file: 0, page: 0, after: null } : null);
+    return finish(result, next ? { source: next.source, output: next.output, file: 0, page: 0, after: null } : null, request.position !== null);
   }
 
   private async searchGroup(session: ReadSession, group: Group, capability: string, key: string,
@@ -131,22 +138,30 @@ export class PagedIndexSearch implements SearchAdapter {
       return null;
     }
     const candidates = candidatePages(manifest, key);
+    const invalid = () => new ReadError('invalid_request', 'Continuation does not match the selected index; start the search again');
+    // Resume rules: without an order key, only the start of the output; with one, the anchor page
+    // must be a candidate page that actually holds that exact posting (checked while reading it).
     let index = 0;
     let skipThrough = resume?.after ?? null;   // delivered before this request
+    let anchorSeen = false;
     let last = skipThrough;                     // postings must keep strictly increasing order
-    if (resume && (resume.file !== 0 || resume.page !== 0 || skipThrough !== null)) {
+    let lastAt: { file: number; page: number } | null = null;
+    if (resume && skipThrough === null && (resume.file !== 0 || resume.page !== 0)) throw invalid();
+    if (resume && skipThrough !== null) {
       index = candidates.findIndex(c => c.file === resume.file && c.page === resume.page);
-      if (index < 0) throw new ReadError('invalid_request', 'Search position does not match the selected index');
+      if (index < 0) throw invalid();
+      lastAt = candidates[index];
     }
+    const stopAt = () => lastAt && last ? at(lastAt.file, lastAt.page, last) : at(0, 0, null);
     const scope: SearchedScope = { source_revision_id: group.source, capability, coverage_state: manifest.coverage_state,
-      unit_ids: manifest.unit_ids, normalization_rule: manifest.normalization_rule, complete: false };
+      unit_ids: manifest.unit_ids, normalization_rule: manifest.normalization_rule, complete: false, resumed_after: resume?.after ?? null };
     result.searched.push(scope);
     if (manifest.coverage_state !== 'available')
       result.limitations.push(limitation('missing_index', group.source, manifest.coverage_limitation ?? `Index coverage is ${manifest.coverage_state}`));
     for (; index < candidates.length; index++) {
       const { file, page } = candidates[index];
       const entry = manifest.files[file].pages[page];
-      if (!session.budget.canRead(entry.byte_length)) return at(file, page, last);
+      if (!session.budget.canRead(entry.byte_length)) return stopAt();
       let text: string;
       try {
         text = await readArtifact(session, manifest.files[file].artifact, { offset: entry.byte_offset, length: entry.byte_length, sha256: entry.sha256 });
@@ -163,17 +178,26 @@ export class PagedIndexSearch implements SearchAdapter {
         const hit = checkPosting(posting, group.source, manifest);
         if (!hit) { result.limitations.push(limitation('corrupt', group.source, 'Inconsistent posting; index output withheld')); return null; }
         const order: [number, string] = [hit.native_order, hit.occurrence_id];
-        if (skipThrough && notAfter(order, skipThrough)) continue;
-        skipThrough = null;
+        if (skipThrough) {
+          if (order[0] === skipThrough[0] && order[1] === skipThrough[1]) { anchorSeen = true; continue; }
+          if (notAfter(order, skipThrough)) continue;
+          if (!anchorSeen) throw invalid();
+          skipThrough = null;
+        }
         if (last && notAfter(order, last)) {
           result.limitations.push(limitation('corrupt', group.source, 'Postings out of order; index output withheld'));
           return null;
         }
-        const bytes = utf8Length(canonicalJson(hit));
-        if (!session.budget.canReturn(bytes)) return at(file, page, last);
+        const bytes = hitBytes(hit);
+        if (!session.budget.canReturn(bytes)) return stopAt();
         session.budget.spendResult(bytes);
         result.hits.push(hit);
         last = order;
+        lastAt = { file, page };
+      }
+      if (skipThrough) {               // end of the anchor page
+        if (!anchorSeen) throw invalid();
+        skipThrough = null;            // every posting on it was delivered before
       }
     }
     scope.complete = true;
@@ -186,8 +210,12 @@ export class PagedIndexSearch implements SearchAdapter {
     const key = canonicalJson([session.release.id, group.source, group.output, artifact.id, artifact.sha256, artifact.format, group.method, capability]);
     const cached = MANIFESTS.get(key);
     if (cached) return cached;
+    // Forward progress on a cold isolate: the manifest, the re-read anchor page and one new page
+    // must fit one request, or every cold request would end where it started.
+    const { r2Bytes, r2Reads, pageBytes } = session.budget.limits;
+    if (artifact.byte_count + 2 * pageBytes > r2Bytes || r2Reads < 3)
+      throw new ReadError('exceeds_limits', 'Index manifest is too large to search within one request allowance');
     if (!session.budget.canRead(artifact.byte_count, 'object')) {
-      if (artifact.byte_count > session.budget.limits.r2Bytes) throw new ReadError('exceeds_limits', 'Index manifest is larger than the request allowance');
       return null;
     }
     const raw = await readArtifact(session, artifact);
@@ -236,10 +264,15 @@ function checkPosting(p: Record<string, unknown>, source: string, manifest: Inde
 const notAfter = (order: [number, string], than: [number, string]) =>
   order[0] < than[0] || (order[0] === than[0] && compareUtf8(order[1], than[1]) <= 0);
 
-function finish(result: SearchResult, remaining: SearchPosition | null): SearchResult {
+/** The size a hit adds to the batch, as the batch layer wraps it. One owner charges it. */
+export function hitBytes(hit: SearchHit): number { return utf8Length(canonicalJson({ kind: 'search_hit', hit })) + 1; }
+
+/** `no_match` only for a search started from the beginning; a resumed search that ends without
+ *  new hits is `complete`, because earlier batches delivered its matches. */
+function finish(result: SearchResult, remaining: SearchPosition | null, resumed: boolean): SearchResult {
   result.remaining = remaining;
   if (remaining) result.state = 'continues';
   else if (result.limitations.length) result.state = 'incomplete';
-  else result.state = result.hits.length ? 'complete' : 'no_match';
+  else result.state = result.hits.length || resumed ? 'complete' : 'no_match';
   return result;
 }

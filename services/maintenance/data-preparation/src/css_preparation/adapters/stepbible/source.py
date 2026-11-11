@@ -3,9 +3,10 @@
 The reviewed recipe pins the exact STEPBible-Data commit, file path, SHA-256 and size of one
 component file. Nothing here chooses a source or decides admission: the owner's admission
 decision is given to Maintenance Control, and this module records the licence basis the
-reviewed recipe states. The licence (CC BY 4.0) permits keeping the data and sending it to AI
-hosts but asks that copies of the data files are not posted elsewhere, so originals go only to
-protected private storage, never to public Git.
+reviewed recipe states. The licence (CC BY 4.0) permits keeping, redistributing and sending the
+data to AI hosts with attribution. STEPBible asks (a request, not a licence condition) that copies
+of the data files are not posted elsewhere; that request is kept as a notice. By the owner's
+decision the originals are kept only in protected private storage (R2), not in Git.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import re
 from typing import Any, Mapping
 import urllib.parse
 
-from ...acquire.retention import AdmissionBasis, InputRecord, storage_route
+from ...acquire.retention import AdmissionBasis, InputRecord, assert_usable
 from ...prepare.evidence import SourceIdentity, SourceLevel
 from ...prepare.records import RecordError
 from .format import Language
@@ -127,7 +128,7 @@ class Component:
         return AdmissionBasis(
             decision_refs=('Maintenance Control task admission decision',),
             terms_basis=f'{LICENCE} licence notice in {self.path} at STEPBible-Data commit {self.commit}',
-            both_hosts_eligible=True, public_redistribution='not_allowed')
+            both_hosts_eligible=True, public_redistribution='allowed')
 
     def input_record(self, upstream_basis: str = 'git-commit') -> InputRecord:
         return InputRecord(self.revision_id, self.component, self.acquisition_id, f'{upstream_basis}:{self.commit}',
@@ -136,21 +137,22 @@ class Component:
 
     @property
     def original_key(self) -> str:
-        route, key = storage_route(self.input_record(), f'{self.component}.txt')
-        if route != 'protected':
-            raise RecordError('STEPBible originals must stay in protected storage')
-        return key
+        """Protected private key. Public redistribution is allowed, but the owner keeps these
+        originals in R2 only, so the public-Git route is never used for them."""
+        assert_usable(self.input_record())
+        return f'originals/{self.revision_id}/{self.sha256}/{self.component}.txt'
 
     def admission_row(self) -> dict[str, Any]:
         basis = self.admission()
         return {'id': f'{self.revision_id}:{self.component}', 'source_revision_id': self.revision_id,
                 'component': self.component, 'terms_basis': basis.terms_basis,
                 'permitted_uses_json': ['acquire', 'retain', 'backup', 'prepare', 'chatgpt', 'claude'],
-                'restrictions_json': ['Do not post copies of the data file elsewhere (licence notice)',
-                                      'Attribute Tyndale House and STEPBible.org with a link to '
+                'restrictions_json': ['Attribute Tyndale House and STEPBible.org with a link to '
                                       'STEPBible.github.io/STEPBible-Data',
                                       'Make changes to the data visible to its users'],
-                'notices_json': [self.identity().attribution],
+                'notices_json': [self.identity().attribution,
+                                 'STEPBible asks: please do not post copies of this data file elsewhere, '
+                                 'so that it remains the single up-to-date source'],
                 'both_hosts_eligible': basis.both_hosts_eligible,
                 'public_redistribution': basis.public_redistribution}
 

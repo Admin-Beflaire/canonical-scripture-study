@@ -226,7 +226,10 @@ class RecipeTest(unittest.TestCase):
         component, _ = fixture.component('tahot')
         self.assertTrue(component.original_key.startswith(f'originals/{component.revision_id}/{component.sha256}/'))
         row = component.admission_row()
-        self.assertEqual(row['public_redistribution'], 'not_allowed')
+        # CC BY 4.0 allows redistribution; STEPBible's request not to repost is a notice, and the
+        # owner keeps the originals in private R2 only.
+        self.assertEqual(row['public_redistribution'], 'allowed')
+        self.assertTrue(any('please do not post copies' in notice for notice in row['notices_json']))
         self.assertNotIn('git_history', row['permitted_uses_json'])
 
 

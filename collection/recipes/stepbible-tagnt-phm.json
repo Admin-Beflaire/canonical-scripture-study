@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tagnt-phm",
+  "revision": "stepbible-tagnt-phm/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tagnt",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tagnt-act-rev",
+    "path": "Translators Amalgamated OT+NT/TAGNT Act-Rev - Translators Amalgamated Greek NT - STEPBible.org CC-BY.txt",
+    "sha256": "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968",
+    "byte_count": 15938967
+  },
+  "native_extent": {
+    "book": "Phm",
+    "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tagnt-act-rev"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tagnt-act-rev"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Phm.1.1", "Phm.1.2", "Phm.1.3", "Phm.1.4", "Phm.1.5", "Phm.1.6", "Phm.1.7", "Phm.1.8", "Phm.1.9", "Phm.1.10", "Phm.1.11", "Phm.1.12", "Phm.1.13", "Phm.1.14", "Phm.1.15", "Phm.1.16", "Phm.1.17", "Phm.1.18", "Phm.1.19", "Phm.1.20", "Phm.1.21", "Phm.1.22", "Phm.1.23", "Phm.1.24", "Phm.1.25"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Phm.1.1", "Phm.1.2", "Phm.1.3", "Phm.1.4", "Phm.1.5", "Phm.1.6", "Phm.1.7", "Phm.1.8", "Phm.1.9", "Phm.1.10", "Phm.1.11", "Phm.1.12", "Phm.1.13", "Phm.1.14", "Phm.1.15", "Phm.1.16", "Phm.1.17", "Phm.1.18", "Phm.1.19", "Phm.1.20", "Phm.1.21", "Phm.1.22", "Phm.1.23", "Phm.1.24", "Phm.1.25"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

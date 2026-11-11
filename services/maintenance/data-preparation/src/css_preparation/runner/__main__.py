@@ -100,7 +100,12 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
 
     def read_control(task_id: str, unit_id: str, attempt: int):
         return control.read_state(task_id, unit_id, attempt, run_id=run_id, job_input_basis=basis)
-    gate = dict(run_id=run_id, read_control=read_control, registered=storage.registered)
+    def registered(reference: dict[str, Any]) -> bool:
+        # Saved inputs, or inputs the reviewed recipe itself declares (its acquisition route,
+        # and the source revision that only its acquire unit may create).
+        return storage.registered(reference) or (
+            recipe is not None and recipe.declares is not None and recipe.declares(reference, kind))
+    gate = dict(run_id=run_id, read_control=read_control, registered=registered)
     try:
         if recipe is None:
             # Still confirm the dispatch, so a stale job is reported as not runnable.

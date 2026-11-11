@@ -1,0 +1,96 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tagnt-mrk",
+  "revision": "stepbible-tagnt-mrk/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tagnt",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tagnt-mat-jhn",
+    "path": "Translators Amalgamated OT+NT/TAGNT Mat-Jhn - Translators Amalgamated Greek NT - STEPBible.org CC-BY.txt",
+    "sha256": "d4c0c820fdf9f2b450c9f96ce6103d6875028affd2e44094d753f1329ca1fd85",
+    "byte_count": 14188364
+  },
+  "native_extent": {
+    "book": "Mrk",
+    "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tagnt-mat-jhn"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tagnt-mat-jhn"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Mrk.1.1", "Mrk.1.2", "Mrk.1.3", "Mrk.1.4", "Mrk.1.5", "Mrk.1.6", "Mrk.1.7", "Mrk.1.8", "Mrk.1.9", "Mrk.1.10", "Mrk.1.11", "Mrk.1.12", "Mrk.1.13", "Mrk.1.14", "Mrk.1.15", "Mrk.1.16", "Mrk.1.17", "Mrk.1.18", "Mrk.1.19", "Mrk.1.20", "Mrk.1.21", "Mrk.1.22", "Mrk.1.23", "Mrk.1.24", "Mrk.1.25", "Mrk.1.26", "Mrk.1.27", "Mrk.1.28", "Mrk.1.29", "Mrk.1.30", "Mrk.1.31", "Mrk.1.32", "Mrk.1.33", "Mrk.1.34", "Mrk.1.35", "Mrk.1.36", "Mrk.1.37", "Mrk.1.38", "Mrk.1.39", "Mrk.1.40", "Mrk.1.41", "Mrk.1.42", "Mrk.1.43", "Mrk.1.44", "Mrk.1.45", "Mrk.2.1", "Mrk.2.2", "Mrk.2.3", "Mrk.2.4", "Mrk.2.5", "Mrk.2.6", "Mrk.2.7", "Mrk.2.8", "Mrk.2.9", "Mrk.2.10", "Mrk.2.11", "Mrk.2.12", "Mrk.2.13", "Mrk.2.14", "Mrk.2.15", "Mrk.2.16", "Mrk.2.17", "Mrk.2.18", "Mrk.2.19", "Mrk.2.20", "Mrk.2.21", "Mrk.2.22", "Mrk.2.23", "Mrk.2.24", "Mrk.2.25", "Mrk.2.26", "Mrk.2.27", "Mrk.2.28", "Mrk.3.1", "Mrk.3.2", "Mrk.3.3", "Mrk.3.4", "Mrk.3.5", "Mrk.3.6", "Mrk.3.7", "Mrk.3.8", "Mrk.3.9", "Mrk.3.10", "Mrk.3.11", "Mrk.3.12", "Mrk.3.13", "Mrk.3.14", "Mrk.3.15", "Mrk.3.16", "Mrk.3.17", "Mrk.3.18", "Mrk.3.19", "Mrk.3.20", "Mrk.3.21", "Mrk.3.22", "Mrk.3.23", "Mrk.3.24", "Mrk.3.25", "Mrk.3.26", "Mrk.3.27", "Mrk.3.28", "Mrk.3.29", "Mrk.3.30", "Mrk.3.31", "Mrk.3.32", "Mrk.3.33", "Mrk.3.34", "Mrk.3.35", "Mrk.4.1", "Mrk.4.2", "Mrk.4.3", "Mrk.4.4", "Mrk.4.5", "Mrk.4.6", "Mrk.4.7", "Mrk.4.8", "Mrk.4.9", "Mrk.4.10", "Mrk.4.11", "Mrk.4.12", "Mrk.4.13", "Mrk.4.14", "Mrk.4.15", "Mrk.4.16", "Mrk.4.17", "Mrk.4.18", "Mrk.4.19", "Mrk.4.20", "Mrk.4.21", "Mrk.4.22", "Mrk.4.23", "Mrk.4.24", "Mrk.4.25", "Mrk.4.26", "Mrk.4.27", "Mrk.4.28", "Mrk.4.29", "Mrk.4.30", "Mrk.4.31", "Mrk.4.32", "Mrk.4.33", "Mrk.4.34", "Mrk.4.35", "Mrk.4.36", "Mrk.4.37", "Mrk.4.38", "Mrk.4.39", "Mrk.4.40", "Mrk.4.41", "Mrk.5.1", "Mrk.5.2", "Mrk.5.3", "Mrk.5.4", "Mrk.5.5", "Mrk.5.6", "Mrk.5.7", "Mrk.5.8", "Mrk.5.9", "Mrk.5.10", "Mrk.5.11", "Mrk.5.12", "Mrk.5.13", "Mrk.5.14", "Mrk.5.15", "Mrk.5.16", "Mrk.5.17", "Mrk.5.18", "Mrk.5.19", "Mrk.5.20", "Mrk.5.21", "Mrk.5.22", "Mrk.5.23", "Mrk.5.24", "Mrk.5.25", "Mrk.5.26", "Mrk.5.27", "Mrk.5.28", "Mrk.5.29", "Mrk.5.30", "Mrk.5.31", "Mrk.5.32", "Mrk.5.33", "Mrk.5.34", "Mrk.5.35", "Mrk.5.36", "Mrk.5.37", "Mrk.5.38", "Mrk.5.39", "Mrk.5.40", "Mrk.5.41", "Mrk.5.42", "Mrk.5.43", "Mrk.6.1", "Mrk.6.2", "Mrk.6.3", "Mrk.6.4", "Mrk.6.5", "Mrk.6.6", "Mrk.6.7", "Mrk.6.8", "Mrk.6.9", "Mrk.6.10", "Mrk.6.11", "Mrk.6.12", "Mrk.6.13", "Mrk.6.14", "Mrk.6.15", "Mrk.6.16", "Mrk.6.17", "Mrk.6.18", "Mrk.6.19", "Mrk.6.20", "Mrk.6.21", "Mrk.6.22", "Mrk.6.23", "Mrk.6.24", "Mrk.6.25", "Mrk.6.26", "Mrk.6.27", "Mrk.6.28", "Mrk.6.29", "Mrk.6.30", "Mrk.6.31", "Mrk.6.32", "Mrk.6.33", "Mrk.6.34"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-02",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Mrk.6.35", "Mrk.6.36", "Mrk.6.37", "Mrk.6.38", "Mrk.6.39", "Mrk.6.40", "Mrk.6.41", "Mrk.6.42", "Mrk.6.43", "Mrk.6.44", "Mrk.6.45", "Mrk.6.46", "Mrk.6.47", "Mrk.6.48", "Mrk.6.49", "Mrk.6.50", "Mrk.6.51", "Mrk.6.52", "Mrk.6.53", "Mrk.6.54", "Mrk.6.55", "Mrk.6.56", "Mrk.7.1", "Mrk.7.2", "Mrk.7.3", "Mrk.7.4", "Mrk.7.5", "Mrk.7.6", "Mrk.7.7", "Mrk.7.8", "Mrk.7.9", "Mrk.7.10", "Mrk.7.11", "Mrk.7.12", "Mrk.7.13", "Mrk.7.14", "Mrk.7.15", "Mrk.7.16", "Mrk.7.17", "Mrk.7.18", "Mrk.7.19", "Mrk.7.20", "Mrk.7.21", "Mrk.7.22", "Mrk.7.23", "Mrk.7.24", "Mrk.7.25", "Mrk.7.26", "Mrk.7.27", "Mrk.7.28", "Mrk.7.29", "Mrk.7.30", "Mrk.7.31", "Mrk.7.32", "Mrk.7.33", "Mrk.7.34", "Mrk.7.35", "Mrk.7.36", "Mrk.7.37", "Mrk.8.1", "Mrk.8.2", "Mrk.8.3", "Mrk.8.4", "Mrk.8.5", "Mrk.8.6", "Mrk.8.7", "Mrk.8.8", "Mrk.8.9", "Mrk.8.10", "Mrk.8.11", "Mrk.8.12", "Mrk.8.13", "Mrk.8.14", "Mrk.8.15", "Mrk.8.16", "Mrk.8.17", "Mrk.8.18", "Mrk.8.19", "Mrk.8.20", "Mrk.8.21", "Mrk.8.22", "Mrk.8.23", "Mrk.8.24", "Mrk.8.25", "Mrk.8.26", "Mrk.8.27", "Mrk.8.28", "Mrk.8.29", "Mrk.8.30", "Mrk.8.31", "Mrk.8.32", "Mrk.8.33", "Mrk.8.34", "Mrk.8.35", "Mrk.8.36", "Mrk.8.37", "Mrk.8.38", "Mrk.9.1", "Mrk.9.2", "Mrk.9.3", "Mrk.9.4", "Mrk.9.5", "Mrk.9.6", "Mrk.9.7", "Mrk.9.8", "Mrk.9.9", "Mrk.9.10", "Mrk.9.11", "Mrk.9.12", "Mrk.9.13", "Mrk.9.14", "Mrk.9.15", "Mrk.9.16", "Mrk.9.17", "Mrk.9.18", "Mrk.9.19", "Mrk.9.20", "Mrk.9.21", "Mrk.9.22", "Mrk.9.23", "Mrk.9.24", "Mrk.9.25", "Mrk.9.26", "Mrk.9.27", "Mrk.9.28", "Mrk.9.29", "Mrk.9.30", "Mrk.9.31", "Mrk.9.32", "Mrk.9.33", "Mrk.9.34", "Mrk.9.35", "Mrk.9.36", "Mrk.9.37", "Mrk.9.38", "Mrk.9.39", "Mrk.9.40", "Mrk.9.41", "Mrk.9.42", "Mrk.9.43", "Mrk.9.44", "Mrk.9.45", "Mrk.9.46", "Mrk.9.47", "Mrk.9.48", "Mrk.9.49", "Mrk.9.50", "Mrk.10.1", "Mrk.10.2", "Mrk.10.3", "Mrk.10.4", "Mrk.10.5", "Mrk.10.6", "Mrk.10.7", "Mrk.10.8", "Mrk.10.9", "Mrk.10.10", "Mrk.10.11", "Mrk.10.12", "Mrk.10.13", "Mrk.10.14", "Mrk.10.15", "Mrk.10.16", "Mrk.10.17", "Mrk.10.18", "Mrk.10.19", "Mrk.10.20", "Mrk.10.21", "Mrk.10.22", "Mrk.10.23", "Mrk.10.24", "Mrk.10.25", "Mrk.10.26", "Mrk.10.27", "Mrk.10.28", "Mrk.10.29", "Mrk.10.30", "Mrk.10.31", "Mrk.10.32", "Mrk.10.33", "Mrk.10.34", "Mrk.10.35", "Mrk.10.36", "Mrk.10.37", "Mrk.10.38", "Mrk.10.39", "Mrk.10.40", "Mrk.10.41", "Mrk.10.42", "Mrk.10.43", "Mrk.10.44", "Mrk.10.45", "Mrk.10.46", "Mrk.10.47", "Mrk.10.48", "Mrk.10.49", "Mrk.10.50", "Mrk.10.51", "Mrk.10.52", "Mrk.11.1", "Mrk.11.2", "Mrk.11.3", "Mrk.11.4", "Mrk.11.5", "Mrk.11.6", "Mrk.11.7", "Mrk.11.8", "Mrk.11.9", "Mrk.11.10", "Mrk.11.11", "Mrk.11.12", "Mrk.11.13", "Mrk.11.14", "Mrk.11.15", "Mrk.11.16", "Mrk.11.17", "Mrk.11.18", "Mrk.11.19", "Mrk.11.20", "Mrk.11.21", "Mrk.11.22", "Mrk.11.23", "Mrk.11.24", "Mrk.11.25", "Mrk.11.26", "Mrk.11.27"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-03",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Mrk.11.28", "Mrk.11.29", "Mrk.11.30", "Mrk.11.31", "Mrk.11.32", "Mrk.11.33", "Mrk.12.1", "Mrk.12.2", "Mrk.12.3", "Mrk.12.4", "Mrk.12.5", "Mrk.12.6", "Mrk.12.7", "Mrk.12.8", "Mrk.12.9", "Mrk.12.10", "Mrk.12.11", "Mrk.12.12", "Mrk.12.13", "Mrk.12.14", "Mrk.12.15", "Mrk.12.16", "Mrk.12.17", "Mrk.12.18", "Mrk.12.19", "Mrk.12.20", "Mrk.12.21", "Mrk.12.22", "Mrk.12.23", "Mrk.12.24", "Mrk.12.25", "Mrk.12.26", "Mrk.12.27", "Mrk.12.28", "Mrk.12.29", "Mrk.12.30", "Mrk.12.31", "Mrk.12.32", "Mrk.12.33", "Mrk.12.34", "Mrk.12.35", "Mrk.12.36", "Mrk.12.37", "Mrk.12.38", "Mrk.12.39", "Mrk.12.40", "Mrk.12.41", "Mrk.12.42", "Mrk.12.43", "Mrk.12.44", "Mrk.13.1", "Mrk.13.2", "Mrk.13.3", "Mrk.13.4", "Mrk.13.5", "Mrk.13.6", "Mrk.13.7", "Mrk.13.8", "Mrk.13.9", "Mrk.13.10", "Mrk.13.11", "Mrk.13.12", "Mrk.13.13", "Mrk.13.14", "Mrk.13.15", "Mrk.13.16", "Mrk.13.17", "Mrk.13.18", "Mrk.13.19", "Mrk.13.20", "Mrk.13.21", "Mrk.13.22", "Mrk.13.23", "Mrk.13.24", "Mrk.13.25", "Mrk.13.26", "Mrk.13.27", "Mrk.13.28", "Mrk.13.29", "Mrk.13.30", "Mrk.13.31", "Mrk.13.32", "Mrk.13.33", "Mrk.13.34", "Mrk.13.35", "Mrk.13.36", "Mrk.13.37", "Mrk.14.1", "Mrk.14.2", "Mrk.14.3", "Mrk.14.4", "Mrk.14.5", "Mrk.14.6", "Mrk.14.7", "Mrk.14.8", "Mrk.14.9", "Mrk.14.10", "Mrk.14.11", "Mrk.14.12", "Mrk.14.13", "Mrk.14.14", "Mrk.14.15", "Mrk.14.16", "Mrk.14.17", "Mrk.14.18", "Mrk.14.19", "Mrk.14.20", "Mrk.14.21", "Mrk.14.22", "Mrk.14.23", "Mrk.14.24", "Mrk.14.25", "Mrk.14.26", "Mrk.14.27", "Mrk.14.28", "Mrk.14.29", "Mrk.14.30", "Mrk.14.31", "Mrk.14.32", "Mrk.14.33", "Mrk.14.34", "Mrk.14.35", "Mrk.14.36", "Mrk.14.37", "Mrk.14.38", "Mrk.14.39", "Mrk.14.40", "Mrk.14.41", "Mrk.14.42", "Mrk.14.43", "Mrk.14.44", "Mrk.14.45", "Mrk.14.46", "Mrk.14.47", "Mrk.14.48", "Mrk.14.49", "Mrk.14.50", "Mrk.14.51", "Mrk.14.52", "Mrk.14.53", "Mrk.14.54", "Mrk.14.55", "Mrk.14.56", "Mrk.14.57", "Mrk.14.58", "Mrk.14.59", "Mrk.14.60", "Mrk.14.61", "Mrk.14.62", "Mrk.14.63", "Mrk.14.64", "Mrk.14.65", "Mrk.14.66", "Mrk.14.67", "Mrk.14.68", "Mrk.14.69", "Mrk.14.70", "Mrk.14.71", "Mrk.14.72", "Mrk.15.1", "Mrk.15.2", "Mrk.15.3", "Mrk.15.4", "Mrk.15.5", "Mrk.15.6", "Mrk.15.7", "Mrk.15.8", "Mrk.15.9", "Mrk.15.10", "Mrk.15.11", "Mrk.15.12", "Mrk.15.13", "Mrk.15.14", "Mrk.15.15", "Mrk.15.16", "Mrk.15.17", "Mrk.15.18", "Mrk.15.19", "Mrk.15.20", "Mrk.15.21", "Mrk.15.22", "Mrk.15.23", "Mrk.15.24", "Mrk.15.25", "Mrk.15.26", "Mrk.15.27", "Mrk.15.28", "Mrk.15.29", "Mrk.15.30", "Mrk.15.31", "Mrk.15.32", "Mrk.15.33", "Mrk.15.34", "Mrk.15.35", "Mrk.15.36", "Mrk.15.37", "Mrk.15.38", "Mrk.15.39", "Mrk.15.40", "Mrk.15.41", "Mrk.15.42", "Mrk.15.43", "Mrk.15.44", "Mrk.15.45", "Mrk.15.46", "Mrk.15.47", "Mrk.16.1", "Mrk.16.2", "Mrk.16.3", "Mrk.16.4", "Mrk.16.5", "Mrk.16.6", "Mrk.16.7", "Mrk.16.8", "Mrk.16.9", "Mrk.16.10", "Mrk.16.11", "Mrk.16.12", "Mrk.16.13", "Mrk.16.14", "Mrk.16.15", "Mrk.16.16", "Mrk.16.17", "Mrk.16.18", "Mrk.16.19", "Mrk.16.20"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
+        "unit_ids": ["Mrk.1.1", "Mrk.1.2", "Mrk.1.3", "Mrk.1.4", "Mrk.1.5", "Mrk.1.6", "Mrk.1.7", "Mrk.1.8", "Mrk.1.9", "Mrk.1.10", "Mrk.1.11", "Mrk.1.12", "Mrk.1.13", "Mrk.1.14", "Mrk.1.15", "Mrk.1.16", "Mrk.1.17", "Mrk.1.18", "Mrk.1.19", "Mrk.1.20", "Mrk.1.21", "Mrk.1.22", "Mrk.1.23", "Mrk.1.24", "Mrk.1.25", "Mrk.1.26", "Mrk.1.27", "Mrk.1.28", "Mrk.1.29", "Mrk.1.30", "Mrk.1.31", "Mrk.1.32", "Mrk.1.33", "Mrk.1.34", "Mrk.1.35", "Mrk.1.36", "Mrk.1.37", "Mrk.1.38", "Mrk.1.39", "Mrk.1.40", "Mrk.1.41", "Mrk.1.42", "Mrk.1.43", "Mrk.1.44", "Mrk.1.45", "Mrk.2.1", "Mrk.2.2", "Mrk.2.3", "Mrk.2.4", "Mrk.2.5", "Mrk.2.6", "Mrk.2.7", "Mrk.2.8", "Mrk.2.9", "Mrk.2.10", "Mrk.2.11", "Mrk.2.12", "Mrk.2.13", "Mrk.2.14", "Mrk.2.15", "Mrk.2.16", "Mrk.2.17", "Mrk.2.18", "Mrk.2.19", "Mrk.2.20", "Mrk.2.21", "Mrk.2.22", "Mrk.2.23", "Mrk.2.24", "Mrk.2.25", "Mrk.2.26", "Mrk.2.27", "Mrk.2.28", "Mrk.3.1", "Mrk.3.2", "Mrk.3.3", "Mrk.3.4", "Mrk.3.5", "Mrk.3.6", "Mrk.3.7", "Mrk.3.8", "Mrk.3.9", "Mrk.3.10", "Mrk.3.11", "Mrk.3.12", "Mrk.3.13", "Mrk.3.14", "Mrk.3.15", "Mrk.3.16", "Mrk.3.17", "Mrk.3.18", "Mrk.3.19", "Mrk.3.20", "Mrk.3.21", "Mrk.3.22", "Mrk.3.23", "Mrk.3.24", "Mrk.3.25", "Mrk.3.26", "Mrk.3.27", "Mrk.3.28", "Mrk.3.29", "Mrk.3.30", "Mrk.3.31", "Mrk.3.32", "Mrk.3.33", "Mrk.3.34", "Mrk.3.35", "Mrk.4.1", "Mrk.4.2", "Mrk.4.3", "Mrk.4.4", "Mrk.4.5", "Mrk.4.6", "Mrk.4.7", "Mrk.4.8", "Mrk.4.9", "Mrk.4.10", "Mrk.4.11", "Mrk.4.12", "Mrk.4.13", "Mrk.4.14", "Mrk.4.15", "Mrk.4.16", "Mrk.4.17", "Mrk.4.18", "Mrk.4.19", "Mrk.4.20", "Mrk.4.21", "Mrk.4.22", "Mrk.4.23", "Mrk.4.24", "Mrk.4.25", "Mrk.4.26", "Mrk.4.27", "Mrk.4.28", "Mrk.4.29", "Mrk.4.30", "Mrk.4.31", "Mrk.4.32", "Mrk.4.33", "Mrk.4.34", "Mrk.4.35", "Mrk.4.36", "Mrk.4.37", "Mrk.4.38", "Mrk.4.39", "Mrk.4.40", "Mrk.4.41", "Mrk.5.1", "Mrk.5.2", "Mrk.5.3", "Mrk.5.4", "Mrk.5.5", "Mrk.5.6", "Mrk.5.7", "Mrk.5.8", "Mrk.5.9", "Mrk.5.10", "Mrk.5.11", "Mrk.5.12", "Mrk.5.13", "Mrk.5.14", "Mrk.5.15", "Mrk.5.16", "Mrk.5.17", "Mrk.5.18", "Mrk.5.19", "Mrk.5.20", "Mrk.5.21", "Mrk.5.22", "Mrk.5.23", "Mrk.5.24", "Mrk.5.25", "Mrk.5.26", "Mrk.5.27", "Mrk.5.28", "Mrk.5.29", "Mrk.5.30", "Mrk.5.31", "Mrk.5.32", "Mrk.5.33", "Mrk.5.34", "Mrk.5.35", "Mrk.5.36", "Mrk.5.37", "Mrk.5.38", "Mrk.5.39", "Mrk.5.40", "Mrk.5.41", "Mrk.5.42", "Mrk.5.43", "Mrk.6.1", "Mrk.6.2", "Mrk.6.3", "Mrk.6.4", "Mrk.6.5", "Mrk.6.6", "Mrk.6.7", "Mrk.6.8", "Mrk.6.9", "Mrk.6.10", "Mrk.6.11", "Mrk.6.12", "Mrk.6.13", "Mrk.6.14", "Mrk.6.15", "Mrk.6.16", "Mrk.6.17", "Mrk.6.18", "Mrk.6.19", "Mrk.6.20", "Mrk.6.21", "Mrk.6.22", "Mrk.6.23", "Mrk.6.24", "Mrk.6.25", "Mrk.6.26", "Mrk.6.27", "Mrk.6.28", "Mrk.6.29", "Mrk.6.30", "Mrk.6.31", "Mrk.6.32", "Mrk.6.33", "Mrk.6.34", "Mrk.6.35", "Mrk.6.36", "Mrk.6.37", "Mrk.6.38", "Mrk.6.39", "Mrk.6.40", "Mrk.6.41", "Mrk.6.42", "Mrk.6.43", "Mrk.6.44", "Mrk.6.45", "Mrk.6.46", "Mrk.6.47", "Mrk.6.48", "Mrk.6.49", "Mrk.6.50", "Mrk.6.51", "Mrk.6.52", "Mrk.6.53", "Mrk.6.54", "Mrk.6.55", "Mrk.6.56", "Mrk.7.1", "Mrk.7.2", "Mrk.7.3", "Mrk.7.4", "Mrk.7.5", "Mrk.7.6", "Mrk.7.7", "Mrk.7.8", "Mrk.7.9", "Mrk.7.10", "Mrk.7.11", "Mrk.7.12", "Mrk.7.13", "Mrk.7.14", "Mrk.7.15", "Mrk.7.16", "Mrk.7.17", "Mrk.7.18", "Mrk.7.19", "Mrk.7.20", "Mrk.7.21", "Mrk.7.22", "Mrk.7.23", "Mrk.7.24", "Mrk.7.25", "Mrk.7.26", "Mrk.7.27", "Mrk.7.28", "Mrk.7.29", "Mrk.7.30", "Mrk.7.31", "Mrk.7.32", "Mrk.7.33", "Mrk.7.34", "Mrk.7.35", "Mrk.7.36", "Mrk.7.37", "Mrk.8.1", "Mrk.8.2", "Mrk.8.3", "Mrk.8.4", "Mrk.8.5", "Mrk.8.6", "Mrk.8.7", "Mrk.8.8", "Mrk.8.9", "Mrk.8.10", "Mrk.8.11", "Mrk.8.12", "Mrk.8.13", "Mrk.8.14", "Mrk.8.15", "Mrk.8.16", "Mrk.8.17", "Mrk.8.18", "Mrk.8.19", "Mrk.8.20", "Mrk.8.21", "Mrk.8.22", "Mrk.8.23", "Mrk.8.24", "Mrk.8.25", "Mrk.8.26", "Mrk.8.27", "Mrk.8.28", "Mrk.8.29", "Mrk.8.30", "Mrk.8.31", "Mrk.8.32", "Mrk.8.33", "Mrk.8.34", "Mrk.8.35", "Mrk.8.36", "Mrk.8.37", "Mrk.8.38", "Mrk.9.1", "Mrk.9.2", "Mrk.9.3", "Mrk.9.4", "Mrk.9.5", "Mrk.9.6", "Mrk.9.7", "Mrk.9.8", "Mrk.9.9", "Mrk.9.10", "Mrk.9.11", "Mrk.9.12", "Mrk.9.13", "Mrk.9.14", "Mrk.9.15", "Mrk.9.16", "Mrk.9.17", "Mrk.9.18", "Mrk.9.19", "Mrk.9.20", "Mrk.9.21", "Mrk.9.22", "Mrk.9.23", "Mrk.9.24", "Mrk.9.25", "Mrk.9.26", "Mrk.9.27", "Mrk.9.28", "Mrk.9.29", "Mrk.9.30", "Mrk.9.31", "Mrk.9.32", "Mrk.9.33", "Mrk.9.34", "Mrk.9.35", "Mrk.9.36", "Mrk.9.37", "Mrk.9.38", "Mrk.9.39", "Mrk.9.40", "Mrk.9.41", "Mrk.9.42", "Mrk.9.43", "Mrk.9.44", "Mrk.9.45", "Mrk.9.46", "Mrk.9.47", "Mrk.9.48", "Mrk.9.49", "Mrk.9.50", "Mrk.10.1", "Mrk.10.2", "Mrk.10.3", "Mrk.10.4", "Mrk.10.5", "Mrk.10.6", "Mrk.10.7", "Mrk.10.8", "Mrk.10.9", "Mrk.10.10", "Mrk.10.11", "Mrk.10.12", "Mrk.10.13", "Mrk.10.14", "Mrk.10.15", "Mrk.10.16", "Mrk.10.17", "Mrk.10.18", "Mrk.10.19", "Mrk.10.20", "Mrk.10.21", "Mrk.10.22", "Mrk.10.23", "Mrk.10.24", "Mrk.10.25", "Mrk.10.26", "Mrk.10.27", "Mrk.10.28", "Mrk.10.29", "Mrk.10.30", "Mrk.10.31", "Mrk.10.32", "Mrk.10.33", "Mrk.10.34", "Mrk.10.35", "Mrk.10.36", "Mrk.10.37", "Mrk.10.38", "Mrk.10.39", "Mrk.10.40", "Mrk.10.41", "Mrk.10.42", "Mrk.10.43", "Mrk.10.44", "Mrk.10.45", "Mrk.10.46", "Mrk.10.47", "Mrk.10.48", "Mrk.10.49", "Mrk.10.50", "Mrk.10.51", "Mrk.10.52", "Mrk.11.1", "Mrk.11.2", "Mrk.11.3", "Mrk.11.4", "Mrk.11.5", "Mrk.11.6", "Mrk.11.7", "Mrk.11.8", "Mrk.11.9", "Mrk.11.10", "Mrk.11.11", "Mrk.11.12", "Mrk.11.13", "Mrk.11.14", "Mrk.11.15", "Mrk.11.16", "Mrk.11.17", "Mrk.11.18", "Mrk.11.19", "Mrk.11.20", "Mrk.11.21", "Mrk.11.22", "Mrk.11.23", "Mrk.11.24", "Mrk.11.25", "Mrk.11.26", "Mrk.11.27", "Mrk.11.28", "Mrk.11.29", "Mrk.11.30", "Mrk.11.31", "Mrk.11.32", "Mrk.11.33", "Mrk.12.1", "Mrk.12.2", "Mrk.12.3", "Mrk.12.4", "Mrk.12.5", "Mrk.12.6", "Mrk.12.7", "Mrk.12.8", "Mrk.12.9", "Mrk.12.10", "Mrk.12.11", "Mrk.12.12", "Mrk.12.13", "Mrk.12.14", "Mrk.12.15", "Mrk.12.16", "Mrk.12.17", "Mrk.12.18", "Mrk.12.19", "Mrk.12.20", "Mrk.12.21", "Mrk.12.22", "Mrk.12.23", "Mrk.12.24", "Mrk.12.25", "Mrk.12.26", "Mrk.12.27", "Mrk.12.28", "Mrk.12.29", "Mrk.12.30", "Mrk.12.31", "Mrk.12.32", "Mrk.12.33", "Mrk.12.34", "Mrk.12.35", "Mrk.12.36", "Mrk.12.37", "Mrk.12.38", "Mrk.12.39", "Mrk.12.40", "Mrk.12.41", "Mrk.12.42", "Mrk.12.43", "Mrk.12.44", "Mrk.13.1", "Mrk.13.2", "Mrk.13.3", "Mrk.13.4", "Mrk.13.5", "Mrk.13.6", "Mrk.13.7", "Mrk.13.8", "Mrk.13.9", "Mrk.13.10", "Mrk.13.11", "Mrk.13.12", "Mrk.13.13", "Mrk.13.14", "Mrk.13.15", "Mrk.13.16", "Mrk.13.17", "Mrk.13.18", "Mrk.13.19", "Mrk.13.20", "Mrk.13.21", "Mrk.13.22", "Mrk.13.23", "Mrk.13.24", "Mrk.13.25", "Mrk.13.26", "Mrk.13.27", "Mrk.13.28", "Mrk.13.29", "Mrk.13.30", "Mrk.13.31", "Mrk.13.32", "Mrk.13.33", "Mrk.13.34", "Mrk.13.35", "Mrk.13.36", "Mrk.13.37", "Mrk.14.1", "Mrk.14.2", "Mrk.14.3", "Mrk.14.4", "Mrk.14.5", "Mrk.14.6", "Mrk.14.7", "Mrk.14.8", "Mrk.14.9", "Mrk.14.10", "Mrk.14.11", "Mrk.14.12", "Mrk.14.13", "Mrk.14.14", "Mrk.14.15", "Mrk.14.16", "Mrk.14.17", "Mrk.14.18", "Mrk.14.19", "Mrk.14.20", "Mrk.14.21", "Mrk.14.22", "Mrk.14.23", "Mrk.14.24", "Mrk.14.25", "Mrk.14.26", "Mrk.14.27", "Mrk.14.28", "Mrk.14.29", "Mrk.14.30", "Mrk.14.31", "Mrk.14.32", "Mrk.14.33", "Mrk.14.34", "Mrk.14.35", "Mrk.14.36", "Mrk.14.37", "Mrk.14.38", "Mrk.14.39", "Mrk.14.40", "Mrk.14.41", "Mrk.14.42", "Mrk.14.43", "Mrk.14.44", "Mrk.14.45", "Mrk.14.46", "Mrk.14.47", "Mrk.14.48", "Mrk.14.49", "Mrk.14.50", "Mrk.14.51", "Mrk.14.52", "Mrk.14.53", "Mrk.14.54", "Mrk.14.55", "Mrk.14.56", "Mrk.14.57", "Mrk.14.58", "Mrk.14.59", "Mrk.14.60", "Mrk.14.61", "Mrk.14.62", "Mrk.14.63", "Mrk.14.64", "Mrk.14.65", "Mrk.14.66", "Mrk.14.67", "Mrk.14.68", "Mrk.14.69", "Mrk.14.70", "Mrk.14.71", "Mrk.14.72", "Mrk.15.1", "Mrk.15.2", "Mrk.15.3", "Mrk.15.4", "Mrk.15.5", "Mrk.15.6", "Mrk.15.7", "Mrk.15.8", "Mrk.15.9", "Mrk.15.10", "Mrk.15.11", "Mrk.15.12", "Mrk.15.13", "Mrk.15.14", "Mrk.15.15", "Mrk.15.16", "Mrk.15.17", "Mrk.15.18", "Mrk.15.19", "Mrk.15.20", "Mrk.15.21", "Mrk.15.22", "Mrk.15.23", "Mrk.15.24", "Mrk.15.25", "Mrk.15.26", "Mrk.15.27", "Mrk.15.28", "Mrk.15.29", "Mrk.15.30", "Mrk.15.31", "Mrk.15.32", "Mrk.15.33", "Mrk.15.34", "Mrk.15.35", "Mrk.15.36", "Mrk.15.37", "Mrk.15.38", "Mrk.15.39", "Mrk.15.40", "Mrk.15.41", "Mrk.15.42", "Mrk.15.43", "Mrk.15.44", "Mrk.15.45", "Mrk.15.46", "Mrk.15.47", "Mrk.16.1", "Mrk.16.2", "Mrk.16.3", "Mrk.16.4", "Mrk.16.5", "Mrk.16.6", "Mrk.16.7", "Mrk.16.8", "Mrk.16.9", "Mrk.16.10", "Mrk.16.11", "Mrk.16.12", "Mrk.16.13", "Mrk.16.14", "Mrk.16.15", "Mrk.16.16", "Mrk.16.17", "Mrk.16.18", "Mrk.16.19", "Mrk.16.20"]
+      },
+      "depends_on": [
+        "prepare-01",
+        "prepare-02",
+        "prepare-03"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

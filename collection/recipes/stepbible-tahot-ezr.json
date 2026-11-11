@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-ezr",
+  "revision": "stepbible-tahot-ezr/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-jos-est",
+    "path": "Translators Amalgamated OT+NT/TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7",
+    "byte_count": 24500357
+  },
+  "native_extent": {
+    "book": "Ezr",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-jos-est"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-jos-est"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Ezr.1.1", "Ezr.1.2", "Ezr.1.3", "Ezr.1.4", "Ezr.1.5", "Ezr.1.6", "Ezr.1.7", "Ezr.1.8", "Ezr.1.9", "Ezr.1.10", "Ezr.1.11", "Ezr.2.1", "Ezr.2.2", "Ezr.2.3", "Ezr.2.4", "Ezr.2.5", "Ezr.2.6", "Ezr.2.7", "Ezr.2.8", "Ezr.2.9", "Ezr.2.10", "Ezr.2.11", "Ezr.2.12", "Ezr.2.13", "Ezr.2.14", "Ezr.2.15", "Ezr.2.16", "Ezr.2.17", "Ezr.2.18", "Ezr.2.19", "Ezr.2.20", "Ezr.2.21", "Ezr.2.22", "Ezr.2.23", "Ezr.2.24", "Ezr.2.25", "Ezr.2.26", "Ezr.2.27", "Ezr.2.28", "Ezr.2.29", "Ezr.2.30", "Ezr.2.31", "Ezr.2.32", "Ezr.2.33", "Ezr.2.34", "Ezr.2.35", "Ezr.2.36", "Ezr.2.37", "Ezr.2.38", "Ezr.2.39", "Ezr.2.40", "Ezr.2.41", "Ezr.2.42", "Ezr.2.43", "Ezr.2.44", "Ezr.2.45", "Ezr.2.46", "Ezr.2.47", "Ezr.2.48", "Ezr.2.49", "Ezr.2.50", "Ezr.2.51", "Ezr.2.52", "Ezr.2.53", "Ezr.2.54", "Ezr.2.55", "Ezr.2.56", "Ezr.2.57", "Ezr.2.58", "Ezr.2.59", "Ezr.2.60", "Ezr.2.61", "Ezr.2.62", "Ezr.2.63", "Ezr.2.64", "Ezr.2.65", "Ezr.2.66", "Ezr.2.67", "Ezr.2.68", "Ezr.2.69", "Ezr.2.70", "Ezr.3.1", "Ezr.3.2", "Ezr.3.3", "Ezr.3.4", "Ezr.3.5", "Ezr.3.6", "Ezr.3.7", "Ezr.3.8", "Ezr.3.9", "Ezr.3.10", "Ezr.3.11", "Ezr.3.12", "Ezr.3.13", "Ezr.4.1", "Ezr.4.2", "Ezr.4.3", "Ezr.4.4", "Ezr.4.5", "Ezr.4.6", "Ezr.4.7", "Ezr.4.8", "Ezr.4.9", "Ezr.4.10", "Ezr.4.11", "Ezr.4.12", "Ezr.4.13", "Ezr.4.14", "Ezr.4.15", "Ezr.4.16", "Ezr.4.17", "Ezr.4.18", "Ezr.4.19", "Ezr.4.20", "Ezr.4.21", "Ezr.4.22", "Ezr.4.23", "Ezr.4.24", "Ezr.5.1", "Ezr.5.2", "Ezr.5.3", "Ezr.5.4", "Ezr.5.5", "Ezr.5.6", "Ezr.5.7", "Ezr.5.8", "Ezr.5.9", "Ezr.5.10", "Ezr.5.11", "Ezr.5.12", "Ezr.5.13", "Ezr.5.14", "Ezr.5.15", "Ezr.5.16", "Ezr.5.17", "Ezr.6.1", "Ezr.6.2", "Ezr.6.3", "Ezr.6.4", "Ezr.6.5", "Ezr.6.6", "Ezr.6.7", "Ezr.6.8", "Ezr.6.9", "Ezr.6.10", "Ezr.6.11", "Ezr.6.12", "Ezr.6.13", "Ezr.6.14", "Ezr.6.15", "Ezr.6.16", "Ezr.6.17", "Ezr.6.18", "Ezr.6.19", "Ezr.6.20", "Ezr.6.21", "Ezr.6.22", "Ezr.7.1", "Ezr.7.2", "Ezr.7.3", "Ezr.7.4", "Ezr.7.5", "Ezr.7.6", "Ezr.7.7", "Ezr.7.8", "Ezr.7.9", "Ezr.7.10", "Ezr.7.11", "Ezr.7.12", "Ezr.7.13", "Ezr.7.14", "Ezr.7.15", "Ezr.7.16", "Ezr.7.17", "Ezr.7.18", "Ezr.7.19", "Ezr.7.20", "Ezr.7.21", "Ezr.7.22", "Ezr.7.23", "Ezr.7.24", "Ezr.7.25", "Ezr.7.26", "Ezr.7.27", "Ezr.7.28", "Ezr.8.1", "Ezr.8.2", "Ezr.8.3", "Ezr.8.4", "Ezr.8.5", "Ezr.8.6", "Ezr.8.7", "Ezr.8.8", "Ezr.8.9", "Ezr.8.10", "Ezr.8.11", "Ezr.8.12", "Ezr.8.13", "Ezr.8.14", "Ezr.8.15", "Ezr.8.16", "Ezr.8.17", "Ezr.8.18", "Ezr.8.19", "Ezr.8.20", "Ezr.8.21", "Ezr.8.22", "Ezr.8.23", "Ezr.8.24", "Ezr.8.25", "Ezr.8.26", "Ezr.8.27", "Ezr.8.28", "Ezr.8.29", "Ezr.8.30", "Ezr.8.31", "Ezr.8.32", "Ezr.8.33", "Ezr.8.34", "Ezr.8.35", "Ezr.8.36", "Ezr.9.1", "Ezr.9.2", "Ezr.9.3", "Ezr.9.4", "Ezr.9.5", "Ezr.9.6", "Ezr.9.7", "Ezr.9.8", "Ezr.9.9", "Ezr.9.10", "Ezr.9.11", "Ezr.9.12", "Ezr.9.13", "Ezr.9.14", "Ezr.9.15", "Ezr.10.1", "Ezr.10.2", "Ezr.10.3", "Ezr.10.4", "Ezr.10.5", "Ezr.10.6", "Ezr.10.7", "Ezr.10.8", "Ezr.10.9", "Ezr.10.10", "Ezr.10.11", "Ezr.10.12", "Ezr.10.13", "Ezr.10.14", "Ezr.10.15", "Ezr.10.16", "Ezr.10.17", "Ezr.10.18", "Ezr.10.19", "Ezr.10.20", "Ezr.10.21", "Ezr.10.22", "Ezr.10.23", "Ezr.10.24", "Ezr.10.25", "Ezr.10.26", "Ezr.10.27", "Ezr.10.28", "Ezr.10.29", "Ezr.10.30", "Ezr.10.31", "Ezr.10.32", "Ezr.10.33", "Ezr.10.34", "Ezr.10.35", "Ezr.10.36", "Ezr.10.37", "Ezr.10.38", "Ezr.10.39", "Ezr.10.40", "Ezr.10.41", "Ezr.10.42", "Ezr.10.43", "Ezr.10.44"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Ezr.1.1", "Ezr.1.2", "Ezr.1.3", "Ezr.1.4", "Ezr.1.5", "Ezr.1.6", "Ezr.1.7", "Ezr.1.8", "Ezr.1.9", "Ezr.1.10", "Ezr.1.11", "Ezr.2.1", "Ezr.2.2", "Ezr.2.3", "Ezr.2.4", "Ezr.2.5", "Ezr.2.6", "Ezr.2.7", "Ezr.2.8", "Ezr.2.9", "Ezr.2.10", "Ezr.2.11", "Ezr.2.12", "Ezr.2.13", "Ezr.2.14", "Ezr.2.15", "Ezr.2.16", "Ezr.2.17", "Ezr.2.18", "Ezr.2.19", "Ezr.2.20", "Ezr.2.21", "Ezr.2.22", "Ezr.2.23", "Ezr.2.24", "Ezr.2.25", "Ezr.2.26", "Ezr.2.27", "Ezr.2.28", "Ezr.2.29", "Ezr.2.30", "Ezr.2.31", "Ezr.2.32", "Ezr.2.33", "Ezr.2.34", "Ezr.2.35", "Ezr.2.36", "Ezr.2.37", "Ezr.2.38", "Ezr.2.39", "Ezr.2.40", "Ezr.2.41", "Ezr.2.42", "Ezr.2.43", "Ezr.2.44", "Ezr.2.45", "Ezr.2.46", "Ezr.2.47", "Ezr.2.48", "Ezr.2.49", "Ezr.2.50", "Ezr.2.51", "Ezr.2.52", "Ezr.2.53", "Ezr.2.54", "Ezr.2.55", "Ezr.2.56", "Ezr.2.57", "Ezr.2.58", "Ezr.2.59", "Ezr.2.60", "Ezr.2.61", "Ezr.2.62", "Ezr.2.63", "Ezr.2.64", "Ezr.2.65", "Ezr.2.66", "Ezr.2.67", "Ezr.2.68", "Ezr.2.69", "Ezr.2.70", "Ezr.3.1", "Ezr.3.2", "Ezr.3.3", "Ezr.3.4", "Ezr.3.5", "Ezr.3.6", "Ezr.3.7", "Ezr.3.8", "Ezr.3.9", "Ezr.3.10", "Ezr.3.11", "Ezr.3.12", "Ezr.3.13", "Ezr.4.1", "Ezr.4.2", "Ezr.4.3", "Ezr.4.4", "Ezr.4.5", "Ezr.4.6", "Ezr.4.7", "Ezr.4.8", "Ezr.4.9", "Ezr.4.10", "Ezr.4.11", "Ezr.4.12", "Ezr.4.13", "Ezr.4.14", "Ezr.4.15", "Ezr.4.16", "Ezr.4.17", "Ezr.4.18", "Ezr.4.19", "Ezr.4.20", "Ezr.4.21", "Ezr.4.22", "Ezr.4.23", "Ezr.4.24", "Ezr.5.1", "Ezr.5.2", "Ezr.5.3", "Ezr.5.4", "Ezr.5.5", "Ezr.5.6", "Ezr.5.7", "Ezr.5.8", "Ezr.5.9", "Ezr.5.10", "Ezr.5.11", "Ezr.5.12", "Ezr.5.13", "Ezr.5.14", "Ezr.5.15", "Ezr.5.16", "Ezr.5.17", "Ezr.6.1", "Ezr.6.2", "Ezr.6.3", "Ezr.6.4", "Ezr.6.5", "Ezr.6.6", "Ezr.6.7", "Ezr.6.8", "Ezr.6.9", "Ezr.6.10", "Ezr.6.11", "Ezr.6.12", "Ezr.6.13", "Ezr.6.14", "Ezr.6.15", "Ezr.6.16", "Ezr.6.17", "Ezr.6.18", "Ezr.6.19", "Ezr.6.20", "Ezr.6.21", "Ezr.6.22", "Ezr.7.1", "Ezr.7.2", "Ezr.7.3", "Ezr.7.4", "Ezr.7.5", "Ezr.7.6", "Ezr.7.7", "Ezr.7.8", "Ezr.7.9", "Ezr.7.10", "Ezr.7.11", "Ezr.7.12", "Ezr.7.13", "Ezr.7.14", "Ezr.7.15", "Ezr.7.16", "Ezr.7.17", "Ezr.7.18", "Ezr.7.19", "Ezr.7.20", "Ezr.7.21", "Ezr.7.22", "Ezr.7.23", "Ezr.7.24", "Ezr.7.25", "Ezr.7.26", "Ezr.7.27", "Ezr.7.28", "Ezr.8.1", "Ezr.8.2", "Ezr.8.3", "Ezr.8.4", "Ezr.8.5", "Ezr.8.6", "Ezr.8.7", "Ezr.8.8", "Ezr.8.9", "Ezr.8.10", "Ezr.8.11", "Ezr.8.12", "Ezr.8.13", "Ezr.8.14", "Ezr.8.15", "Ezr.8.16", "Ezr.8.17", "Ezr.8.18", "Ezr.8.19", "Ezr.8.20", "Ezr.8.21", "Ezr.8.22", "Ezr.8.23", "Ezr.8.24", "Ezr.8.25", "Ezr.8.26", "Ezr.8.27", "Ezr.8.28", "Ezr.8.29", "Ezr.8.30", "Ezr.8.31", "Ezr.8.32", "Ezr.8.33", "Ezr.8.34", "Ezr.8.35", "Ezr.8.36", "Ezr.9.1", "Ezr.9.2", "Ezr.9.3", "Ezr.9.4", "Ezr.9.5", "Ezr.9.6", "Ezr.9.7", "Ezr.9.8", "Ezr.9.9", "Ezr.9.10", "Ezr.9.11", "Ezr.9.12", "Ezr.9.13", "Ezr.9.14", "Ezr.9.15", "Ezr.10.1", "Ezr.10.2", "Ezr.10.3", "Ezr.10.4", "Ezr.10.5", "Ezr.10.6", "Ezr.10.7", "Ezr.10.8", "Ezr.10.9", "Ezr.10.10", "Ezr.10.11", "Ezr.10.12", "Ezr.10.13", "Ezr.10.14", "Ezr.10.15", "Ezr.10.16", "Ezr.10.17", "Ezr.10.18", "Ezr.10.19", "Ezr.10.20", "Ezr.10.21", "Ezr.10.22", "Ezr.10.23", "Ezr.10.24", "Ezr.10.25", "Ezr.10.26", "Ezr.10.27", "Ezr.10.28", "Ezr.10.29", "Ezr.10.30", "Ezr.10.31", "Ezr.10.32", "Ezr.10.33", "Ezr.10.34", "Ezr.10.35", "Ezr.10.36", "Ezr.10.37", "Ezr.10.38", "Ezr.10.39", "Ezr.10.40", "Ezr.10.41", "Ezr.10.42", "Ezr.10.43", "Ezr.10.44"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

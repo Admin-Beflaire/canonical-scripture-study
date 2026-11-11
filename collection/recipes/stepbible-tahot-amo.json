@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-amo",
+  "revision": "stepbible-tahot-amo/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-isa-mal",
+    "path": "Translators Amalgamated OT+NT/TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540",
+    "byte_count": 17977558
+  },
+  "native_extent": {
+    "book": "Amo",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-isa-mal"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-isa-mal"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Amo.1.1", "Amo.1.2", "Amo.1.3", "Amo.1.4", "Amo.1.5", "Amo.1.6", "Amo.1.7", "Amo.1.8", "Amo.1.9", "Amo.1.10", "Amo.1.11", "Amo.1.12", "Amo.1.13", "Amo.1.14", "Amo.1.15", "Amo.2.1", "Amo.2.2", "Amo.2.3", "Amo.2.4", "Amo.2.5", "Amo.2.6", "Amo.2.7", "Amo.2.8", "Amo.2.9", "Amo.2.10", "Amo.2.11", "Amo.2.12", "Amo.2.13", "Amo.2.14", "Amo.2.15", "Amo.2.16", "Amo.3.1", "Amo.3.2", "Amo.3.3", "Amo.3.4", "Amo.3.5", "Amo.3.6", "Amo.3.7", "Amo.3.8", "Amo.3.9", "Amo.3.10", "Amo.3.11", "Amo.3.12", "Amo.3.13", "Amo.3.14", "Amo.3.15", "Amo.4.1", "Amo.4.2", "Amo.4.3", "Amo.4.4", "Amo.4.5", "Amo.4.6", "Amo.4.7", "Amo.4.8", "Amo.4.9", "Amo.4.10", "Amo.4.11", "Amo.4.12", "Amo.4.13", "Amo.5.1", "Amo.5.2", "Amo.5.3", "Amo.5.4", "Amo.5.5", "Amo.5.6", "Amo.5.7", "Amo.5.8", "Amo.5.9", "Amo.5.10", "Amo.5.11", "Amo.5.12", "Amo.5.13", "Amo.5.14", "Amo.5.15", "Amo.5.16", "Amo.5.17", "Amo.5.18", "Amo.5.19", "Amo.5.20", "Amo.5.21", "Amo.5.22", "Amo.5.23", "Amo.5.24", "Amo.5.25", "Amo.5.26", "Amo.5.27", "Amo.6.1", "Amo.6.2", "Amo.6.3", "Amo.6.4", "Amo.6.5", "Amo.6.6", "Amo.6.7", "Amo.6.8", "Amo.6.9", "Amo.6.10", "Amo.6.11", "Amo.6.12", "Amo.6.13", "Amo.6.14", "Amo.7.1", "Amo.7.2", "Amo.7.3", "Amo.7.4", "Amo.7.5", "Amo.7.6", "Amo.7.7", "Amo.7.8", "Amo.7.9", "Amo.7.10", "Amo.7.11", "Amo.7.12", "Amo.7.13", "Amo.7.14", "Amo.7.15", "Amo.7.16", "Amo.7.17", "Amo.8.1", "Amo.8.2", "Amo.8.3", "Amo.8.4", "Amo.8.5", "Amo.8.6", "Amo.8.7", "Amo.8.8", "Amo.8.9", "Amo.8.10", "Amo.8.11", "Amo.8.12", "Amo.8.13", "Amo.8.14", "Amo.9.1", "Amo.9.2", "Amo.9.3", "Amo.9.4", "Amo.9.5", "Amo.9.6", "Amo.9.7", "Amo.9.8", "Amo.9.9", "Amo.9.10", "Amo.9.11", "Amo.9.12", "Amo.9.13", "Amo.9.14", "Amo.9.15"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Amo.1.1", "Amo.1.2", "Amo.1.3", "Amo.1.4", "Amo.1.5", "Amo.1.6", "Amo.1.7", "Amo.1.8", "Amo.1.9", "Amo.1.10", "Amo.1.11", "Amo.1.12", "Amo.1.13", "Amo.1.14", "Amo.1.15", "Amo.2.1", "Amo.2.2", "Amo.2.3", "Amo.2.4", "Amo.2.5", "Amo.2.6", "Amo.2.7", "Amo.2.8", "Amo.2.9", "Amo.2.10", "Amo.2.11", "Amo.2.12", "Amo.2.13", "Amo.2.14", "Amo.2.15", "Amo.2.16", "Amo.3.1", "Amo.3.2", "Amo.3.3", "Amo.3.4", "Amo.3.5", "Amo.3.6", "Amo.3.7", "Amo.3.8", "Amo.3.9", "Amo.3.10", "Amo.3.11", "Amo.3.12", "Amo.3.13", "Amo.3.14", "Amo.3.15", "Amo.4.1", "Amo.4.2", "Amo.4.3", "Amo.4.4", "Amo.4.5", "Amo.4.6", "Amo.4.7", "Amo.4.8", "Amo.4.9", "Amo.4.10", "Amo.4.11", "Amo.4.12", "Amo.4.13", "Amo.5.1", "Amo.5.2", "Amo.5.3", "Amo.5.4", "Amo.5.5", "Amo.5.6", "Amo.5.7", "Amo.5.8", "Amo.5.9", "Amo.5.10", "Amo.5.11", "Amo.5.12", "Amo.5.13", "Amo.5.14", "Amo.5.15", "Amo.5.16", "Amo.5.17", "Amo.5.18", "Amo.5.19", "Amo.5.20", "Amo.5.21", "Amo.5.22", "Amo.5.23", "Amo.5.24", "Amo.5.25", "Amo.5.26", "Amo.5.27", "Amo.6.1", "Amo.6.2", "Amo.6.3", "Amo.6.4", "Amo.6.5", "Amo.6.6", "Amo.6.7", "Amo.6.8", "Amo.6.9", "Amo.6.10", "Amo.6.11", "Amo.6.12", "Amo.6.13", "Amo.6.14", "Amo.7.1", "Amo.7.2", "Amo.7.3", "Amo.7.4", "Amo.7.5", "Amo.7.6", "Amo.7.7", "Amo.7.8", "Amo.7.9", "Amo.7.10", "Amo.7.11", "Amo.7.12", "Amo.7.13", "Amo.7.14", "Amo.7.15", "Amo.7.16", "Amo.7.17", "Amo.8.1", "Amo.8.2", "Amo.8.3", "Amo.8.4", "Amo.8.5", "Amo.8.6", "Amo.8.7", "Amo.8.8", "Amo.8.9", "Amo.8.10", "Amo.8.11", "Amo.8.12", "Amo.8.13", "Amo.8.14", "Amo.9.1", "Amo.9.2", "Amo.9.3", "Amo.9.4", "Amo.9.5", "Amo.9.6", "Amo.9.7", "Amo.9.8", "Amo.9.9", "Amo.9.10", "Amo.9.11", "Amo.9.12", "Amo.9.13", "Amo.9.14", "Amo.9.15"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

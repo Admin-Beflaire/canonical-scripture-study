@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from ..validation import SCHEMAS, SchemaSubset
 
@@ -29,7 +29,8 @@ KEYS: dict[str, tuple[str, ...]] = {
     'character_statement': ('id',),
 }
 # Shared immutable identities may already be saved; an identical row is kept, a different one fails.
-SHARED = ('source_node', 'text_payload')
+# A component's admission record is the same for every task that acquires it.
+SHARED = ('source_node', 'admission', 'text_payload')
 
 
 class RecordError(ValueError):
@@ -101,6 +102,45 @@ class RecordSet:
                     result.append((f"INSERT INTO {table} ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
                                    values))
         return result
+
+
+_BY_OUTPUT = ('artifact', 'native_span', 'annotation', 'relationship', 'coverage', 'study_package',
+              'character_statement')
+
+
+def scoped_query(kind: str, output_ids: Sequence[str]) -> tuple[str, list[Any]]:
+    """SELECT for the saved `kind` rows that belong to these prepared outputs.
+
+    Quality and checkpoint checks read only their candidate's rows, never whole tables:
+    output-owned rows by output, navigation, members and payloads through their spans or
+    relationships, and source identities through the outputs' input revisions and their
+    ancestry. The query binds each output ID once.
+    """
+    if kind not in KEYS:
+        raise RecordError('Unknown record kind')
+    if not output_ids or any(not isinstance(item, str) for item in output_ids):
+        raise RecordError('Scoped reads need output identities')
+    marks = ','.join('?' for _ in output_ids)
+    table = TABLES[kind]
+    revisions = (f'SELECT value FROM prepared_outputs, json_each(prepared_outputs.input_revisions_json) '
+                 f'WHERE prepared_outputs.id IN ({marks})')
+    if kind == 'prepared_output':
+        where = f'id IN ({marks})'
+    elif kind in _BY_OUTPUT:
+        where = f'output_id IN ({marks})'
+    elif kind == 'span_segment':
+        where = f'span_id IN (SELECT id FROM native_spans WHERE output_id IN ({marks}))'
+    elif kind == 'text_payload':
+        where = f'content_id IN (SELECT content_id FROM native_spans WHERE output_id IN ({marks}))'
+    elif kind == 'relation_member':
+        where = f'relationship_id IN (SELECT id FROM relationships WHERE output_id IN ({marks}))'
+    elif kind == 'admission':
+        where = f'source_revision_id IN ({revisions})'
+    else:  # source_node: the input revisions and every ancestor
+        return (f'SELECT * FROM {table} WHERE id IN (WITH RECURSIVE ancestry(id) AS ({revisions} '
+                f'UNION SELECT s.parent_id FROM {table} s JOIN ancestry a ON s.id = a.id '
+                f'WHERE s.parent_id IS NOT NULL) SELECT id FROM ancestry)', list(output_ids))
+    return f'SELECT * FROM {table} WHERE {where}', list(output_ids)
 
 
 def decoded(rows: Iterable[Any]) -> list[dict[str, Any]]:

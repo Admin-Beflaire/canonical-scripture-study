@@ -1,0 +1,18 @@
+{
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "provider": "STEPBible.org, based on work at Tyndale House Cambridge",
+  "origin": "https://github.com/STEPBible/STEPBible-Data",
+  "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+  "licence": "CC BY 4.0",
+  "licence_basis": "Licence notice at the head of each file: use in software and sending to AI servers are permitted without asking; attribute Tyndale House and STEPBible.org with a link to STEPBible.github.io/STEPBible-Data; note changes made; do not post copies of the data files elsewhere.",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task that acquires a component",
+  "components": [
+    {"component": "tahot-gen-deu", "byte_count": 18190495, "sha256": "7763ef367bb0e6e1c1a95fb9b652e1d611b2481827611433e82abbf229216d70"},
+    {"component": "tahot-jos-est", "byte_count": 24500357, "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7"},
+    {"component": "tahot-job-sng", "byte_count": 9540663, "sha256": "e0416880bb78f46715bb17ce526b623c3051da0ef83f7bf83beaad350e6272e8"},
+    {"component": "tahot-isa-mal", "byte_count": 17977558, "sha256": "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540"},
+    {"component": "tagnt-mat-jhn", "byte_count": 14188364, "sha256": "d4c0c820fdf9f2b450c9f96ce6103d6875028affd2e44094d753f1329ca1fd85"},
+    {"component": "tagnt-act-rev", "byte_count": 15938967, "sha256": "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968"}
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-neh",
+  "revision": "stepbible-tahot-neh/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-jos-est",
+    "path": "Translators Amalgamated OT+NT/TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7",
+    "byte_count": 24500357
+  },
+  "native_extent": {
+    "book": "Neh",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-jos-est"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-jos-est"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Neh.1.1", "Neh.1.2", "Neh.1.3", "Neh.1.4", "Neh.1.5", "Neh.1.6", "Neh.1.7", "Neh.1.8", "Neh.1.9", "Neh.1.10", "Neh.1.11", "Neh.2.1", "Neh.2.2", "Neh.2.3", "Neh.2.4", "Neh.2.5", "Neh.2.6", "Neh.2.7", "Neh.2.8", "Neh.2.9", "Neh.2.10", "Neh.2.11", "Neh.2.12", "Neh.2.13", "Neh.2.14", "Neh.2.15", "Neh.2.16", "Neh.2.17", "Neh.2.18", "Neh.2.19", "Neh.2.20", "Neh.3.1", "Neh.3.2", "Neh.3.3", "Neh.3.4", "Neh.3.5", "Neh.3.6", "Neh.3.7", "Neh.3.8", "Neh.3.9", "Neh.3.10", "Neh.3.11", "Neh.3.12", "Neh.3.13", "Neh.3.14", "Neh.3.15", "Neh.3.16", "Neh.3.17", "Neh.3.18", "Neh.3.19", "Neh.3.20", "Neh.3.21", "Neh.3.22", "Neh.3.23", "Neh.3.24", "Neh.3.25", "Neh.3.26", "Neh.3.27", "Neh.3.28", "Neh.3.29", "Neh.3.30", "Neh.3.31", "Neh.3.32", "Neh.3.33", "Neh.3.34", "Neh.3.35", "Neh.3.36", "Neh.3.37", "Neh.3.38", "Neh.4.1", "Neh.4.2", "Neh.4.3", "Neh.4.4", "Neh.4.5", "Neh.4.6", "Neh.4.7", "Neh.4.8", "Neh.4.9", "Neh.4.10", "Neh.4.11", "Neh.4.12", "Neh.4.13", "Neh.4.14", "Neh.4.15", "Neh.4.16", "Neh.4.17", "Neh.5.1", "Neh.5.2", "Neh.5.3", "Neh.5.4", "Neh.5.5", "Neh.5.6", "Neh.5.7", "Neh.5.8", "Neh.5.9", "Neh.5.10", "Neh.5.11", "Neh.5.12", "Neh.5.13", "Neh.5.14", "Neh.5.15", "Neh.5.16", "Neh.5.17", "Neh.5.18", "Neh.5.19", "Neh.6.1", "Neh.6.2", "Neh.6.3", "Neh.6.4", "Neh.6.5", "Neh.6.6", "Neh.6.7", "Neh.6.8", "Neh.6.9", "Neh.6.10", "Neh.6.11", "Neh.6.12", "Neh.6.13", "Neh.6.14", "Neh.6.15", "Neh.6.16", "Neh.6.17", "Neh.6.18", "Neh.6.19", "Neh.7.1", "Neh.7.2", "Neh.7.3", "Neh.7.4", "Neh.7.5", "Neh.7.6", "Neh.7.7", "Neh.7.8", "Neh.7.9", "Neh.7.10", "Neh.7.11", "Neh.7.12", "Neh.7.13", "Neh.7.14", "Neh.7.15", "Neh.7.16", "Neh.7.17", "Neh.7.18", "Neh.7.19", "Neh.7.20", "Neh.7.21", "Neh.7.22", "Neh.7.23", "Neh.7.24", "Neh.7.25", "Neh.7.26", "Neh.7.27", "Neh.7.28", "Neh.7.29", "Neh.7.30", "Neh.7.31", "Neh.7.32", "Neh.7.33", "Neh.7.34", "Neh.7.35", "Neh.7.36", "Neh.7.37", "Neh.7.38", "Neh.7.39", "Neh.7.40", "Neh.7.41", "Neh.7.42", "Neh.7.43", "Neh.7.44", "Neh.7.45", "Neh.7.46", "Neh.7.47", "Neh.7.48", "Neh.7.49", "Neh.7.50", "Neh.7.51", "Neh.7.52", "Neh.7.53", "Neh.7.54", "Neh.7.55", "Neh.7.56", "Neh.7.57", "Neh.7.58", "Neh.7.59", "Neh.7.60", "Neh.7.61", "Neh.7.62", "Neh.7.63", "Neh.7.64", "Neh.7.65", "Neh.7.66", "Neh.7.67", "Neh.7.68", "Neh.7.69", "Neh.7.70", "Neh.7.71", "Neh.7.72", "Neh.8.1", "Neh.8.2", "Neh.8.3", "Neh.8.4", "Neh.8.5", "Neh.8.6", "Neh.8.7"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-02",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Neh.8.8", "Neh.8.9", "Neh.8.10", "Neh.8.11", "Neh.8.12", "Neh.8.13", "Neh.8.14", "Neh.8.15", "Neh.8.16", "Neh.8.17", "Neh.8.18", "Neh.9.1", "Neh.9.2", "Neh.9.3", "Neh.9.4", "Neh.9.5", "Neh.9.6", "Neh.9.7", "Neh.9.8", "Neh.9.9", "Neh.9.10", "Neh.9.11", "Neh.9.12", "Neh.9.13", "Neh.9.14", "Neh.9.15", "Neh.9.16", "Neh.9.17", "Neh.9.18", "Neh.9.19", "Neh.9.20", "Neh.9.21", "Neh.9.22", "Neh.9.23", "Neh.9.24", "Neh.9.25", "Neh.9.26", "Neh.9.27", "Neh.9.28", "Neh.9.29", "Neh.9.30", "Neh.9.31", "Neh.9.32", "Neh.9.33", "Neh.9.34", "Neh.9.35", "Neh.9.36", "Neh.9.37", "Neh.10.1", "Neh.10.2", "Neh.10.3", "Neh.10.4", "Neh.10.5", "Neh.10.6", "Neh.10.7", "Neh.10.8", "Neh.10.9", "Neh.10.10", "Neh.10.11", "Neh.10.12", "Neh.10.13", "Neh.10.14", "Neh.10.15", "Neh.10.16", "Neh.10.17", "Neh.10.18", "Neh.10.19", "Neh.10.20", "Neh.10.21", "Neh.10.22", "Neh.10.23", "Neh.10.24", "Neh.10.25", "Neh.10.26", "Neh.10.27", "Neh.10.28", "Neh.10.29", "Neh.10.30", "Neh.10.31", "Neh.10.32", "Neh.10.33", "Neh.10.34", "Neh.10.35", "Neh.10.36", "Neh.10.37", "Neh.10.38", "Neh.10.39", "Neh.10.40", "Neh.11.1", "Neh.11.2", "Neh.11.3", "Neh.11.4", "Neh.11.5", "Neh.11.6", "Neh.11.7", "Neh.11.8", "Neh.11.9", "Neh.11.10", "Neh.11.11", "Neh.11.12", "Neh.11.13", "Neh.11.14", "Neh.11.15", "Neh.11.16", "Neh.11.17", "Neh.11.18", "Neh.11.19", "Neh.11.20", "Neh.11.21", "Neh.11.22", "Neh.11.23", "Neh.11.24", "Neh.11.25", "Neh.11.26", "Neh.11.27", "Neh.11.28", "Neh.11.29", "Neh.11.30", "Neh.11.31", "Neh.11.32", "Neh.11.33", "Neh.11.34", "Neh.11.35", "Neh.11.36", "Neh.12.1", "Neh.12.2", "Neh.12.3", "Neh.12.4", "Neh.12.5", "Neh.12.6", "Neh.12.7", "Neh.12.8", "Neh.12.9", "Neh.12.10", "Neh.12.11", "Neh.12.12", "Neh.12.13", "Neh.12.14", "Neh.12.15", "Neh.12.16", "Neh.12.17", "Neh.12.18", "Neh.12.19", "Neh.12.20", "Neh.12.21", "Neh.12.22", "Neh.12.23", "Neh.12.24", "Neh.12.25", "Neh.12.26", "Neh.12.27", "Neh.12.28", "Neh.12.29", "Neh.12.30", "Neh.12.31", "Neh.12.32", "Neh.12.33", "Neh.12.34", "Neh.12.35", "Neh.12.36", "Neh.12.37", "Neh.12.38", "Neh.12.39", "Neh.12.40", "Neh.12.41", "Neh.12.42", "Neh.12.43", "Neh.12.44", "Neh.12.45", "Neh.12.46", "Neh.12.47", "Neh.13.1", "Neh.13.2", "Neh.13.3", "Neh.13.4", "Neh.13.5", "Neh.13.6", "Neh.13.7", "Neh.13.8", "Neh.13.9", "Neh.13.10", "Neh.13.11", "Neh.13.12", "Neh.13.13", "Neh.13.14", "Neh.13.15", "Neh.13.16", "Neh.13.17", "Neh.13.18", "Neh.13.19", "Neh.13.20", "Neh.13.21", "Neh.13.22", "Neh.13.23", "Neh.13.24", "Neh.13.25", "Neh.13.26", "Neh.13.27", "Neh.13.28", "Neh.13.29", "Neh.13.30", "Neh.13.31"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Neh.1.1", "Neh.1.2", "Neh.1.3", "Neh.1.4", "Neh.1.5", "Neh.1.6", "Neh.1.7", "Neh.1.8", "Neh.1.9", "Neh.1.10", "Neh.1.11", "Neh.2.1", "Neh.2.2", "Neh.2.3", "Neh.2.4", "Neh.2.5", "Neh.2.6", "Neh.2.7", "Neh.2.8", "Neh.2.9", "Neh.2.10", "Neh.2.11", "Neh.2.12", "Neh.2.13", "Neh.2.14", "Neh.2.15", "Neh.2.16", "Neh.2.17", "Neh.2.18", "Neh.2.19", "Neh.2.20", "Neh.3.1", "Neh.3.2", "Neh.3.3", "Neh.3.4", "Neh.3.5", "Neh.3.6", "Neh.3.7", "Neh.3.8", "Neh.3.9", "Neh.3.10", "Neh.3.11", "Neh.3.12", "Neh.3.13", "Neh.3.14", "Neh.3.15", "Neh.3.16", "Neh.3.17", "Neh.3.18", "Neh.3.19", "Neh.3.20", "Neh.3.21", "Neh.3.22", "Neh.3.23", "Neh.3.24", "Neh.3.25", "Neh.3.26", "Neh.3.27", "Neh.3.28", "Neh.3.29", "Neh.3.30", "Neh.3.31", "Neh.3.32", "Neh.3.33", "Neh.3.34", "Neh.3.35", "Neh.3.36", "Neh.3.37", "Neh.3.38", "Neh.4.1", "Neh.4.2", "Neh.4.3", "Neh.4.4", "Neh.4.5", "Neh.4.6", "Neh.4.7", "Neh.4.8", "Neh.4.9", "Neh.4.10", "Neh.4.11", "Neh.4.12", "Neh.4.13", "Neh.4.14", "Neh.4.15", "Neh.4.16", "Neh.4.17", "Neh.5.1", "Neh.5.2", "Neh.5.3", "Neh.5.4", "Neh.5.5", "Neh.5.6", "Neh.5.7", "Neh.5.8", "Neh.5.9", "Neh.5.10", "Neh.5.11", "Neh.5.12", "Neh.5.13", "Neh.5.14", "Neh.5.15", "Neh.5.16", "Neh.5.17", "Neh.5.18", "Neh.5.19", "Neh.6.1", "Neh.6.2", "Neh.6.3", "Neh.6.4", "Neh.6.5", "Neh.6.6", "Neh.6.7", "Neh.6.8", "Neh.6.9", "Neh.6.10", "Neh.6.11", "Neh.6.12", "Neh.6.13", "Neh.6.14", "Neh.6.15", "Neh.6.16", "Neh.6.17", "Neh.6.18", "Neh.6.19", "Neh.7.1", "Neh.7.2", "Neh.7.3", "Neh.7.4", "Neh.7.5", "Neh.7.6", "Neh.7.7", "Neh.7.8", "Neh.7.9", "Neh.7.10", "Neh.7.11", "Neh.7.12", "Neh.7.13", "Neh.7.14", "Neh.7.15", "Neh.7.16", "Neh.7.17", "Neh.7.18", "Neh.7.19", "Neh.7.20", "Neh.7.21", "Neh.7.22", "Neh.7.23", "Neh.7.24", "Neh.7.25", "Neh.7.26", "Neh.7.27", "Neh.7.28", "Neh.7.29", "Neh.7.30", "Neh.7.31", "Neh.7.32", "Neh.7.33", "Neh.7.34", "Neh.7.35", "Neh.7.36", "Neh.7.37", "Neh.7.38", "Neh.7.39", "Neh.7.40", "Neh.7.41", "Neh.7.42", "Neh.7.43", "Neh.7.44", "Neh.7.45", "Neh.7.46", "Neh.7.47", "Neh.7.48", "Neh.7.49", "Neh.7.50", "Neh.7.51", "Neh.7.52", "Neh.7.53", "Neh.7.54", "Neh.7.55", "Neh.7.56", "Neh.7.57", "Neh.7.58", "Neh.7.59", "Neh.7.60", "Neh.7.61", "Neh.7.62", "Neh.7.63", "Neh.7.64", "Neh.7.65", "Neh.7.66", "Neh.7.67", "Neh.7.68", "Neh.7.69", "Neh.7.70", "Neh.7.71", "Neh.7.72", "Neh.8.1", "Neh.8.2", "Neh.8.3", "Neh.8.4", "Neh.8.5", "Neh.8.6", "Neh.8.7", "Neh.8.8", "Neh.8.9", "Neh.8.10", "Neh.8.11", "Neh.8.12", "Neh.8.13", "Neh.8.14", "Neh.8.15", "Neh.8.16", "Neh.8.17", "Neh.8.18", "Neh.9.1", "Neh.9.2", "Neh.9.3", "Neh.9.4", "Neh.9.5", "Neh.9.6", "Neh.9.7", "Neh.9.8", "Neh.9.9", "Neh.9.10", "Neh.9.11", "Neh.9.12", "Neh.9.13", "Neh.9.14", "Neh.9.15", "Neh.9.16", "Neh.9.17", "Neh.9.18", "Neh.9.19", "Neh.9.20", "Neh.9.21", "Neh.9.22", "Neh.9.23", "Neh.9.24", "Neh.9.25", "Neh.9.26", "Neh.9.27", "Neh.9.28", "Neh.9.29", "Neh.9.30", "Neh.9.31", "Neh.9.32", "Neh.9.33", "Neh.9.34", "Neh.9.35", "Neh.9.36", "Neh.9.37", "Neh.10.1", "Neh.10.2", "Neh.10.3", "Neh.10.4", "Neh.10.5", "Neh.10.6", "Neh.10.7", "Neh.10.8", "Neh.10.9", "Neh.10.10", "Neh.10.11", "Neh.10.12", "Neh.10.13", "Neh.10.14", "Neh.10.15", "Neh.10.16", "Neh.10.17", "Neh.10.18", "Neh.10.19", "Neh.10.20", "Neh.10.21", "Neh.10.22", "Neh.10.23", "Neh.10.24", "Neh.10.25", "Neh.10.26", "Neh.10.27", "Neh.10.28", "Neh.10.29", "Neh.10.30", "Neh.10.31", "Neh.10.32", "Neh.10.33", "Neh.10.34", "Neh.10.35", "Neh.10.36", "Neh.10.37", "Neh.10.38", "Neh.10.39", "Neh.10.40", "Neh.11.1", "Neh.11.2", "Neh.11.3", "Neh.11.4", "Neh.11.5", "Neh.11.6", "Neh.11.7", "Neh.11.8", "Neh.11.9", "Neh.11.10", "Neh.11.11", "Neh.11.12", "Neh.11.13", "Neh.11.14", "Neh.11.15", "Neh.11.16", "Neh.11.17", "Neh.11.18", "Neh.11.19", "Neh.11.20", "Neh.11.21", "Neh.11.22", "Neh.11.23", "Neh.11.24", "Neh.11.25", "Neh.11.26", "Neh.11.27", "Neh.11.28", "Neh.11.29", "Neh.11.30", "Neh.11.31", "Neh.11.32", "Neh.11.33", "Neh.11.34", "Neh.11.35", "Neh.11.36", "Neh.12.1", "Neh.12.2", "Neh.12.3", "Neh.12.4", "Neh.12.5", "Neh.12.6", "Neh.12.7", "Neh.12.8", "Neh.12.9", "Neh.12.10", "Neh.12.11", "Neh.12.12", "Neh.12.13", "Neh.12.14", "Neh.12.15", "Neh.12.16", "Neh.12.17", "Neh.12.18", "Neh.12.19", "Neh.12.20", "Neh.12.21", "Neh.12.22", "Neh.12.23", "Neh.12.24", "Neh.12.25", "Neh.12.26", "Neh.12.27", "Neh.12.28", "Neh.12.29", "Neh.12.30", "Neh.12.31", "Neh.12.32", "Neh.12.33", "Neh.12.34", "Neh.12.35", "Neh.12.36", "Neh.12.37", "Neh.12.38", "Neh.12.39", "Neh.12.40", "Neh.12.41", "Neh.12.42", "Neh.12.43", "Neh.12.44", "Neh.12.45", "Neh.12.46", "Neh.12.47", "Neh.13.1", "Neh.13.2", "Neh.13.3", "Neh.13.4", "Neh.13.5", "Neh.13.6", "Neh.13.7", "Neh.13.8", "Neh.13.9", "Neh.13.10", "Neh.13.11", "Neh.13.12", "Neh.13.13", "Neh.13.14", "Neh.13.15", "Neh.13.16", "Neh.13.17", "Neh.13.18", "Neh.13.19", "Neh.13.20", "Neh.13.21", "Neh.13.22", "Neh.13.23", "Neh.13.24", "Neh.13.25", "Neh.13.26", "Neh.13.27", "Neh.13.28", "Neh.13.29", "Neh.13.30", "Neh.13.31"]
+      },
+      "depends_on": [
+        "prepare-01",
+        "prepare-02"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

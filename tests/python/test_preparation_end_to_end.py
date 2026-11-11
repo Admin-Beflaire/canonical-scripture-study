@@ -111,7 +111,7 @@ class PreparationIntegratedStageSix(unittest.TestCase):
             for sql, values in statements:
                 self.db.execute(sql, values)
 
-    def rows(self, kind):
+    def rows(self, kind, *_):
         return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
 
     def row(self, kind, identity):

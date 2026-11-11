@@ -1,0 +1,84 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-dan",
+  "revision": "stepbible-tahot-dan/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-isa-mal",
+    "path": "Translators Amalgamated OT+NT/TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540",
+    "byte_count": 17977558
+  },
+  "native_extent": {
+    "book": "Dan",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-isa-mal"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-isa-mal"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Dan.1.1", "Dan.1.2", "Dan.1.3", "Dan.1.4", "Dan.1.5", "Dan.1.6", "Dan.1.7", "Dan.1.8", "Dan.1.9", "Dan.1.10", "Dan.1.11", "Dan.1.12", "Dan.1.13", "Dan.1.14", "Dan.1.15", "Dan.1.16", "Dan.1.17", "Dan.1.18", "Dan.1.19", "Dan.1.20", "Dan.1.21", "Dan.2.1", "Dan.2.2", "Dan.2.3", "Dan.2.4", "Dan.2.5", "Dan.2.6", "Dan.2.7", "Dan.2.8", "Dan.2.9", "Dan.2.10", "Dan.2.11", "Dan.2.12", "Dan.2.13", "Dan.2.14", "Dan.2.15", "Dan.2.16", "Dan.2.17", "Dan.2.18", "Dan.2.19", "Dan.2.20", "Dan.2.21", "Dan.2.22", "Dan.2.23", "Dan.2.24", "Dan.2.25", "Dan.2.26", "Dan.2.27", "Dan.2.28", "Dan.2.29", "Dan.2.30", "Dan.2.31", "Dan.2.32", "Dan.2.33", "Dan.2.34", "Dan.2.35", "Dan.2.36", "Dan.2.37", "Dan.2.38", "Dan.2.39", "Dan.2.40", "Dan.2.41", "Dan.2.42", "Dan.2.43", "Dan.2.44", "Dan.2.45", "Dan.2.46", "Dan.2.47", "Dan.2.48", "Dan.2.49", "Dan.3.1", "Dan.3.2", "Dan.3.3", "Dan.3.4", "Dan.3.5", "Dan.3.6", "Dan.3.7", "Dan.3.8", "Dan.3.9", "Dan.3.10", "Dan.3.11", "Dan.3.12", "Dan.3.13", "Dan.3.14", "Dan.3.15", "Dan.3.16", "Dan.3.17", "Dan.3.18", "Dan.3.19", "Dan.3.20", "Dan.3.21", "Dan.3.22", "Dan.3.23", "Dan.3.24", "Dan.3.25", "Dan.3.26", "Dan.3.27", "Dan.3.28", "Dan.3.29", "Dan.3.30", "Dan.3.31", "Dan.3.32", "Dan.3.33", "Dan.4.1", "Dan.4.2", "Dan.4.3", "Dan.4.4", "Dan.4.5", "Dan.4.6", "Dan.4.7", "Dan.4.8", "Dan.4.9", "Dan.4.10", "Dan.4.11", "Dan.4.12", "Dan.4.13", "Dan.4.14", "Dan.4.15", "Dan.4.16", "Dan.4.17", "Dan.4.18", "Dan.4.19", "Dan.4.20", "Dan.4.21", "Dan.4.22", "Dan.4.23", "Dan.4.24", "Dan.4.25", "Dan.4.26", "Dan.4.27", "Dan.4.28", "Dan.4.29", "Dan.4.30", "Dan.4.31", "Dan.4.32", "Dan.4.33", "Dan.4.34", "Dan.5.1", "Dan.5.2", "Dan.5.3", "Dan.5.4", "Dan.5.5", "Dan.5.6", "Dan.5.7", "Dan.5.8", "Dan.5.9", "Dan.5.10", "Dan.5.11", "Dan.5.12", "Dan.5.13", "Dan.5.14", "Dan.5.15", "Dan.5.16", "Dan.5.17", "Dan.5.18", "Dan.5.19", "Dan.5.20", "Dan.5.21", "Dan.5.22", "Dan.5.23", "Dan.5.24", "Dan.5.25", "Dan.5.26", "Dan.5.27", "Dan.5.28", "Dan.5.29", "Dan.5.30", "Dan.6.1", "Dan.6.2", "Dan.6.3", "Dan.6.4", "Dan.6.5", "Dan.6.6", "Dan.6.7", "Dan.6.8", "Dan.6.9", "Dan.6.10", "Dan.6.11", "Dan.6.12"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-02",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Dan.6.13", "Dan.6.14", "Dan.6.15", "Dan.6.16", "Dan.6.17", "Dan.6.18", "Dan.6.19", "Dan.6.20", "Dan.6.21", "Dan.6.22", "Dan.6.23", "Dan.6.24", "Dan.6.25", "Dan.6.26", "Dan.6.27", "Dan.6.28", "Dan.6.29", "Dan.7.1", "Dan.7.2", "Dan.7.3", "Dan.7.4", "Dan.7.5", "Dan.7.6", "Dan.7.7", "Dan.7.8", "Dan.7.9", "Dan.7.10", "Dan.7.11", "Dan.7.12", "Dan.7.13", "Dan.7.14", "Dan.7.15", "Dan.7.16", "Dan.7.17", "Dan.7.18", "Dan.7.19", "Dan.7.20", "Dan.7.21", "Dan.7.22", "Dan.7.23", "Dan.7.24", "Dan.7.25", "Dan.7.26", "Dan.7.27", "Dan.7.28", "Dan.8.1", "Dan.8.2", "Dan.8.3", "Dan.8.4", "Dan.8.5", "Dan.8.6", "Dan.8.7", "Dan.8.8", "Dan.8.9", "Dan.8.10", "Dan.8.11", "Dan.8.12", "Dan.8.13", "Dan.8.14", "Dan.8.15", "Dan.8.16", "Dan.8.17", "Dan.8.18", "Dan.8.19", "Dan.8.20", "Dan.8.21", "Dan.8.22", "Dan.8.23", "Dan.8.24", "Dan.8.25", "Dan.8.26", "Dan.8.27", "Dan.9.1", "Dan.9.2", "Dan.9.3", "Dan.9.4", "Dan.9.5", "Dan.9.6", "Dan.9.7", "Dan.9.8", "Dan.9.9", "Dan.9.10", "Dan.9.11", "Dan.9.12", "Dan.9.13", "Dan.9.14", "Dan.9.15", "Dan.9.16", "Dan.9.17", "Dan.9.18", "Dan.9.19", "Dan.9.20", "Dan.9.21", "Dan.9.22", "Dan.9.23", "Dan.9.24", "Dan.9.25", "Dan.9.26", "Dan.9.27", "Dan.10.1", "Dan.10.2", "Dan.10.3", "Dan.10.4", "Dan.10.5", "Dan.10.6", "Dan.10.7", "Dan.10.8", "Dan.10.9", "Dan.10.10", "Dan.10.11", "Dan.10.12", "Dan.10.13", "Dan.10.14", "Dan.10.15", "Dan.10.16", "Dan.10.17", "Dan.10.18", "Dan.10.19", "Dan.10.20", "Dan.10.21", "Dan.11.1", "Dan.11.2", "Dan.11.3", "Dan.11.4", "Dan.11.5", "Dan.11.6", "Dan.11.7", "Dan.11.8", "Dan.11.9", "Dan.11.10", "Dan.11.11", "Dan.11.12", "Dan.11.13", "Dan.11.14", "Dan.11.15", "Dan.11.16", "Dan.11.17", "Dan.11.18", "Dan.11.19", "Dan.11.20", "Dan.11.21", "Dan.11.22", "Dan.11.23", "Dan.11.24", "Dan.11.25", "Dan.11.26", "Dan.11.27", "Dan.11.28", "Dan.11.29", "Dan.11.30", "Dan.11.31", "Dan.11.32", "Dan.11.33", "Dan.11.34", "Dan.11.35", "Dan.11.36", "Dan.11.37", "Dan.11.38", "Dan.11.39", "Dan.11.40", "Dan.11.41", "Dan.11.42", "Dan.11.43", "Dan.11.44", "Dan.11.45", "Dan.12.1", "Dan.12.2", "Dan.12.3", "Dan.12.4", "Dan.12.5", "Dan.12.6", "Dan.12.7", "Dan.12.8", "Dan.12.9", "Dan.12.10", "Dan.12.11", "Dan.12.12", "Dan.12.13"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Dan.1.1", "Dan.1.2", "Dan.1.3", "Dan.1.4", "Dan.1.5", "Dan.1.6", "Dan.1.7", "Dan.1.8", "Dan.1.9", "Dan.1.10", "Dan.1.11", "Dan.1.12", "Dan.1.13", "Dan.1.14", "Dan.1.15", "Dan.1.16", "Dan.1.17", "Dan.1.18", "Dan.1.19", "Dan.1.20", "Dan.1.21", "Dan.2.1", "Dan.2.2", "Dan.2.3", "Dan.2.4", "Dan.2.5", "Dan.2.6", "Dan.2.7", "Dan.2.8", "Dan.2.9", "Dan.2.10", "Dan.2.11", "Dan.2.12", "Dan.2.13", "Dan.2.14", "Dan.2.15", "Dan.2.16", "Dan.2.17", "Dan.2.18", "Dan.2.19", "Dan.2.20", "Dan.2.21", "Dan.2.22", "Dan.2.23", "Dan.2.24", "Dan.2.25", "Dan.2.26", "Dan.2.27", "Dan.2.28", "Dan.2.29", "Dan.2.30", "Dan.2.31", "Dan.2.32", "Dan.2.33", "Dan.2.34", "Dan.2.35", "Dan.2.36", "Dan.2.37", "Dan.2.38", "Dan.2.39", "Dan.2.40", "Dan.2.41", "Dan.2.42", "Dan.2.43", "Dan.2.44", "Dan.2.45", "Dan.2.46", "Dan.2.47", "Dan.2.48", "Dan.2.49", "Dan.3.1", "Dan.3.2", "Dan.3.3", "Dan.3.4", "Dan.3.5", "Dan.3.6", "Dan.3.7", "Dan.3.8", "Dan.3.9", "Dan.3.10", "Dan.3.11", "Dan.3.12", "Dan.3.13", "Dan.3.14", "Dan.3.15", "Dan.3.16", "Dan.3.17", "Dan.3.18", "Dan.3.19", "Dan.3.20", "Dan.3.21", "Dan.3.22", "Dan.3.23", "Dan.3.24", "Dan.3.25", "Dan.3.26", "Dan.3.27", "Dan.3.28", "Dan.3.29", "Dan.3.30", "Dan.3.31", "Dan.3.32", "Dan.3.33", "Dan.4.1", "Dan.4.2", "Dan.4.3", "Dan.4.4", "Dan.4.5", "Dan.4.6", "Dan.4.7", "Dan.4.8", "Dan.4.9", "Dan.4.10", "Dan.4.11", "Dan.4.12", "Dan.4.13", "Dan.4.14", "Dan.4.15", "Dan.4.16", "Dan.4.17", "Dan.4.18", "Dan.4.19", "Dan.4.20", "Dan.4.21", "Dan.4.22", "Dan.4.23", "Dan.4.24", "Dan.4.25", "Dan.4.26", "Dan.4.27", "Dan.4.28", "Dan.4.29", "Dan.4.30", "Dan.4.31", "Dan.4.32", "Dan.4.33", "Dan.4.34", "Dan.5.1", "Dan.5.2", "Dan.5.3", "Dan.5.4", "Dan.5.5", "Dan.5.6", "Dan.5.7", "Dan.5.8", "Dan.5.9", "Dan.5.10", "Dan.5.11", "Dan.5.12", "Dan.5.13", "Dan.5.14", "Dan.5.15", "Dan.5.16", "Dan.5.17", "Dan.5.18", "Dan.5.19", "Dan.5.20", "Dan.5.21", "Dan.5.22", "Dan.5.23", "Dan.5.24", "Dan.5.25", "Dan.5.26", "Dan.5.27", "Dan.5.28", "Dan.5.29", "Dan.5.30", "Dan.6.1", "Dan.6.2", "Dan.6.3", "Dan.6.4", "Dan.6.5", "Dan.6.6", "Dan.6.7", "Dan.6.8", "Dan.6.9", "Dan.6.10", "Dan.6.11", "Dan.6.12", "Dan.6.13", "Dan.6.14", "Dan.6.15", "Dan.6.16", "Dan.6.17", "Dan.6.18", "Dan.6.19", "Dan.6.20", "Dan.6.21", "Dan.6.22", "Dan.6.23", "Dan.6.24", "Dan.6.25", "Dan.6.26", "Dan.6.27", "Dan.6.28", "Dan.6.29", "Dan.7.1", "Dan.7.2", "Dan.7.3", "Dan.7.4", "Dan.7.5", "Dan.7.6", "Dan.7.7", "Dan.7.8", "Dan.7.9", "Dan.7.10", "Dan.7.11", "Dan.7.12", "Dan.7.13", "Dan.7.14", "Dan.7.15", "Dan.7.16", "Dan.7.17", "Dan.7.18", "Dan.7.19", "Dan.7.20", "Dan.7.21", "Dan.7.22", "Dan.7.23", "Dan.7.24", "Dan.7.25", "Dan.7.26", "Dan.7.27", "Dan.7.28", "Dan.8.1", "Dan.8.2", "Dan.8.3", "Dan.8.4", "Dan.8.5", "Dan.8.6", "Dan.8.7", "Dan.8.8", "Dan.8.9", "Dan.8.10", "Dan.8.11", "Dan.8.12", "Dan.8.13", "Dan.8.14", "Dan.8.15", "Dan.8.16", "Dan.8.17", "Dan.8.18", "Dan.8.19", "Dan.8.20", "Dan.8.21", "Dan.8.22", "Dan.8.23", "Dan.8.24", "Dan.8.25", "Dan.8.26", "Dan.8.27", "Dan.9.1", "Dan.9.2", "Dan.9.3", "Dan.9.4", "Dan.9.5", "Dan.9.6", "Dan.9.7", "Dan.9.8", "Dan.9.9", "Dan.9.10", "Dan.9.11", "Dan.9.12", "Dan.9.13", "Dan.9.14", "Dan.9.15", "Dan.9.16", "Dan.9.17", "Dan.9.18", "Dan.9.19", "Dan.9.20", "Dan.9.21", "Dan.9.22", "Dan.9.23", "Dan.9.24", "Dan.9.25", "Dan.9.26", "Dan.9.27", "Dan.10.1", "Dan.10.2", "Dan.10.3", "Dan.10.4", "Dan.10.5", "Dan.10.6", "Dan.10.7", "Dan.10.8", "Dan.10.9", "Dan.10.10", "Dan.10.11", "Dan.10.12", "Dan.10.13", "Dan.10.14", "Dan.10.15", "Dan.10.16", "Dan.10.17", "Dan.10.18", "Dan.10.19", "Dan.10.20", "Dan.10.21", "Dan.11.1", "Dan.11.2", "Dan.11.3", "Dan.11.4", "Dan.11.5", "Dan.11.6", "Dan.11.7", "Dan.11.8", "Dan.11.9", "Dan.11.10", "Dan.11.11", "Dan.11.12", "Dan.11.13", "Dan.11.14", "Dan.11.15", "Dan.11.16", "Dan.11.17", "Dan.11.18", "Dan.11.19", "Dan.11.20", "Dan.11.21", "Dan.11.22", "Dan.11.23", "Dan.11.24", "Dan.11.25", "Dan.11.26", "Dan.11.27", "Dan.11.28", "Dan.11.29", "Dan.11.30", "Dan.11.31", "Dan.11.32", "Dan.11.33", "Dan.11.34", "Dan.11.35", "Dan.11.36", "Dan.11.37", "Dan.11.38", "Dan.11.39", "Dan.11.40", "Dan.11.41", "Dan.11.42", "Dan.11.43", "Dan.11.44", "Dan.11.45", "Dan.12.1", "Dan.12.2", "Dan.12.3", "Dan.12.4", "Dan.12.5", "Dan.12.6", "Dan.12.7", "Dan.12.8", "Dan.12.9", "Dan.12.10", "Dan.12.11", "Dan.12.12", "Dan.12.13"]
+      },
+      "depends_on": [
+        "prepare-01",
+        "prepare-02"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

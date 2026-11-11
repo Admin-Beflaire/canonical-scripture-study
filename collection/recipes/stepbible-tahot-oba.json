@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-oba",
+  "revision": "stepbible-tahot-oba/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-isa-mal",
+    "path": "Translators Amalgamated OT+NT/TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540",
+    "byte_count": 17977558
+  },
+  "native_extent": {
+    "book": "Oba",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-isa-mal"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-isa-mal"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Oba.1.1", "Oba.1.2", "Oba.1.3", "Oba.1.4", "Oba.1.5", "Oba.1.6", "Oba.1.7", "Oba.1.8", "Oba.1.9", "Oba.1.10", "Oba.1.11", "Oba.1.12", "Oba.1.13", "Oba.1.14", "Oba.1.15", "Oba.1.16", "Oba.1.17", "Oba.1.18", "Oba.1.19", "Oba.1.20", "Oba.1.21"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Oba.1.1", "Oba.1.2", "Oba.1.3", "Oba.1.4", "Oba.1.5", "Oba.1.6", "Oba.1.7", "Oba.1.8", "Oba.1.9", "Oba.1.10", "Oba.1.11", "Oba.1.12", "Oba.1.13", "Oba.1.14", "Oba.1.15", "Oba.1.16", "Oba.1.17", "Oba.1.18", "Oba.1.19", "Oba.1.20", "Oba.1.21"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

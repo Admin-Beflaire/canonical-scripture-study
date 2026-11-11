@@ -1,0 +1,96 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-jos",
+  "revision": "stepbible-tahot-jos/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-jos-est",
+    "path": "Translators Amalgamated OT+NT/TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7",
+    "byte_count": 24500357
+  },
+  "native_extent": {
+    "book": "Jos",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-jos-est"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-jos-est"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jos.1.1", "Jos.1.2", "Jos.1.3", "Jos.1.4", "Jos.1.5", "Jos.1.6", "Jos.1.7", "Jos.1.8", "Jos.1.9", "Jos.1.10", "Jos.1.11", "Jos.1.12", "Jos.1.13", "Jos.1.14", "Jos.1.15", "Jos.1.16", "Jos.1.17", "Jos.1.18", "Jos.2.1", "Jos.2.2", "Jos.2.3", "Jos.2.4", "Jos.2.5", "Jos.2.6", "Jos.2.7", "Jos.2.8", "Jos.2.9", "Jos.2.10", "Jos.2.11", "Jos.2.12", "Jos.2.13", "Jos.2.14", "Jos.2.15", "Jos.2.16", "Jos.2.17", "Jos.2.18", "Jos.2.19", "Jos.2.20", "Jos.2.21", "Jos.2.22", "Jos.2.23", "Jos.2.24", "Jos.3.1", "Jos.3.2", "Jos.3.3", "Jos.3.4", "Jos.3.5", "Jos.3.6", "Jos.3.7", "Jos.3.8", "Jos.3.9", "Jos.3.10", "Jos.3.11", "Jos.3.12", "Jos.3.13", "Jos.3.14", "Jos.3.15", "Jos.3.16", "Jos.3.17", "Jos.4.1", "Jos.4.2", "Jos.4.3", "Jos.4.4", "Jos.4.5", "Jos.4.6", "Jos.4.7", "Jos.4.8", "Jos.4.9", "Jos.4.10", "Jos.4.11", "Jos.4.12", "Jos.4.13", "Jos.4.14", "Jos.4.15", "Jos.4.16", "Jos.4.17", "Jos.4.18", "Jos.4.19", "Jos.4.20", "Jos.4.21", "Jos.4.22", "Jos.4.23", "Jos.4.24", "Jos.5.1", "Jos.5.2", "Jos.5.3", "Jos.5.4", "Jos.5.5", "Jos.5.6", "Jos.5.7", "Jos.5.8", "Jos.5.9", "Jos.5.10", "Jos.5.11", "Jos.5.12", "Jos.5.13", "Jos.5.14", "Jos.5.15", "Jos.6.1", "Jos.6.2", "Jos.6.3", "Jos.6.4", "Jos.6.5", "Jos.6.6", "Jos.6.7", "Jos.6.8", "Jos.6.9", "Jos.6.10", "Jos.6.11", "Jos.6.12", "Jos.6.13", "Jos.6.14", "Jos.6.15", "Jos.6.16", "Jos.6.17", "Jos.6.18", "Jos.6.19", "Jos.6.20", "Jos.6.21", "Jos.6.22", "Jos.6.23", "Jos.6.24", "Jos.6.25", "Jos.6.26", "Jos.6.27", "Jos.7.1", "Jos.7.2", "Jos.7.3", "Jos.7.4", "Jos.7.5", "Jos.7.6", "Jos.7.7", "Jos.7.8", "Jos.7.9", "Jos.7.10", "Jos.7.11", "Jos.7.12", "Jos.7.13", "Jos.7.14", "Jos.7.15", "Jos.7.16", "Jos.7.17", "Jos.7.18", "Jos.7.19", "Jos.7.20", "Jos.7.21", "Jos.7.22", "Jos.7.23", "Jos.7.24", "Jos.7.25", "Jos.7.26", "Jos.8.1", "Jos.8.2", "Jos.8.3", "Jos.8.4", "Jos.8.5", "Jos.8.6", "Jos.8.7", "Jos.8.8", "Jos.8.9", "Jos.8.10", "Jos.8.11", "Jos.8.12", "Jos.8.13", "Jos.8.14", "Jos.8.15", "Jos.8.16", "Jos.8.17", "Jos.8.18", "Jos.8.19", "Jos.8.20", "Jos.8.21", "Jos.8.22", "Jos.8.23", "Jos.8.24", "Jos.8.25", "Jos.8.26", "Jos.8.27", "Jos.8.28", "Jos.8.29", "Jos.8.30", "Jos.8.31", "Jos.8.32", "Jos.8.33", "Jos.8.34", "Jos.8.35", "Jos.9.1", "Jos.9.2", "Jos.9.3", "Jos.9.4", "Jos.9.5", "Jos.9.6", "Jos.9.7", "Jos.9.8", "Jos.9.9", "Jos.9.10", "Jos.9.11", "Jos.9.12", "Jos.9.13", "Jos.9.14", "Jos.9.15", "Jos.9.16", "Jos.9.17", "Jos.9.18", "Jos.9.19", "Jos.9.20", "Jos.9.21", "Jos.9.22", "Jos.9.23", "Jos.9.24", "Jos.9.25", "Jos.9.26", "Jos.9.27", "Jos.10.1", "Jos.10.2", "Jos.10.3", "Jos.10.4", "Jos.10.5", "Jos.10.6", "Jos.10.7"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-02",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jos.10.8", "Jos.10.9", "Jos.10.10", "Jos.10.11", "Jos.10.12", "Jos.10.13", "Jos.10.14", "Jos.10.15", "Jos.10.16", "Jos.10.17", "Jos.10.18", "Jos.10.19", "Jos.10.20", "Jos.10.21", "Jos.10.22", "Jos.10.23", "Jos.10.24", "Jos.10.25", "Jos.10.26", "Jos.10.27", "Jos.10.28", "Jos.10.29", "Jos.10.30", "Jos.10.31", "Jos.10.32", "Jos.10.33", "Jos.10.34", "Jos.10.35", "Jos.10.36", "Jos.10.37", "Jos.10.38", "Jos.10.39", "Jos.10.40", "Jos.10.41", "Jos.10.42", "Jos.10.43", "Jos.11.1", "Jos.11.2", "Jos.11.3", "Jos.11.4", "Jos.11.5", "Jos.11.6", "Jos.11.7", "Jos.11.8", "Jos.11.9", "Jos.11.10", "Jos.11.11", "Jos.11.12", "Jos.11.13", "Jos.11.14", "Jos.11.15", "Jos.11.16", "Jos.11.17", "Jos.11.18", "Jos.11.19", "Jos.11.20", "Jos.11.21", "Jos.11.22", "Jos.11.23", "Jos.12.1", "Jos.12.2", "Jos.12.3", "Jos.12.4", "Jos.12.5", "Jos.12.6", "Jos.12.7", "Jos.12.8", "Jos.12.9", "Jos.12.10", "Jos.12.11", "Jos.12.12", "Jos.12.13", "Jos.12.14", "Jos.12.15", "Jos.12.16", "Jos.12.17", "Jos.12.18", "Jos.12.19", "Jos.12.20", "Jos.12.21", "Jos.12.22", "Jos.12.23", "Jos.12.24", "Jos.13.1", "Jos.13.2", "Jos.13.3", "Jos.13.4", "Jos.13.5", "Jos.13.6", "Jos.13.7", "Jos.13.8", "Jos.13.9", "Jos.13.10", "Jos.13.11", "Jos.13.12", "Jos.13.13", "Jos.13.14", "Jos.13.15", "Jos.13.16", "Jos.13.17", "Jos.13.18", "Jos.13.19", "Jos.13.20", "Jos.13.21", "Jos.13.22", "Jos.13.23", "Jos.13.24", "Jos.13.25", "Jos.13.26", "Jos.13.27", "Jos.13.28", "Jos.13.29", "Jos.13.30", "Jos.13.31", "Jos.13.32", "Jos.13.33", "Jos.14.1", "Jos.14.2", "Jos.14.3", "Jos.14.4", "Jos.14.5", "Jos.14.6", "Jos.14.7", "Jos.14.8", "Jos.14.9", "Jos.14.10", "Jos.14.11", "Jos.14.12", "Jos.14.13", "Jos.14.14", "Jos.14.15", "Jos.15.1", "Jos.15.2", "Jos.15.3", "Jos.15.4", "Jos.15.5", "Jos.15.6", "Jos.15.7", "Jos.15.8", "Jos.15.9", "Jos.15.10", "Jos.15.11", "Jos.15.12", "Jos.15.13", "Jos.15.14", "Jos.15.15", "Jos.15.16", "Jos.15.17", "Jos.15.18", "Jos.15.19", "Jos.15.20", "Jos.15.21", "Jos.15.22", "Jos.15.23", "Jos.15.24", "Jos.15.25", "Jos.15.26", "Jos.15.27", "Jos.15.28", "Jos.15.29", "Jos.15.30", "Jos.15.31", "Jos.15.32", "Jos.15.33", "Jos.15.34", "Jos.15.35", "Jos.15.36", "Jos.15.37", "Jos.15.38", "Jos.15.39", "Jos.15.40", "Jos.15.41", "Jos.15.42", "Jos.15.43", "Jos.15.44", "Jos.15.45", "Jos.15.46", "Jos.15.47", "Jos.15.48", "Jos.15.49", "Jos.15.50", "Jos.15.51", "Jos.15.52", "Jos.15.53", "Jos.15.54", "Jos.15.55", "Jos.15.56", "Jos.15.57", "Jos.15.58", "Jos.15.59", "Jos.15.60", "Jos.15.61", "Jos.15.62", "Jos.15.63", "Jos.16.1", "Jos.16.2", "Jos.16.3", "Jos.16.4", "Jos.16.5", "Jos.16.6", "Jos.16.7", "Jos.16.8", "Jos.16.9", "Jos.16.10", "Jos.17.1", "Jos.17.2", "Jos.17.3", "Jos.17.4", "Jos.17.5", "Jos.17.6", "Jos.17.7", "Jos.17.8", "Jos.17.9", "Jos.17.10", "Jos.17.11", "Jos.17.12", "Jos.17.13", "Jos.17.14", "Jos.17.15", "Jos.17.16"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-03",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jos.17.17", "Jos.17.18", "Jos.18.1", "Jos.18.2", "Jos.18.3", "Jos.18.4", "Jos.18.5", "Jos.18.6", "Jos.18.7", "Jos.18.8", "Jos.18.9", "Jos.18.10", "Jos.18.11", "Jos.18.12", "Jos.18.13", "Jos.18.14", "Jos.18.15", "Jos.18.16", "Jos.18.17", "Jos.18.18", "Jos.18.19", "Jos.18.20", "Jos.18.21", "Jos.18.22", "Jos.18.23", "Jos.18.24", "Jos.18.25", "Jos.18.26", "Jos.18.27", "Jos.18.28", "Jos.19.1", "Jos.19.2", "Jos.19.3", "Jos.19.4", "Jos.19.5", "Jos.19.6", "Jos.19.7", "Jos.19.8", "Jos.19.9", "Jos.19.10", "Jos.19.11", "Jos.19.12", "Jos.19.13", "Jos.19.14", "Jos.19.15", "Jos.19.16", "Jos.19.17", "Jos.19.18", "Jos.19.19", "Jos.19.20", "Jos.19.21", "Jos.19.22", "Jos.19.23", "Jos.19.24", "Jos.19.25", "Jos.19.26", "Jos.19.27", "Jos.19.28", "Jos.19.29", "Jos.19.30", "Jos.19.31", "Jos.19.32", "Jos.19.33", "Jos.19.34", "Jos.19.35", "Jos.19.36", "Jos.19.37", "Jos.19.38", "Jos.19.39", "Jos.19.40", "Jos.19.41", "Jos.19.42", "Jos.19.43", "Jos.19.44", "Jos.19.45", "Jos.19.46", "Jos.19.47", "Jos.19.48", "Jos.19.49", "Jos.19.50", "Jos.19.51", "Jos.20.1", "Jos.20.2", "Jos.20.3", "Jos.20.4", "Jos.20.5", "Jos.20.6", "Jos.20.7", "Jos.20.8", "Jos.20.9", "Jos.21.1", "Jos.21.2", "Jos.21.3", "Jos.21.4", "Jos.21.5", "Jos.21.6", "Jos.21.7", "Jos.21.8", "Jos.21.9", "Jos.21.10", "Jos.21.11", "Jos.21.12", "Jos.21.13", "Jos.21.14", "Jos.21.15", "Jos.21.16", "Jos.21.17", "Jos.21.18", "Jos.21.19", "Jos.21.20", "Jos.21.21", "Jos.21.22", "Jos.21.23", "Jos.21.24", "Jos.21.25", "Jos.21.26", "Jos.21.27", "Jos.21.28", "Jos.21.29", "Jos.21.30", "Jos.21.31", "Jos.21.32", "Jos.21.33", "Jos.21.34", "Jos.21.35", "Jos.21.36", "Jos.21.37", "Jos.21.38", "Jos.21.39", "Jos.21.40", "Jos.21.41", "Jos.21.42", "Jos.21.43", "Jos.21.44", "Jos.21.45", "Jos.22.1", "Jos.22.2", "Jos.22.3", "Jos.22.4", "Jos.22.5", "Jos.22.6", "Jos.22.7", "Jos.22.8", "Jos.22.9", "Jos.22.10", "Jos.22.11", "Jos.22.12", "Jos.22.13", "Jos.22.14", "Jos.22.15", "Jos.22.16", "Jos.22.17", "Jos.22.18", "Jos.22.19", "Jos.22.20", "Jos.22.21", "Jos.22.22", "Jos.22.23", "Jos.22.24", "Jos.22.25", "Jos.22.26", "Jos.22.27", "Jos.22.28", "Jos.22.29", "Jos.22.30", "Jos.22.31", "Jos.22.32", "Jos.22.33", "Jos.22.34", "Jos.23.1", "Jos.23.2", "Jos.23.3", "Jos.23.4", "Jos.23.5", "Jos.23.6", "Jos.23.7", "Jos.23.8", "Jos.23.9", "Jos.23.10", "Jos.23.11", "Jos.23.12", "Jos.23.13", "Jos.23.14", "Jos.23.15", "Jos.23.16", "Jos.24.1", "Jos.24.2", "Jos.24.3", "Jos.24.4", "Jos.24.5", "Jos.24.6", "Jos.24.7", "Jos.24.8", "Jos.24.9", "Jos.24.10", "Jos.24.11", "Jos.24.12", "Jos.24.13", "Jos.24.14", "Jos.24.15", "Jos.24.16", "Jos.24.17", "Jos.24.18", "Jos.24.19", "Jos.24.20", "Jos.24.21", "Jos.24.22", "Jos.24.23", "Jos.24.24", "Jos.24.25", "Jos.24.26", "Jos.24.27", "Jos.24.28", "Jos.24.29", "Jos.24.30", "Jos.24.31", "Jos.24.32", "Jos.24.33"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jos.1.1", "Jos.1.2", "Jos.1.3", "Jos.1.4", "Jos.1.5", "Jos.1.6", "Jos.1.7", "Jos.1.8", "Jos.1.9", "Jos.1.10", "Jos.1.11", "Jos.1.12", "Jos.1.13", "Jos.1.14", "Jos.1.15", "Jos.1.16", "Jos.1.17", "Jos.1.18", "Jos.2.1", "Jos.2.2", "Jos.2.3", "Jos.2.4", "Jos.2.5", "Jos.2.6", "Jos.2.7", "Jos.2.8", "Jos.2.9", "Jos.2.10", "Jos.2.11", "Jos.2.12", "Jos.2.13", "Jos.2.14", "Jos.2.15", "Jos.2.16", "Jos.2.17", "Jos.2.18", "Jos.2.19", "Jos.2.20", "Jos.2.21", "Jos.2.22", "Jos.2.23", "Jos.2.24", "Jos.3.1", "Jos.3.2", "Jos.3.3", "Jos.3.4", "Jos.3.5", "Jos.3.6", "Jos.3.7", "Jos.3.8", "Jos.3.9", "Jos.3.10", "Jos.3.11", "Jos.3.12", "Jos.3.13", "Jos.3.14", "Jos.3.15", "Jos.3.16", "Jos.3.17", "Jos.4.1", "Jos.4.2", "Jos.4.3", "Jos.4.4", "Jos.4.5", "Jos.4.6", "Jos.4.7", "Jos.4.8", "Jos.4.9", "Jos.4.10", "Jos.4.11", "Jos.4.12", "Jos.4.13", "Jos.4.14", "Jos.4.15", "Jos.4.16", "Jos.4.17", "Jos.4.18", "Jos.4.19", "Jos.4.20", "Jos.4.21", "Jos.4.22", "Jos.4.23", "Jos.4.24", "Jos.5.1", "Jos.5.2", "Jos.5.3", "Jos.5.4", "Jos.5.5", "Jos.5.6", "Jos.5.7", "Jos.5.8", "Jos.5.9", "Jos.5.10", "Jos.5.11", "Jos.5.12", "Jos.5.13", "Jos.5.14", "Jos.5.15", "Jos.6.1", "Jos.6.2", "Jos.6.3", "Jos.6.4", "Jos.6.5", "Jos.6.6", "Jos.6.7", "Jos.6.8", "Jos.6.9", "Jos.6.10", "Jos.6.11", "Jos.6.12", "Jos.6.13", "Jos.6.14", "Jos.6.15", "Jos.6.16", "Jos.6.17", "Jos.6.18", "Jos.6.19", "Jos.6.20", "Jos.6.21", "Jos.6.22", "Jos.6.23", "Jos.6.24", "Jos.6.25", "Jos.6.26", "Jos.6.27", "Jos.7.1", "Jos.7.2", "Jos.7.3", "Jos.7.4", "Jos.7.5", "Jos.7.6", "Jos.7.7", "Jos.7.8", "Jos.7.9", "Jos.7.10", "Jos.7.11", "Jos.7.12", "Jos.7.13", "Jos.7.14", "Jos.7.15", "Jos.7.16", "Jos.7.17", "Jos.7.18", "Jos.7.19", "Jos.7.20", "Jos.7.21", "Jos.7.22", "Jos.7.23", "Jos.7.24", "Jos.7.25", "Jos.7.26", "Jos.8.1", "Jos.8.2", "Jos.8.3", "Jos.8.4", "Jos.8.5", "Jos.8.6", "Jos.8.7", "Jos.8.8", "Jos.8.9", "Jos.8.10", "Jos.8.11", "Jos.8.12", "Jos.8.13", "Jos.8.14", "Jos.8.15", "Jos.8.16", "Jos.8.17", "Jos.8.18", "Jos.8.19", "Jos.8.20", "Jos.8.21", "Jos.8.22", "Jos.8.23", "Jos.8.24", "Jos.8.25", "Jos.8.26", "Jos.8.27", "Jos.8.28", "Jos.8.29", "Jos.8.30", "Jos.8.31", "Jos.8.32", "Jos.8.33", "Jos.8.34", "Jos.8.35", "Jos.9.1", "Jos.9.2", "Jos.9.3", "Jos.9.4", "Jos.9.5", "Jos.9.6", "Jos.9.7", "Jos.9.8", "Jos.9.9", "Jos.9.10", "Jos.9.11", "Jos.9.12", "Jos.9.13", "Jos.9.14", "Jos.9.15", "Jos.9.16", "Jos.9.17", "Jos.9.18", "Jos.9.19", "Jos.9.20", "Jos.9.21", "Jos.9.22", "Jos.9.23", "Jos.9.24", "Jos.9.25", "Jos.9.26", "Jos.9.27", "Jos.10.1", "Jos.10.2", "Jos.10.3", "Jos.10.4", "Jos.10.5", "Jos.10.6", "Jos.10.7", "Jos.10.8", "Jos.10.9", "Jos.10.10", "Jos.10.11", "Jos.10.12", "Jos.10.13", "Jos.10.14", "Jos.10.15", "Jos.10.16", "Jos.10.17", "Jos.10.18", "Jos.10.19", "Jos.10.20", "Jos.10.21", "Jos.10.22", "Jos.10.23", "Jos.10.24", "Jos.10.25", "Jos.10.26", "Jos.10.27", "Jos.10.28", "Jos.10.29", "Jos.10.30", "Jos.10.31", "Jos.10.32", "Jos.10.33", "Jos.10.34", "Jos.10.35", "Jos.10.36", "Jos.10.37", "Jos.10.38", "Jos.10.39", "Jos.10.40", "Jos.10.41", "Jos.10.42", "Jos.10.43", "Jos.11.1", "Jos.11.2", "Jos.11.3", "Jos.11.4", "Jos.11.5", "Jos.11.6", "Jos.11.7", "Jos.11.8", "Jos.11.9", "Jos.11.10", "Jos.11.11", "Jos.11.12", "Jos.11.13", "Jos.11.14", "Jos.11.15", "Jos.11.16", "Jos.11.17", "Jos.11.18", "Jos.11.19", "Jos.11.20", "Jos.11.21", "Jos.11.22", "Jos.11.23", "Jos.12.1", "Jos.12.2", "Jos.12.3", "Jos.12.4", "Jos.12.5", "Jos.12.6", "Jos.12.7", "Jos.12.8", "Jos.12.9", "Jos.12.10", "Jos.12.11", "Jos.12.12", "Jos.12.13", "Jos.12.14", "Jos.12.15", "Jos.12.16", "Jos.12.17", "Jos.12.18", "Jos.12.19", "Jos.12.20", "Jos.12.21", "Jos.12.22", "Jos.12.23", "Jos.12.24", "Jos.13.1", "Jos.13.2", "Jos.13.3", "Jos.13.4", "Jos.13.5", "Jos.13.6", "Jos.13.7", "Jos.13.8", "Jos.13.9", "Jos.13.10", "Jos.13.11", "Jos.13.12", "Jos.13.13", "Jos.13.14", "Jos.13.15", "Jos.13.16", "Jos.13.17", "Jos.13.18", "Jos.13.19", "Jos.13.20", "Jos.13.21", "Jos.13.22", "Jos.13.23", "Jos.13.24", "Jos.13.25", "Jos.13.26", "Jos.13.27", "Jos.13.28", "Jos.13.29", "Jos.13.30", "Jos.13.31", "Jos.13.32", "Jos.13.33", "Jos.14.1", "Jos.14.2", "Jos.14.3", "Jos.14.4", "Jos.14.5", "Jos.14.6", "Jos.14.7", "Jos.14.8", "Jos.14.9", "Jos.14.10", "Jos.14.11", "Jos.14.12", "Jos.14.13", "Jos.14.14", "Jos.14.15", "Jos.15.1", "Jos.15.2", "Jos.15.3", "Jos.15.4", "Jos.15.5", "Jos.15.6", "Jos.15.7", "Jos.15.8", "Jos.15.9", "Jos.15.10", "Jos.15.11", "Jos.15.12", "Jos.15.13", "Jos.15.14", "Jos.15.15", "Jos.15.16", "Jos.15.17", "Jos.15.18", "Jos.15.19", "Jos.15.20", "Jos.15.21", "Jos.15.22", "Jos.15.23", "Jos.15.24", "Jos.15.25", "Jos.15.26", "Jos.15.27", "Jos.15.28", "Jos.15.29", "Jos.15.30", "Jos.15.31", "Jos.15.32", "Jos.15.33", "Jos.15.34", "Jos.15.35", "Jos.15.36", "Jos.15.37", "Jos.15.38", "Jos.15.39", "Jos.15.40", "Jos.15.41", "Jos.15.42", "Jos.15.43", "Jos.15.44", "Jos.15.45", "Jos.15.46", "Jos.15.47", "Jos.15.48", "Jos.15.49", "Jos.15.50", "Jos.15.51", "Jos.15.52", "Jos.15.53", "Jos.15.54", "Jos.15.55", "Jos.15.56", "Jos.15.57", "Jos.15.58", "Jos.15.59", "Jos.15.60", "Jos.15.61", "Jos.15.62", "Jos.15.63", "Jos.16.1", "Jos.16.2", "Jos.16.3", "Jos.16.4", "Jos.16.5", "Jos.16.6", "Jos.16.7", "Jos.16.8", "Jos.16.9", "Jos.16.10", "Jos.17.1", "Jos.17.2", "Jos.17.3", "Jos.17.4", "Jos.17.5", "Jos.17.6", "Jos.17.7", "Jos.17.8", "Jos.17.9", "Jos.17.10", "Jos.17.11", "Jos.17.12", "Jos.17.13", "Jos.17.14", "Jos.17.15", "Jos.17.16", "Jos.17.17", "Jos.17.18", "Jos.18.1", "Jos.18.2", "Jos.18.3", "Jos.18.4", "Jos.18.5", "Jos.18.6", "Jos.18.7", "Jos.18.8", "Jos.18.9", "Jos.18.10", "Jos.18.11", "Jos.18.12", "Jos.18.13", "Jos.18.14", "Jos.18.15", "Jos.18.16", "Jos.18.17", "Jos.18.18", "Jos.18.19", "Jos.18.20", "Jos.18.21", "Jos.18.22", "Jos.18.23", "Jos.18.24", "Jos.18.25", "Jos.18.26", "Jos.18.27", "Jos.18.28", "Jos.19.1", "Jos.19.2", "Jos.19.3", "Jos.19.4", "Jos.19.5", "Jos.19.6", "Jos.19.7", "Jos.19.8", "Jos.19.9", "Jos.19.10", "Jos.19.11", "Jos.19.12", "Jos.19.13", "Jos.19.14", "Jos.19.15", "Jos.19.16", "Jos.19.17", "Jos.19.18", "Jos.19.19", "Jos.19.20", "Jos.19.21", "Jos.19.22", "Jos.19.23", "Jos.19.24", "Jos.19.25", "Jos.19.26", "Jos.19.27", "Jos.19.28", "Jos.19.29", "Jos.19.30", "Jos.19.31", "Jos.19.32", "Jos.19.33", "Jos.19.34", "Jos.19.35", "Jos.19.36", "Jos.19.37", "Jos.19.38", "Jos.19.39", "Jos.19.40", "Jos.19.41", "Jos.19.42", "Jos.19.43", "Jos.19.44", "Jos.19.45", "Jos.19.46", "Jos.19.47", "Jos.19.48", "Jos.19.49", "Jos.19.50", "Jos.19.51", "Jos.20.1", "Jos.20.2", "Jos.20.3", "Jos.20.4", "Jos.20.5", "Jos.20.6", "Jos.20.7", "Jos.20.8", "Jos.20.9", "Jos.21.1", "Jos.21.2", "Jos.21.3", "Jos.21.4", "Jos.21.5", "Jos.21.6", "Jos.21.7", "Jos.21.8", "Jos.21.9", "Jos.21.10", "Jos.21.11", "Jos.21.12", "Jos.21.13", "Jos.21.14", "Jos.21.15", "Jos.21.16", "Jos.21.17", "Jos.21.18", "Jos.21.19", "Jos.21.20", "Jos.21.21", "Jos.21.22", "Jos.21.23", "Jos.21.24", "Jos.21.25", "Jos.21.26", "Jos.21.27", "Jos.21.28", "Jos.21.29", "Jos.21.30", "Jos.21.31", "Jos.21.32", "Jos.21.33", "Jos.21.34", "Jos.21.35", "Jos.21.36", "Jos.21.37", "Jos.21.38", "Jos.21.39", "Jos.21.40", "Jos.21.41", "Jos.21.42", "Jos.21.43", "Jos.21.44", "Jos.21.45", "Jos.22.1", "Jos.22.2", "Jos.22.3", "Jos.22.4", "Jos.22.5", "Jos.22.6", "Jos.22.7", "Jos.22.8", "Jos.22.9", "Jos.22.10", "Jos.22.11", "Jos.22.12", "Jos.22.13", "Jos.22.14", "Jos.22.15", "Jos.22.16", "Jos.22.17", "Jos.22.18", "Jos.22.19", "Jos.22.20", "Jos.22.21", "Jos.22.22", "Jos.22.23", "Jos.22.24", "Jos.22.25", "Jos.22.26", "Jos.22.27", "Jos.22.28", "Jos.22.29", "Jos.22.30", "Jos.22.31", "Jos.22.32", "Jos.22.33", "Jos.22.34", "Jos.23.1", "Jos.23.2", "Jos.23.3", "Jos.23.4", "Jos.23.5", "Jos.23.6", "Jos.23.7", "Jos.23.8", "Jos.23.9", "Jos.23.10", "Jos.23.11", "Jos.23.12", "Jos.23.13", "Jos.23.14", "Jos.23.15", "Jos.23.16", "Jos.24.1", "Jos.24.2", "Jos.24.3", "Jos.24.4", "Jos.24.5", "Jos.24.6", "Jos.24.7", "Jos.24.8", "Jos.24.9", "Jos.24.10", "Jos.24.11", "Jos.24.12", "Jos.24.13", "Jos.24.14", "Jos.24.15", "Jos.24.16", "Jos.24.17", "Jos.24.18", "Jos.24.19", "Jos.24.20", "Jos.24.21", "Jos.24.22", "Jos.24.23", "Jos.24.24", "Jos.24.25", "Jos.24.26", "Jos.24.27", "Jos.24.28", "Jos.24.29", "Jos.24.30", "Jos.24.31", "Jos.24.32", "Jos.24.33"]
+      },
+      "depends_on": [
+        "prepare-01",
+        "prepare-02",
+        "prepare-03"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

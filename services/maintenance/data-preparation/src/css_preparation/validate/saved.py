@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from ..indexes.saved import verify_saved_index
 from ..prepare.evidence import OutputBasis, reusable
@@ -57,13 +57,13 @@ def _schema(kind: str, row: dict) -> None:
 
 def verify_candidate_inventory(
     inventory: CandidateInventory, *,
-    read_rows: Callable[[str], Iterable[Mapping[str, Any]]],
+    read_rows: Callable[[str, Sequence[str]], Iterable[Mapping[str, Any]]],
     read_blob: Callable[[str], bytes],
     max_page_bytes: int = 2048,
 ) -> SavedInventory:
     """Read D1 rows and registered R2 bytes, not in-memory builder records.
 
-    The runner supplies a read-only D1 reader for the declared candidate, and a
+    The runner supplies a read-only D1 reader scoped to the candidate's output IDs, and a
     private-R2 reader keyed by each stored artifact's registered_locator. This
     routine has no provider calls, release selection, or source admission logic.
     """
@@ -82,7 +82,7 @@ def verify_candidate_inventory(
 
     # Load the saved records once. Old, unselected candidate rows may coexist;
     # only rows attached to the explicit included output IDs are authoritative.
-    data = {kind: tuple(dict(row) for row in read_rows(kind)) for kind in ORDER}
+    data = {kind: tuple(dict(row) for row in read_rows(kind, output_ids)) for kind in ORDER}
     prepared = _unique((r for r in data['prepared_output'] if r.get('id') in included),
                        'id', 'prepared_output')
     if set(prepared) != included:

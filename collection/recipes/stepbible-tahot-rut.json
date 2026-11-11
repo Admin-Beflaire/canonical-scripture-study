@@ -1,0 +1,72 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-rut",
+  "revision": "stepbible-tahot-rut/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-jos-est",
+    "path": "Translators Amalgamated OT+NT/TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7",
+    "byte_count": 24500357
+  },
+  "native_extent": {
+    "book": "Rut",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-jos-est"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-jos-est"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Rut.1.1", "Rut.1.2", "Rut.1.3", "Rut.1.4", "Rut.1.5", "Rut.1.6", "Rut.1.7", "Rut.1.8", "Rut.1.9", "Rut.1.10", "Rut.1.11", "Rut.1.12", "Rut.1.13", "Rut.1.14", "Rut.1.15", "Rut.1.16", "Rut.1.17", "Rut.1.18", "Rut.1.19", "Rut.1.20", "Rut.1.21", "Rut.1.22", "Rut.2.1", "Rut.2.2", "Rut.2.3", "Rut.2.4", "Rut.2.5", "Rut.2.6", "Rut.2.7", "Rut.2.8", "Rut.2.9", "Rut.2.10", "Rut.2.11", "Rut.2.12", "Rut.2.13", "Rut.2.14", "Rut.2.15", "Rut.2.16", "Rut.2.17", "Rut.2.18", "Rut.2.19", "Rut.2.20", "Rut.2.21", "Rut.2.22", "Rut.2.23", "Rut.3.1", "Rut.3.2", "Rut.3.3", "Rut.3.4", "Rut.3.5", "Rut.3.6", "Rut.3.7", "Rut.3.8", "Rut.3.9", "Rut.3.10", "Rut.3.11", "Rut.3.12", "Rut.3.13", "Rut.3.14", "Rut.3.15", "Rut.3.16", "Rut.3.17", "Rut.3.18", "Rut.4.1", "Rut.4.2", "Rut.4.3", "Rut.4.4", "Rut.4.5", "Rut.4.6", "Rut.4.7", "Rut.4.8", "Rut.4.9", "Rut.4.10", "Rut.4.11", "Rut.4.12", "Rut.4.13", "Rut.4.14", "Rut.4.15", "Rut.4.16", "Rut.4.17", "Rut.4.18", "Rut.4.19", "Rut.4.20", "Rut.4.21", "Rut.4.22"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Rut.1.1", "Rut.1.2", "Rut.1.3", "Rut.1.4", "Rut.1.5", "Rut.1.6", "Rut.1.7", "Rut.1.8", "Rut.1.9", "Rut.1.10", "Rut.1.11", "Rut.1.12", "Rut.1.13", "Rut.1.14", "Rut.1.15", "Rut.1.16", "Rut.1.17", "Rut.1.18", "Rut.1.19", "Rut.1.20", "Rut.1.21", "Rut.1.22", "Rut.2.1", "Rut.2.2", "Rut.2.3", "Rut.2.4", "Rut.2.5", "Rut.2.6", "Rut.2.7", "Rut.2.8", "Rut.2.9", "Rut.2.10", "Rut.2.11", "Rut.2.12", "Rut.2.13", "Rut.2.14", "Rut.2.15", "Rut.2.16", "Rut.2.17", "Rut.2.18", "Rut.2.19", "Rut.2.20", "Rut.2.21", "Rut.2.22", "Rut.2.23", "Rut.3.1", "Rut.3.2", "Rut.3.3", "Rut.3.4", "Rut.3.5", "Rut.3.6", "Rut.3.7", "Rut.3.8", "Rut.3.9", "Rut.3.10", "Rut.3.11", "Rut.3.12", "Rut.3.13", "Rut.3.14", "Rut.3.15", "Rut.3.16", "Rut.3.17", "Rut.3.18", "Rut.4.1", "Rut.4.2", "Rut.4.3", "Rut.4.4", "Rut.4.5", "Rut.4.6", "Rut.4.7", "Rut.4.8", "Rut.4.9", "Rut.4.10", "Rut.4.11", "Rut.4.12", "Rut.4.13", "Rut.4.14", "Rut.4.15", "Rut.4.16", "Rut.4.17", "Rut.4.18", "Rut.4.19", "Rut.4.20", "Rut.4.21", "Rut.4.22"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

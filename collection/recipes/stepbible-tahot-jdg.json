@@ -1,0 +1,96 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-tahot-jdg",
+  "revision": "stepbible-tahot-jdg/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-tagged",
+    "method_version": "stepbible-tagged/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-jos-est",
+    "path": "Translators Amalgamated OT+NT/TAHOT Jos-Est - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "b79add01a8c95673e31ec3ab8ad86183d2312cd96421ddf21f3d1f74377526a7",
+    "byte_count": 24500357
+  },
+  "native_extent": {
+    "book": "Jdg",
+    "coordinate_version": "stepbible-tahot:hebrew-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact",
+    "form_exact",
+    "lemma_exact",
+    "grammar_exact"
+  ],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-jos-est"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-jos-est"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jdg.1.1", "Jdg.1.2", "Jdg.1.3", "Jdg.1.4", "Jdg.1.5", "Jdg.1.6", "Jdg.1.7", "Jdg.1.8", "Jdg.1.9", "Jdg.1.10", "Jdg.1.11", "Jdg.1.12", "Jdg.1.13", "Jdg.1.14", "Jdg.1.15", "Jdg.1.16", "Jdg.1.17", "Jdg.1.18", "Jdg.1.19", "Jdg.1.20", "Jdg.1.21", "Jdg.1.22", "Jdg.1.23", "Jdg.1.24", "Jdg.1.25", "Jdg.1.26", "Jdg.1.27", "Jdg.1.28", "Jdg.1.29", "Jdg.1.30", "Jdg.1.31", "Jdg.1.32", "Jdg.1.33", "Jdg.1.34", "Jdg.1.35", "Jdg.1.36", "Jdg.2.1", "Jdg.2.2", "Jdg.2.3", "Jdg.2.4", "Jdg.2.5", "Jdg.2.6", "Jdg.2.7", "Jdg.2.8", "Jdg.2.9", "Jdg.2.10", "Jdg.2.11", "Jdg.2.12", "Jdg.2.13", "Jdg.2.14", "Jdg.2.15", "Jdg.2.16", "Jdg.2.17", "Jdg.2.18", "Jdg.2.19", "Jdg.2.20", "Jdg.2.21", "Jdg.2.22", "Jdg.2.23", "Jdg.3.1", "Jdg.3.2", "Jdg.3.3", "Jdg.3.4", "Jdg.3.5", "Jdg.3.6", "Jdg.3.7", "Jdg.3.8", "Jdg.3.9", "Jdg.3.10", "Jdg.3.11", "Jdg.3.12", "Jdg.3.13", "Jdg.3.14", "Jdg.3.15", "Jdg.3.16", "Jdg.3.17", "Jdg.3.18", "Jdg.3.19", "Jdg.3.20", "Jdg.3.21", "Jdg.3.22", "Jdg.3.23", "Jdg.3.24", "Jdg.3.25", "Jdg.3.26", "Jdg.3.27", "Jdg.3.28", "Jdg.3.29", "Jdg.3.30", "Jdg.3.31", "Jdg.4.1", "Jdg.4.2", "Jdg.4.3", "Jdg.4.4", "Jdg.4.5", "Jdg.4.6", "Jdg.4.7", "Jdg.4.8", "Jdg.4.9", "Jdg.4.10", "Jdg.4.11", "Jdg.4.12", "Jdg.4.13", "Jdg.4.14", "Jdg.4.15", "Jdg.4.16", "Jdg.4.17", "Jdg.4.18", "Jdg.4.19", "Jdg.4.20", "Jdg.4.21", "Jdg.4.22", "Jdg.4.23", "Jdg.4.24", "Jdg.5.1", "Jdg.5.2", "Jdg.5.3", "Jdg.5.4", "Jdg.5.5", "Jdg.5.6", "Jdg.5.7", "Jdg.5.8", "Jdg.5.9", "Jdg.5.10", "Jdg.5.11", "Jdg.5.12", "Jdg.5.13", "Jdg.5.14", "Jdg.5.15", "Jdg.5.16", "Jdg.5.17", "Jdg.5.18", "Jdg.5.19", "Jdg.5.20", "Jdg.5.21", "Jdg.5.22", "Jdg.5.23", "Jdg.5.24", "Jdg.5.25", "Jdg.5.26", "Jdg.5.27", "Jdg.5.28", "Jdg.5.29", "Jdg.5.30", "Jdg.5.31", "Jdg.6.1", "Jdg.6.2", "Jdg.6.3", "Jdg.6.4", "Jdg.6.5", "Jdg.6.6", "Jdg.6.7", "Jdg.6.8", "Jdg.6.9", "Jdg.6.10", "Jdg.6.11", "Jdg.6.12", "Jdg.6.13", "Jdg.6.14", "Jdg.6.15", "Jdg.6.16", "Jdg.6.17", "Jdg.6.18", "Jdg.6.19", "Jdg.6.20", "Jdg.6.21", "Jdg.6.22", "Jdg.6.23", "Jdg.6.24", "Jdg.6.25", "Jdg.6.26", "Jdg.6.27", "Jdg.6.28", "Jdg.6.29", "Jdg.6.30", "Jdg.6.31", "Jdg.6.32", "Jdg.6.33", "Jdg.6.34", "Jdg.6.35", "Jdg.6.36", "Jdg.6.37", "Jdg.6.38", "Jdg.6.39", "Jdg.6.40", "Jdg.7.1", "Jdg.7.2", "Jdg.7.3", "Jdg.7.4", "Jdg.7.5", "Jdg.7.6", "Jdg.7.7", "Jdg.7.8", "Jdg.7.9", "Jdg.7.10", "Jdg.7.11", "Jdg.7.12", "Jdg.7.13", "Jdg.7.14", "Jdg.7.15", "Jdg.7.16", "Jdg.7.17", "Jdg.7.18", "Jdg.7.19", "Jdg.7.20", "Jdg.7.21"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-02",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jdg.7.22", "Jdg.7.23", "Jdg.7.24", "Jdg.7.25", "Jdg.8.1", "Jdg.8.2", "Jdg.8.3", "Jdg.8.4", "Jdg.8.5", "Jdg.8.6", "Jdg.8.7", "Jdg.8.8", "Jdg.8.9", "Jdg.8.10", "Jdg.8.11", "Jdg.8.12", "Jdg.8.13", "Jdg.8.14", "Jdg.8.15", "Jdg.8.16", "Jdg.8.17", "Jdg.8.18", "Jdg.8.19", "Jdg.8.20", "Jdg.8.21", "Jdg.8.22", "Jdg.8.23", "Jdg.8.24", "Jdg.8.25", "Jdg.8.26", "Jdg.8.27", "Jdg.8.28", "Jdg.8.29", "Jdg.8.30", "Jdg.8.31", "Jdg.8.32", "Jdg.8.33", "Jdg.8.34", "Jdg.8.35", "Jdg.9.1", "Jdg.9.2", "Jdg.9.3", "Jdg.9.4", "Jdg.9.5", "Jdg.9.6", "Jdg.9.7", "Jdg.9.8", "Jdg.9.9", "Jdg.9.10", "Jdg.9.11", "Jdg.9.12", "Jdg.9.13", "Jdg.9.14", "Jdg.9.15", "Jdg.9.16", "Jdg.9.17", "Jdg.9.18", "Jdg.9.19", "Jdg.9.20", "Jdg.9.21", "Jdg.9.22", "Jdg.9.23", "Jdg.9.24", "Jdg.9.25", "Jdg.9.26", "Jdg.9.27", "Jdg.9.28", "Jdg.9.29", "Jdg.9.30", "Jdg.9.31", "Jdg.9.32", "Jdg.9.33", "Jdg.9.34", "Jdg.9.35", "Jdg.9.36", "Jdg.9.37", "Jdg.9.38", "Jdg.9.39", "Jdg.9.40", "Jdg.9.41", "Jdg.9.42", "Jdg.9.43", "Jdg.9.44", "Jdg.9.45", "Jdg.9.46", "Jdg.9.47", "Jdg.9.48", "Jdg.9.49", "Jdg.9.50", "Jdg.9.51", "Jdg.9.52", "Jdg.9.53", "Jdg.9.54", "Jdg.9.55", "Jdg.9.56", "Jdg.9.57", "Jdg.10.1", "Jdg.10.2", "Jdg.10.3", "Jdg.10.4", "Jdg.10.5", "Jdg.10.6", "Jdg.10.7", "Jdg.10.8", "Jdg.10.9", "Jdg.10.10", "Jdg.10.11", "Jdg.10.12", "Jdg.10.13", "Jdg.10.14", "Jdg.10.15", "Jdg.10.16", "Jdg.10.17", "Jdg.10.18", "Jdg.11.1", "Jdg.11.2", "Jdg.11.3", "Jdg.11.4", "Jdg.11.5", "Jdg.11.6", "Jdg.11.7", "Jdg.11.8", "Jdg.11.9", "Jdg.11.10", "Jdg.11.11", "Jdg.11.12", "Jdg.11.13", "Jdg.11.14", "Jdg.11.15", "Jdg.11.16", "Jdg.11.17", "Jdg.11.18", "Jdg.11.19", "Jdg.11.20", "Jdg.11.21", "Jdg.11.22", "Jdg.11.23", "Jdg.11.24", "Jdg.11.25", "Jdg.11.26", "Jdg.11.27", "Jdg.11.28", "Jdg.11.29", "Jdg.11.30", "Jdg.11.31", "Jdg.11.32", "Jdg.11.33", "Jdg.11.34", "Jdg.11.35", "Jdg.11.36", "Jdg.11.37", "Jdg.11.38", "Jdg.11.39", "Jdg.11.40", "Jdg.12.1", "Jdg.12.2", "Jdg.12.3", "Jdg.12.4", "Jdg.12.5", "Jdg.12.6", "Jdg.12.7", "Jdg.12.8", "Jdg.12.9", "Jdg.12.10", "Jdg.12.11", "Jdg.12.12", "Jdg.12.13", "Jdg.12.14", "Jdg.12.15", "Jdg.13.1", "Jdg.13.2", "Jdg.13.3", "Jdg.13.4", "Jdg.13.5", "Jdg.13.6", "Jdg.13.7", "Jdg.13.8", "Jdg.13.9", "Jdg.13.10", "Jdg.13.11", "Jdg.13.12", "Jdg.13.13", "Jdg.13.14", "Jdg.13.15", "Jdg.13.16", "Jdg.13.17", "Jdg.13.18", "Jdg.13.19", "Jdg.13.20", "Jdg.13.21", "Jdg.13.22", "Jdg.13.23", "Jdg.13.24", "Jdg.13.25", "Jdg.14.1", "Jdg.14.2", "Jdg.14.3", "Jdg.14.4", "Jdg.14.5", "Jdg.14.6", "Jdg.14.7", "Jdg.14.8", "Jdg.14.9", "Jdg.14.10", "Jdg.14.11", "Jdg.14.12"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "prepare-03",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jdg.14.13", "Jdg.14.14", "Jdg.14.15", "Jdg.14.16", "Jdg.14.17", "Jdg.14.18", "Jdg.14.19", "Jdg.14.20", "Jdg.15.1", "Jdg.15.2", "Jdg.15.3", "Jdg.15.4", "Jdg.15.5", "Jdg.15.6", "Jdg.15.7", "Jdg.15.8", "Jdg.15.9", "Jdg.15.10", "Jdg.15.11", "Jdg.15.12", "Jdg.15.13", "Jdg.15.14", "Jdg.15.15", "Jdg.15.16", "Jdg.15.17", "Jdg.15.18", "Jdg.15.19", "Jdg.15.20", "Jdg.16.1", "Jdg.16.2", "Jdg.16.3", "Jdg.16.4", "Jdg.16.5", "Jdg.16.6", "Jdg.16.7", "Jdg.16.8", "Jdg.16.9", "Jdg.16.10", "Jdg.16.11", "Jdg.16.12", "Jdg.16.13", "Jdg.16.14", "Jdg.16.15", "Jdg.16.16", "Jdg.16.17", "Jdg.16.18", "Jdg.16.19", "Jdg.16.20", "Jdg.16.21", "Jdg.16.22", "Jdg.16.23", "Jdg.16.24", "Jdg.16.25", "Jdg.16.26", "Jdg.16.27", "Jdg.16.28", "Jdg.16.29", "Jdg.16.30", "Jdg.16.31", "Jdg.17.1", "Jdg.17.2", "Jdg.17.3", "Jdg.17.4", "Jdg.17.5", "Jdg.17.6", "Jdg.17.7", "Jdg.17.8", "Jdg.17.9", "Jdg.17.10", "Jdg.17.11", "Jdg.17.12", "Jdg.17.13", "Jdg.18.1", "Jdg.18.2", "Jdg.18.3", "Jdg.18.4", "Jdg.18.5", "Jdg.18.6", "Jdg.18.7", "Jdg.18.8", "Jdg.18.9", "Jdg.18.10", "Jdg.18.11", "Jdg.18.12", "Jdg.18.13", "Jdg.18.14", "Jdg.18.15", "Jdg.18.16", "Jdg.18.17", "Jdg.18.18", "Jdg.18.19", "Jdg.18.20", "Jdg.18.21", "Jdg.18.22", "Jdg.18.23", "Jdg.18.24", "Jdg.18.25", "Jdg.18.26", "Jdg.18.27", "Jdg.18.28", "Jdg.18.29", "Jdg.18.30", "Jdg.18.31", "Jdg.19.1", "Jdg.19.2", "Jdg.19.3", "Jdg.19.4", "Jdg.19.5", "Jdg.19.6", "Jdg.19.7", "Jdg.19.8", "Jdg.19.9", "Jdg.19.10", "Jdg.19.11", "Jdg.19.12", "Jdg.19.13", "Jdg.19.14", "Jdg.19.15", "Jdg.19.16", "Jdg.19.17", "Jdg.19.18", "Jdg.19.19", "Jdg.19.20", "Jdg.19.21", "Jdg.19.22", "Jdg.19.23", "Jdg.19.24", "Jdg.19.25", "Jdg.19.26", "Jdg.19.27", "Jdg.19.28", "Jdg.19.29", "Jdg.19.30", "Jdg.20.1", "Jdg.20.2", "Jdg.20.3", "Jdg.20.4", "Jdg.20.5", "Jdg.20.6", "Jdg.20.7", "Jdg.20.8", "Jdg.20.9", "Jdg.20.10", "Jdg.20.11", "Jdg.20.12", "Jdg.20.13", "Jdg.20.14", "Jdg.20.15", "Jdg.20.16", "Jdg.20.17", "Jdg.20.18", "Jdg.20.19", "Jdg.20.20", "Jdg.20.21", "Jdg.20.22", "Jdg.20.23", "Jdg.20.24", "Jdg.20.25", "Jdg.20.26", "Jdg.20.27", "Jdg.20.28", "Jdg.20.29", "Jdg.20.30", "Jdg.20.31", "Jdg.20.32", "Jdg.20.33", "Jdg.20.34", "Jdg.20.35", "Jdg.20.36", "Jdg.20.37", "Jdg.20.38", "Jdg.20.39", "Jdg.20.40", "Jdg.20.41", "Jdg.20.42", "Jdg.20.43", "Jdg.20.44", "Jdg.20.45", "Jdg.20.46", "Jdg.20.47", "Jdg.20.48", "Jdg.21.1", "Jdg.21.2", "Jdg.21.3", "Jdg.21.4", "Jdg.21.5", "Jdg.21.6", "Jdg.21.7", "Jdg.21.8", "Jdg.21.9", "Jdg.21.10", "Jdg.21.11", "Jdg.21.12", "Jdg.21.13", "Jdg.21.14", "Jdg.21.15", "Jdg.21.16", "Jdg.21.17", "Jdg.21.18", "Jdg.21.19", "Jdg.21.20", "Jdg.21.21", "Jdg.21.22", "Jdg.21.23", "Jdg.21.24", "Jdg.21.25"]
+      },
+      "depends_on": [
+        "acquire"
+      ]
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "stepbible-tahot:hebrew-verses/1",
+        "unit_ids": ["Jdg.1.1", "Jdg.1.2", "Jdg.1.3", "Jdg.1.4", "Jdg.1.5", "Jdg.1.6", "Jdg.1.7", "Jdg.1.8", "Jdg.1.9", "Jdg.1.10", "Jdg.1.11", "Jdg.1.12", "Jdg.1.13", "Jdg.1.14", "Jdg.1.15", "Jdg.1.16", "Jdg.1.17", "Jdg.1.18", "Jdg.1.19", "Jdg.1.20", "Jdg.1.21", "Jdg.1.22", "Jdg.1.23", "Jdg.1.24", "Jdg.1.25", "Jdg.1.26", "Jdg.1.27", "Jdg.1.28", "Jdg.1.29", "Jdg.1.30", "Jdg.1.31", "Jdg.1.32", "Jdg.1.33", "Jdg.1.34", "Jdg.1.35", "Jdg.1.36", "Jdg.2.1", "Jdg.2.2", "Jdg.2.3", "Jdg.2.4", "Jdg.2.5", "Jdg.2.6", "Jdg.2.7", "Jdg.2.8", "Jdg.2.9", "Jdg.2.10", "Jdg.2.11", "Jdg.2.12", "Jdg.2.13", "Jdg.2.14", "Jdg.2.15", "Jdg.2.16", "Jdg.2.17", "Jdg.2.18", "Jdg.2.19", "Jdg.2.20", "Jdg.2.21", "Jdg.2.22", "Jdg.2.23", "Jdg.3.1", "Jdg.3.2", "Jdg.3.3", "Jdg.3.4", "Jdg.3.5", "Jdg.3.6", "Jdg.3.7", "Jdg.3.8", "Jdg.3.9", "Jdg.3.10", "Jdg.3.11", "Jdg.3.12", "Jdg.3.13", "Jdg.3.14", "Jdg.3.15", "Jdg.3.16", "Jdg.3.17", "Jdg.3.18", "Jdg.3.19", "Jdg.3.20", "Jdg.3.21", "Jdg.3.22", "Jdg.3.23", "Jdg.3.24", "Jdg.3.25", "Jdg.3.26", "Jdg.3.27", "Jdg.3.28", "Jdg.3.29", "Jdg.3.30", "Jdg.3.31", "Jdg.4.1", "Jdg.4.2", "Jdg.4.3", "Jdg.4.4", "Jdg.4.5", "Jdg.4.6", "Jdg.4.7", "Jdg.4.8", "Jdg.4.9", "Jdg.4.10", "Jdg.4.11", "Jdg.4.12", "Jdg.4.13", "Jdg.4.14", "Jdg.4.15", "Jdg.4.16", "Jdg.4.17", "Jdg.4.18", "Jdg.4.19", "Jdg.4.20", "Jdg.4.21", "Jdg.4.22", "Jdg.4.23", "Jdg.4.24", "Jdg.5.1", "Jdg.5.2", "Jdg.5.3", "Jdg.5.4", "Jdg.5.5", "Jdg.5.6", "Jdg.5.7", "Jdg.5.8", "Jdg.5.9", "Jdg.5.10", "Jdg.5.11", "Jdg.5.12", "Jdg.5.13", "Jdg.5.14", "Jdg.5.15", "Jdg.5.16", "Jdg.5.17", "Jdg.5.18", "Jdg.5.19", "Jdg.5.20", "Jdg.5.21", "Jdg.5.22", "Jdg.5.23", "Jdg.5.24", "Jdg.5.25", "Jdg.5.26", "Jdg.5.27", "Jdg.5.28", "Jdg.5.29", "Jdg.5.30", "Jdg.5.31", "Jdg.6.1", "Jdg.6.2", "Jdg.6.3", "Jdg.6.4", "Jdg.6.5", "Jdg.6.6", "Jdg.6.7", "Jdg.6.8", "Jdg.6.9", "Jdg.6.10", "Jdg.6.11", "Jdg.6.12", "Jdg.6.13", "Jdg.6.14", "Jdg.6.15", "Jdg.6.16", "Jdg.6.17", "Jdg.6.18", "Jdg.6.19", "Jdg.6.20", "Jdg.6.21", "Jdg.6.22", "Jdg.6.23", "Jdg.6.24", "Jdg.6.25", "Jdg.6.26", "Jdg.6.27", "Jdg.6.28", "Jdg.6.29", "Jdg.6.30", "Jdg.6.31", "Jdg.6.32", "Jdg.6.33", "Jdg.6.34", "Jdg.6.35", "Jdg.6.36", "Jdg.6.37", "Jdg.6.38", "Jdg.6.39", "Jdg.6.40", "Jdg.7.1", "Jdg.7.2", "Jdg.7.3", "Jdg.7.4", "Jdg.7.5", "Jdg.7.6", "Jdg.7.7", "Jdg.7.8", "Jdg.7.9", "Jdg.7.10", "Jdg.7.11", "Jdg.7.12", "Jdg.7.13", "Jdg.7.14", "Jdg.7.15", "Jdg.7.16", "Jdg.7.17", "Jdg.7.18", "Jdg.7.19", "Jdg.7.20", "Jdg.7.21", "Jdg.7.22", "Jdg.7.23", "Jdg.7.24", "Jdg.7.25", "Jdg.8.1", "Jdg.8.2", "Jdg.8.3", "Jdg.8.4", "Jdg.8.5", "Jdg.8.6", "Jdg.8.7", "Jdg.8.8", "Jdg.8.9", "Jdg.8.10", "Jdg.8.11", "Jdg.8.12", "Jdg.8.13", "Jdg.8.14", "Jdg.8.15", "Jdg.8.16", "Jdg.8.17", "Jdg.8.18", "Jdg.8.19", "Jdg.8.20", "Jdg.8.21", "Jdg.8.22", "Jdg.8.23", "Jdg.8.24", "Jdg.8.25", "Jdg.8.26", "Jdg.8.27", "Jdg.8.28", "Jdg.8.29", "Jdg.8.30", "Jdg.8.31", "Jdg.8.32", "Jdg.8.33", "Jdg.8.34", "Jdg.8.35", "Jdg.9.1", "Jdg.9.2", "Jdg.9.3", "Jdg.9.4", "Jdg.9.5", "Jdg.9.6", "Jdg.9.7", "Jdg.9.8", "Jdg.9.9", "Jdg.9.10", "Jdg.9.11", "Jdg.9.12", "Jdg.9.13", "Jdg.9.14", "Jdg.9.15", "Jdg.9.16", "Jdg.9.17", "Jdg.9.18", "Jdg.9.19", "Jdg.9.20", "Jdg.9.21", "Jdg.9.22", "Jdg.9.23", "Jdg.9.24", "Jdg.9.25", "Jdg.9.26", "Jdg.9.27", "Jdg.9.28", "Jdg.9.29", "Jdg.9.30", "Jdg.9.31", "Jdg.9.32", "Jdg.9.33", "Jdg.9.34", "Jdg.9.35", "Jdg.9.36", "Jdg.9.37", "Jdg.9.38", "Jdg.9.39", "Jdg.9.40", "Jdg.9.41", "Jdg.9.42", "Jdg.9.43", "Jdg.9.44", "Jdg.9.45", "Jdg.9.46", "Jdg.9.47", "Jdg.9.48", "Jdg.9.49", "Jdg.9.50", "Jdg.9.51", "Jdg.9.52", "Jdg.9.53", "Jdg.9.54", "Jdg.9.55", "Jdg.9.56", "Jdg.9.57", "Jdg.10.1", "Jdg.10.2", "Jdg.10.3", "Jdg.10.4", "Jdg.10.5", "Jdg.10.6", "Jdg.10.7", "Jdg.10.8", "Jdg.10.9", "Jdg.10.10", "Jdg.10.11", "Jdg.10.12", "Jdg.10.13", "Jdg.10.14", "Jdg.10.15", "Jdg.10.16", "Jdg.10.17", "Jdg.10.18", "Jdg.11.1", "Jdg.11.2", "Jdg.11.3", "Jdg.11.4", "Jdg.11.5", "Jdg.11.6", "Jdg.11.7", "Jdg.11.8", "Jdg.11.9", "Jdg.11.10", "Jdg.11.11", "Jdg.11.12", "Jdg.11.13", "Jdg.11.14", "Jdg.11.15", "Jdg.11.16", "Jdg.11.17", "Jdg.11.18", "Jdg.11.19", "Jdg.11.20", "Jdg.11.21", "Jdg.11.22", "Jdg.11.23", "Jdg.11.24", "Jdg.11.25", "Jdg.11.26", "Jdg.11.27", "Jdg.11.28", "Jdg.11.29", "Jdg.11.30", "Jdg.11.31", "Jdg.11.32", "Jdg.11.33", "Jdg.11.34", "Jdg.11.35", "Jdg.11.36", "Jdg.11.37", "Jdg.11.38", "Jdg.11.39", "Jdg.11.40", "Jdg.12.1", "Jdg.12.2", "Jdg.12.3", "Jdg.12.4", "Jdg.12.5", "Jdg.12.6", "Jdg.12.7", "Jdg.12.8", "Jdg.12.9", "Jdg.12.10", "Jdg.12.11", "Jdg.12.12", "Jdg.12.13", "Jdg.12.14", "Jdg.12.15", "Jdg.13.1", "Jdg.13.2", "Jdg.13.3", "Jdg.13.4", "Jdg.13.5", "Jdg.13.6", "Jdg.13.7", "Jdg.13.8", "Jdg.13.9", "Jdg.13.10", "Jdg.13.11", "Jdg.13.12", "Jdg.13.13", "Jdg.13.14", "Jdg.13.15", "Jdg.13.16", "Jdg.13.17", "Jdg.13.18", "Jdg.13.19", "Jdg.13.20", "Jdg.13.21", "Jdg.13.22", "Jdg.13.23", "Jdg.13.24", "Jdg.13.25", "Jdg.14.1", "Jdg.14.2", "Jdg.14.3", "Jdg.14.4", "Jdg.14.5", "Jdg.14.6", "Jdg.14.7", "Jdg.14.8", "Jdg.14.9", "Jdg.14.10", "Jdg.14.11", "Jdg.14.12", "Jdg.14.13", "Jdg.14.14", "Jdg.14.15", "Jdg.14.16", "Jdg.14.17", "Jdg.14.18", "Jdg.14.19", "Jdg.14.20", "Jdg.15.1", "Jdg.15.2", "Jdg.15.3", "Jdg.15.4", "Jdg.15.5", "Jdg.15.6", "Jdg.15.7", "Jdg.15.8", "Jdg.15.9", "Jdg.15.10", "Jdg.15.11", "Jdg.15.12", "Jdg.15.13", "Jdg.15.14", "Jdg.15.15", "Jdg.15.16", "Jdg.15.17", "Jdg.15.18", "Jdg.15.19", "Jdg.15.20", "Jdg.16.1", "Jdg.16.2", "Jdg.16.3", "Jdg.16.4", "Jdg.16.5", "Jdg.16.6", "Jdg.16.7", "Jdg.16.8", "Jdg.16.9", "Jdg.16.10", "Jdg.16.11", "Jdg.16.12", "Jdg.16.13", "Jdg.16.14", "Jdg.16.15", "Jdg.16.16", "Jdg.16.17", "Jdg.16.18", "Jdg.16.19", "Jdg.16.20", "Jdg.16.21", "Jdg.16.22", "Jdg.16.23", "Jdg.16.24", "Jdg.16.25", "Jdg.16.26", "Jdg.16.27", "Jdg.16.28", "Jdg.16.29", "Jdg.16.30", "Jdg.16.31", "Jdg.17.1", "Jdg.17.2", "Jdg.17.3", "Jdg.17.4", "Jdg.17.5", "Jdg.17.6", "Jdg.17.7", "Jdg.17.8", "Jdg.17.9", "Jdg.17.10", "Jdg.17.11", "Jdg.17.12", "Jdg.17.13", "Jdg.18.1", "Jdg.18.2", "Jdg.18.3", "Jdg.18.4", "Jdg.18.5", "Jdg.18.6", "Jdg.18.7", "Jdg.18.8", "Jdg.18.9", "Jdg.18.10", "Jdg.18.11", "Jdg.18.12", "Jdg.18.13", "Jdg.18.14", "Jdg.18.15", "Jdg.18.16", "Jdg.18.17", "Jdg.18.18", "Jdg.18.19", "Jdg.18.20", "Jdg.18.21", "Jdg.18.22", "Jdg.18.23", "Jdg.18.24", "Jdg.18.25", "Jdg.18.26", "Jdg.18.27", "Jdg.18.28", "Jdg.18.29", "Jdg.18.30", "Jdg.18.31", "Jdg.19.1", "Jdg.19.2", "Jdg.19.3", "Jdg.19.4", "Jdg.19.5", "Jdg.19.6", "Jdg.19.7", "Jdg.19.8", "Jdg.19.9", "Jdg.19.10", "Jdg.19.11", "Jdg.19.12", "Jdg.19.13", "Jdg.19.14", "Jdg.19.15", "Jdg.19.16", "Jdg.19.17", "Jdg.19.18", "Jdg.19.19", "Jdg.19.20", "Jdg.19.21", "Jdg.19.22", "Jdg.19.23", "Jdg.19.24", "Jdg.19.25", "Jdg.19.26", "Jdg.19.27", "Jdg.19.28", "Jdg.19.29", "Jdg.19.30", "Jdg.20.1", "Jdg.20.2", "Jdg.20.3", "Jdg.20.4", "Jdg.20.5", "Jdg.20.6", "Jdg.20.7", "Jdg.20.8", "Jdg.20.9", "Jdg.20.10", "Jdg.20.11", "Jdg.20.12", "Jdg.20.13", "Jdg.20.14", "Jdg.20.15", "Jdg.20.16", "Jdg.20.17", "Jdg.20.18", "Jdg.20.19", "Jdg.20.20", "Jdg.20.21", "Jdg.20.22", "Jdg.20.23", "Jdg.20.24", "Jdg.20.25", "Jdg.20.26", "Jdg.20.27", "Jdg.20.28", "Jdg.20.29", "Jdg.20.30", "Jdg.20.31", "Jdg.20.32", "Jdg.20.33", "Jdg.20.34", "Jdg.20.35", "Jdg.20.36", "Jdg.20.37", "Jdg.20.38", "Jdg.20.39", "Jdg.20.40", "Jdg.20.41", "Jdg.20.42", "Jdg.20.43", "Jdg.20.44", "Jdg.20.45", "Jdg.20.46", "Jdg.20.47", "Jdg.20.48", "Jdg.21.1", "Jdg.21.2", "Jdg.21.3", "Jdg.21.4", "Jdg.21.5", "Jdg.21.6", "Jdg.21.7", "Jdg.21.8", "Jdg.21.9", "Jdg.21.10", "Jdg.21.11", "Jdg.21.12", "Jdg.21.13", "Jdg.21.14", "Jdg.21.15", "Jdg.21.16", "Jdg.21.17", "Jdg.21.18", "Jdg.21.19", "Jdg.21.20", "Jdg.21.21", "Jdg.21.22", "Jdg.21.23", "Jdg.21.24", "Jdg.21.25"]
+      },
+      "depends_on": [
+        "prepare-01",
+        "prepare-02",
+        "prepare-03"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact",
+        "form_exact",
+        "lemma_exact",
+        "grammar_exact"
+      ]
+    }
+  ]
+}

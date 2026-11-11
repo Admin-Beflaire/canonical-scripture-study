@@ -72,8 +72,8 @@ chunks of at most 90 bound IDs, never whole tables.
 
 One recipe per book (`collection/recipes/stepbible-*.json`). The acquire unit fetches
 the pinned file from `raw.githubusercontent.com` at its commit, checks size and SHA-256,
-and keeps it under `originals/` in private R2 (the licence asks that copies are not
-posted elsewhere). Prepare units of at most 300 verses each produce the verse evidence,
+and keeps it under `originals/` in private R2 only, by the owner's decision (CC BY 4.0 allows
+redistribution; STEPBible's request not to repost the files is kept as a notice). Prepare units of at most 300 verses each produce the verse evidence,
 source search and word/lemma/grammar indexes in one D1 batch:
 
 - Base text: TAHOT's translators' text (Leningrad following the Qere, with restored

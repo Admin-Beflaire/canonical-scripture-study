@@ -1,0 +1,62 @@
+[
+  {
+    "file": "source.ndjson",
+    "key": "synthetic/indexes/ix-source-postings",
+    "bytes": 2146,
+    "sha256": "f58afa51cd714181d64cf5960ed9ec27ac089ac4305ba60cb51419c9bae5d6f8"
+  },
+  {
+    "file": "source.manifest.json",
+    "key": "synthetic/indexes/ix-source-manifest",
+    "bytes": 1361,
+    "sha256": "60099262ea37f4d0ffb2c2f4562567a941e6c1bf986b1178741c2d7683669ca2"
+  },
+  {
+    "file": "word.ndjson",
+    "key": "synthetic/indexes/ix-word-postings",
+    "bytes": 12141,
+    "sha256": "1d2612dbeeb243152731429e2c1ec89b8a37a3c415cf11bbfd2f54d867406ba2"
+  },
+  {
+    "file": "word.manifest.json",
+    "key": "synthetic/indexes/ix-word-manifest",
+    "bytes": 1782,
+    "sha256": "278134f60d0f4b08a81e2c36931794dc526dfcda85d64573c4d70834f57103e9"
+  },
+  {
+    "file": "lexicon.ndjson",
+    "key": "synthetic/indexes/ix-lexicon-postings",
+    "bytes": 865,
+    "sha256": "601a9f232d06793d164dcbf70b6b217e37250d52bf9b6e9ff8546e7427ead119"
+  },
+  {
+    "file": "lexicon.manifest.json",
+    "key": "synthetic/indexes/ix-lexicon-manifest",
+    "bytes": 1360,
+    "sha256": "6d46f7e5f64266a33f563e244f33454d3c433b443a00fcca3ee7d3d8a94e24ac"
+  },
+  {
+    "file": "native-body.txt",
+    "key": "synthetic/indexes/native-body",
+    "bytes": 22,
+    "sha256": "1eeea160b0b1604eae9d2d81e0177b4ec6f2661804d81b3f017f30fd124281bd"
+  },
+  {
+    "file": "source.directory.ndjson",
+    "key": "synthetic/indexes/ix-source-directory",
+    "bytes": 570,
+    "sha256": "0e2a9bb4b0743fd54cbf390a4a3ffeeb6bd56304369531665ed348538b1a9b11"
+  },
+  {
+    "file": "word.directory.ndjson",
+    "key": "synthetic/indexes/ix-word-directory",
+    "bytes": 2595,
+    "sha256": "a8795a181a83ec9dd34004a11aa94f410756fdb9f8b9dea9d9f4377f1009fd06"
+  },
+  {
+    "file": "lexicon.directory.ndjson",
+    "key": "synthetic/indexes/ix-lexicon-directory",
+    "bytes": 200,
+    "sha256": "7c59a51c0afc227609f3eeea1048afc5ac6db3ff50d9594344601d60329cdc09"
+  }
+]

@@ -11,6 +11,7 @@ import hashlib
 import json
 from typing import Any, Callable, Mapping, Sequence
 
+from ..indexes.files import PAGE_CAP
 from ..prepare.evidence import NativeText, span_wording
 from ..prepare.records import ORDER, RecordError
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
@@ -34,7 +35,7 @@ def check_saved_semantics(
     read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
-    max_page_bytes: int = 2048,
+    max_page_bytes: int = PAGE_CAP,
 ) -> SemanticEvidence:
     """Never substitute a builder's success flag for saved candidate evidence."""
     saved = verify_candidate_inventory(inventory, read_rows=read_rows, read_blob=read_blob,

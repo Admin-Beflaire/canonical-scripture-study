@@ -20,14 +20,35 @@ def order(row):
     return row['search_key'].encode('utf-8'), row['native_order'], row['occurrence_id'].encode('utf-8')
 
 
+def directory_pages(manifest, key=None):
+    """Directory pages from the manifest root, verified; only those overlapping `key` when given."""
+    root = manifest['directory']
+    raw = (FIXTURE_ROOT / FIXTURE['artifact_files'][root['artifact_id']]).read_bytes()
+    assert len(raw) == root['byte_length'] and hashlib.sha256(raw).hexdigest() == root['sha256']
+    out = []
+    for page in root['pages']:
+        if key is not None and not page['first_key'].encode() <= key.encode() <= page['last_key'].encode():
+            continue
+        part = raw[page['byte_offset']:page['byte_offset'] + page['byte_length']]
+        assert hashlib.sha256(part).hexdigest() == page['sha256'] and part.endswith(b'\n')
+        out.append((page, [json.loads(line) for line in part.decode('utf-8').split('\n')[:-1]]))
+    return out
+
+
+def postings_pages(manifest, key=None):
+    """(file, page) pairs named by the directory entries, in postings order."""
+    files = {file['artifact_id']: file for file in manifest['files']}
+    return [(files[entry['postings_artifact_id']], entry) for _, entries in directory_pages(manifest, key) for entry in entries
+            if key is None or entry['first_key'].encode() <= key.encode() <= entry['last_key'].encode()]
+
+
 def page_directory(manifest, key):
-    return [(file,page) for file in manifest['files'] for page in file['pages']
-            if page['first_key'].encode() <= key.encode() <= page['last_key'].encode()]
+    return postings_pages(manifest, key)
 
 
-def read_fixture_window(manifest, key, position, budget, fetch, hasher=hashlib.sha256, decode=json.loads):
+def read_fixture_window(manifest, key, position, budget, fetch, hasher=hashlib.sha256, decode=json.loads, pages=None):
     """Minimal contract probe, with bounds checked before fetch/hash/decode."""
-    pages = page_directory(manifest,key)
+    pages = page_directory(manifest,key) if pages is None else pages
     if position < 0 or position > len(pages) or budget['max_pages'] < 1:
         raise ValueError('Invalid fixture continuation/budget')
     window = pages[position:position+budget['max_pages']]
@@ -81,12 +102,14 @@ class IndexContractTests(unittest.TestCase):
     def test_pages_are_contiguous_line_aligned_sorted_and_registered(self):
         for name,m in MANIFESTS.items():
             seen=set();previous=None
+            self.assertEqual(m['format_version'],'index-manifest/2')
+            entries=postings_pages(m)
             for file in m['files']:
                 raw=(FIXTURE_ROOT/FIXTURE['postings'][file['artifact_id']]).read_bytes()
                 self.assertEqual(len(raw),file['byte_length'])
                 self.assertEqual(hashlib.sha256(raw).hexdigest(),file['sha256'])
                 offset=0
-                for page in file['pages']:
+                for page in [p for f,p in entries if f is file]:
                     self.assertEqual(page['byte_offset'],offset)
                     part=raw[offset:offset+page['byte_length']]
                     self.assertLessEqual(len(part),m['encoded_page_cap_bytes'])
@@ -102,6 +125,29 @@ class IndexContractTests(unittest.TestCase):
                         previous=order(row)
                     offset+=page['byte_length']
                 self.assertEqual(offset,len(raw))
+
+    def test_directory_pages_are_contiguous_bounded_and_key_ordered(self):
+        for name,m in MANIFESTS.items():
+            root=m['directory'];offset=0;previous=None
+            self.assertLessEqual(len((FIXTURE_ROOT/FIXTURE['manifests'][name]).read_bytes()),m['encoded_page_cap_bytes'])
+            for page,entries in directory_pages(m):
+                self.assertEqual(page['byte_offset'],offset);self.assertLessEqual(page['byte_length'],m['encoded_page_cap_bytes'])
+                self.assertEqual((page['first_key'],page['last_key']),(entries[0]['first_key'],entries[-1]['last_key']))
+                for entry in entries:
+                    self.assertIn(entry['postings_artifact_id'],{f['artifact_id'] for f in m['files']})
+                    if previous is not None:self.assertLessEqual(previous,entry['first_key'].encode())
+                    previous=entry['last_key'].encode()
+                offset+=page['byte_length']
+            self.assertEqual(offset,root['byte_length'])
+        # One lemma key spans two directory pages; its lookup reads both and loses nothing.
+        key='lemma:provider-0:lemma-א'
+        self.assertEqual(len(directory_pages(MANIFESTS['word'],key)),2)
+        rows=[];position=0;done=False
+        while not done:
+            got,position,done=read_fixture_window(MANIFESTS['word'],key,position,FIXTURE['fixture_budget'],self.fetch)
+            rows.extend(got)
+        self.assertEqual(len(rows),len({r['occurrence_id'] for r in rows}))
+        self.assertEqual(sorted(r['occurrence_id'] for r in rows),FIXTURE['expected_word_occurrences'])
 
     def test_common_key_spans_pages_without_duplicates_and_continues_within_budget(self):
         for name,key,expected in [('source','א',FIXTURE['expected_source_occurrences']),('word','form:א',FIXTURE['expected_word_occurrences'])]:
@@ -121,22 +167,23 @@ class IndexContractTests(unittest.TestCase):
     def test_bounds_reject_before_any_read_hash_or_decode(self):
         for mutation in ('page_cap','request_cap','range'):
             m=deepcopy(MANIFESTS['source']);budget=deepcopy(FIXTURE['fixture_budget'])
+            pages=deepcopy(page_directory(m,'א'))
             if mutation=='page_cap':budget['max_encoded_page_bytes']=1
             elif mutation=='request_cap':budget['max_request_bytes']=1
-            else:m['files'][0]['pages'][0]['byte_length']=m['files'][0]['byte_length']+1
+            else:pages[0][1]['byte_length']=pages[0][0]['byte_length']+1
             read,hash_page,decode=Mock(),Mock(),Mock()
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):
-                read_fixture_window(m,'א',0,budget,read,hash_page,decode)
+                read_fixture_window(m,'א',0,budget,read,hash_page,decode,pages=pages)
             for callback in (read,hash_page,decode):callback.assert_not_called()
 
     def test_corrupt_or_non_line_aligned_pages_reject(self):
         with self.assertRaisesRegex(ValueError,'integrity'):
             read_fixture_window(MANIFESTS['source'],'א',0,FIXTURE['fixture_budget'],lambda _,o,n:b'x'*n)
-        m=deepcopy(MANIFESTS['source']);file=m['files'][0];page=file['pages'][0]
+        m=deepcopy(MANIFESTS['source']);pages=deepcopy(page_directory(m,''));file,page=pages[0]
         raw=self.fetch(file['artifact_id'],page['byte_offset'],page['byte_length'])[:-1]
         page['byte_length']=len(raw);page['sha256']=hashlib.sha256(raw).hexdigest()
         with self.assertRaisesRegex(ValueError,'Unaligned'):
-            read_fixture_window(m,'',0,FIXTURE['fixture_budget'],lambda *_:raw)
+            read_fixture_window(m,'',0,FIXTURE['fixture_budget'],lambda *_:raw,pages=pages)
 
     def test_exact_wording_and_analysis_identity_survive_normalization(self):
         rows,_,_=read_fixture_window(MANIFESTS['source'],'א',0,FIXTURE['fixture_budget'],self.fetch)
@@ -152,10 +199,9 @@ class IndexContractTests(unittest.TestCase):
     def test_lf_framing_preserves_unicode_text_separators(self):
         manifest=deepcopy(MANIFESTS['source'])
         raw=(json.dumps({'search_key':'', 'text':'before\u2028middle\u0085after'},ensure_ascii=False)+'\n').encode()
-        file=manifest['files'][0];file['byte_length']=len(raw)
-        file['pages']=[dict(first_key='',last_key='',byte_offset=0,byte_length=len(raw),sha256=hashlib.sha256(raw).hexdigest())]
-        manifest['files']=[file]
-        rows,_,done=read_fixture_window(manifest,'',0,FIXTURE['fixture_budget'],lambda *_:raw)
+        file={'artifact_id':'synthetic','byte_length':len(raw)}
+        pages=[(file,dict(first_key='',last_key='',byte_offset=0,byte_length=len(raw),sha256=hashlib.sha256(raw).hexdigest()))]
+        rows,_,done=read_fixture_window(manifest,'',0,FIXTURE['fixture_budget'],lambda *_:raw,pages=pages)
         self.assertTrue(done)
         self.assertEqual(rows[0]['text'],'before\u2028middle\u0085after')
 
@@ -194,7 +240,7 @@ class IndexContractTests(unittest.TestCase):
         for name,expected in MANIFESTS.items():
             coverage=next(c for c in FIXTURE['evidence_delta']['coverage'] if c['output_id']==expected['prepared_output_id'])
             self.assertTrue(compatible(expected,expected,coverage,selected))
-            for field,value in [('format_version','future/2'),('coordinate_version','wrong'),('normalization_rule','wrong'),('tokenizer_version','wrong'),('source_revision_ids',['wrong']),('analysis_revision_ids',[] if name=='word' else ['wrong']),('native_extent',{'unit_ids':['wrong']})]:
+            for field,value in [('format_version','index-manifest/1'),('coordinate_version','wrong'),('normalization_rule','wrong'),('tokenizer_version','wrong'),('source_revision_ids',['wrong']),('analysis_revision_ids',[] if name=='word' else ['wrong']),('native_extent',{'unit_ids':['wrong'],'order_range':expected['native_extent']['order_range']}),('native_extent',{**expected['native_extent'],'order_range':[0,99]})]:
                 broken=deepcopy(expected);broken[field]=value
                 with self.subTest(name=name,field=field):self.assertFalse(compatible(broken,expected,coverage,selected))
             broken=deepcopy(expected);broken['coverage']['state']='partial';broken['coverage']['limitation']='fixture incomplete'

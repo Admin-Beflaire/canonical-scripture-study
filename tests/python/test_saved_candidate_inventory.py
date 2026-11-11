@@ -22,8 +22,8 @@ class SavedInventoryStageFour(unittest.TestCase):
         text = text_a()
         parts = build_source_postings(
             text, evidence, configured_basis(evidence, text), RULES,
-            max_units=2, max_scalars=64, max_occurrences=20)
-        self.index = build_index_files(parts[0])
+            max_units=2, max_scalars=64, max_occurrences=20, encoded_page_cap_bytes=2048)
+        self.index = build_index_files(parts[0], encoded_page_cap_bytes=2048)
         self.bases = (next(iter(evidence.rows('prepared_output'))), parts[0].basis)
         self.evidence_basis = evidence.rows('prepared_output')[0]
         self.records = RecordSet().merge(evidence).merge(self.index.records)
@@ -184,9 +184,10 @@ class SavedInventoryStageFour(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'page cap'):
             self.check(limit=700)
         for mutate in (
-            lambda m: m['files'][0]['pages'][0].update(first_key='wrong'),
-            lambda m: m['files'][0]['pages'][0].update(byte_length=2049),
-            lambda m: m['files'][0]['pages'][0].update(byte_offset=1),
+            lambda m: m['directory']['pages'][0].update(first_key='wrong'),
+            lambda m: m['directory']['pages'][0].update(byte_length=2049),
+            lambda m: m['directory']['pages'][0].update(byte_offset=1),
+            lambda m: m['directory'].update(artifact_id=m['files'][0]['artifact_id']),
         ):
             with self.subTest(mutation=mutate.__code__.co_firstlineno):
                 rows, blob = self._forge_manifest(mutate)

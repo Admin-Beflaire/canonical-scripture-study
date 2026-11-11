@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from ..indexes.files import PAGE_CAP
 from ..indexes.saved import verify_saved_index
 from ..prepare.evidence import OutputBasis, reusable
 from ..prepare.records import ORDER, RecordError
@@ -59,7 +60,7 @@ def verify_candidate_inventory(
     inventory: CandidateInventory, *,
     read_rows: Callable[[str, Sequence[str]], Iterable[Mapping[str, Any]]],
     read_blob: Callable[[str], bytes],
-    max_page_bytes: int = 2048,
+    max_page_bytes: int = PAGE_CAP,
 ) -> SavedInventory:
     """Read D1 rows and registered R2 bytes, not in-memory builder records.
 

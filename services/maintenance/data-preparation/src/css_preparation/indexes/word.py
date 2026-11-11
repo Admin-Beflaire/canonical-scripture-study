@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping
 
+from .limits import PAGE_CAP
 from ..prepare.evidence import NativeText, OutputBasis, canonical_digest
 from ..prepare.records import RecordError
 from .source import SourcePartition, MAX_SAFE_ORDER
@@ -42,6 +43,7 @@ class WordPartition:
     postings: tuple[dict, ...]
     coverage_state: str
     limitation: str | None
+    order_range: tuple[int, int] | None = None   # inherited from its source partition
 
 
 def _valid(value: str) -> bool:
@@ -54,7 +56,7 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
                         admitted_analysis_revisions: tuple[str, ...], basis: OutputBasis, *,
                         normalize: Callable[[str], str],
                         grammar_keys: Callable[[AnalysisAlternative], Iterable[str]],
-                        max_postings: int, encoded_page_cap_bytes: int = 2048) -> tuple[WordPartition, ...]:
+                        max_postings: int, encoded_page_cap_bytes: int = PAGE_CAP) -> tuple[WordPartition, ...]:
     """Build deterministic lookup rows over the exact Stage 1 occurrences.
 
     expected_by_revision is the admitted adapter's declared native-occurrence
@@ -211,5 +213,6 @@ def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePart
                                   'encoded_page_cap_bytes': encoded_page_cap_bytes,
                                   'received_analysis_sha256': canonical_digest(received)},
                                  extent, tuple(dict.fromkeys((*basis.dependencies, part.basis.output_id))))
-        results.append(WordPartition(word_basis, tuple(rows), state, limitation if state == 'partial' else None))
+        results.append(WordPartition(word_basis, tuple(rows), state, limitation if state == 'partial' else None,
+                                     part.order_range))
     return tuple(results)

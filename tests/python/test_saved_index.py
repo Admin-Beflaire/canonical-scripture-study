@@ -5,7 +5,7 @@ import hashlib
 import json
 import unittest
 
-from css_preparation.indexes.files import build_index_files, _object_key
+from css_preparation.indexes.files import PAGE_CAP, build_index_files, page_lines, _object_key
 from css_preparation.indexes.saved import verify_saved_index, reusable_index_ids
 from css_preparation.prepare.records import RecordError, RecordSet
 from test_word_index_builder import WordIndexStageTwo
@@ -30,7 +30,7 @@ class SavedIndexStageFour(unittest.TestCase):
         self.bases = (fixture.parts[0].basis, fixture.parts[1].basis, fixture.build()[0].basis)
 
     def check(self, built, *, saved_output=None, artifacts=None, coverage=None, blobs=None,
-              max_page_bytes=2048):
+              max_page_bytes=PAGE_CAP):
         output = saved_output if saved_output is not None else next(
             row for row in self.outputs if row['id'] == built.manifest['prepared_output_id'])
         return verify_saved_index(
@@ -62,6 +62,46 @@ class SavedIndexStageFour(unittest.TestCase):
         blobs = dict(self.blobs)
         del blobs[old_id]
         blobs[new_id] = content
+        return artifacts, coverage, blobs
+
+    def forge(self, built, *, postings=None, entries=None):
+        """Rewrite postings and/or directory entries, then forge consistent digests, IDs and registry rows
+        for the directory and manifest, so a structural defect (not a digest) is what is reached."""
+        output = built.manifest['prepared_output_id']
+        cap = built.manifest['encoded_page_cap_bytes']
+        manifest = deepcopy(built.manifest)
+        blobs = {k: v for k, v in self.blobs.items()
+                 if k not in (built.postings_artifact_id, built.directory_artifact_id, built.manifest_artifact_id)}
+        artifacts = [dict(r) for r in self.artifacts]
+        body = postings if postings is not None else self.blobs[built.postings_artifact_id]
+        body_sha = hashlib.sha256(body).hexdigest()
+        posting_id = f'{output}:postings:{body_sha[:20]}'
+        if entries is None:
+            _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
+                                   for l in body.splitlines(keepends=True)], cap)
+            entries = [{'postings_artifact_id': posting_id, **page} for page in pages]
+        lines = [(e['first_key'], e['last_key'], json.dumps(e, sort_keys=True, ensure_ascii=False,
+                  separators=(',', ':')).encode('utf-8') + b'\n') for e in entries]
+        directory, directory_pages = page_lines(lines, cap)
+        directory_sha = hashlib.sha256(directory).hexdigest()
+        directory_id = f'{output}:directory:{directory_sha[:20]}'
+        manifest['files'] = [{'artifact_id': posting_id, 'byte_length': len(body), 'sha256': body_sha}]
+        manifest['directory'] = {'artifact_id': directory_id, 'byte_length': len(directory),
+                                 'sha256': directory_sha, 'pages': directory_pages}
+        content = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        manifest_sha = hashlib.sha256(content).hexdigest()
+        manifest_id = f'{output}:manifest:{manifest_sha[:20]}'
+        for row in artifacts:
+            for old, new, sha, data, name in (
+                    (built.postings_artifact_id, posting_id, body_sha, body, 'postings.ndjson'),
+                    (built.directory_artifact_id, directory_id, directory_sha, directory, 'directory.ndjson'),
+                    (built.manifest_artifact_id, manifest_id, manifest_sha, content, 'manifest.json')):
+                if row['id'] == old:
+                    row.update(id=new, sha256=sha, byte_count=len(data),
+                               registered_locator=_object_key(output, sha, name))
+        coverage = [dict(r, index_artifact_id=manifest_id) if r['index_artifact_id'] == built.manifest_artifact_id
+                    else dict(r) for r in self.coverage]
+        blobs.update({posting_id: body, directory_id: directory, manifest_id: content})
         return artifacts, coverage, blobs
 
     def test_valid_source_and_word_saved_files_reuse_in_dependency_order(self):
@@ -149,13 +189,30 @@ class SavedIndexStageFour(unittest.TestCase):
     def test_page_caps_and_manifest_directory_fail_closed(self):
         with self.assertRaisesRegex(RecordError, 'page cap'):
             self.check(self.a, max_page_bytes=1024)
+        self.assertEqual(self.check(self.a, **dict(zip(('artifacts', 'coverage', 'blobs'), self.forge(self.a))))['format_version'],
+                         'index-manifest/2', 'the forging helper itself yields a valid index')
+        root = self.blobs[self.a.directory_artifact_id]
+        good = [json.loads(line) for line in root.splitlines()]
         for change in (
-            lambda m: m['files'][0]['pages'][0].update(byte_offset=1),
-            lambda m: m['files'][0]['pages'][0].update(first_key='wrong'),
-            lambda m: m['files'][0]['pages'][0].update(byte_length=2049),
-            lambda m: m['files'][0]['pages'].pop(),
+            lambda e: e[0].update(byte_offset=1),
+            lambda e: e[0].update(first_key='wrong'),
+            lambda e: e[0].update(byte_length=PAGE_CAP + 1),
+            lambda e: e.pop(),
+            lambda e: e[0].update(postings_artifact_id='elsewhere'),
         ):
             with self.subTest(change=change.__code__.co_firstlineno):
+                entries = deepcopy(good)
+                change(entries)
+                artifacts, coverage, blobs = self.forge(self.a, entries=entries)
+                with self.assertRaises(RecordError):
+                    self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+        for change in (
+            lambda m: m['directory']['pages'][0].update(first_key='wrong'),
+            lambda m: m['directory']['pages'].pop(),
+            lambda m: m.update(format_version='index-manifest/1'),
+            lambda m: m['native_extent'].update(order_range=[5, 1]),
+        ):
+            with self.subTest(manifest=change.__code__.co_firstlineno):
                 artifacts, coverage, blobs = self.mutate_manifest(self.a, change)
                 with self.assertRaises(RecordError):
                     self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
@@ -180,46 +237,12 @@ class SavedIndexStageFour(unittest.TestCase):
             self.check(self.a, artifacts=altered)
 
     def test_reject_misordered_rows_even_with_recomputed_digests(self):
-        # One page, with every digest/registry/key range forged consistently.
-        from css_preparation.indexes.files import build_index_files
-        source_part = replace(self.source_part, basis=replace(
-            self.source_part.basis, parameters={**self.source_part.basis.parameters,
-                                                'encoded_page_cap_bytes': 10000}))
-        built = build_index_files(source_part, encoded_page_cap_bytes=10000)
-        original = built.records.blobs[built.postings_artifact_id]
-        lines = original.splitlines(keepends=True)
+        # Every digest, registry row and key range forged consistently around reversed postings.
+        lines = self.blobs[self.a.postings_artifact_id].splitlines(keepends=True)
         self.assertGreater(len(lines), 2)
-        shuffled = b''.join(reversed(lines))
-        manifest = deepcopy(built.manifest)
-        [file] = manifest['files']
-        [page] = file['pages']
-        body_sha = hashlib.sha256(shuffled).hexdigest()
-        old_posting = built.postings_artifact_id
-        new_posting = f"{source_part.basis.output_id}:postings:{body_sha[:20]}"
-        file.update(artifact_id=new_posting, sha256=body_sha)
-        page.update(sha256=body_sha, first_key=json.loads(lines[-1])['search_key'],
-                    last_key=json.loads(lines[0])['search_key'])
-        payload = json.dumps(manifest, sort_keys=True, ensure_ascii=False,
-                             separators=(',', ':')).encode('utf-8')
-        manifest_sha = hashlib.sha256(payload).hexdigest()
-        old_manifest = built.manifest_artifact_id
-        new_manifest = f"{source_part.basis.output_id}:manifest:{manifest_sha[:20]}"
-        artifacts = deepcopy(built.records.rows('artifact'))
-        for item in artifacts:
-            if item['id'] == old_posting:
-                item.update(id=new_posting, sha256=body_sha,
-                            registered_locator=_object_key(source_part.basis.output_id, body_sha, 'postings.ndjson'))
-            if item['id'] == old_manifest:
-                item.update(id=new_manifest, sha256=manifest_sha,
-                            byte_count=len(payload),
-                            registered_locator=_object_key(source_part.basis.output_id, manifest_sha, 'manifest.json'))
-        coverage = deepcopy(built.records.rows('coverage'))
-        for item in coverage:
-            item['index_artifact_id'] = new_manifest
-        blobs = {new_posting: shuffled, new_manifest: payload}
-        with self.assertRaisesRegex(RecordError, 'bytewise order'):
-            verify_saved_index(source_part.basis, built.records.rows('prepared_output')[0],
-                               artifacts, coverage, blobs, max_page_bytes=10000)
+        artifacts, coverage, blobs = self.forge(self.a, postings=b''.join(reversed(lines)))
+        with self.assertRaisesRegex(RecordError, 'out of (bytewise|key) order'):
+            self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
 
     def test_correction_and_removal_omit_dependents_keep_unrelated(self):
         # Part B is independent of part A; word depends on part A.

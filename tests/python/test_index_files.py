@@ -11,7 +11,34 @@ from css_preparation.validation import SchemaSubset
 from preparation_fixture import evidence_a, text_a
 from test_source_index_builder import RULES, configured_basis
 
-_MANIFEST = SchemaSubset('indexes/manifest.v1.schema.json')
+_MANIFEST = SchemaSubset('indexes/manifest.v2.schema.json')
+
+
+def with_cap(part, cap):
+    return replace(part, basis=replace(part.basis, parameters={**part.basis.parameters, 'encoded_page_cap_bytes': cap}))
+
+
+def common_rows(part, count):
+    """`count` synthetic occurrences of one key at one native order: one key spanning many pages."""
+    sample = next(row for row in part.postings if row['search_key'])
+    return tuple({**sample, 'occurrence_id': f'synthetic-{i:03d}'} for i in range(count))
+
+
+def read_directory(result):
+    """Decode the directory pages listed by the manifest root, checking digests and boundaries."""
+    root = result.manifest['directory']
+    body = result.records.blobs[root['artifact_id']]
+    entries, cursor = [], 0
+    for page in root['pages']:
+        data = body[cursor:cursor + page['byte_length']]
+        assert page['byte_offset'] == cursor and data.endswith(b'\n')
+        assert page['sha256'] == hashlib.sha256(data).hexdigest()
+        rows = [json.loads(line) for line in data.splitlines()]
+        assert (page['first_key'], page['last_key']) == (rows[0]['first_key'], rows[-1]['last_key'])
+        entries.extend(rows)
+        cursor += len(data)
+    assert cursor == len(body) == root['byte_length']
+    return entries
 
 
 class IndexFilesStageThree(unittest.TestCase):
@@ -23,10 +50,11 @@ class IndexFilesStageThree(unittest.TestCase):
                                            max_units=2, max_scalars=64, max_occurrences=20)
 
     def test_exact_page_offsets_digests_and_registered_coverage(self):
-        part = replace(self.parts[0], basis=replace(
-            self.parts[0].basis, parameters={**self.parts[0].basis.parameters,
-                                             'encoded_page_cap_bytes': 700}))
-        result = build_index_files(part, encoded_page_cap_bytes=700)
+        base = self.parts[0]
+        part = with_cap(replace(base, postings=tuple(sorted(
+            base.postings + common_rows(base, 12),
+            key=lambda r: (r['search_key'].encode(), r['native_order'], r['occurrence_id'].encode())))), 2048)
+        result = build_index_files(part, encoded_page_cap_bytes=2048)
         self.assertEqual(_MANIFEST.document_errors(result.manifest), [])
         records = result.records
         self.assertEqual(records.output_ids(), [part.basis.output_id])
@@ -35,12 +63,18 @@ class IndexFilesStageThree(unittest.TestCase):
         self.assertEqual(meta['byte_length'], len(body))
         self.assertEqual(meta['sha256'], hashlib.sha256(body).hexdigest())
         self.assertEqual(json.loads(records.blobs[result.manifest_artifact_id]), result.manifest)
-        self.assertEqual(result.manifest['native_extent'], {'unit_ids': part.basis.extent['unit_ids']})
+        self.assertEqual(result.manifest['format_version'], 'index-manifest/2')
+        self.assertEqual(result.manifest['native_extent'], {'unit_ids': part.basis.extent['unit_ids'],
+                                                            'order_range': list(part.order_range)})
         self.assertEqual(result.manifest['coverage']['capabilities'], ['word_exact'])
+        self.assertLessEqual(len(records.blobs[result.manifest_artifact_id]), 2048)
+        entries = read_directory(result)
+        self.assertEqual({e['postings_artifact_id'] for e in entries}, {result.postings_artifact_id})
+        self.assertGreater(len(entries), 1)
         cursor, decoded = 0, []
-        for page in meta['pages']:
+        for page in entries:
             self.assertEqual(page['byte_offset'], cursor)
-            self.assertLessEqual(page['byte_length'], 700)
+            self.assertLessEqual(page['byte_length'], 2048)
             data = body[cursor:cursor + page['byte_length']]
             self.assertEqual(len(data), page['byte_length'])
             self.assertTrue(data.endswith(b'\n'))
@@ -53,7 +87,9 @@ class IndexFilesStageThree(unittest.TestCase):
         self.assertEqual(cursor, len(body))
         self.assertEqual(decoded, list(part.postings))
         artifacts = {item['id']: item for item in records.rows('artifact')}
-        self.assertEqual(set(artifacts), {result.postings_artifact_id, result.manifest_artifact_id})
+        self.assertEqual(set(artifacts), {result.postings_artifact_id, result.manifest_artifact_id,
+                                          result.directory_artifact_id})
+        self.assertEqual(artifacts[result.directory_artifact_id]['format'], 'application/x-ndjson; profile=index-directory')
         for artifact_id, artifact in artifacts.items():
             self.assertTrue(artifact['registered_locator'].startswith('prepared/'))
             self.assertNotIn('://', artifact['registered_locator'])
@@ -62,23 +98,19 @@ class IndexFilesStageThree(unittest.TestCase):
         [coverage] = records.rows('coverage')
         self.assertEqual(coverage['index_artifact_id'], result.manifest_artifact_id)
         self.assertEqual(coverage['native_extent_json'], result.manifest['native_extent'])
-        again = build_index_files(part, encoded_page_cap_bytes=700)
+        again = build_index_files(part, encoded_page_cap_bytes=2048)
         self.assertEqual(result.manifest, again.manifest)
         self.assertEqual(records.blobs, again.records.blobs)
 
-    def test_common_utf8_key_spans_small_pages_without_lost_rows(self):
+    def test_common_utf8_key_spans_postings_and_directory_pages_without_lost_rows(self):
         base = self.parts[0]
-        sample = next(row for row in base.postings if row['search_key'])
-        rows = tuple({**sample, 'native_order': sample['native_order'] + i,
-                      'occurrence_id': f'synthetic-{i}'} for i in range(5))
-        line_bytes = len(json.dumps(rows[0], sort_keys=True, ensure_ascii=False,
-                                    separators=(',', ':')).encode('utf-8')) + 1
-        part = replace(base, postings=rows, basis=replace(
-            base.basis, parameters={**base.basis.parameters,
-                                    'encoded_page_cap_bytes': line_bytes + 10}))
-        result = build_index_files(part, encoded_page_cap_bytes=line_bytes + 10)
-        pages = result.manifest['files'][0]['pages']
-        self.assertEqual(len(pages), 5)
+        rows = common_rows(base, 80)
+        sample = rows[0]
+        part = with_cap(replace(base, postings=rows), 2048)
+        result = build_index_files(part, encoded_page_cap_bytes=2048)
+        pages = read_directory(result)
+        self.assertGreater(len(pages), 5)
+        self.assertGreater(len(result.manifest['directory']['pages']), 1, 'the key also spans directory pages')
         self.assertEqual({p['first_key'] for p in pages}, {sample['search_key']})
         self.assertEqual({p['last_key'] for p in pages}, {sample['search_key']})
         body = result.records.blobs[result.postings_artifact_id]
@@ -88,10 +120,9 @@ class IndexFilesStageThree(unittest.TestCase):
 
     def test_page_cap_changes_immutable_output_and_coverage_identity(self):
         normal = self.parts[0]
-        compact = replace(normal, basis=replace(
-            normal.basis, parameters={**normal.basis.parameters, 'encoded_page_cap_bytes': 700}))
+        compact = with_cap(normal, 2048)
         a = build_index_files(normal)
-        b = build_index_files(compact, encoded_page_cap_bytes=700)
+        b = build_index_files(compact, encoded_page_cap_bytes=2048)
         self.assertNotEqual(normal.basis.output_id, compact.basis.output_id)
         self.assertNotEqual(a.manifest['prepared_output_id'], b.manifest['prepared_output_id'])
         self.assertNotEqual(a.manifest_artifact_id, b.manifest_artifact_id)
@@ -126,6 +157,12 @@ class IndexFilesStageThree(unittest.TestCase):
             build_index_files(replace(base, postings=()))
         with self.assertRaisesRegex(RecordError, 'positive safe'):
             build_index_files(base, encoded_page_cap_bytes=True)
+        with self.assertRaisesRegex(RecordError, 'manifest exceeds the page cap'):
+            build_index_files(with_cap(replace(base, postings=(sample,)), 900), encoded_page_cap_bytes=900)
+        with self.assertRaisesRegex(RecordError, 'order range'):
+            build_index_files(replace(base, order_range=None))
+        with self.assertRaisesRegex(RecordError, 'identity or native extent'):
+            build_index_files(replace(base, order_range=(sample['native_order'] + 1, sample['native_order'] + 2)))
 
     def test_word_provider_alternatives_and_partial_manifest_coverage(self):
         from test_word_index_builder import WordIndexStageTwo

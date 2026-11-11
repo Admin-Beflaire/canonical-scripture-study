@@ -19,9 +19,9 @@ const recipe = {
   native_extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'], dependencies: [],
   units: [
     { unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
-    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { units: ['u1'] }, depends_on: ['acquire'] },
-    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { units: ['u2'] }, depends_on: ['acquire'] },
-    { unit_id: 'quality', kind: 'quality', native_extent: { units: ['u1', 'u2'] }, depends_on: ['prepare-u1', 'prepare-u2'],
+    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { unit_ids: ['u1'] }, depends_on: ['acquire'] },
+    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { unit_ids: ['u2'] }, depends_on: ['acquire'] },
+    { unit_id: 'quality', kind: 'quality', native_extent: { unit_ids: ['u1', 'u2'] }, depends_on: ['prepare-u1', 'prepare-u2'],
       required_capabilities: ['source_text'] },
   ],
 };
@@ -107,8 +107,12 @@ test('units progress through results alone, in dependency order, with exact depe
   await finish(context, 'quality');
   const report = (await taskReport(db, owner, task.id))!;
   assert.deepEqual(report.remaining_extent, {});
-  assert.ok(report.limitations.some(text => text.includes('scope check and selection follow')));
-  assert.equal(report.data_current, false, 'MC-02 never selects data');
+  // Control's own scope check runs next; these minimal rows have no receipt or coverage, so
+  // it fails and the current release stays unchanged (promotion is tested in selection.test.ts).
+  assert.equal(report.state, 'blocked');
+  assert.equal(report.checks.scope, 'failed');
+  assert.ok(report.limitations.includes('no quality receipt'));
+  assert.equal(report.data_current, false);
   assert.equal(db.sqlite.prepare('SELECT current_release_id FROM release_selection').get()?.current_release_id, null);
 });
 

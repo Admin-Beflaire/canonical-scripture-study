@@ -3,6 +3,7 @@ import { platformServer } from '../../../../packages/shared/src/platform.ts';
 import type { D1Database } from './d1.ts';
 import type { GitHubActions } from './github.ts';
 import { advance, reconcile } from './progress.ts';
+import type { ObjectStore } from './selection.ts';
 import { controlTask, listTasks, requestTask, taskReport, TASK_KINDS, type ControlAction, type Outcome, type TaskRequest } from './tasks.ts';
 
 /** Essential guidance sent to both hosts on initialize, so no separate skill is needed. */
@@ -14,10 +15,12 @@ Workflow:
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
 
-Preparation runs by itself in GitHub Actions: a task that names a reviewed recipe in constraints.recipe dispatches its units in order, each unit's result starts the next, and failed units are retried up to three times. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units; cancel also stops running ones; resume continues only unfinished units.
+Preparation runs by itself in GitHub Actions: a task that names a reviewed recipe in constraints.recipe dispatches its units in order, each unit's result starts the next, and failed units are retried up to three times. The task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
 
-Kinds: prepare (includes acquisition and index rebuilds), correct, replace, remove, package (source references only, never answers), incorporate_statement (needs the owner's named and versioned approval), rollback, validate_restore.
-Report to the owner plainly: received, prepared, checked, partial or current. Work continues without an open chat; check back with get_task.`;
+When every unit has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). If both pass, the result becomes current at once: the owner's instruction is the permission, no second go is needed. If a check fails, the task is blocked with the reasons and the current data is unchanged.
+
+Kinds: prepare (includes acquisition and index rebuilds), correct, replace (constraints.replaces lists the source revisions it replaces), remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later prepare task lifts it), package (source references only, never answers), incorporate_statement (needs the owner's named and versioned approval), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked).
+Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 
 const id = { type: 'string', minLength: 1, maxLength: 200, pattern: '^[A-Za-z0-9][A-Za-z0-9._:/-]*$' };
 const inputRef = { type: 'object', additionalProperties: false, required: ['kind', 'id'], properties: {
@@ -63,7 +66,8 @@ async function progressSafely<T>(work: () => Promise<T>): Promise<T | null> {
 }
 
 /** The single Maintenance MCP server for one authenticated request. */
-export function controlServer(db: D1Database, requester: string | undefined, enhancements: boolean, github: GitHubActions | null = null) {
+export function controlServer(db: D1Database, requester: string | undefined, enhancements: boolean, github: GitHubActions | null = null,
+  objects: ObjectStore | null = null) {
   const server = platformServer('control', enhancements, CONTROL_INSTRUCTIONS);
   const owner = () => {
     if (!requester) throw new Error('Task tools need the authenticated owner.');
@@ -76,7 +80,7 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
     const result = await requestTask(db, owner(), request);
     if (result.status === 'needs_information') return reply('More information is needed from the owner before this task can start.', result);
     if (result.status === 'conflict') return reply(result.message, result, true);
-    const progress = await progressSafely(() => advance(db, github, result.task.id));
+    const progress = await progressSafely(() => advance(db, github, result.task.id, objects));
     const task = (await taskReport(db, owner(), result.task.id))!;
     const dispatched = progress?.dispatched ?? [];
     return reply(`Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${dispatched.length ? `; dispatched ${dispatched.join(', ')}` : ''}${progress === null ? '; the progression check did not complete, it continues on the next check' : progress.limitation === 'github_unavailable' ? '; dispatch postponed (GitHub unavailable), it continues on the next check' : ''}.`,
@@ -93,7 +97,7 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
         // Reconcile interrupted work and continue progression before reporting. A GitHub outage
         // only postpones this; the saved status is still reported.
         notes = (await progressSafely(() => reconcile(db, github, task_id))) ?? ['The reconciliation check did not complete; it runs again on the next check.'];
-        const progress = await progressSafely(() => advance(db, github, task_id));
+        const progress = await progressSafely(() => advance(db, github, task_id, objects));
         if (progress === null) notes.push('The progression check did not complete; it continues on the next check.');
         else if (progress.limitation === 'github_unavailable') notes.push('Dispatch postponed: GitHub was unavailable; it continues on the next check.');
       }
@@ -119,7 +123,7 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
     }
     if (action === 'resume') {
       await progressSafely(() => reconcile(db, github, task_id));
-      await progressSafely(() => advance(db, github, task_id));
+      await progressSafely(() => advance(db, github, task_id, objects));
     }
     const task = (await taskReport(db, owner(), task_id))!;
     const note = failed.length ? ` Cancellation of ${failed.length} run(s) did not go through; get_task requests it again.` : '';

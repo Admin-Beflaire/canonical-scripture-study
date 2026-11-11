@@ -92,9 +92,14 @@ class PrepareTest(unittest.TestCase):
         spans = {row['label']: row for row in records.rows('native_span')}
         self.assertEqual(spans['Mat 1:4']['reading_kind'], 'gap')
         notes = {row['span_id'].rsplit('#', 1)[1]: row['details_json']['words'] for row in records.rows('annotation')}
-        self.assertEqual(notes['Mat.1.1'][0], {'row': 2, 'type': 'K', 'word': 'δεζ', 'editions': ['TR', 'Byz'],
-                                               'gloss': 'second', 'tags': 'G2222=V-PAI-3S'})
-        self.assertEqual(notes['Mat.1.1'][1]['meaning_variants'], 'synthetic meaning variant')
+        self.assertEqual(notes['Mat.1.1'], [
+            {'row': 1, 'type': 'NKO', 'editions': 'NA28+NA27+TR+Byz'},
+            {'row': 2, 'type': 'K', 'word': 'δεζ', 'editions': 'TR+Byz', 'gloss': 'second', 'tags': 'G2222=V-PAI-3S'},
+            # A base word placed elsewhere in one edition keeps the displacement note.
+            {'row': 3, 'type': 'NKO', 'editions': 'NA28+NA27+TR«4+Byz', 'meaning_variants': 'synthetic meaning variant'},
+            # A base word missing from some editions keeps its edition list.
+            {'row': 4, 'type': 'NKO', 'editions': 'NA28+TR'}])
+        self.assertEqual(notes['Mat.1.3'], [{'row': 1, 'type': 'NKO', 'editions': 'NA28+TR'}])
         self.assertEqual(notes['Mat.1.4'][0]['word'], 'λμν')
         postings = self._postings(records, 'word_index')
         crasis = {row['search_key'] for row in postings if row['form'] == 'κἀγώ'}
@@ -102,6 +107,25 @@ class PrepareTest(unittest.TestCase):
         self.assertIn('lemma:G20447', {row['search_key'] for row in postings})
         self.assertIn('δι’', {row['search_key'] for row in self._postings(records, 'source_search')})
         self.assertEqual({row['state'] for row in records.rows('coverage')}, {'available'})
+
+    def test_word_present_in_every_edition_needs_no_annotation(self):
+        lines = fixture.tagnt_lines()
+        lines[-2] = fixture.row('Mat.1.2(1.3)#01=NKO', 'ηθι. (ēthi)', 'there', 'G3333=ADV', 'ηθι=there',
+                                'NA28+NA27+Tyn+SBL+WH+Treg+TR+Byz')
+        component, raw = fixture.component('tagnt', lines)
+        self.assertEqual(prepare_unit(raw, component, 'Mat', ['Mat.1.3']).rows('annotation'), [])
+
+    def test_two_words_in_one_hebrew_row_stay_two_words(self):
+        lines = fixture.tahot_lines()
+        lines[-1] = fixture.row('Exo.1.2(1.3)#03=Q(K)', 'בָּא//גָד\\׃', 'ba gad', 'fortune came',
+                                '{H0935G}//{H1409}\\H9016', 'HVqp3ms//Ncmsa')
+        component, raw = fixture.component('tahot', lines)
+        text = book_text(book_verses(read_component(raw, component), component, 'Exo'), component, 'Exo')
+        self.assertEqual(text.unit('Exo.1.3'), 'יָכ בָּא גָד׃')
+        records = prepare_unit(raw, component, 'Exo', ['Exo.1.3'])
+        words = {row['form']: row for row in self._postings(records, 'word_index') if row['lookup_kind'] == 'lemma'}
+        self.assertEqual(set(words), {'יָכ', 'בָּא', 'גָד'})
+        self.assertEqual({a['lemma_id'] for a in words['גָד']['analyses']}, {'H0935G', 'H1409'})
 
     def test_untagged_word_is_reported_as_partial_word_coverage(self):
         lines = fixture.tagnt_lines()

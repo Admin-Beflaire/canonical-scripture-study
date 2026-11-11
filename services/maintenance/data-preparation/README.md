@@ -80,10 +80,11 @@ source search and word/lemma/grammar indexes in one D1 batch:
 - Base text: TAHOT's translators' text (Leningrad following the Qere, with restored
   `R` and LXX-based `X` words as `restored` and `reconstructed` word spans); the Ketiv
   and recorded variants are attributed `textual_variants` annotations. TAGNT: the words
-  whose editions include NA28; words found only in other editions (such as the TR) and
+  whose editions include NA28; words found only in other editions (such as the TR), the
+  exact editions cell of any base word missing from or moved in an edition (`TR«4`), and
   recorded variants are `textual_variants` annotations. A verse without base words is a gap.
-- Wording joins the word cells (STEPBible's `/` and `\` separators removed) with one
-  space, except after a Hebrew maqaf. Search keys: Hebrew without accents, meteg and
+- Wording joins the word cells (STEPBible's `/` and `\` separators removed; `//`, a
+  word break inside one row, becomes a space) with one space, except after a Hebrew maqaf. Search keys: Hebrew without accents, meteg and
   puncta; Greek case- and accent-folded. Paragraph markers and punctuation are kept in
   the wording but are not tokens.
 - Each tagged morpheme (Hebrew) or crasis component (Greek) is one attributed analysis

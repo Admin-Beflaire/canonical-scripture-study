@@ -81,11 +81,13 @@ def read_words(lines: Iterable[str], language: Language) -> Iterator[TaggedWord]
 def native_form(word: TaggedWord, language: Language) -> str:
     """The word's running-text wording.
 
-    Hebrew: the Hebrew cell without STEPBible's `/` and `\\` separators. Greek: the Greek
+    Hebrew: the Hebrew cell without STEPBible's `/` and `\\` separators, `//` (a word break
+    inside one row) becoming a space. Greek: the Greek
     cell before its ` (transliteration)`. Surrounding spaces are not wording.
     """
     if language == 'hebrew':
-        return word.cell.translate(_HEBREW_MARKUP).strip()
+        # `//` divides two words held in one row (for example a Qere of two words): a space.
+        return word.cell.replace('//', ' ').translate(_HEBREW_MARKUP).strip()
     match = _GREEK_CELL.fullmatch(word.cell)
     if match is None:
         raise FormatError(f'Line {word.line}: Greek cell has no transliteration')
@@ -112,6 +114,14 @@ def join_forms(forms: Iterable[str], language: Language) -> tuple[str, tuple[tup
 
 
 _TYPE_LETTERS = re.compile(r'\([^)]*\)')
+
+
+ALL_GREEK_EDITIONS = frozenset(('NA28', 'NA27', 'Tyn', 'SBL', 'WH', 'Treg', 'TR', 'Byz'))
+
+
+def editions_differ(word: TaggedWord) -> bool:
+    """Is the word missing from any edition, or placed elsewhere in one (`TR«4`)?"""
+    return set(greek_editions(word)) != ALL_GREEK_EDITIONS or any(mark in word.cells[4] for mark in '«»')
 
 
 def greek_editions(word: TaggedWord) -> tuple[str, ...]:

@@ -22,7 +22,8 @@ from ...indexes.source import build_source_postings
 from ...indexes.word import WordObservation, build_word_postings
 from ...prepare.evidence import AnnotationSpec, NativeText, OutputBasis, SpanSpec, build_evidence
 from ...prepare.records import RecordError, RecordSet
-from .format import FormatError, TaggedWord, greek_editions, join_forms, native_form, outer_type_letters, read_words
+from .format import (FormatError, TaggedWord, editions_differ, greek_editions, join_forms, native_form,
+                     outer_type_letters, read_words)
 from .rules import GRAMMAR_KEY_VERSION, RULES, analyses, grammar_keys
 from .source import BOOK_STRIDE, BOOKS, PROVIDER, Component
 
@@ -113,9 +114,13 @@ def _variant_entries(verse: Verse, component: Component) -> list[dict[str, Any]]
         meaning, spelling = word.cells[5], word.cells[6]
         entry: dict[str, Any] = {'row': position, 'type': word.text_type}
         if component.source.language == 'greek':
+            # The editions cell is kept exactly, with any displacement note (`TR«4`): which
+            # editions have the word, and where an edition places it.
             if span is None:
-                entry.update(word=native_form(word, 'greek'), editions=list(greek_editions(word)),
+                entry.update(word=native_form(word, 'greek'), editions=word.cells[4],
                              gloss=word.cells[1], tags=word.cells[2])
+            elif editions_differ(word):
+                entry['editions'] = word.cells[4]
             elif not meaning and not spelling:
                 continue
         elif word.text_type == 'L' and not meaning and not spelling:

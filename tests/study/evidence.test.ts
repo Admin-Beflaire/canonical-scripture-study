@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { buildFixture, UNITS } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
 import { STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
-import { readSpans } from '../../services/study/src/read/evidence.ts';
+import { readRelationships, readSpans } from '../../services/study/src/read/evidence.ts';
 import { artifactFrom, readArtifact } from '../../services/study/src/read/objects.ts';
 import { ReadError } from '../../services/study/src/read/states.ts';
 
@@ -66,4 +66,22 @@ test('the resolver rejects unregistered paths, bad ranges, unsupported formats a
   await assert.rejects(readArtifact(session, { ...artifact, byte_count: 70000 }), state('exceeds_limits'));
   assert.deepEqual(fixture.bucket.reads, []);
   await assert.rejects(readArtifact(session, { ...artifact, registered_locator: 'synthetic/none' }), state('corrupt'));
+});
+
+test('relationships page by complete relationship; unselected endpoints stay unavailable', async () => {
+  const fixture = buildFixture();
+  fixture.select(null);
+  for (let i = 0; i < 11; i++) {
+    fixture.db.sqlite.exec(`INSERT INTO relationships VALUES ('rel-y${String(i).padStart(2, '0')}', 'syn-ev', 'quotation', 'directed', 'supported', '{}')`);
+    fixture.db.sqlite.exec(`INSERT INTO relation_members VALUES ('rel-y${String(i).padStart(2, '0')}', 'from', 0, 'a-u2', 'exact', NULL)`);
+  }
+  fixture.select('rel-2', 'rel-1');
+  const session = await ReadSession.open(fixture.env, roomy);
+  const first = await readRelationships(session, 'a-u1');
+  assert.deepEqual(first.relationships[0].members.map(m => m.endpoint.state), ['selected', 'unavailable', 'none']);
+  assert.equal(first.more, false);
+  const page1 = await readRelationships(session, 'a-u2', ['quotation']);
+  assert.deepEqual([page1.relationships.length, page1.more, page1.after], [10, true, 'rel-y09']);
+  const page2 = await readRelationships(session, 'a-u2', ['quotation'], page1.after);
+  assert.deepEqual([page2.relationships.map(r => r.id), page2.more], [['rel-y10'], false]);
 });

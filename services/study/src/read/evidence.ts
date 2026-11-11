@@ -1,5 +1,6 @@
 import { isIdentifier, sha256Hex } from './bytes.ts';
 import { artifactFrom, readArtifact, type RegisteredArtifact } from './objects.ts';
+import { RELATIONSHIPS_PER_QUERY } from './queries.ts';
 import type { ReadSession } from './session.ts';
 import { ReadError, limitation, type Limitation } from './states.ts';
 
@@ -89,4 +90,41 @@ async function bodyText(session: ReadSession, row: Record<string, unknown>, segm
     text.push(await readArtifact(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 }));
   }
   return text;
+}
+
+export interface RelationshipMember {
+  role: string; ordinal: number; correspondence: string; gap_reason: string | null;
+  /** `selected`: the endpoint span is in the current release; `unavailable`: it exists but is
+   *  not selected now (never filled from another release); `none`: a recorded gap. */
+  endpoint: { state: 'selected'; span_id: string; source_revision_id: string; label: string; native_order: number; coordinate_version: string }
+    | { state: 'unavailable'; span_id: string } | { state: 'none' };
+}
+export interface RelationshipEvidence { id: string; kind: string; direction: string; status: string; basis: Record<string, unknown>; members: RelationshipMember[] }
+
+/** Typed, directed, ordered relationships touching one span, one bounded page at a time.
+ *  `after` continues from the last complete relationship. */
+export async function readRelationships(session: ReadSession, spanId: string, kinds: string[] | null = null, after: string | null = null):
+    Promise<{ relationships: RelationshipEvidence[]; more: boolean; after: string | null }> {
+  const { rows, more: truncated } = await session.query('relationships', { span_id: spanId, kinds, after: after === null ? null : [after] });
+  const groups: RelationshipEvidence[] = [];
+  for (const row of rows) {
+    let group = groups.at(-1);
+    if (!group || group.id !== row.relationship_id) {
+      group = { id: String(row.relationship_id), kind: String(row.kind), direction: String(row.direction), status: String(row.status),
+        basis: json(row.basis_json, isObject), members: [] };
+      groups.push(group);
+    }
+    group.members.push({ role: String(row.role), ordinal: Number(row.ordinal), correspondence: String(row.correspondence),
+      gap_reason: typeof row.gap_reason === 'string' ? row.gap_reason : null,
+      endpoint: row.span_id === null ? { state: 'none' } : row.endpoint_selected === 1
+        ? { state: 'selected', span_id: String(row.span_id), source_revision_id: String(row.endpoint_source_revision_id), label: String(row.endpoint_label),
+            native_order: Number(row.endpoint_native_order), coordinate_version: String(row.endpoint_coordinate_version) }
+        : { state: 'unavailable', span_id: String(row.span_id) } });
+  }
+  // The inner statement fetches one extra relationship and the outer one may cut members:
+  // drop the last group whenever more may follow, so no relationship is returned partially.
+  let more = false;
+  if (groups.length > RELATIONSHIPS_PER_QUERY || truncated) { groups.pop(); more = true; }
+  if (more && groups.length === 0) throw new ReadError('exceeds_limits', 'One relationship has more members than a query may return');
+  return { relationships: groups, more, after: more ? groups.at(-1)!.id : null };
 }

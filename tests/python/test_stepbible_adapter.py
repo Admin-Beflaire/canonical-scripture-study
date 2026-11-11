@@ -181,6 +181,13 @@ class RecipeTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 BookRecipe.from_recipe({**value, **change})
 
+    def test_hebrew_books_follow_the_tanakh_order(self):
+        from css_preparation.adapters.stepbible.source import BOOKS
+        books = BOOKS['tahot']
+        self.assertEqual(len(set(books)), 39)
+        self.assertEqual((books[:5], books[5], books[11], books[26], books[-1]),
+                         (('Gen', 'Exo', 'Lev', 'Num', 'Deu'), 'Jos', 'Isa', 'Psa', '2Ch'))
+
     def test_original_stays_in_protected_storage(self):
         component, _ = fixture.component('tahot')
         self.assertTrue(component.original_key.startswith(f'originals/{component.revision_id}/{component.sha256}/'))

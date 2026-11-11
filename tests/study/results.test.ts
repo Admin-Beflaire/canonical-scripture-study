@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildFixture, A, B, type Fixture } from './fixture.ts';
+import { buildFixture, entriesOf, A, B, type Fixture } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
 import { STARTING_LIMITS, RequestBudget } from '../../services/study/src/read/budget.ts';
 import { readSpans } from '../../services/study/src/read/evidence.ts';
@@ -47,11 +47,11 @@ test('malformed, foreign or out-of-bounds continuations are rejected', async () 
 
 test('a search batch continues to completion; every continuation resolves current anew', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const batches = await drain(fixture, new PagedIndexSearch(), workload);
   const hits = batches.flatMap(b => b.evidence.map(e => e.kind === 'search_hit' ? e.hit.occurrence_id : ''));
-  assert.equal(hits.length, 24);
-  assert.equal(new Set(hits).size, 24);
+  assert.equal(hits.length, 48);
+  assert.equal(new Set(hits).size, 48);
   assert.ok(batches.every(b => b.release_id === 'rel-2' && b.guidance_version === 'guidance-test/1'));
   assert.ok(batches.slice(0, -1).every(b => b.continuation && b.remaining));
   assert.equal(batches.at(-1)!.remaining, null);
@@ -61,7 +61,7 @@ test('a search batch continues to completion; every continuation resolves curren
 
 test('after promotion or rollback a continuation resolves current anew and rejects a stale anchor', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const first = await searchBatch(await ReadSession.open(fixture.env, STARTING_LIMITS), new PagedIndexSearch(), workload, null, 'g/1');
   fixture.select('rel-1', 'rel-2');   // the anchored index output is no longer selected
   await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, first.continuation, 'g/1'),
@@ -74,35 +74,42 @@ test('after promotion or rollback a continuation resolves current anew and rejec
 
 test('tampered continuation positions cannot escape the workload or the index bounds', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const tamper = [
-    { source: B, output: 'syn-src-b', file: 0, page: 0 },        // source outside the workload
-    { source: A, output: 'syn-src-1', file: 0, page: 9999 },     // not a candidate page
-    { source: A, output: 'syn-src-1', file: 0, page: 0, extra: 1 },
+    { source: B, output: 'syn-src-b', order: 0, dir: 0, entry: 0, anchor: null },          // source outside the workload
+    { source: A, output: 'syn-src-1', order: 0, dir: 0, entry: 9999, anchor: null },       // mid-output without an order key
+    { source: A, output: 'syn-src-1', order: 0, dir: 0, entry: 0, anchor: null, extra: 1 },
   ];
   for (const pos of tamper) {
     const token = await encodeContinuation(workload, { op: 'search', pos, key: null });
     await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, token, 'g/1'), state('invalid_request'), JSON.stringify(pos));
   }
-  // Invented anchors: an unselected or high output name, a mid-output page without an order key,
-  // and order keys on a real candidate page that are not postings there (past the end, or in range).
-  const directory = JSON.parse(new TextDecoder().decode(fixture.indexes['syn-src-1'].manifest)).files[0].pages as { first_key: string; last_key: string }[];
-  const first = directory.findIndex(p => p.first_key <= 'common' && 'common' <= p.last_key);
-  const real = fixture.postings['syn-src-1'].filter(p => p.search_key === 'common')[0];
+  // Invented anchors: unselected or high output names, a wrong order position, a next page that does not
+  // follow the anchor page, an order key the anchor page does not hold, and an anchor range that is not a page.
+  const entries = entriesOf(fixture.indexes['syn-src-1']).filter(e => e.first_key <= 'common' && 'common' <= e.last_key);
+  const [p0, p1, p2] = entries;
+  const ref = (e: typeof p0) => ({ file: e.postings_artifact_id, offset: e.byte_offset, length: e.byte_length, sha256: e.sha256 });
+  const onP0 = fixture.postings['syn-src-1'].filter(p => p.search_key === 'common')[0];
+  const at = (next: typeof p0, anchor: ReturnType<typeof ref>) => ({ source: A, output: 'syn-src-1', order: 0, dir: next.dir, entry: next.entry, anchor });
   const forged = [
-    { pos: { source: A, output: '../x', file: 0, page: 0 }, key: null },
-    { pos: { source: A, output: 'zzz-after-everything', file: 0, page: 0 }, key: null },
-    { pos: { source: A, output: 'syn-src-1', file: 0, page: first + 1 }, key: null },
-    { pos: { source: A, output: 'syn-src-1', file: 0, page: first }, key: [9_000_000, 'occ-x'] },
-    { pos: { source: A, output: 'syn-src-1', file: 0, page: first }, key: [real.native_order, `${real.occurrence_id}-forged`] },
+    { pos: { source: A, output: '../x', order: 0, dir: 0, entry: 0, anchor: null }, key: null },
+    { pos: { source: A, output: 'zzz-after-everything', order: 0, dir: 0, entry: 0, anchor: null }, key: null },
+    { pos: { source: A, output: 'syn-src-1', order: 5, dir: 0, entry: 0, anchor: null }, key: null },
+    { pos: at(p2, ref(p0)), key: [onP0.native_order, onP0.occurrence_id] },                                  // skips p1
+    { pos: at(p1, ref(p0)), key: [9_000_000, 'occ-x'] },                                                      // not on p0
+    { pos: at(p1, ref(p0)), key: [onP0.native_order, `${onP0.occurrence_id}-forged`] },
+    { pos: at(p1, { ...ref(p0), sha256: 'f'.repeat(64) }), key: [onP0.native_order, onP0.occurrence_id] },    // not a real page
+    { pos: at(p1, { ...ref(p0), offset: ref(p0).offset + 1, length: ref(p0).length - 1 }), key: [onP0.native_order, onP0.occurrence_id] },
   ];
+  assert.ok(p2, 'the key spans at least three pages');
   for (const { pos, key } of forged) {
     const token = await encodeContinuation(workload, { op: 'search', pos, key });
     await assert.rejects(searchBatch(await ReadSession.open(fixture.env, roomy), new PagedIndexSearch(), workload, token, 'g/1'),
       state('invalid_request'), JSON.stringify(pos));
   }
-  assert.equal(SEARCH_CHECKS.search({ source: A, output: 'syn-src-1', file: 0, page: 0 }, [1, 'occ'], workload), true);
-  assert.equal(SEARCH_CHECKS.search({ source: A, output: 'syn-src-1', file: 0, page: 0 }, [-1, 'occ'], workload), false);
+  assert.equal(SEARCH_CHECKS.search(at(p1, ref(p0)), [1, 'occ'], workload), true);
+  assert.equal(SEARCH_CHECKS.search(at(p1, ref(p0)), [-1, 'occ'], workload), false);
+  assert.equal(SEARCH_CHECKS.search({ ...at(p1, ref(p0)), anchor: null }, [1, 'occ'], workload), false);
 });
 
 test('citations must match supplied evidence; equal wording from two sources stays separate', async () => {
@@ -168,13 +175,14 @@ class MemorySearch implements SearchAdapter {
     const last = slice.at(-1);
     return { ...base, hits: slice, state: rest ? 'continues' : slice.length ? 'complete' : 'no_match',
       searched: request.sources.map(s => ({ source_revision_id: s, capability: 'word_exact', coverage_state: 'available', unit_ids: ['u1', 'u2'], normalization_rule: 'syn:identity/1', complete: !rest, resumed_after: request.position?.after ?? null })),
-      remaining: rest && last ? { source: last.source_revision_id, output: 'memory', file: 0, page: 0, after: [last.native_order, last.occurrence_id] } : null };
+      remaining: rest && last ? { source: last.source_revision_id, output: 'memory', order: 0, dir: 0, entry: 0, after: [last.native_order, last.occurrence_id],
+        anchor: { file: 'memory', offset: 0, length: 1, sha256: '0'.repeat(64) } } : null };
   }
 }
 
 test('a contract-faithful replacement adapter yields the same hits through the same batch contract', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const paged = await drain(fixture, new PagedIndexSearch(), workload);
   const memoryHits = fixture.postings['syn-src-1'].filter(p => p.search_key === 'common').map(p => ({
     source_revision_id: p.source_revision_id, span_id: p.span_id, coordinate_version: p.coordinate_version,
@@ -189,7 +197,7 @@ test('a contract-faithful replacement adapter yields the same hits through the s
 
 test('every batch, envelope included, fits the result allowance', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const batches = await drain(fixture, new PagedIndexSearch(), workload);
   for (const batch of batches) assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= STARTING_LIMITS.resultBytes);
   assert.equal(batches.at(-1)!.remaining, null);

@@ -5,6 +5,7 @@ export type ReadState =
   | 'incompatible_release'   // the selected release uses formats this Study does not read
   | 'no_match'               // searched the stated extent and found nothing
   | 'missing_index'          // no selected index for this source/capability
+  | 'incompatible_index'     // a selected index uses a format this Study does not read; rebuild needed
   | 'missing_evidence'       // a reference is not available in the current release
   | 'unresolved_mapping'     // an endpoint or correspondence exists but cannot be resolved here
   | 'unsupported_capability' // e.g. phrase, proximity or fuzzy lookup

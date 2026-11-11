@@ -69,7 +69,7 @@ test('the resolver rejects unregistered paths, bad ranges, unsupported formats a
     assert.throws(() => artifactFrom({ ...artifact, registered_locator: locator }), state('corrupt'));
   await assert.rejects(readArtifact(session, { ...artifact, format: 'application/zip' }), state('corrupt'));
   await assert.rejects(readArtifact(session, artifact, { offset: 8, length: 5, sha256: '0'.repeat(64) }), state('corrupt'));
-  await assert.rejects(readArtifact(session, { ...artifact, byte_count: 9000 }, { offset: 0, length: 3000, sha256: '0'.repeat(64) }), state('exceeds_limits'));
+  await assert.rejects(readArtifact(session, { ...artifact, byte_count: 40000 }, { offset: 0, length: 20000, sha256: '0'.repeat(64) }), state('exceeds_limits'));
   await assert.rejects(readArtifact(session, { ...artifact, byte_count: 70000 }), state('exceeds_limits'));
   assert.deepEqual(fixture.bucket.reads, []);
   await assert.rejects(readArtifact(session, { ...artifact, registered_locator: 'synthetic/none' }), state('corrupt'));

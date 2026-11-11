@@ -21,7 +21,7 @@ const id = (value: unknown): string => {
 };
 const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.length !== size || !value.every(v => v === '' || isIdentifier(v, 1024) || isSafeCount(v)))
+  if (!Array.isArray(value) || value.length !== size || !value.every(v => v === '' || v === -1 || isIdentifier(v, 1024) || isSafeCount(v)))
     throw new ReadError('invalid_request', 'Invalid query position');
   return value;
 };
@@ -38,7 +38,7 @@ export interface CountsInput { span_id: string }
 export interface CoverageInput { source_revision_ids: string[]; after?: [string, string, string] | null }
 export interface PackagesInput { subject: string; after?: [string] | null }
 export interface StatementInput { [key: string]: never }
-export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, string] | null }
+export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, number, string] | null }
 
 const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
@@ -126,17 +126,21 @@ WHERE ro.release_id = ?1 AND cs.status = 'approved'
 ORDER BY cs.id
 LIMIT ?2`;
 
-/** Search adapter only: index outputs for a capability, with every artifact of each output. */
-const INDEX_FILES = `SELECT c.output_id, c.source_revision_id, c.capability, c.state, c.method_version, c.limitation,
-  c.native_extent_json, c.index_artifact_id,
-  a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator
-FROM coverage c
-JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-LEFT JOIN artifacts a ON a.output_id = c.output_id
-WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
-  AND (c.source_revision_id, c.output_id) >= (?4, ?5)
-ORDER BY c.source_revision_id, c.output_id, a.id
-LIMIT ?6`;
+/** Search adapter only: index outputs for a capability in native order (their `order_range`
+ *  start), with every artifact of each output. The unit list is not returned. An output without
+ *  an order range sorts first and is reported as an incompatible index. */
+const INDEX_FILES = `WITH idx AS (
+  SELECT c.output_id, c.source_revision_id, c.capability, c.state, c.method_version, c.limitation, c.index_artifact_id,
+    json_extract(c.native_extent_json, '$.order_range[0]') AS order_first,
+    json_extract(c.native_extent_json, '$.order_range[1]') AS order_last
+  FROM coverage c
+  JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+  WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
+SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator
+FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
+WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?4, ?5, ?6)
+ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
+LIMIT ?7`;
 
 export const QUERIES = {
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
@@ -157,7 +161,7 @@ export const QUERIES = {
   packages: { sql: PACKAGES, params: (i: PackagesInput) => [id(i.subject), ...(optionalAfter(i.after, 1) ?? [''])] },
   statement: { sql: STATEMENT, params: (_: StatementInput) => [] },
   index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>
-    [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
+    [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 3) ?? ['', -1, ''])] },
 } satisfies Record<string, Declaration<never>>;
 
 export type QueryName = keyof typeof QUERIES;

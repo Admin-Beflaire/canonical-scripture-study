@@ -6,7 +6,8 @@ import { ReadError } from './states.ts';
  *  it is used for the R2 read and never returned to a host. */
 export interface RegisteredArtifact { id: string; sha256: string; byte_count: number; format: string; registered_locator: string }
 
-export const SUPPORTED_FORMATS: ReadonlySet<string> = new Set(['application/json', 'application/x-ndjson', 'text/utf-8']);
+export const SUPPORTED_FORMATS: ReadonlySet<string> = new Set(['application/json', 'application/x-ndjson',
+  'application/x-ndjson; profile=index-directory', 'text/utf-8']);
 const HEX = /^[0-9a-f]{64}$/;
 
 /** Same portable object-key rules as the D1 schema; checked again before any R2 read. */

@@ -19,7 +19,7 @@ export function normalizeSearchWorkload(w: SearchWorkload): SearchWorkload {
  *  adapter's position bounds; the adapter re-checks it against the selected index. */
 export const SEARCH_CHECKS: Readonly<Record<string, PositionCheck>> = Object.freeze({
   search(pos: unknown, key: unknown, workload: unknown) {
-    if (!pos || typeof pos !== 'object' || Array.isArray(pos) || JSON.stringify(Object.keys(pos).sort()) !== '["file","output","page","source"]') return false;
+    if (!pos || typeof pos !== 'object' || Array.isArray(pos) || JSON.stringify(Object.keys(pos).sort()) !== '["anchor","dir","entry","order","output","source"]') return false;
     const w = workload as SearchWorkload;
     try { checkRequest({ lookup: w.lookup, key: w.key, sources: w.sources, position: { ...(pos as Omit<SearchPosition, 'after'>), after: key as SearchPosition['after'] } }); }
     catch { return false; }
@@ -41,7 +41,8 @@ export async function searchBatch(session: ReadSession, adapter: SearchAdapter, 
   const result = await adapter.search(session, { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources, position });
   const evidence: EvidenceItem[] = result.hits.map(hit => ({ kind: 'search_hit', hit }));
   const next = result.remaining ? await encodeContinuation(normalized, { op: 'search',
-    pos: { source: result.remaining.source, output: result.remaining.output, file: result.remaining.file, page: result.remaining.page },
+    pos: { source: result.remaining.source, output: result.remaining.output, order: result.remaining.order,
+      dir: result.remaining.dir, entry: result.remaining.entry, anchor: result.remaining.anchor },
     key: result.remaining.after }) : null;
   const { batch } = assembleBatch({
     release_id: session.release.id, mode: normalized.mode, depth: normalized.depth,

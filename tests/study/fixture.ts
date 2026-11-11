@@ -59,7 +59,7 @@ function posting(source: string, spanId: string, unit: string, t: { start: numbe
 
 export function wordPostings(source: string, base: Posting[]): Posting[] {
   const out: Posting[] = [];
-  for (const p of base.filter(row => row.native_order < 1000)) {
+  for (const p of base.filter(row => row.native_order < 1000 || row.native_order >= 10000)) {
     const analyses = [
       { analysis_id: `prov-a:${p.occurrence_id}`, analysis_revision_id: 'syn:prov-a:source_revision', lemma_id: `prov-a:lemma-${p.search_key}`,
         grammar: { part_of_speech: 'noun' }, provider: 'syn-provider-a', basis: 'syn-receipt-a' },
@@ -74,41 +74,55 @@ export function wordPostings(source: string, base: Posting[]): Posting[] {
   return out;
 }
 
-export interface BuiltIndex { output: string; manifest: Uint8Array; postings: Uint8Array; manifestId: string; postingsId: string; capabilities: string[] }
+export interface BuiltIndex { output: string; manifest: Uint8Array; postings: Uint8Array; directory: Uint8Array; manifestId: string;
+  postingsId: string; directoryId: string; capabilities: string[]; orderRange: [number, number] }
 
-/** Builds an index in the Data Indexes v1 format: sorted NDJSON split into line-aligned pages. */
-export function buildIndex(output: string, kind: 'source_text' | 'word_language', source: string, units: string[], rows: Posting[], pageCap: number,
-                           coverage: { state: string; limitation: string | null } = { state: 'available', limitation: null }): BuiltIndex {
-  const sorted = [...rows].sort((x, y) => byteOrder(x.search_key, y.search_key) || x.native_order - y.native_order || byteOrder(x.occurrence_id, y.occurrence_id));
-  const lines = sorted.map(row => ({ key: row.search_key, bytes: enc.encode(JSON.stringify(row) + '\n') }));
-  const pages: { first_key: string; last_key: string; byte_offset: number; byte_length: number; sha256: string }[] = [];
+export const DIRECTORY_FORMAT = 'application/x-ndjson; profile=index-directory';
+
+type Page = { first_key: string; last_key: string; byte_offset: number; byte_length: number; sha256: string };
+function pack(lines: { first: string; last: string; bytes: Uint8Array }[], cap: number): { body: Uint8Array; pages: Page[] } {
+  const pages: Page[] = [];
   const chunks: Uint8Array[] = [];
   let offset = 0;
   let current: typeof lines = [];
   const flush = () => {
     if (!current.length) return;
     const bytes = Buffer.concat(current.map(l => l.bytes));
-    pages.push({ first_key: current[0].key, last_key: current[current.length - 1].key, byte_offset: offset, byte_length: bytes.length, sha256: sha(bytes) });
+    pages.push({ first_key: current[0].first, last_key: current[current.length - 1].last, byte_offset: offset, byte_length: bytes.length, sha256: sha(bytes) });
     chunks.push(bytes); offset += bytes.length; current = [];
   };
   for (const line of lines) {
-    if (line.bytes.length > pageCap) throw new Error('Synthetic posting exceeds page cap');
-    if (current.reduce((n, l) => n + l.bytes.length, 0) + line.bytes.length > pageCap) flush();
+    if (line.bytes.length > cap) throw new Error('Synthetic line exceeds page cap');
+    if (current.reduce((n, l) => n + l.bytes.length, 0) + line.bytes.length > cap) flush();
     current.push(line);
   }
   flush();
-  const postings = Buffer.concat(chunks);
+  return { body: Buffer.concat(chunks), pages };
+}
+
+/** Builds an index in the Data Indexes v2 format: sorted NDJSON postings pages, a paged directory
+ *  naming them by artifact ID, and a manifest (within the cap) listing the directory pages. */
+export function buildIndex(output: string, kind: 'source_text' | 'word_language', source: string, units: string[], rows: Posting[], pageCap: number,
+                           coverage: { state: string; limitation: string | null } = { state: 'available', limitation: null },
+                           orderRange: [number, number] = [0, 9999]): BuiltIndex {
+  const sorted = [...rows].sort((x, y) => byteOrder(x.search_key, y.search_key) || x.native_order - y.native_order || byteOrder(x.occurrence_id, y.occurrence_id));
+  const postings = pack(sorted.map(row => ({ first: row.search_key, last: row.search_key, bytes: enc.encode(JSON.stringify(row) + '\n') })), pageCap);
   const postingsId = `${output}:postings`;
+  const entries = postings.pages.map(page => ({ postings_artifact_id: postingsId, ...page }));
+  const directory = pack(entries.map(e => ({ first: e.first_key, last: e.last_key, bytes: enc.encode(JSON.stringify(e) + '\n') })), pageCap);
+  const directoryId = `${output}:directory`;
   const capabilities = kind === 'source_text' ? ['word_exact'] : ['form_exact', 'grammar_exact', 'lemma_exact'];
   const manifest = enc.encode(JSON.stringify({
-    format_version: 'index-manifest/1', index_kind: kind, prepared_output_id: output, source_revision_ids: [source],
-    native_extent: { unit_ids: units }, coordinate_version: COORD, normalization_rule: 'syn:identity/1', tokenizer_version: 'syn:spaces/1',
+    format_version: 'index-manifest/2', index_kind: kind, prepared_output_id: output, source_revision_ids: [source],
+    native_extent: { unit_ids: units, order_range: orderRange }, coordinate_version: COORD, normalization_rule: 'syn:identity/1', tokenizer_version: 'syn:spaces/1',
     analysis_revision_ids: kind === 'word_language' ? ['syn:prov-a:source_revision', 'syn:prov-b:source_revision'] : [],
     parameters: { encoded_page_cap_bytes: pageCap }, ordering: ['search_key', 'native_order', 'occurrence_id'], key_collation: 'utf8-bytewise',
-    encoded_page_cap_bytes: pageCap, files: [{ artifact_id: postingsId, byte_length: postings.length, sha256: sha(postings), pages }],
+    encoded_page_cap_bytes: pageCap, files: [{ artifact_id: postingsId, byte_length: postings.body.length, sha256: sha(postings.body) }],
+    directory: { artifact_id: directoryId, byte_length: directory.body.length, sha256: sha(directory.body), pages: directory.pages },
     coverage: { capabilities, ...coverage },
   }));
-  return { output, manifest, postings, manifestId: `${output}:manifest`, postingsId, capabilities };
+  if (manifest.length > pageCap) throw new Error(`Synthetic manifest (${manifest.length} B) exceeds page cap ${pageCap}`);
+  return { output, manifest, postings: postings.body, directory: directory.body, manifestId: `${output}:manifest`, postingsId, directoryId, capabilities, orderRange };
 }
 
 /** In-memory R2 with range reads, call log and fault injection. */
@@ -194,26 +208,27 @@ export function buildFixture({ pageCap = 2048, commonCount = 24, wordPageCap = 2
   const postings: Record<string, Posting[]> = {};
   const addIndex = (built: BuiltIndex, source: string, units: string[], rows: Posting[], state = 'available', limitation: string | null = null) => {
     indexes[built.output] = built; postings[built.output] = rows;
-    for (const [id, bytes, format] of [[built.manifestId, built.manifest, 'application/json'], [built.postingsId, built.postings, 'application/x-ndjson']] as const) {
+    for (const [id, bytes, format] of [[built.manifestId, built.manifest, 'application/json'], [built.postingsId, built.postings, 'application/x-ndjson'],
+      [built.directoryId, built.directory, DIRECTORY_FORMAT]] as const) {
       insert('artifacts', { id, source_revision_id: source, output_id: built.output, sha256: sha(bytes), byte_count: bytes.length, format, registered_locator: `synthetic/indexes/${id.replace(':', '/')}` });
       bucket.objects.set(`synthetic/indexes/${id.replace(':', '/')}`, bytes);
     }
     for (const capability of built.capabilities)
-      insert('coverage', { output_id: built.output, source_revision_id: source, native_extent_json: { unit_ids: units }, capability, state,
+      insert('coverage', { output_id: built.output, source_revision_id: source, native_extent_json: { unit_ids: units, order_range: built.orderRange }, capability, state,
         method_version: 'syn:method/1', index_artifact_id: built.manifestId, dependencies_json: ['syn-ev'], limitation });
   };
   const astral = '\u{10900}';   // above U+FFFF: UTF-16 and UTF-8 orders disagree with U+FB00
   const p1 = sourcePostings(A, ['u1'], () => 'a-u1', [['common', commonCount], [astral, 2], ['ﬀ', 2]]);
   addIndex(buildIndex('syn-src-1', 'source_text', A, ['u1'], p1, pageCap), A, ['u1'], p1);
   const p2 = sourcePostings(A, ['u2'], () => 'a-u2');
-  for (const p of p2) p.native_order += 100;
-  addIndex(buildIndex('syn-src-2', 'source_text', A, ['u2'], p2, pageCap), A, ['u2'], p2);
+  for (const p of p2) p.native_order += 10000;   // u2 follows u1 in the revision's linear order
+  addIndex(buildIndex('syn-src-2', 'source_text', A, ['u2'], p2, pageCap, undefined, [10000, 19999]), A, ['u2'], p2);
   const pb = sourcePostings(B, ['b1'], () => 'b-1');
   addIndex(buildIndex('syn-src-b', 'source_text', B, ['b1'], pb, pageCap, { state: 'partial', limitation: 'synthetic partial extent' }), B, ['b1'], pb, 'partial', 'synthetic partial extent');
   const pOld = sourcePostings(A, ['u1'], () => 'a-old', [['onlyold', 1]]);
   addIndex(buildIndex('syn-src-old', 'source_text', A, ['u1'], pOld, pageCap), A, ['u1'], pOld);
   const pw = wordPostings(A, [...p1, ...p2]);
-  addIndex(buildIndex('syn-word-1', 'word_language', A, ['u1', 'u2'], pw, wordPageCap), A, ['u1', 'u2'], pw);
+  addIndex(buildIndex('syn-word-1', 'word_language', A, ['u1', 'u2'], pw, wordPageCap, undefined, [0, 19999]), A, ['u1', 'u2'], pw);
 
   for (const [id, members] of [['rel-1', ['syn-ev-old', 'syn-src-old']], ['rel-2', ['syn-ev', 'syn-ev-b', 'syn-src-1', 'syn-src-2', 'syn-src-b', 'syn-word-1', 'syn-pkg', 'syn-statement']]] as const) {
     insert('releases', { id, manifest_revision: 'syn:manifest/1', recipe_revision: 'syn:recipe/1', schema_versions_json: { evidence_records: '1', native_reference: '1' },
@@ -225,4 +240,13 @@ export function buildFixture({ pageCap = 2048, commonCount = 24, wordPageCap = 2
   select('rel-2', 'rel-1');
   const env: StudyReadEnvironment = { DATA_DB: db, PRIVATE_OBJECTS: bucket, MAX_PAGE_BYTES: 65536, REQUEST_BYTES: 262144, MAX_D1_CALLS: 25, MAX_SUBREQUESTS: 40 };
   return { env, db, bucket, indexes, postings, select };
+}
+
+/** Test helper: every postings-page entry of a built index with its directory position. */
+export function entriesOf(built: BuiltIndex) {
+  const manifest = JSON.parse(new TextDecoder().decode(built.manifest));
+  const body = Buffer.from(built.directory);
+  return (manifest.directory.pages as Page[]).flatMap((page, dir) =>
+    body.subarray(page.byte_offset, page.byte_offset + page.byte_length).toString('utf8').trimEnd().split('\n')
+      .map((line, entry) => ({ dir, entry, ...(JSON.parse(line) as Page & { postings_artifact_id: string }) })));
 }

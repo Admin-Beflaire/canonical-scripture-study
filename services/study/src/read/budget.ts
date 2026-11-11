@@ -12,12 +12,13 @@ export interface BudgetLimits {
   rowsPerQuery: number; // LIMIT on any one D1 query
 }
 
-/** Starting budgets from the CF-02 measurement on Workers Free (#337, 9 November 2026):
- *  2,048-byte pages, at most 2 D1 calls and 3–4 R2 reads per request. `r2Bytes` is four
- *  such pages. `resultBytes` and `rowsPerQuery` were not measured by CF-02; they are
- *  conservative starting values to re-measure before production limits are fixed. */
+/** Starting budgets. D1 calls and R2 reads follow the CF-02 measurement on Workers Free (at most
+ *  2 D1 calls and 3–4 R2 reads per request). Pages follow Data Indexes 0.6: one 16 KB cap for the
+ *  manifest, directory pages and postings pages, so a request can read the manifest, one directory
+ *  page and two postings pages (`r2Bytes`, four pages). The 16 KB cap, `resultBytes` and
+ *  `rowsPerQuery` await the Workers fit measurement before production limits are fixed. */
 export const STARTING_LIMITS: Readonly<BudgetLimits> = Object.freeze({
-  d1Calls: 2, r2Reads: 4, pageBytes: 2048, r2Bytes: 8192, resultBytes: 16384, rowsPerQuery: 50,
+  d1Calls: 2, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 50,
 });
 
 function configured(value: string | number | undefined): number | undefined {

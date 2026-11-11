@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildFixture, A, B, type Fixture } from './fixture.ts';
+import { buildFixture, entriesOf, A, B, type Fixture } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
 import { STARTING_LIMITS, type BudgetLimits } from '../../services/study/src/read/budget.ts';
 import { PagedIndexSearch, clearSearchCache, type SearchRequest, type SearchResult } from '../../services/study/src/read/search.ts';
@@ -54,10 +54,10 @@ test('exact word search returns attributed native references across partitions i
 
 test('a key spanning many pages is enumerated across bounded requests without duplicates or false exhaustion', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const run = await all(fixture, { lookup: 'word', key: 'common', sources: [A] }, STARTING_LIMITS);
   const want = expected(fixture, ['syn-src-1'], 'common');
-  assert.equal(want.length, 24);
+  assert.equal(want.length, 48);
   assert.deepEqual(run.hits.map(h => h.occurrence_id), want);
   assert.ok(run.results.length > 2, 'the key spans several requests');
   assert.ok(run.results.slice(0, -1).every(r => r.state === 'continues' && r.remaining), 'no request before the last claims exhaustion');
@@ -71,7 +71,7 @@ test('a key spanning many pages is enumerated across bounded requests without du
 });
 
 test('the same enumeration works with a cold cache on every request', async () => {
-  const fixture = buildFixture({ pageCap: 1024, commonCount: 24 });
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
   const hits = [];
   let position = null;
   for (let i = 0; i < 100; i++) {
@@ -86,9 +86,9 @@ test('the same enumeration works with a cold cache on every request', async () =
 
 test('keys above U+FFFF select the right pages', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 900 });
-  const pages = JSON.parse(new TextDecoder().decode(fixture.indexes['syn-src-1'].manifest)).files[0].pages;
-  assert.ok(pages.some((p: { first_key: string; last_key: string }) => p.first_key === 'ﬀ' && p.last_key === '\u{10900}'),
+  const fixture = buildFixture({ pageCap: 3200 });   // this cap puts both keys on one page
+  const pages = entriesOf(fixture.indexes['syn-src-1']);
+  assert.ok(pages.some(p => p.first_key === '\uFB00' && p.last_key === '\u{10900}'),
     'one page spans both keys, which UTF-16 comparison would misorder');
   for (const key of ['\u{10900}', 'ﬀ']) {
     const { result } = await once(fixture, { lookup: 'word', key, sources: [A] });
@@ -173,12 +173,14 @@ test('a provider failure is temporary and leaves other outputs readable', async 
 
 test('malformed or mismatched positions are rejected before reading pages', async () => {
   clearSearchCache();
-  const fixture = buildFixture({ pageCap: 1024 });
+  const fixture = buildFixture({ pageCap: 2048 });
   const bad = [
-    { source: B, output: 'syn-src-1', file: 0, page: 0, after: null },                      // source not requested
-    { source: A, output: 'syn-src-1', file: 0, page: 999, after: [0, 'x'] as [number, string] }, // not a candidate page
-    { source: A, output: '', file: 3, page: 0, after: null },                                 // start position with a page
-    { source: A, output: 'syn-src-1', file: -1, page: 0, after: null },
+    { source: B, output: 'syn-src-1', order: 0, dir: 0, entry: 0, after: null, anchor: null },             // source not requested
+    { source: A, output: 'syn-src-1', order: 0, dir: 999, entry: 0, after: [0, 'x'] as [number, string],
+      anchor: { file: 'syn-src-1:postings', offset: 0, length: 10, sha256: '0'.repeat(64) } },                 // not a candidate directory page
+    { source: A, output: '', order: 0, dir: 3, entry: 0, after: null, anchor: null },                        // start position with a page
+    { source: A, output: 'syn-src-1', order: 0, dir: -1, entry: 0, after: null, anchor: null },
+    { source: A, output: 'syn-src-1', order: 0, dir: 0, entry: 0, after: [0, 'x'] as [number, string], anchor: null },  // key without anchor
   ];
   for (const position of bad)
     await assert.rejects(once(fixture, { lookup: 'word', key: 'common', sources: [A], position }), state('invalid_request'), JSON.stringify(position));

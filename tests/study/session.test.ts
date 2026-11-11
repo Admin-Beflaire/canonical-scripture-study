@@ -22,11 +22,11 @@ test('budget counts work before it happens', () => {
   const budget = new RequestBudget(STARTING_LIMITS);
   budget.spendQuery(); budget.spendQuery();
   assert.throws(() => budget.spendQuery(), state('budget'));
-  assert.equal(budget.canRead(2049), false);
-  assert.equal(budget.canRead(4000, 'object'), true);
-  budget.spendRead(4000, 'object'); budget.spendRead(2048); budget.spendRead(2048);
+  assert.equal(budget.canRead(16385), false, 'a page read is capped by pageBytes');
+  assert.equal(budget.canRead(20000, 'object'), true, 'a whole small object only by the remaining bytes');
+  budget.spendRead(20000, 'object'); budget.spendRead(16384); budget.spendRead(16384);
   assert.equal(budget.canRead(1), true);
-  assert.equal(budget.canRead(97), false, 'total R2 bytes stay within the request allowance');
+  assert.equal(budget.canRead(65536 - 20000 - 2 * 16384 + 1), false, 'total R2 bytes stay within the request allowance');
 });
 
 test('reads current once per request and uses one D1 call for it', async () => {

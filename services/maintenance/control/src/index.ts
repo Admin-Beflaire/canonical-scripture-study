@@ -3,8 +3,22 @@ import type { D1Database } from './d1.ts';
 import { GitHubActions } from './github.ts';
 import { jobRoutes } from './jobs.ts';
 import { controlServer } from './mcp.ts';
+import type { ObjectStore } from './selection.ts';
 
-type ControlSettings = AccessSettings & { DATA_DB?: D1Database; GITHUB_REPOSITORY?: string; PREPARATION_DISPATCH_TOKEN?: string };
+type Bucket = { list(options: { prefix: string; cursor?: string; limit: number }): Promise<{ objects: Array<{ key: string; size: number }>; truncated: boolean; cursor?: string }> };
+type ControlSettings = AccessSettings & { DATA_DB?: D1Database; PRIVATE_OBJECTS?: Bucket; GITHUB_REPOSITORY?: string; PREPARATION_DISPATCH_TOKEN?: string };
+
+/** The private bucket, read only, for the scope check's artifact sizes. */
+function objects(settings: ControlSettings): ObjectStore | null {
+  const bucket = settings.PRIVATE_OBJECTS;
+  if (!bucket) return null;
+  return {
+    async list(prefix, cursor) {
+      const page = await bucket.list({ prefix, limit: 1000, ...(cursor ? { cursor } : {}) });
+      return { objects: page.objects.map(item => ({ key: item.key, size: item.size })), ...(page.truncated && page.cursor ? { cursor: page.cursor } : {}) };
+    },
+  };
+}
 
 /** Dispatch is optional: without the PREPARATION_DISPATCH_TOKEN secret (GITHUB_REPOSITORY is a plain
  *  configuration value), tasks are recorded but not dispatched. */
@@ -21,11 +35,11 @@ export default protectedWorker('control', {
     const config = settings as ControlSettings;
     if (!config.DATA_DB) return Promise.resolve(new Response('Unavailable', { status: 503 }));
     const db = config.DATA_DB;
-    return protocolHandler(() => controlServer(db, identity.email, settings.ENHANCEMENTS, github(config)), settings.ENHANCEMENTS).fetch(request);
+    return protocolHandler(() => controlServer(db, identity.email, settings.ENHANCEMENTS, github(config), objects(config)), settings.ENHANCEMENTS).fetch(request);
   },
   job(request, settings) {
     const config = settings as ControlSettings;
     if (!config.DATA_DB) return Promise.resolve(new Response('Unavailable', { status: 503 }));
-    return jobRoutes(config.DATA_DB, github(config))(request);
+    return jobRoutes(config.DATA_DB, github(config), objects(config))(request);
   },
 });

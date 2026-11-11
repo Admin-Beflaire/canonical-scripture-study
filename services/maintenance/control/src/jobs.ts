@@ -2,6 +2,7 @@ import type { D1Database } from './d1.ts';
 import { acceptReceipt } from './dispatch.ts';
 import { runTitle, type GitHubActions } from './github.ts';
 import { advance } from './progress.ts';
+import type { ObjectStore } from './selection.ts';
 
 /** Control's internal job routes for the preparation runner (tests/conformance/internal-jobs.v1.json).
  *  Platform has already verified the Access Service Auth identity for /internal/jobs/*.
@@ -26,13 +27,13 @@ async function body(request: Request): Promise<Record<string, unknown> | null> {
   } catch { return null; }
 }
 
-export function jobRoutes(db: D1Database, github: GitHubActions | null) {
+export function jobRoutes(db: D1Database, github: GitHubActions | null, objects: ObjectStore | null = null) {
   return async (request: Request): Promise<Response> => {
     const path = new URL(request.url).pathname;
     const input = await body(request);
     if (!input) return json(400, { error: 'invalid_request' });
     if (path === '/internal/jobs/state') return state(db, github, input);
-    if (path === '/internal/jobs/result') return result(db, github, input);
+    if (path === '/internal/jobs/result') return result(db, github, input, objects);
     return json(404, { error: 'not_found' });
   };
 }
@@ -78,7 +79,7 @@ async function state(db: D1Database, github: GitHubActions | null, input: Record
   });
 }
 
-async function result(db: D1Database, github: GitHubActions | null, input: Record<string, unknown>): Promise<Response> {
+async function result(db: D1Database, github: GitHubActions | null, input: Record<string, unknown>, objects: ObjectStore | null): Promise<Response> {
   const { result: value, commit } = input;
   if (Object.keys(input).length !== 2 || typeof commit !== 'string' || !value || typeof value !== 'object')
     return json(400, { error: 'invalid_request' });
@@ -90,9 +91,10 @@ async function result(db: D1Database, github: GitHubActions | null, input: Recor
   catch { return json(200, { status: 'rejected', reason: 'run is not verifiable' }); }
   const receipt = await acceptReceipt(db, value, commit, workflowCommit);
   if (receipt.status === 'accepted') {
-    // Advance the task now, so work continues without an open chat.
+    // Advance the task now, so work continues without an open chat: after the last unit this
+    // runs the scope check and selection.
     const taskId = (value as { task_id: string }).task_id;
-    try { await advance(db, github, taskId); } catch { /* get_task or resume retries progression */ }
+    try { await advance(db, github, taskId, objects); } catch { /* get_task or resume retries progression */ }
   }
   return json(200, receipt);
 }

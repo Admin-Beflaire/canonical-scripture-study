@@ -2,11 +2,13 @@ import { canonicalJson, type D1Database } from './d1.ts';
 import { recipeErrors, type ArtifactRef, type JobResult, type Recipe, type RecipeUnit } from './contracts.ts';
 import { dispatchUnit, type DispatchResult, type UnitPlan } from './dispatch.ts';
 import { FileEncodingError, GitHubError, runTitle, type GitHubActions } from './github.ts';
+import { checkAndSelect, selectDirect, type ObjectStore } from './selection.ts';
 import type { Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
  *  The recipe's units are Data Preparation's partition; Control only reads them, dispatches
- *  ready units and reconciles interrupted ones. Quality/scope checks and selection are MC-03. */
+ *  ready units and reconciles interrupted ones. When every unit has succeeded, the scope check
+ *  and conditional selection follow (selection.ts, MC-03). */
 export const MAX_ATTEMPTS = 3;
 const ACTIVE = new Set(['intended', 'dispatched', 'running', 'checkpointed']);
 const RETRYABLE = new Set(['failed', 'cancelled']);
@@ -62,12 +64,19 @@ function addLimitation(outcome: Outcome, text: string) {
 }
 
 /** Dispatch every unit whose dependencies have succeeded. Safe to call repeatedly. */
-export async function advance(db: D1Database, github: GitHubActions | null, taskId: string): Promise<Progress> {
+export async function advance(db: D1Database, github: GitHubActions | null, taskId: string, objects: ObjectStore | null = null): Promise<Progress> {
   let row = await task(db, taskId);
   if (!row) return { dispatched: [], state: 'unknown' };
-  if (!['queued', 'running'].includes(row.state)) return { dispatched: [], state: row.state };
+  if (!['queued', 'running', 'checked'].includes(row.state)) return { dispatched: [], state: row.state };
   const scope = JSON.parse(row.scope_json) as Scope;
-  if (scope.constraints.recipe === undefined) return { dispatched: [], state: row.state }; // Not a dispatched task kind.
+  if (scope.constraints.recipe === undefined) {
+    // Removal, rollback and restore validation prepare nothing: they go straight to the checks and gate.
+    if (DIRECT.has(scope.kind) && row.state !== 'checked') {
+      const selected = await selectDirect(db, objects, row);
+      return { dispatched: [], state: selected.state, ...(selected.limitation ? { limitation: selected.limitation } : {}) };
+    }
+    return { dispatched: [], state: row.state }; // Not a dispatched task kind.
+  }
   if (!github) {
     await setOutcome(db, row, outcome => addLimitation(outcome, 'Preparation dispatch is not configured for Control.'));
     return { dispatched: [], state: row.state, limitation: 'dispatch_not_configured' };
@@ -79,10 +88,11 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     if (error instanceof GitHubError) return { dispatched: [], state: row.state, limitation: 'github_unavailable' };
     throw error;
   }
-  const { recipe, problem } = loaded;
+  const { recipe, problem: invalid } = loaded;
   const pinned = (JSON.parse(row.outcome_json) as { recipe_revision?: string }).recipe_revision;
   const changed = recipe && pinned && pinned !== recipe.revision
     ? `recipe changed from ${pinned} to ${recipe.revision}; start a new task for the changed recipe` : undefined;
+  const problem = invalid ?? (recipe ? recipeFit(scope, recipe) : undefined);
   if (problem || changed) {
     await setOutcome(db, row, outcome => addLimitation(outcome, (problem ?? changed)!), 'blocked');
     return { dispatched: [], state: 'blocked', limitation: problem ?? changed };
@@ -134,14 +144,30 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   }
 
   row = (await task(db, taskId))!;
-  if (recipe!.units!.every(unit => succeeded.has(unit.unit_id))) {
+  if (recipe!.units!.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
     await setOutcome(db, row, outcome => {
       outcome.completed_extent = scope.extent;
       outcome.remaining_extent = {};
-      addLimitation(outcome, 'All units prepared and quality-checked; the scope check and selection follow separately.');
     });
+    row = (await task(db, taskId))!;
+    if (!pinnedNow(row) || !['queued', 'running', 'checked'].includes(row.state)) return { dispatched, state: row.state };
+    // Quality passed for every unit: Control's own scope check, then the conditional selection.
+    const selected = await checkAndSelect(db, objects, row, recipe!, succeeded);
+    return { dispatched, state: selected.state, ...(selected.limitation ? { limitation: selected.limitation } : {}) };
   }
   return { dispatched, state: row.state };
+}
+
+const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
+
+/** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
+function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
+  if (recipe.native_extent && canonicalJson(scope.extent) !== canonicalJson(recipe.native_extent))
+    return `the task extent must be the recipe's extent ${canonicalJson(recipe.native_extent)}`;
+  const offered = new Set(recipe.capabilities ?? []);
+  const extra = scope.capabilities.filter(capability => !offered.has(capability));
+  if (extra.length) return `the recipe does not provide ${extra.join(', ')}`;
+  return undefined;
 }
 
 /** The job plan for one unit: exact dependency outputs, and the candidate for a quality unit. */

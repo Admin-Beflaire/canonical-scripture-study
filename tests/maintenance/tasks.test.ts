@@ -18,7 +18,8 @@ const prepare = (extra: Partial<TaskRequest> = {}): TaskRequest => ({
 
 test('every task kind normalizes, and missing information is named instead of guessed', () => {
   for (const kind of TASK_KINDS) {
-    const { missing } = normalizeScope({ request_key: 'k', instruction: 'x', kind, inputs: [{ kind: 'artifact', id: 'a1' }],
+    const { missing } = normalizeScope({ request_key: 'k', instruction: 'x', kind,
+      inputs: [kind === 'remove' ? { kind: 'source_revision', id: 'src-rev-1' } : { kind: 'artifact', id: 'a1' }],
       extent: { units: ['u1'] }, capabilities: ['source_text'],
       decision_refs: [{ kind: 'statement', ref: 'owner-decision:9', name: 'Character of God', version: '1.0' }] });
     assert.deepEqual(missing, [], kind);

@@ -94,7 +94,7 @@ export function recipeErrors(value: unknown): string[] {
 export interface RecipeUnit {
   unit_id: string; kind: JobInput['kind']; native_extent: Record<string, unknown>; depends_on: string[]; required_capabilities?: string[];
 }
-export interface Recipe { id: string; revision: string; manifest_revision?: string; units?: RecipeUnit[] }
+export interface Recipe { id: string; revision: string; manifest_revision?: string; native_extent?: Record<string, unknown>; capabilities?: string[]; units?: RecipeUnit[] }
 export function assertJobInput(value: unknown): asserts value is JobInput {
   const errors = contractErrors('job_input', value);
   if (errors.length) throw new Error(`Invalid job input: ${errors.slice(0, 5).join('; ')}`);

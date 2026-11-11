@@ -23,6 +23,11 @@ export interface Outcome {
   completed_extent: Record<string, unknown>; remaining_extent: Record<string, unknown>;
   limitations: string[]; selection: null | { current_release_id: string | null; became_current: boolean };
   cancel_requested_runs?: string[];
+  /** Separate results: Preparation's quality check and Control's scope check. */
+  checks?: { quality?: 'passed'; scope?: 'passed' | 'failed' };
+  scope_report?: { problems?: string[] } & Record<string, unknown>;
+  removal_report?: Record<string, unknown>;
+  restore_report?: Record<string, unknown>;
 }
 export interface TaskRow {
   id: string; requester: string; request_key: string; instruction: string; scope_json: string; basis_digest: string;
@@ -60,6 +65,11 @@ export function normalizeScope(request: TaskRequest): { scope: Scope; missing: s
     if (Object.keys(scope.extent).length === 0) missing.push('extent: the finite native extent (for example which books or units)');
     if (scope.capabilities.length === 0) missing.push('capabilities: which outputs are needed (for example source_text, word_index)');
   }
+  if (request.kind === 'remove' && inputs.some(ref => ref.kind !== 'source_revision'))
+    missing.push('inputs: name the source revisions to remove (kind "source_revision")');
+  if (request.kind === 'validate_restore' && scope.constraints.select_release !== undefined
+      && (typeof scope.constraints.select_release !== 'string' || !ID.test(scope.constraints.select_release)))
+    missing.push('constraints.select_release: the ID of the restored release to select, only if the owner asked to select it');
   if (request.kind === 'incorporate_statement') {
     const statements = decisions.filter(ref => ref.kind === 'statement');
     if (statements.length !== 1 || !statements[0].name || !statements[0].version)
@@ -73,6 +83,7 @@ export function normalizeScope(request: TaskRequest): { scope: Scope; missing: s
 export async function admissionGaps(db: D1Database, scope: Scope): Promise<string[]> {
   const decided = new Set(scope.decision_refs.filter(ref => ref.kind === 'admission' && ref.subject).map(ref => ref.subject));
   const gaps: string[] = [];
+  if (scope.kind === 'remove') return gaps; // Removing data needs no admission.
   for (const ref of scope.inputs) {
     if (ref.kind === 'artifact' || decided.has(ref.id)) continue;
     if (ref.kind === 'source_revision') {
@@ -137,7 +148,7 @@ export async function requestTask(db: D1Database, requester: string, request: Ta
 
 export type ControlAction = 'pause' | 'cancel' | 'resume';
 const TRANSITIONS: Record<ControlAction, readonly TaskState[]> = {
-  pause: ['queued', 'running', 'blocked'],
+  pause: ['queued', 'running', 'blocked', 'checked'],
   cancel: ['queued', 'running', 'paused', 'blocked', 'checked'],
   resume: ['paused', 'blocked'],
 };
@@ -201,7 +212,11 @@ export async function taskReport(db: D1Database, requester: string, taskId: stri
     id: task.id, revision: task.revision, state: task.state, instruction: task.instruction,
     requested: scope, completed_extent: outcome.completed_extent, remaining_extent: outcome.remaining_extent,
     jobs: jobs.results.slice(0, 50), more_jobs: jobs.results.length > 50,
-    checks: { quality: task.quality_ref, scope: task.scope_ref },
+    checks: {
+      quality: outcome.checks?.quality ?? (task.quality_ref ? 'passed' : 'not run'), quality_receipt: task.quality_ref,
+      scope: outcome.checks?.scope ?? 'not run', scope_receipt: task.scope_ref,
+      ...(outcome.scope_report?.problems?.length ? { scope_problems: outcome.scope_report.problems.slice(0, 20) } : {}),
+    },
     selection: { base_release_id: task.base_release_id, candidate_release_id: task.candidate_release_id, outcome: outcome.selection },
     limitations: outcome.limitations,
     data_current: outcome.selection?.became_current === true,

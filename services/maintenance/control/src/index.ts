@@ -6,7 +6,8 @@ import { controlServer } from './mcp.ts';
 
 type ControlSettings = AccessSettings & { DATA_DB?: D1Database; GITHUB_REPOSITORY?: string; PREPARATION_DISPATCH_TOKEN?: string };
 
-/** Dispatch is optional: without its two secrets, tasks are recorded but not dispatched. */
+/** Dispatch is optional: without the PREPARATION_DISPATCH_TOKEN secret (GITHUB_REPOSITORY is a plain
+ *  configuration value), tasks are recorded but not dispatched. */
 function github(settings: ControlSettings): GitHubActions | null {
   if (!settings.GITHUB_REPOSITORY || !settings.PREPARATION_DISPATCH_TOKEN) return null;
   try { return new GitHubActions({ repository: settings.GITHUB_REPOSITORY, token: settings.PREPARATION_DISPATCH_TOKEN }); }

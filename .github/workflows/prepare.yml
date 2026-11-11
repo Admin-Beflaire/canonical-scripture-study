@@ -4,7 +4,9 @@ name: Preparation unit
 run-name: Preparation ${{ inputs.dispatch_ref }}
 # Control dispatches one fixed job envelope per unit on reviewed main (Platform GitHub To-Be §2–3).
 # The job stays in the event file: it is never placed in a step environment or a shell command,
-# because public run logs show step environments. Detailed diagnostics go only to Control's
+# because public run logs show step environments. Plain settings (Control origin, account, database,
+# bucket, service-token client ID) are environment variables; only the two credentials are secrets.
+# Detailed diagnostics go only to Control's
 # private result record. This workflow never merges, deploys, approves scope or selects data.
 on:
   workflow_dispatch:
@@ -65,12 +67,12 @@ jobs:
         env:
           PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
           PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ secrets.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ secrets.PREPARATION_ACCESS_CLIENT_ID }}
+          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
+          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
           PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
           PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
         shell: bash
         run: |
@@ -101,12 +103,12 @@ jobs:
         env:
           PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
           PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ secrets.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ secrets.PREPARATION_ACCESS_CLIENT_ID }}
+          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
+          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
           PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
           PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
         shell: bash
         run: |
@@ -137,12 +139,12 @@ jobs:
         env:
           PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
           PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ secrets.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ secrets.PREPARATION_ACCESS_CLIENT_ID }}
+          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
+          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
           PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
           PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
         shell: bash
         run: |

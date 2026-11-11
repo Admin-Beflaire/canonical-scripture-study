@@ -60,8 +60,8 @@ registered in `runner/recipes.py`; until source adapters are registered, jobs
 end as `failed` with `no_registered_recipe`. A quality job names its candidate
 in `constraints.candidate` (`added`, `reused`, `omitted` output IDs).
 
-The `preparation` environment needs these secrets, all masked:
-`CONTROL_ORIGIN`, `PREPARATION_ACCESS_CLIENT_ID`, `PREPARATION_ACCESS_CLIENT_SECRET`,
-`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID`, `R2_BUCKET` and
-`PREPARATION_CLOUDFLARE_TOKEN` (D1 write and R2 write for the project's database
-and bucket only).
+The `preparation` environment needs two secrets, `PREPARATION_ACCESS_CLIENT_SECRET`
+and `PREPARATION_CLOUDFLARE_TOKEN` (D1 write, and R2 read and write on the project's
+bucket only), and five plain variables: `CONTROL_ORIGIN`, `PREPARATION_ACCESS_CLIENT_ID`,
+`CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` and `R2_BUCKET`. The variables are not
+secret and appear in run logs.

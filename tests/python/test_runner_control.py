@@ -46,6 +46,8 @@ class ControlClientTest(unittest.TestCase):
         self.assertEqual(headers['cf-access-client-id'], 'synthetic-id')
         self.assertEqual(headers['cf-access-client-secret'], 'synthetic-secret')
         self.assertNotIn('authorization', headers)
+        # urllib's default agent is blocked by the zone's Browser Integrity Check.
+        self.assertEqual(headers['user-agent'], 'canonical-scripture-study-preparation')
 
     def test_missing_dispatch_and_malformed_state(self):
         self.replies = [(404, {}), (200, {**WIRE['state']['response_200'], 'extra': 1}),

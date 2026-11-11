@@ -21,7 +21,7 @@ const id = (value: unknown): string => {
 };
 const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.length !== size || !value.every(v => isIdentifier(v, 1024) || isSafeCount(v)))
+  if (!Array.isArray(value) || value.length !== size || !value.every(v => v === '' || isIdentifier(v, 1024) || isSafeCount(v)))
     throw new ReadError('invalid_request', 'Invalid query position');
   return value;
 };

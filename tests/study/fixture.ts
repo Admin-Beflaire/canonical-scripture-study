@@ -77,7 +77,8 @@ export function wordPostings(source: string, base: Posting[]): Posting[] {
 export interface BuiltIndex { output: string; manifest: Uint8Array; postings: Uint8Array; manifestId: string; postingsId: string; capabilities: string[] }
 
 /** Builds an index in the Data Indexes v1 format: sorted NDJSON split into line-aligned pages. */
-export function buildIndex(output: string, kind: 'source_text' | 'word_language', source: string, units: string[], rows: Posting[], pageCap: number): BuiltIndex {
+export function buildIndex(output: string, kind: 'source_text' | 'word_language', source: string, units: string[], rows: Posting[], pageCap: number,
+                           coverage: { state: string; limitation: string | null } = { state: 'available', limitation: null }): BuiltIndex {
   const sorted = [...rows].sort((x, y) => byteOrder(x.search_key, y.search_key) || x.native_order - y.native_order || byteOrder(x.occurrence_id, y.occurrence_id));
   const lines = sorted.map(row => ({ key: row.search_key, bytes: enc.encode(JSON.stringify(row) + '\n') }));
   const pages: { first_key: string; last_key: string; byte_offset: number; byte_length: number; sha256: string }[] = [];
@@ -105,7 +106,7 @@ export function buildIndex(output: string, kind: 'source_text' | 'word_language'
     analysis_revision_ids: kind === 'word_language' ? ['syn:prov-a:source_revision', 'syn:prov-b:source_revision'] : [],
     parameters: { encoded_page_cap_bytes: pageCap }, ordering: ['search_key', 'native_order', 'occurrence_id'], key_collation: 'utf8-bytewise',
     encoded_page_cap_bytes: pageCap, files: [{ artifact_id: postingsId, byte_length: postings.length, sha256: sha(postings), pages }],
-    coverage: { capabilities, state: 'available', limitation: null },
+    coverage: { capabilities, ...coverage },
   }));
   return { output, manifest, postings, manifestId: `${output}:manifest`, postingsId, capabilities };
 }
@@ -138,7 +139,7 @@ const jsonColumns = (row: Record<string, unknown>) =>
 
 /** Builds two releases. `rel-2` is current unless `select` changes it.
  *  `pageCap` controls how many pages a common key spans. */
-export function buildFixture({ pageCap = 2048, commonCount = 24 } = {}): Fixture {
+export function buildFixture({ pageCap = 2048, commonCount = 24, wordPageCap = 2048 } = {}): Fixture {
   const db = localD1();
   const bucket = new MemoryBucket();
   const insert = (table: string, row: Record<string, unknown>) => {
@@ -208,11 +209,11 @@ export function buildFixture({ pageCap = 2048, commonCount = 24 } = {}): Fixture
   for (const p of p2) p.native_order += 100;
   addIndex(buildIndex('syn-src-2', 'source_text', A, ['u2'], p2, pageCap), A, ['u2'], p2);
   const pb = sourcePostings(B, ['b1'], () => 'b-1');
-  addIndex(buildIndex('syn-src-b', 'source_text', B, ['b1'], pb, pageCap), B, ['b1'], pb, 'partial', 'synthetic partial extent');
+  addIndex(buildIndex('syn-src-b', 'source_text', B, ['b1'], pb, pageCap, { state: 'partial', limitation: 'synthetic partial extent' }), B, ['b1'], pb, 'partial', 'synthetic partial extent');
   const pOld = sourcePostings(A, ['u1'], () => 'a-old', [['onlyold', 1]]);
   addIndex(buildIndex('syn-src-old', 'source_text', A, ['u1'], pOld, pageCap), A, ['u1'], pOld);
   const pw = wordPostings(A, [...p1, ...p2]);
-  addIndex(buildIndex('syn-word-1', 'word_language', A, ['u1', 'u2'], pw, pageCap), A, ['u1', 'u2'], pw);
+  addIndex(buildIndex('syn-word-1', 'word_language', A, ['u1', 'u2'], pw, wordPageCap), A, ['u1', 'u2'], pw);
 
   for (const [id, members] of [['rel-1', ['syn-ev-old', 'syn-src-old']], ['rel-2', ['syn-ev', 'syn-ev-b', 'syn-src-1', 'syn-src-2', 'syn-src-b', 'syn-word-1', 'syn-pkg', 'syn-statement']]] as const) {
     insert('releases', { id, manifest_revision: 'syn:manifest/1', recipe_revision: 'syn:recipe/1', schema_versions_json: { evidence_records: '1', native_reference: '1' },

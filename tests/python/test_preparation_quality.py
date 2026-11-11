@@ -57,7 +57,7 @@ class CandidateQualityStageFive(unittest.TestCase):
             raw, run_id='quality-5', read_control=control or (lambda *_: state),
             registered=lambda _: True,
             inventory=inventory or self.saved.inventory,
-            read_rows=rows or self.saved.rows,
+            read_rows=rows or (lambda kind, *_: self.saved.rows(kind)),
             read_blob=read_blob or self.saved.blobs.__getitem__,
             read_source=native or (lambda _: text_a()),
             receipts=receipts or self.receipts)
@@ -104,7 +104,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         original = next(r for r in self.saved.rows('native_span') if r['content_id'] is not None)
         forged = 'forged wording'
         digest = hashlib.sha256(forged.encode('utf-8')).hexdigest()
-        def read(kind):
+        def read(kind, *_):
             rows = self.saved.rows(kind)
             if kind == 'native_span':
                 for row in rows:
@@ -118,14 +118,14 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertIsNone(failed['quality_receipt_ref'])
 
     def test_changed_native_coordinates_and_missing_relationship_endpoint_fail(self):
-        def wrong_nav(kind):
+        def wrong_nav(kind, *_):
             rows = self.saved.rows(kind)
             if kind == 'span_segment':
                 rows[0]['start_order'] += 1
             return rows
         self.assertEqual(self.invoke(rows=wrong_nav)['state'], 'failed')
         output_id = self.saved.inventory.added[0].output_id
-        def dangling(kind):
+        def dangling(kind, *_):
             rows = self.saved.rows(kind)
             if kind == 'relationship':
                 rows.append({'id': 'rel-x', 'output_id': output_id, 'kind': 'correspondence',
@@ -154,7 +154,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         inventory = CandidateInventory(added=(self.saved.inventory.added[0], changed))
         failed = self.invoke(inventory=inventory)
         self.assertEqual(failed['state'], 'failed')
-        def omitted(kind):
+        def omitted(kind, *_):
             rows = self.saved.rows(kind)
             if kind == 'coverage':
                 return []
@@ -172,7 +172,7 @@ class CandidateQualityStageFive(unittest.TestCase):
     def test_receipt_is_identical_when_database_row_order_changes(self):
         first = self.invoke()
         self.assertEqual(first['state'], 'succeeded')
-        second = self.invoke(rows=lambda kind: list(reversed(self.saved.rows(kind))))
+        second = self.invoke(rows=lambda kind, *_: list(reversed(self.saved.rows(kind))))
         self.assertEqual(second['state'], 'succeeded')
         self.assertEqual(first['quality_receipt_ref'], second['quality_receipt_ref'])
         self.assertEqual(first['coverage_refs'], second['coverage_refs'])

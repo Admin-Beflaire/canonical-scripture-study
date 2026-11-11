@@ -43,7 +43,7 @@ class SavedInventoryStageFour(unittest.TestCase):
                            row['native_extent_json'],
                            tuple(row['validation_basis_json']['dependencies']))
 
-    def rows(self, kind):
+    def rows(self, kind, *_):
         return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
 
     def check(self, *, inventory=None, read_rows=None, read_blob=None, limit=2048):
@@ -114,7 +114,7 @@ class SavedInventoryStageFour(unittest.TestCase):
                     absent = next(r for r in full if r['id'] == self.index.manifest_artifact_id)
                 else:
                     absent = full[0]
-                def missing(which, kind=kind, absent=absent):
+                def missing(which, _ids=(), kind=kind, absent=absent):
                     got = self.rows(which)
                     return [r for r in got if r != absent] if which == kind else got
                 with self.assertRaises(RecordError):
@@ -135,7 +135,7 @@ class SavedInventoryStageFour(unittest.TestCase):
         self.assert_no_selection_change()
 
     def test_saved_schema_and_coverage_basis_are_checked(self):
-        def bad_span(kind):
+        def bad_span(kind, *_):
             rows = self.rows(kind)
             if kind == 'native_span':
                 rows[0]['coordinate_version'] = None
@@ -143,7 +143,7 @@ class SavedInventoryStageFour(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'Invalid saved native_span'):
             self.check(read_rows=bad_span)
 
-        def bad_dependency(kind):
+        def bad_dependency(kind, *_):
             rows = self.rows(kind)
             if kind == 'coverage':
                 for row in rows:
@@ -164,7 +164,7 @@ class SavedInventoryStageFour(unittest.TestCase):
         digest = hashlib.sha256(data).hexdigest()
         replacement = original.split(':manifest:')[0] + ':manifest:' + digest[:20]
         new_locator = _object_key(artifact['output_id'], digest, 'manifest.json')
-        def rows(kind):
+        def rows(kind, *_):
             result = self.rows(kind)
             if kind == 'artifact':
                 for row in result:

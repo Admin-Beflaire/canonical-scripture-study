@@ -144,7 +144,7 @@ def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | No
         return None
     current_refs = {
         (row['id'], row['sha256'], row['byte_count'])
-        for row in storage.read_rows('artifact') if row.get('output_id') in outputs
+        for row in storage.read_rows('artifact', outputs) if row.get('output_id') in outputs
     }
     expected_refs = {(ref['artifact_id'], ref['sha256'], ref['byte_count'])
                      for ref in references}

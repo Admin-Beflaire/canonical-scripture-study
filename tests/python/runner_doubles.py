@@ -95,6 +95,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             with api.db:  # One transaction for the whole batch, like a D1 binding batch.
                 for item in statements:
+                    api.queries.append(item['sql'])
+                    if len(item.get('params', [])) > 100:  # D1's bound-parameter limit
+                        raise ValueError('too many bound parameters')
                     cursor = api.db.execute(item['sql'], item.get('params', []))
                     rows = [dict(row) for row in cursor.fetchall()]
                     results.append({'success': True, 'results': rows, 'meta': {}})
@@ -127,6 +130,7 @@ class LoopbackApi(HTTPServer):
         self.objects: dict[str, bytes] = {}
         self.requests: list = []
         self.batches: list[int] = []
+        self.queries: list[str] = []
         self.redirect_once = False
         self.signed_paths: list = []
         self.control_handler = None

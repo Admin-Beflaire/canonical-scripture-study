@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from ..prepare.records import RecordError, RecordSet
 from . import ControlState, execute_unit
@@ -27,7 +27,7 @@ class CandidateStore:
     read_blob: Callable[[str], bytes]
     write_rows: Callable[[list[tuple[str, list[Any]]]], None]
     read_row: Callable[[str, str], Mapping[str, Any] | None]
-    read_rows: Callable[[str], list[dict[str, Any]]] | None = None
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]] | None = None  # (kind, output IDs)
 
     def optional_row(self, kind: str, identity: str) -> Mapping[str, Any] | None:
         """Missing D1 identity is None; tolerate KeyError-style adapters safely."""

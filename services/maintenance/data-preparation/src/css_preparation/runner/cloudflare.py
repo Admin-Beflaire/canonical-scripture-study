@@ -11,11 +11,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import re
-from typing import Any
+from typing import Any, Sequence
 
 from ..executor.candidate import CandidateStore
 from ..executor.checkpoints import CheckpointStore
-from ..prepare.records import KEYS, TABLES, decoded
+from ..prepare.records import KEYS, TABLES, decoded, scoped_query
 from .r2 import R2Objects
 from .web import Origin, ProviderError
 
@@ -23,6 +23,7 @@ _ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}')
 _HEX = re.compile(r'[0-9a-f]{64}')
 _PAGE_ROWS = 500           # Keeps each paged result far below D1's 50 MB response limit.
 _BATCH_STATEMENTS = 1000   # One unit's candidate rows; larger units must be split by the recipe.
+_BOUND_IDS = 90            # D1 binds at most 100 parameters per statement (two more for paging).
 
 
 @dataclass(frozen=True)
@@ -86,17 +87,31 @@ class CloudflareStorage:
             raise ProviderError('Duplicate saved identity')
         return rows[0] if rows else None
 
-    def read_rows(self, kind: str) -> list[dict[str, Any]]:
+    def read_rows(self, kind: str, output_ids: Sequence[str]) -> list[dict[str, Any]]:
+        """The saved `kind` rows of these outputs only (see `scoped_query`), paged.
+
+        Output IDs are bound in chunks to stay within D1's bound-parameter limit; rows reached
+        through more than one chunk (a shared payload or source identity) are returned once.
+        """
         if kind not in KEYS:
             raise ValueError('Unknown record kind')
+        ids = list(dict.fromkeys(output_ids))
+        if not ids:
+            return []
         order = ', '.join(KEYS[kind])
-        rows: list[dict[str, Any]] = []
-        while True:
-            page = self.select(f'SELECT * FROM {TABLES[kind]} ORDER BY {order} LIMIT ? OFFSET ?',
-                               [_PAGE_ROWS, len(rows)])
-            rows.extend(page)
-            if len(page) < _PAGE_ROWS:
-                return rows
+        rows: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for start in range(0, len(ids), _BOUND_IDS):
+            sql, params = scoped_query(kind, ids[start:start + _BOUND_IDS])
+            offset = 0
+            while True:
+                page = self.select(f'SELECT * FROM ({sql}) ORDER BY {order} LIMIT ? OFFSET ?',
+                                   params + [_PAGE_ROWS, offset])
+                for row in page:
+                    rows.setdefault(tuple(row[key] for key in KEYS[kind]), row)
+                offset += len(page)
+                if len(page) < _PAGE_ROWS:
+                    break
+        return [rows[key] for key in sorted(rows)]
 
     # R2 -----------------------------------------------------------------
     @staticmethod

@@ -8,7 +8,7 @@ from css_preparation.prepare.records import RecordError
 from css_preparation.runner import cloudflare
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.web import Origin, ProviderError
-from preparation_fixture import evidence_a
+from preparation_fixture import evidence_a, evidence_b
 from runner_doubles import TOKEN_ID, LoopbackApi
 
 
@@ -61,9 +61,27 @@ class CloudflareStorageTest(unittest.TestCase):
         persist_candidate(records, self.storage.candidate_store())
         expected = len(records.rows('native_span'))
         with mock.patch.object(cloudflare, '_PAGE_ROWS', 2):
-            rows = self.storage.read_rows('native_span')
+            rows = self.storage.read_rows('native_span', records.output_ids())
         self.assertEqual(len(rows), expected)
         self.assertEqual(len({row['id'] for row in rows}), expected)
+
+    def test_reads_are_scoped_to_the_named_outputs(self):
+        first, second = evidence_a(), evidence_b()
+        for records in (first, second):
+            persist_candidate(records, self.storage.candidate_store())
+        ids = first.output_ids()
+        for kind in ('prepared_output', 'native_span', 'span_segment', 'annotation', 'coverage', 'artifact',
+                     'text_payload', 'source_node'):
+            with self.subTest(kind=kind):
+                saved = self.storage.read_rows(kind, ids)
+                self.assertEqual(sorted(map(str, saved)), sorted(map(str, first.rows(kind))))
+        self.assertEqual(self.storage.read_rows('native_span', []), [])
+        # Many output IDs are bound in chunks; rows reached twice come back once.
+        with mock.patch.object(cloudflare, '_BOUND_IDS', 1):
+            both = self.storage.read_rows('source_node', [*ids, *second.output_ids(), *ids])
+        self.assertEqual(len(both), len(first.rows('source_node')) + len(second.rows('source_node')))
+        for sql in self.api.queries:
+            self.assertNotRegex(sql, r'FROM \w+ ORDER BY')  # never an unscoped table read
 
     def test_failed_batch_leaves_nothing(self):
         records = evidence_a()
@@ -71,7 +89,7 @@ class CloudflareStorageTest(unittest.TestCase):
         broken = statements[:-1] + [(statements[-1][0], [None] * len(statements[-1][1]))]
         with self.assertRaises(ProviderError):
             self.storage.write_rows(broken)
-        self.assertEqual(self.storage.read_rows('prepared_output'), [])
+        self.assertEqual(self.storage.read_rows('prepared_output', records.output_ids()), [])
 
     def test_only_candidate_inserts_are_written(self):
         for sql in ('DELETE FROM artifacts', 'UPDATE release_selection SET release_id = ?',

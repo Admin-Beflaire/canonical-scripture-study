@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from ..contracts import job_result, parse_job_input
 from ..prepare.evidence import NativeText
@@ -21,7 +21,7 @@ def check_candidate_quality(
     read_control: Callable[[str, str, int], ControlState | None],
     registered: Callable[[dict[str, Any]], bool],
     inventory: CandidateInventory,
-    read_rows: Callable[[str], list[dict[str, Any]]],
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
     receipts: CheckpointStore,

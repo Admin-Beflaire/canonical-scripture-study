@@ -52,7 +52,7 @@ class CheckpointStageThree(unittest.TestCase):
                                        (identifier,)).fetchall())
         return rows[0] if rows else None
 
-    def all_rows(self, kind):
+    def all_rows(self, kind, *_):
         return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
 
     def save_checkpoint(self, content):
@@ -157,7 +157,7 @@ class CheckpointStageThree(unittest.TestCase):
 
     def test_missing_saved_coverage_disables_replay(self):
         result = self.invoke()
-        def incomplete(kind):
+        def incomplete(kind, *_):
             rows = self.all_rows(kind)
             return [] if kind == 'coverage' else rows
         self.storage = replace(self.storage, read_rows=incomplete)

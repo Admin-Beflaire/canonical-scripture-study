@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from ..prepare.evidence import NativeText, span_wording
 from ..prepare.records import ORDER, RecordError
@@ -31,7 +31,7 @@ class SemanticEvidence:
 
 def check_saved_semantics(
     job: dict[str, Any], inventory: CandidateInventory, *,
-    read_rows: Callable[[str], list[dict[str, Any]]],
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
     max_page_bytes: int = 2048,
@@ -44,7 +44,7 @@ def check_saved_semantics(
     if not revisions or any(b.input_revisions[0] not in revisions
                             for b in (*inventory.added, *inventory.reused)):
         raise RecordError('Candidate inputs disagree with dispatched registered sources')
-    rows = {kind: [dict(row) for row in read_rows(kind)] for kind in ORDER}
+    rows = {kind: [dict(row) for row in read_rows(kind, saved.output_ids)] for kind in ORDER}
     artifacts = {r['id']: r for r in rows['artifact'] if r['output_id'] in included}
     blobs = {}
     for key, row in artifacts.items():

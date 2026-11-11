@@ -1,5 +1,5 @@
 import { canonicalJson, sha256, type D1Database } from './d1.ts';
-import { CONTRACT_VERSION, type ArtifactRef, type JobResult, type Recipe } from './contracts.ts';
+import type { ArtifactRef, JobResult, Recipe } from './contracts.ts';
 import type { DecisionRef, Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Scope check, release construction and checked selection (Maintenance Control To-Be §4, MC-03).
@@ -16,7 +16,9 @@ export interface ObjectStore {
 }
 
 export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'application/json']);
-const SCHEMA_VERSIONS = { job_contract: CONTRACT_VERSION, quality_receipt: 'preparation-quality/1', migrations: '0004' };
+/** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
+ *  lists them: deployment refuses code that does not support the selected release's versions. */
+export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1' };
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;

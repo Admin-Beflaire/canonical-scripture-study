@@ -6,7 +6,8 @@ import { fakeGitHub } from './github.ts';
 import { GitHubActions } from '../../services/maintenance/control/src/github.ts';
 import { jobRoutes } from '../../services/maintenance/control/src/jobs.ts';
 import { advance } from '../../services/maintenance/control/src/progress.ts';
-import { membership, selectDirect, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { membership, selectDirect, SCHEMA_VERSIONS, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import compatibility from '../../infrastructure/github/deployment/compatibility.json' with { type: 'json' };
 import { controlTask, requestTask, taskReport, type TaskRequest } from '../../services/maintenance/control/src/tasks.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
 
@@ -173,6 +174,11 @@ test('a checked candidate becomes current in one guarded selection; the first pr
   assert.equal(release.recipe_revision, 'gen/r1');
   const digest = sha(`receipt ${task.id}`);
   assert.equal(release.quality_receipt, `receipt:${digest.slice(0, 32)}@${digest}`);
+  // Deployment must accept the selected release: every version it records is one the code supports.
+  const versions = JSON.parse(release.schema_versions_json) as Record<string, string>;
+  assert.deepEqual(versions, SCHEMA_VERSIONS);
+  for (const [key, value] of Object.entries(versions))
+    assert.ok((compatibility as Record<string, string[]>)[key]?.includes(value), `${key} ${value} is supported by deployment`);
 });
 
 test('a second book is added to the current release; parallel tasks each rebuild from current at check time', async () => {

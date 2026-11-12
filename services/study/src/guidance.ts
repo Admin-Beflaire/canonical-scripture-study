@@ -1,6 +1,6 @@
 /** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
  *  server instructions, the tool descriptions and get_guidance; no host skill is needed. */
-export const GUIDANCE_VERSION = 'study-guidance/2';
+export const GUIDANCE_VERSION = 'study-guidance/3';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) and summarise its argument before translating and explaining the asked verses.
@@ -23,18 +23,23 @@ const TOOLS = `Using the study tool:
  *  Concrete on purpose: general principles alone let a host fall back on familiar wording. */
 const TRANSLATION = `Translating:
 Working translation
-- Make your own working translation from the Hebrew, Aramaic or Greek evidence returned. Do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or any other standard translation. Keep a familiar rendering only where the original supports it, never because it is familiar; do not reject one only because it is traditional either.
+- Make your own working translation from the Hebrew, Aramaic or Greek evidence returned. Do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or any other standard translation. Your own wording is about phrasing; on the meaning of key terms, convention is the default (see Key terms).
 - Label it "Working translation" (Dutch: "Werkvertaling"). Write natural prose in the answer language; Dutch must read as Dutch, not as English in Dutch words.
 - Translate the asked passage as a coherent literary unit; explain the surrounding context it needs. Do not silently widen or narrow the asked scope; suggest a fuller boundary when useful.
+Key terms
+- Decide key terms before writing. Identify every word or phrase whose range of meaning changes the sense of the passage. For each, set out the realistic options; the evidence in this context (grammar, what the word does in its clause: its verb, subject and the image it belongs to; the same word or phrase elsewhere in the book and corpus); and how the main witnesses and traditions render it (for example LXX, Vulgate, Targum, major Jewish and Christian translations), saying which come from returned evidence and which from general knowledge. Then choose the option the context supports best.
+- Convention is the default. The rendering established in Jewish and Christian translation is the starting point. Depart from it only when the context evidence is clearly stronger. When you depart, the note names the conventional rendering, gives the evidence for departing and states what speaks against your choice. Freshness, style or avoiding a familiar word is never a reason to depart on meaning.
+- Check before delivering. For every key-term note, take the evidence it cites and ask which option that evidence supports best, not merely whether it is compatible with the chosen rendering. If it favours another option, or is the evidence usually given for another option, change the rendering or show why that evidence does not decide. Never adjust the evidence to fit the rendering. Confirm that no rule was applied outside its stated purpose.
+- Each key-term note gives the options, the deciding evidence, the conventional rendering and the choice, and says plainly how settled it is: a close call, or decided by the evidence. Mark every departure from convention with ⚑ so the reader can see where to check.
 Form and force
-- Render poetic and elevated language poetically: keep its force and, where possible, its beauty (rhythm, parallelism, sound, compression, imagery) without giving up accuracy. Example: tohu va-vohu as "wild and waste".
+- Render poetic and elevated language poetically: keep its force and, where possible, its beauty (rhythm, parallelism, sound, compression, imagery) without giving up accuracy. Example: tohu va-vohu as "wild and waste". This concerns form, never the meaning of a key term.
 - Reproduce wordplay where English or Dutch allows; otherwise explain it in a note. Keep metaphors and images; do not replace them with their supposed meaning.
 - Keep repetition, structure, speakers, participants, agency, negation, qualification and logical connections. Do not weaken or strengthen what the wording claims.
 Translation key
 - YHWH is always "Yahweh"; never LORD, the LORD, HEERE or de HEERE.
 - kyrios is Lord, lord or master by context. Identify it with Yahweh only where an Old Testament quotation or strong context warrants it, and say so.
 - Keep Sheol, Hades, Gehenna, the abyss and Tartarus-related verbs distinct; explain each in context without importing a later doctrine of hell or of the afterlife.
-- nephesh/psyche, ruach/pneuma/neshamah and basar/sarx/soma: decide each occurrence from its context (life, person, self, breath, wind, spirit, flesh, body ...). Do not read Greek philosophical categories, such as Platonic soul-body dualism, into this vocabulary. Capitalising "Spirit" is itself an interpretation; say so where it matters.
+- nephesh/psyche, ruach/pneuma/neshamah and basar/sarx/soma: decide each occurrence from its context (life, person, self, breath, wind, spirit, flesh, body ...) under the Key terms rules. One known trap: where a conventional rendering brings in Platonic soul-body dualism (an immortal, separable soul, such as "soul" for nephesh where the context means a living being or life), use the contextual meaning and note the conventional rendering. This concerns dualism only. It does not make ruach, pneuma or any other word suspect in itself, and never overrides the convention default for renderings such as "the Spirit of God" that the context supports.
 - aion/aionios: by context and construction; neither "always endless" nor "always age-long".
 - torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
 - A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.
@@ -51,9 +56,13 @@ Notes
 export const TRANSLATION_RULES: readonly string[] = Object.freeze([
   'Make your own working translation from the original-language evidence; do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or another standard translation.',
   'Label it "Working translation" (Dutch: "Werkvertaling").',
-  'Render poetic and elevated language poetically: keep its force and, where possible, its beauty (e.g. tohu va-vohu as "wild and waste"); keep wordplay, imagery and structure.',
+  'Decide key terms before writing: for every word whose range of meaning changes the sense, set out the options, the evidence in this context (grammar, what the word does in its clause, the same word or phrase elsewhere) and how the main witnesses and traditions render it; then choose what the context supports best.',
+  'Convention is the default: depart from the rendering established in Jewish and Christian translation only when the context evidence is clearly stronger, and then name the convention, the evidence and what speaks against your choice. Freshness or style is never a reason to depart on meaning.',
+  'Check before delivering: for each key-term note, ask which option its cited evidence supports best, not merely whether it fits your rendering. If it favours another option, change the rendering or show why it does not decide. Never adjust the evidence to fit.',
+  'Key-term notes give options, deciding evidence, conventional rendering, choice and how settled it is; mark every departure from convention with ⚑.',
+  'Render poetic and elevated language poetically: keep its force and, where possible, its beauty (e.g. tohu va-vohu as "wild and waste"); keep wordplay, imagery and structure. This concerns form, never the meaning of a key term.',
   'YHWH is always "Yahweh"; never LORD or HEERE.',
-  'Do not read Greek philosophical categories (such as Platonic soul-body dualism) into nephesh, psyche or ruach; decide each occurrence from context.',
+  'Do not read Platonic soul-body dualism (an immortal, separable soul) into nephesh, psyche or ruach. This rule concerns dualism only and never overrides the convention default for renderings such as "the Spirit of God" that the context supports.',
   'For every source, witness or tradition: translate the selected reading, keep substantive differences visible without harmonising, put textually disputed wording in [square brackets] with the evidence, and attribute a reading to source evidence only when it was returned here.',
   'Call get_guidance with topic "translation" for the full translation guidance.',
 ]);

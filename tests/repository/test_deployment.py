@@ -168,6 +168,22 @@ class DeploymentTests(unittest.TestCase):
                     d.deploy(root, root, root, "study")   # the fixture must never be the selected release
                 run.assert_not_called()
 
+    def test_fit_and_ordinary_deploys_accept_current_releases_with_and_without_the_index_version(self):
+        # The live current release records only evidence_records and native_reference; releases built
+        # after the v2 rebuild also record index_manifest 2. A release recording index_manifest 1 is refused.
+        supported = json.loads((ROOT / "infrastructure/github/deployment/compatibility.json").read_text())
+        for versions, ok in (({"evidence_records": "1", "native_reference": "1"}, True),
+                             ({"evidence_records": "1", "native_reference": "1", "index_manifest": "2"}, True),
+                             ({"evidence_records": "1", "native_reference": "1", "index_manifest": "1"}, False)):
+            rows = [{"current_release_id": "r1", "schema_versions_json": json.dumps(versions)}]
+            query = lambda sql, rows=rows: rows if "release_selection s" in sql else [{"name": "x"}]
+            with self.subTest(versions=versions):
+                if ok:
+                    self.assertEqual(d.selection(query, supported), "r1")
+                else:
+                    with self.assertRaises(d.DeploymentError):
+                        d.selection(query, supported)
+
     def test_diagnostics_capacity_blocks_before_any_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

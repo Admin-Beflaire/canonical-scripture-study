@@ -20,6 +20,7 @@ async function staged({ selectFixture = false } = {}) {
 
 test('fit fixture: 16 KB pages, a key spanning several pages, a small manifest', async () => {
   const fixture = await buildFitFixture();
+  assert.deepEqual(fixture.rows.releases[0].schema_versions_json, { evidence_records: '1', native_reference: '1', index_manifest: '2' });
   const [postings, directory, manifest] = fixture.objects;
   assert.ok(postings.bytes.length > 4 * fixture.pageCap);
   assert.ok(manifest.bytes.length <= fixture.pageCap && directory.bytes.length <= fixture.pageCap * 2);
@@ -34,7 +35,8 @@ test('fit search runs the real Study adapter on the unselected fixture and conti
   const seen: string[] = [];
   let continuation: string | null = null;
   for (let i = 0; i < 50; i++) {
-    const result = await runStudyFit(env, continuation) as { occurrences: string[]; continuation: string | null; usage: { d1Calls: number; r2Reads: number; r2Bytes: number }; release_id: string };
+    const result = await runStudyFit(env, continuation) as { occurrences: string[]; continuation: string | null; usage: { d1Calls: number; r2Reads: number; r2Bytes: number }; release_id: string; error?: string };
+    assert.equal(result.error, undefined, 'the real release-format check accepts the fixture release');
     assert.equal(result.release_id, FIT_RELEASE);
     assert.ok(result.usage.d1Calls <= 2 && result.usage.r2Reads <= 4 && result.usage.r2Bytes <= 65536, JSON.stringify(result.usage));
     seen.push(...result.occurrences);

@@ -107,7 +107,7 @@ export async function buildFitFixture({ pageCap = 16384, units = 120, tokens = 6
     coverage: [{ output_id: FIT_OUTPUT, source_revision_id: FIT_SOURCE, native_extent_json: { unit_ids: unitIds, order_range: orderRange },
       capability: 'word_exact', state: 'available', method_version: 'fit:method/1', index_artifact_id: manifestId, dependencies_json: [], limitation: null }],
     releases: [{ id: FIT_RELEASE, manifest_revision: 'fit:manifest/1', recipe_revision: 'fit:recipe/1',
-      schema_versions_json: { evidence_records: '1', native_reference: '1' }, coverage_basis: 'synthetic fit fixture',
+      schema_versions_json: { evidence_records: '1', native_reference: '1', index_manifest: '2' }, coverage_basis: 'synthetic fit fixture',
       quality_receipt: 'synthetic:fit-quality', scope_receipt: 'synthetic:fit-scope' }],
     release_outputs: [{ release_id: FIT_RELEASE, output_id: FIT_OUTPUT }],
   };

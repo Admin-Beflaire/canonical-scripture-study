@@ -198,6 +198,9 @@ test('missing ranges: gaps, missing chapters and an explicit end; an unknown cha
   assert.deepEqual(missingRanges(ref, ['Gen.1.2', 'Gen.1.4', 'Gen.1.5', 'Gen.3.2', 'Gen.3.3']), ['Gen 1:3', 'Gen 2', 'Gen 3:1', 'Gen 3:4']);
   assert.deepEqual(missingRanges(parseReference('Gen 1'), ['Gen.1.1', 'Gen.1.2', 'Gen.1.3']), []);
   assert.deepEqual(missingRanges(parseReference('Gen 1:5'), []), ['Gen 1:5']);
+  // R35-3: nothing found in the first chapter of a cross-chapter range.
+  assert.deepEqual(missingRanges(parseReference('Gen 1:99-2:2'), ['Gen.2.1', 'Gen.2.2']), ['Gen 1:99 to the end of chapter 1']);
+  assert.deepEqual(missingRanges(parseReference('Gen 1:2-3:1'), ['Gen.3.1']), ['Gen 1:2 to the end of chapter 1', 'Gen 2']);
 });
 
 test('R35-2: a missing or malformed body withholds only its verses; independent evidence is delivered', async () => {
@@ -217,4 +220,14 @@ test('R35-2: a missing or malformed body withholds only its verses; independent 
   const [malformed] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:4-6'] });
   assert.deepEqual(units([malformed]), ['Gen.1.4', 'Gen.1.6']);
   assert.ok(malformed.limitations.some(l => l.state === 'corrupt' && /malformed/.test(l.detail)));
+});
+
+test('R35-3 and R35-4: a missing first chapter and a named source without the verses are reported', async () => {
+  const { env } = buildPassageFixture();
+  const [cross] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:99-2:2'] });
+  assert.deepEqual(units([cross]), ['Gen.2.1', 'Gen.2.2']);
+  assert.ok(cross.limitations.some(l => l.state === 'missing_evidence' && /Gen 1:99 to the end of chapter 1/.test(l.detail)), JSON.stringify(cross.limitations));
+  const [mixed] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:1'], sources: [HEB, GRK] });
+  assert.deepEqual(units([mixed]), ['Gen.1.1']);
+  assert.ok(mixed.limitations.some(l => l.state === 'missing_evidence' && l.detail.startsWith(`${GRK} has none`)), JSON.stringify(mixed.limitations));
 });

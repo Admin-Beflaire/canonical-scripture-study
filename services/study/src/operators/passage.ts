@@ -150,17 +150,21 @@ export function missingRanges(ref: PassageRequest, found: string[]): string[] {
   const sorted = [...new Set(found)].map(at).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const out: string[] = [];
   const range = (c1: number, v1: number, c2: number, v2: number | null) =>
-    out.push(v2 === null ? `${ref.book} ${c1}:${v1}-` : c1 === c2 ? (v1 === v2 ? `${ref.book} ${c1}:${v1}` : `${ref.book} ${c1}:${v1}-${v2}`) : `${ref.book} ${c1}:${v1}-${c2}:${v2}`);
+    out.push(v2 === null ? `${ref.book} ${c1}:${v1} to the end of chapter ${c1}` : c1 === c2 ? (v1 === v2 ? `${ref.book} ${c1}:${v1}` : `${ref.book} ${c1}:${v1}-${v2}`) : `${ref.book} ${c1}:${v1}-${c2}:${v2}`);
   const first = { c: ref.from.chapter, v: ref.from.verse ?? 1 };
   if (!sorted.length) { out.push(ref.text); return out; }
   let [pc, pv] = [first.c, first.v - 1];
+  let seen = false;   // whether any asked verse was found in chapter pc
   for (const [c, v] of sorted) {
     if (c === pc && v > pv + 1) range(c, pv + 1, c, v - 1);
     else if (c > pc) {
+      // Nothing found in the first chapter: its asked verses up to the chapter's end are missing.
+      if (!seen) range(pc, pv + 1, pc, null);
       for (let missing = pc + 1; missing < c; missing++) out.push(`${ref.book} ${missing}`);
       if (v > 1) range(c, 1, c, v - 1);
     }
     [pc, pv] = [c, v];
+    seen = true;
   }
   for (let missing = pc + 1; missing <= ref.to.chapter; missing++) out.push(`${ref.book} ${missing}`);
   if (ref.to.verse !== null && pc === ref.to.chapter && pv < ref.to.verse) range(pc, pv + 1, pc, ref.to.verse);
@@ -214,6 +218,12 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
       const { rows: present }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_presence', { units: [...requested], sources: w.sources });
       if (!present.length) limitations.push(limitation('missing_evidence', ref.text,
         w.sources ? 'None of the named sources has the asked verses in the current release' : 'No selected source has the asked verses in the current release'));
+      else if (w.sources) {
+        // A named source without any asked verse is reported, not silently left out.
+        const has = new Set(present.map(row => String(row.source_revision_id)));
+        for (const source of w.sources) if (!has.has(source))
+          limitations.push(limitation('missing_evidence', ref.text, `${source} has none of the asked verses in the current release`));
+      }
       for (const row of present) {
         const gaps = missingRanges(ref, String(row.units ?? '').split(',').filter(Boolean));
         if (gaps.length) limitations.push(limitation('missing_evidence', ref.text,

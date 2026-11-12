@@ -1,0 +1,286 @@
+import { compareUtf8, isIdentifier, isSafeCount, sha256Hex } from '../read/bytes.ts';
+import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
+import { artifactFrom, readSlices, type RegisteredArtifact } from '../read/objects.ts';
+import type { ReadSession } from '../read/session.ts';
+import { ReadError, limitation, type Limitation } from '../read/states.ts';
+import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
+import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
+import { candidateUnits, contextUnits, parseReference, type PassageRequest } from '../scope/references.ts';
+
+/** The passage part of a Study workload: references in each source's own numbering, the
+ *  sources to read (all selected sources when null) and whether to add the surrounding chapter. */
+export interface PassageWorkload { mode: string; depth: string; language: string; references: string[]; sources: string[] | null; context: boolean }
+
+export const MAX_REFERENCES = 4;
+
+/** Position: the reference being read and the last delivered verse (source, linear order). */
+interface PassagePosition { ref: number; source: string; order: number }
+
+export function normalizePassageWorkload(w: PassageWorkload): PassageWorkload {
+  if (!Array.isArray(w.references) || w.references.length < 1 || w.references.length > MAX_REFERENCES)
+    throw new ReadError('invalid_request', `Give 1 to ${MAX_REFERENCES} references`);
+  for (const ref of w.references) parseReference(ref);
+  let sources: string[] | null = null;
+  if (w.sources != null) {
+    if (!Array.isArray(w.sources) || w.sources.length < 1 || w.sources.length > 20 || !w.sources.every(s => isIdentifier(s)))
+      throw new ReadError('invalid_request', 'Sources are source revision IDs as listed by the study tool');
+    sources = [...new Set(w.sources)].sort(compareUtf8);
+  }
+  return { mode: w.mode, depth: w.depth, language: w.language, references: w.references.map(r => r.trim()), sources, context: w.context === true };
+}
+
+export const PASSAGE_CHECKS: Readonly<Record<string, PositionCheck>> = Object.freeze({
+  passage(pos: unknown, key: unknown, workload: unknown) {
+    const w = workload as PassageWorkload;
+    if (key !== null || !pos || typeof pos !== 'object' || Array.isArray(pos)) return false;
+    const p = pos as Record<string, unknown>;
+    if (JSON.stringify(Object.keys(p).sort()) !== '["order","ref","source"]') return false;
+    return Number.isSafeInteger(p.ref) && (p.ref as number) >= 0 && (p.ref as number) < w.references.length
+      && (p.source === '' || isIdentifier(p.source)) && (p.order === -1 || isSafeCount(p.order));
+  },
+});
+
+interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset: number; byte_length: number; sha256: string }
+interface Row { evidence: SpanEvidence; order: number; ranges: BodyRange[]; artifacts: Map<string, RegisteredArtifact>; textFromD1: boolean }
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+function parsed(value: unknown): unknown { try { return typeof value === 'string' ? JSON.parse(value) : undefined; } catch { return undefined; } }
+
+async function toRow(r: Record<string, unknown>): Promise<Row> {
+  const segments = parsed(r.segments_json);
+  const basis = parsed(r.basis_json);
+  if (!Array.isArray(segments) || !segments.length || !segments.every(s => isObject(s) && isIdentifier(s.unit_id) && isSafeCount(s.start) && isSafeCount(s.end))
+      || !isObject(basis) || !isSafeCount(r.start_order))
+    throw new ReadError('corrupt', 'Inconsistent verse record');
+  const evidence: SpanEvidence = {
+    span_id: String(r.id), source_revision_id: String(r.source_revision_id), source_name: String(r.source_name),
+    attribution: String(r.source_attribution), kind: String(r.kind), label: String(r.label), native_order: Number(r.native_order),
+    coordinate_version: String(r.coordinate_version), segments: segments as NativeSegment[], basis, reading_kind: String(r.reading_kind), text: null,
+  };
+  const row: Row = { evidence, order: r.start_order as number, ranges: [], artifacts: new Map(), textFromD1: false };
+  if (r.content_id !== null && r.content_id !== undefined) {
+    if (typeof r.exact_text !== 'string' || await sha256Hex(r.exact_text) !== r.content_id)
+      throw new ReadError('corrupt', 'Text payload does not match its digest');
+    evidence.text = [r.exact_text];
+    row.textFromD1 = true;
+  } else if (evidence.reading_kind !== 'gap') {
+    const ranges = parsed(r.body_ranges_json);
+    if (!Array.isArray(ranges) || ranges.length !== segments.length || ranges.some((x, i) => !isObject(x) || x.segment_ordinal !== i
+        || !isIdentifier(x.artifact_id) || !isSafeCount(x.byte_offset) || !isSafeCount(x.byte_length) || x.byte_length === 0
+        || typeof x.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(x.sha256)))
+      throw new ReadError('corrupt', 'Body ranges are malformed or out of native segment order');
+    row.ranges = ranges as BodyRange[];
+    for (const item of (parsed(r.body_artifacts_json ?? '[]') as Record<string, unknown>[] | undefined) ?? []) {
+      const artifact = artifactFrom(item);
+      row.artifacts.set(artifact.id, artifact);
+    }
+  }
+  return row;
+}
+
+/** Reads the R2 wording of many verses with few reads: neighbouring ranges of one artifact are
+ *  read together (within the page cap) and each verse is checked against its own digest.
+ *  Verses the allowance cannot cover stay without text and are reported as remaining. */
+async function fillBodies(session: ReadSession, rows: Row[], limitations: Limitation[]): Promise<Set<Row>> {
+  const pending = new Set<Row>();
+  const withheld = new Set<Row>();
+  const withhold = (row: Row, state: Limitation['state'], detail: string) => {
+    if (withheld.has(row)) return;
+    withheld.add(row);
+    limitations.push(limitation(state, row.evidence.label, detail));
+  };
+  type Piece = { row: Row; index: number; range: BodyRange; artifact: RegisteredArtifact };
+  const pieces: Piece[] = [];
+  for (const row of rows) row.ranges.forEach((range, index) => {
+    const artifact = row.artifacts.get(range.artifact_id);
+    if (!artifact) withhold(row, 'missing_evidence', 'The stored wording is not selected in the current release and is withheld');
+    else pieces.push({ row, index, range, artifact });
+  });
+  pieces.sort((a, b) => compareUtf8(a.artifact.id, b.artifact.id) || a.range.byte_offset - b.range.byte_offset);
+  const cap = session.budget.limits.pageBytes;
+  const groups: Piece[][] = [];
+  for (const piece of pieces) {
+    if (withheld.has(piece.row)) continue;
+    const group = groups.at(-1);
+    const start = group?.[0].range.byte_offset ?? 0;
+    const end = piece.range.byte_offset + piece.range.byte_length;
+    if (group && group[0].artifact.id === piece.artifact.id && end - start <= cap
+        && piece.range.byte_offset - (group.at(-1)!.range.byte_offset + group.at(-1)!.range.byte_length) <= 256) group.push(piece);
+    else groups.push([piece]);
+  }
+  const texts = new Map<Row, (string | null | undefined)[]>();
+  for (const group of groups) {
+    const start = group[0].range.byte_offset;
+    const end = Math.max(...group.map(p => p.range.byte_offset + p.range.byte_length));
+    let read: (string | null)[];
+    try { read = await readSlices(session, group[0].artifact, start, end - start, group.map(p => ({ offset: p.range.byte_offset, length: p.range.byte_length, sha256: p.range.sha256 }))); }
+    catch (error) {
+      if (!(error instanceof ReadError)) throw error;
+      // Only the verses of this read are affected; other reads and sources stay usable.
+      for (const p of group) {
+        if (error.state === 'budget') pending.add(p.row);
+        else withhold(p.row, error.state, `${error.message}; this verse's wording is withheld`);
+      }
+      continue;
+    }
+    group.forEach((p, i) => {
+      const list = texts.get(p.row) ?? new Array(p.row.ranges.length).fill(undefined);
+      list[p.index] = read[i];
+      texts.set(p.row, list);
+    });
+  }
+  for (const row of rows) {
+    if (!row.ranges.length || pending.has(row)) continue;
+    const list = texts.get(row) ?? [];
+    if (withheld.has(row) || list.length !== row.ranges.length || list.some(t => typeof t !== 'string')) {
+      withhold(row, 'corrupt', 'Stored wording failed its check and is withheld');
+      row.evidence.text = null;
+      continue;
+    }
+    row.evidence.text = list as string[];
+  }
+  return pending;
+}
+
+/** Verses missing from a requested range, per source, as readable ranges. `found` are the unit
+ *  IDs a source has among the requested candidates. A chapter's real end is unknown, so verses
+ *  after the last found one in a chapter are missing only up to an explicit end verse. */
+export function missingRanges(ref: PassageRequest, found: string[]): string[] {
+  const at = (u: string) => { const [, c, v] = u.split('.'); return [Number(c), Number(v)] as const; };
+  const sorted = [...new Set(found)].map(at).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const out: string[] = [];
+  const range = (c1: number, v1: number, c2: number, v2: number | null) =>
+    out.push(v2 === null ? `${ref.book} ${c1}:${v1} to the end of chapter ${c1}` : c1 === c2 ? (v1 === v2 ? `${ref.book} ${c1}:${v1}` : `${ref.book} ${c1}:${v1}-${v2}`) : `${ref.book} ${c1}:${v1}-${c2}:${v2}`);
+  const first = { c: ref.from.chapter, v: ref.from.verse ?? 1 };
+  if (!sorted.length) { out.push(ref.text); return out; }
+  let [pc, pv] = [first.c, first.v - 1];
+  let seen = false;   // whether any asked verse was found in chapter pc
+  for (const [c, v] of sorted) {
+    if (c === pc && v > pv + 1) range(c, pv + 1, c, v - 1);
+    else if (c > pc) {
+      // Nothing found in the first chapter: its asked verses up to the chapter's end are missing.
+      if (!seen) range(pc, pv + 1, pc, null);
+      for (let missing = pc + 1; missing < c; missing++) out.push(`${ref.book} ${missing}`);
+      if (v > 1) range(c, 1, c, v - 1);
+    }
+    [pc, pv] = [c, v];
+    seen = true;
+  }
+  for (let missing = pc + 1; missing <= ref.to.chapter; missing++) out.push(`${ref.book} ${missing}`);
+  if (ref.to.verse !== null && pc === ref.to.chapter && pv < ref.to.verse) range(pc, pv + 1, pc, ref.to.verse);
+  return out;
+}
+
+async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<string, PassageAnnotation[]> | null> {
+  const ids = rows.map(r => r.evidence.span_id);
+  const out = new Map<string, PassageAnnotation[]>();
+  for (let i = 0; i < ids.length; i += 20) {
+    if (!session.canQuery()) return null;
+    const chunk = ids.slice(i, i + 20);
+    let after: [string, string] | null = null;
+    for (;;) {
+      if (!session.canQuery()) return null;
+      const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('annotations', { span_ids: chunk, after });
+      for (const a of found) {
+        const details = parsed(a.details_json);
+        const list = out.get(String(a.span_id)) ?? [];
+        list.push({ kind: String(a.kind), provider: String(a.provider), details: isObject(details) ? details : {} });
+        out.set(String(a.span_id), list);
+      }
+      if (!more || !found.length) break;
+      after = [String(found.at(-1)!.span_id), String(found.at(-1)!.id)];
+    }
+  }
+  return out;
+}
+
+/** One bounded batch of passage evidence: the requested verses, and (with context) the rest of
+ *  their chapters, in each source's native order. Continues across batches without narrowing. */
+export async function passageBatch(session: ReadSession, workload: PassageWorkload, continuation: string | null, guidanceVersion: string,
+                                   notes: Limitation[] = []): Promise<Batch> {
+  const w = normalizePassageWorkload(workload);
+  const refs: PassageRequest[] = w.references.map(parseReference);
+  let pos: PassagePosition = { ref: 0, source: '', order: -1 };
+  if (continuation !== null) pos = (await resumeContinuation(continuation, w, PASSAGE_CHECKS)).pos as PassagePosition;
+  session.budget.spendResult(ENVELOPE_RESERVE);
+  const limitations: Limitation[] = [...notes];
+  const items: { item: EvidenceItem; ref: number; source: string; order: number }[] = [];
+  let next: PassagePosition | null = pos;
+  // Read references in order while the request allowance lasts.
+  while (next) {
+    if (!session.canQuery()) break;
+    if (items.length && session.budget.usage().r2Reads >= session.budget.limits.r2Reads) break;
+    const ref: PassageRequest = refs[next.ref];
+    const requested = new Set(candidateUnits(ref));
+    const units: string[] = w.context ? contextUnits(ref) : [...requested];
+    if (next.source === '' && next.order === -1) {
+      // At the start of a reference: which asked verses each source has, so gaps are reported.
+      const { rows: present }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_presence', { units: [...requested], sources: w.sources });
+      if (!present.length) limitations.push(limitation('missing_evidence', ref.text,
+        w.sources ? 'None of the named sources has the asked verses in the current release' : 'No selected source has the asked verses in the current release'));
+      else if (w.sources) {
+        // A named source without any asked verse is reported, not silently left out.
+        const has = new Set(present.map(row => String(row.source_revision_id)));
+        for (const source of w.sources) if (!has.has(source))
+          limitations.push(limitation('missing_evidence', ref.text, `${source} has none of the asked verses in the current release`));
+      }
+      for (const row of present) {
+        const gaps = missingRanges(ref, String(row.units ?? '').split(',').filter(Boolean));
+        if (gaps.length) limitations.push(limitation('missing_evidence', ref.text,
+          `${String(row.source_revision_id)} has no verse ${gaps.join(', ')} in the current release`));
+      }
+      if (!session.canQuery()) break;
+    }
+    const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_spans', { units, sources: w.sources, after: [next.source, next.order] });
+    const rows: Row[] = [];
+    for (const r of found) {
+      try { rows.push(await toRow(r)); }
+      catch (error) { if (error instanceof ReadError) limitations.push(limitation(error.state, String(r.label ?? r.id), error.message)); else throw error; }
+    }
+    const pending = await fillBodies(session, rows, limitations);
+    // A verse is never delivered after one whose wording is still unread: stop at the first pending verse.
+    const firstPending = rows.findIndex(r => pending.has(r));
+    const deliverable = firstPending < 0 ? rows : rows.slice(0, firstPending);
+    const annotations = deliverable.length ? await annotationsFor(session, deliverable) : new Map<string, PassageAnnotation[]>();
+    if (annotations === null) {
+      // Verses are not delivered without their notes: the next batch reads them again with notes.
+      if (items.length) break;
+      limitations.push(limitation('budget', 'annotations', 'Textual notes for these verses could not be read and are not supplied'));
+    }
+    for (const row of deliverable) {
+      const item: EvidenceItem = { kind: 'source_text', span: row.evidence,
+        role: requested.has(row.evidence.segments[0].unit_id) ? 'requested' : 'context',
+        ...(annotations ? { annotations: annotations.get(row.evidence.span_id) ?? [] } : {}) };
+      items.push({ item, ref: next.ref, source: row.evidence.source_revision_id, order: row.order });
+    }
+    const last = deliverable.at(-1);
+    if (firstPending >= 0) { next = last ? { ref: next.ref, source: last.evidence.source_revision_id, order: last.order } : next; break; }
+    if (more) {
+      // Resume after the last row of this page (a withheld record is reported, not re-read).
+      const tail: Record<string, unknown> = found.at(-1)!;
+      next = { ref: next.ref, source: String(tail.source_revision_id), order: Number(tail.start_order) };
+      continue;
+    }
+    next = next.ref + 1 < refs.length ? { ref: next.ref + 1, source: '', order: -1 } : null;
+  }
+  const { batch, deferred } = assembleBatch({
+    release_id: session.release.id, mode: w.mode, depth: w.depth,
+    delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' },
+    context_scope: w.context ? { chapters: refs.map(r => `${r.book} ${r.from.chapter}${r.to.chapter !== r.from.chapter ? `-${r.to.chapter}` : ''}`),
+      note: 'No literary-unit boundaries are recorded for these sources yet; the context is the whole chapter.' } : null,
+    evidence: items.map(x => x.item), citations: [], searched_scope: [], coverage: [], limitations,
+    remaining: null, continuation: null, guidance_version: guidanceVersion,
+  }, session.budget);
+  // Resume after the last verse actually delivered.
+  const delivered = items.slice(0, items.length - deferred.length);
+  let resume: PassagePosition | null = next;
+  if (deferred.length) {
+    const last = delivered.at(-1);
+    resume = last ? { ref: last.ref, source: last.source, order: last.order } : pos;
+  }
+  if (resume && delivered.length === 0 && resume.ref === pos.ref && resume.source === pos.source && resume.order === pos.order)
+    throw new ReadError('exceeds_limits', 'Not one verse of this passage fits a batch');
+  batch.continuation = resume ? await encodeContinuation(w, { op: 'passage', pos: resume, key: null }) : null;
+  batch.remaining = resume ? { passage: 'continues', reference: w.references[resume.ref] } : null;
+  return batch;
+}

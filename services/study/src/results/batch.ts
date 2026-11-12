@@ -6,8 +6,11 @@ import { ReadError, limitation, type Limitation } from '../read/states.ts';
 
 /** One attributed piece of evidence. Equal wording from different sources stays separate. */
 export type EvidenceItem =
-  | { kind: 'source_text'; span: SpanEvidence }
+  | { kind: 'source_text'; span: SpanEvidence; role?: 'requested' | 'context'; annotations?: PassageAnnotation[] }
   | { kind: 'search_hit'; hit: SearchHit };
+
+/** A recorded note on a verse (for example textual variants), attributed to its provider. */
+export interface PassageAnnotation { kind: string; provider: string; details: Record<string, unknown> }
 
 export interface Citation { source_revision_id: string; span_id: string; coordinate_version: string; segments: NativeSegment[]; quote?: string }
 

@@ -193,6 +193,20 @@ test('a second book is added to the current release; parallel tasks each rebuild
   assert.equal(membersOf(w, now.current_release_id).length, 6, 'Genesis kept, Exodus added');
 });
 
+test('a kept index from an earlier release is not re-judged by the new directory rule', async () => {
+  const w = world();
+  // Genesis was approved in an earlier release, before indexes had a directory file.
+  const old = savePrepared(w, 'rev-1', 'old-gen', ['Gen.1.1'], 'old', { noDirectory: true });
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-old', 'm', 'r', '{}', 'c', 'q', 's')`);
+  for (const output of old.outputs) w.db.sqlite.prepare(`INSERT INTO release_outputs VALUES ('release-old', ?)`).run(output);
+  w.db.sqlite.exec(`UPDATE release_selection SET current_release_id = 'release-old'`);
+  const exodus = await runBook(w, prepareTask('exo', 'e1'));
+  assert.equal(exodus.task.state, 'completed', exodus.task.limitations.join(' | '));
+  const members = membersOf(w, selected(w).current_release_id);
+  for (const output of old.outputs) assert.ok(members.includes(output), 'old Genesis kept unchanged');
+  assert.equal(members.length, old.outputs.length + 2, 'Exodus added');
+});
+
 test('re-preparing a book replaces its overlapping outputs and keeps the rest', async () => {
   const w = world();
   await runBook(w, prepareTask('exo', 'e1'));

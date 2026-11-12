@@ -25,11 +25,14 @@ const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one r
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;
 const DIRECTORY = 'application/x-ndjson; profile=index-directory';
-/** Files every index output needs under index-manifest/2: postings, directory and manifest. */
+/** Files every index output needs, in any format version: postings and manifest. */
 const INDEX_FILES: Record<string, string[]> = {
-  source_search: ['application/x-ndjson', DIRECTORY, 'application/json'],
-  word_index: ['application/x-ndjson', DIRECTORY, 'application/json'],
+  source_search: ['application/x-ndjson', 'application/json'], word_index: ['application/x-ndjson', 'application/json'],
 };
+/** A task's new index outputs use index-manifest/2, which adds the paged directory. Kept members
+ *  were approved in an earlier release; they are checked for presence and integrity, not
+ *  re-judged by a newer format rule. Each source's index is read on its own. */
+const NEW_INDEX_FILES = [DIRECTORY];
 
 interface OutputRow { id: string; kind: string; input_revisions_json: string; native_extent_json: string; validation_basis_json: string }
 export interface Output { id: string; kind: string; revisions: string[]; extent: Record<string, unknown>; dependencies: string[] }
@@ -118,7 +121,8 @@ export async function validateMembers(db: D1Database, stored: Stored, items: Out
   // Evidence may keep its wording in D1, so it needs no artifact.
   for (const item of items.filter(output => INDEX_FILES[output.kind])) {
     const formats = new Set(artifacts.filter(artifact => artifact.output_id === item.id).map(artifact => artifact.format));
-    for (const format of INDEX_FILES[item.kind]) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
+    const required = options.added?.has(item.id) ? [...INDEX_FILES[item.kind], ...NEW_INDEX_FILES] : INDEX_FILES[item.kind];
+    for (const format of required) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
   }
   for (const artifact of artifacts) if (!FORMATS.has(artifact.format)) problems.push(`artifact ${artifact.id} has unsupported format ${artifact.format}`);
   if (artifacts.length) {

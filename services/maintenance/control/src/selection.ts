@@ -15,7 +15,9 @@ export interface ObjectStore {
   list(prefix: string, cursor?: string): Promise<{ objects: Array<{ key: string; size: number }>; cursor?: string }>;
 }
 
-export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'application/json']);
+/** Stored artifact formats a release may hold; index-manifest/2 adds the paged directory. */
+export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'application/json',
+  'application/x-ndjson; profile=index-directory']);
 /** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
  *  lists them: deployment refuses code that does not support the selected release's versions. */
 export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', index_manifest: '2' };

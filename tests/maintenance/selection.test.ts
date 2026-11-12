@@ -88,6 +88,7 @@ function savePrepared(w: World, revision: string, unit: string, units: string[],
   insert.run(index, 'source_search', JSON.stringify([revision]), 'm1', '{}', extent, JSON.stringify({ reuse_basis: 'y', dependencies: [evidence] }));
   const refs = [];
   for (const [output, format, name] of [[evidence, 'text/utf-8', 'body'], [index, damage.format ?? 'application/x-ndjson', 'postings'],
+    [index, 'application/x-ndjson; profile=index-directory', 'directory'],
     ...(damage.noManifest ? [] : [[index, 'application/json', 'manifest']])]) {
     const digest = sha(output + name);
     const locator = `prepared/${digest}/file`;

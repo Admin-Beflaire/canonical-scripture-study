@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Any, Callable, Mapping, Sequence
 
-from ..prepare.records import RecordError, RecordSet
+from ..prepare.records import KEYS, RecordError, RecordSet, comparable
 from . import ControlState, execute_unit
 from .basis import check_unit_records
 
@@ -45,6 +45,24 @@ class SavedCandidate:
     artifact_refs: tuple[dict[str, Any], ...]
 
 
+def _check_saved_rows(records: RecordSet, output_id: str, storage: CandidateStore) -> None:
+    """A saved output is reused only if every row it owns equals the candidate's.
+
+    The output basis does not cover its owned rows (spans, segments, annotations,
+    relationships, coverage), so they are compared directly.
+    """
+    if storage.read_rows is None:
+        raise RecordError('Cannot verify a saved output without its saved rows')
+    for kind, rows in records.owned_rows(output_id).items():
+        if kind == 'prepared_output':
+            continue
+        expected = sorted((comparable(kind, row) for row in rows), key=lambda r: tuple(r[k] for k in KEYS[kind]))
+        saved = sorted((comparable(kind, dict(row)) for row in storage.read_rows(kind, [output_id])),
+                       key=lambda r: tuple(r[k] for k in KEYS[kind]))
+        if saved != expected:
+            raise RecordError('Existing candidate metadata is incomplete or different')
+
+
 def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:
     """Save immutable blobs before candidate records and report only read-back refs.
 
@@ -74,15 +92,24 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
         if (not isinstance(saved, bytes) or saved != records.blobs[artifact['id']]):
             raise RecordError('Saved artifact bytes differ from the candidate')
 
-    # Retry after a saved candidate but before its checkpoint/report: only exact
-    # complete atomic row sets may be acknowledged again. Never overwrite identities.
-    saved_outputs = [storage.optional_row('prepared_output', row['id']) for row in outputs]
-    saved_artifacts = [storage.read_row('artifact', row['id']) for row in artifacts]
-    if any(row is not None for row in saved_outputs + saved_artifacts):
-        if (saved_outputs != outputs or saved_artifacts != artifacts):
+    # An output may already be saved: by a retry after a saved candidate but before its
+    # checkpoint/report, or by an earlier build when its basis is unchanged (a rebuild that
+    # reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
+    # exactly the candidate's; the remaining outputs are written in one atomic batch.
+    # Never overwrite identities.
+    reused = []
+    for output in outputs:
+        owned = [row for row in artifacts if row['output_id'] == output['id']]
+        saved_output = storage.optional_row('prepared_output', output['id'])
+        saved_owned = [storage.optional_row('artifact', row['id']) for row in owned]
+        if saved_output is None and all(row is None for row in saved_owned):
+            continue
+        if saved_output != output or saved_owned != owned:
             raise RecordError('Existing candidate metadata is incomplete or different')
-    else:
-        storage.write_rows(records.statements())
+        _check_saved_rows(records, output['id'], storage)
+        reused.append(output['id'])
+    if not outputs or len(reused) < len(outputs):
+        storage.write_rows(records.without_outputs(reused).statements())
     for output in outputs:
         if storage.read_row('prepared_output', output['id']) != output:
             raise RecordError('Saved candidate output identity differs')

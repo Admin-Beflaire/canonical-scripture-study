@@ -151,9 +151,13 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
         if len({(row['search_key'], row['occurrence_id']) for row in postings}) != len(postings):
             raise RecordError('Duplicate source occurrence')
         state = 'partial' if not text.complete or coverage[0]['state'] == 'partial' else 'available'
-        first = min(offsets[unit] for unit in group)
-        last = max(offsets[unit] + max(len(text.unit(unit)) - 1, 0) for unit in group)
+        # The range covers the group's nonempty text only: an empty unit's position is the next
+        # unit's first position, which may belong to the following partition. An all-empty group
+        # has no postings and no range (the adapter registers no index for it).
+        filled = [unit for unit in group if len(text.unit(unit)) > 0]
+        order_range = (min(offsets[unit] for unit in filled),
+                       max(offsets[unit] + len(text.unit(unit)) - 1 for unit in filled)) if filled else None
         results.append(SourcePartition(group_basis, tuple(postings), state,
                                        (text.limitation or coverage[0].get('limitation')) if state == 'partial' else None,
-                                       (first, last)))
+                                       order_range))
     return tuple(results)

@@ -29,7 +29,7 @@ function bindings({ selected = true, corruptPostings = false } = {}) {
       const data = await readFile(new URL('../conformance/indexes/' + filename, import.meta.url));
       const { offset, length } = options?.range ?? { offset: 0, length: data.length };
       const bytes = Uint8Array.from(data.subarray(offset, offset + length));
-      if (corruptPostings && options) bytes[0] ^= 1;
+      if (corruptPostings && options && artifact.id === 'ix-source-postings') bytes[0] ^= 1;   // postings only, not the directory
       return { arrayBuffer: async () => bytes.buffer };
     },
   };

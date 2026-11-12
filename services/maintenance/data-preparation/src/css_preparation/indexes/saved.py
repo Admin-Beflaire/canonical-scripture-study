@@ -137,11 +137,11 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
     if (len(set(file_ids)) != len(file_ids) or directory_id in file_ids or directory_id == manifest_id
             or set(artifact_by_id) != set(file_ids) | {manifest_id, directory_id}):
         raise RecordError('Saved artifact inventory is incomplete or incompatible')
-    entries_by_file = _directory_entries(manifest, artifact_by_id, blobs, cap=cap, max_page_bytes=max_page_bytes,
+    entries_by_file, directory_order = _directory_entries(manifest, artifact_by_id, blobs, cap=cap, max_page_bytes=max_page_bytes,
                                          output_id=output_id, revision=revision)
     order_low, order_high = manifest['native_extent']['order_range']
-    previous: tuple[bytes, int, bytes] | None = None
     seen: set[tuple[str, str]] = set()
+    page_orders: dict[tuple[str, int], list[tuple[bytes, int, bytes]]] = {}
     actual_capabilities: set[str] = set()
     # Source rows have one stored occurrence per normalized key. Word rows
     # carry all attributed alternatives even when several lookup keys match.
@@ -181,11 +181,8 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
                                for seg in posting['native_reference']['segments'])
                         or not order_low <= posting['native_order'] <= order_high):
                     raise RecordError('Incompatible saved posting source or native reference')
-                order = (posting['search_key'].encode('utf-8'), posting['native_order'],
-                         posting['occurrence_id'].encode('utf-8'))
-                if previous is not None and order < previous:
-                    raise RecordError('Saved postings out of bytewise order')
-                previous = order
+                page_orders.setdefault((artifact_id, page['byte_offset']), []).append(
+                    (posting['search_key'].encode('utf-8'), posting['native_order'], posting['occurrence_id'].encode('utf-8')))
                 identity = (posting['search_key'], posting['occurrence_id'])
                 if identity in seen:
                     raise RecordError('Duplicate saved index occurrence')
@@ -207,6 +204,13 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
             offset += length
         if offset != len(content):
             raise RecordError('Saved page directory does not cover entire file')
+    # Readers follow the directory, across postings files too, so order is checked in directory sequence.
+    previous: tuple[bytes, int, bytes] | None = None
+    for entry in directory_order:
+        for order in page_orders[(entry['postings_artifact_id'], entry['byte_offset'])]:
+            if previous is not None and order < previous:
+                raise RecordError('Saved postings out of bytewise order in directory sequence')
+            previous = order
     if not seen:
         raise RecordError('Empty saved index')
     if (set(capabilities) != (actual_capabilities if word else {'word_exact'})):
@@ -223,8 +227,8 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
 
 
 def _directory_entries(manifest: dict, artifact_by_id: Mapping, blobs: Mapping[str, bytes], *, cap: int,
-                       max_page_bytes: int, output_id: str, revision: str) -> dict[str, list[dict]]:
-    """Verify the paged directory file and return its postings-page entries per postings artifact."""
+                       max_page_bytes: int, output_id: str, revision: str) -> tuple[dict[str, list[dict]], list[dict]]:
+    """Verify the paged directory file; return its postings-page entries per postings artifact and in order."""
     listed = manifest['directory']
     row = artifact_by_id[listed['artifact_id']]
     if row.get('format') != DIRECTORY_FORMAT:
@@ -234,6 +238,7 @@ def _directory_entries(manifest: dict, artifact_by_id: Mapping, blobs: Mapping[s
         raise RecordError('Saved directory does not match the manifest')
     files = {file['artifact_id'] for file in manifest['files']}
     by_file: dict[str, list[dict]] = {}
+    ordered: list[dict] = []
     offset = 0
     previous_last: bytes | None = None
     for page in listed['pages']:
@@ -257,13 +262,14 @@ def _directory_entries(manifest: dict, artifact_by_id: Mapping, blobs: Mapping[s
                 raise RecordError('Saved directory entries out of key order')
             previous_last = entry['last_key'].encode('utf-8')
             entries.append(entry)
+            ordered.append(entry)
             by_file.setdefault(entry['postings_artifact_id'], []).append(entry)
         if entries[0]['first_key'] != page['first_key'] or entries[-1]['last_key'] != page['last_key']:
             raise RecordError('Saved directory page key boundaries do not match its entries')
         offset += length
     if offset != len(content) or set(by_file) != files:
         raise RecordError('Saved directory does not cover every postings file')
-    return by_file
+    return by_file, ordered
 
 
 def reusable_index_ids(bases: Iterable[OutputBasis], saved_outputs: Iterable[Mapping],

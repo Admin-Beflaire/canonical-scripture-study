@@ -263,3 +263,56 @@ class SavedIndexStageFour(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SavedIndexAcrossFiles(unittest.TestCase):
+    """A key spanning two postings files: the directory sequence decides the order readers see."""
+
+    def build(self, reverse):
+        from test_index_files import common_rows, with_cap
+        fixture = WordIndexStageTwo()
+        fixture.setUp()
+        base = fixture.parts[0]
+        part = with_cap(replace(base, postings=common_rows(base, 30)), 2048)
+        built = build_index_files(part, encoded_page_cap_bytes=2048)
+        output, cap = part.basis.output_id, 2048
+        body = built.records.blobs[built.postings_artifact_id]
+        _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
+                               for l in body.splitlines(keepends=True)], cap)
+        self.assertGreater(len(pages), 1)
+        cut = pages[1]['byte_offset']
+        files = []
+        for data in (body[:cut], body[cut:]):
+            sha = hashlib.sha256(data).hexdigest()
+            files.append({'id': f'{output}:postings:{sha[:20]}', 'data': data, 'sha': sha})
+        entries = []
+        for file in files:
+            _, fpages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
+                                    for l in file['data'].splitlines(keepends=True)], cap)
+            entries.append([{'postings_artifact_id': file['id'], **p} for p in fpages])
+        ordered = (entries[1] + entries[0]) if reverse else (entries[0] + entries[1])
+        line = lambda e: json.dumps(e, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8') + b'\n'
+        directory, dpages = page_lines([(e['first_key'], e['last_key'], line(e)) for e in ordered], cap)
+        dsha = hashlib.sha256(directory).hexdigest()
+        manifest = deepcopy(built.manifest)
+        manifest['files'] = [{'artifact_id': f['id'], 'byte_length': len(f['data']), 'sha256': f['sha']} for f in files]
+        manifest['directory'] = {'artifact_id': f'{output}:directory:{dsha[:20]}', 'byte_length': len(directory), 'sha256': dsha, 'pages': dpages}
+        content = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        msha = hashlib.sha256(content).hexdigest()
+        mid = f'{output}:manifest:{msha[:20]}'
+        source = part.basis.input_revisions[0]
+        artifacts = [{'id': f['id'], 'source_revision_id': source, 'output_id': output, 'sha256': f['sha'], 'byte_count': len(f['data']),
+                      'format': 'application/x-ndjson', 'registered_locator': _object_key(output, f['sha'], 'postings.ndjson')} for f in files]
+        artifacts += [{'id': manifest['directory']['artifact_id'], 'source_revision_id': source, 'output_id': output, 'sha256': dsha,
+                       'byte_count': len(directory), 'format': 'application/x-ndjson; profile=index-directory',
+                       'registered_locator': _object_key(output, dsha, 'directory.ndjson')},
+                      {'id': mid, 'source_revision_id': source, 'output_id': output, 'sha256': msha, 'byte_count': len(content),
+                       'format': 'application/json', 'registered_locator': _object_key(output, msha, 'manifest.json')}]
+        coverage = [dict(r, index_artifact_id=mid) for r in built.records.rows('coverage')]
+        blobs = {f['id']: f['data'] for f in files} | {manifest['directory']['artifact_id']: directory, mid: content}
+        return part.basis, built.records.rows('prepared_output')[0], artifacts, coverage, blobs
+
+    def test_directory_sequence_order_is_verified_across_files(self):
+        self.assertEqual(verify_saved_index(*self.build(reverse=False), max_page_bytes=2048)['format_version'], 'index-manifest/2')
+        with self.assertRaisesRegex(RecordError, 'directory sequence'):
+            verify_saved_index(*self.build(reverse=True), max_page_bytes=2048)

@@ -1,6 +1,6 @@
 /** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
  *  server instructions, the tool descriptions and get_guidance; no host skill is needed. */
-export const GUIDANCE_VERSION = 'study-guidance/1';
+export const GUIDANCE_VERSION = 'study-guidance/2';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) and summarise its argument before translating and explaining the asked verses.
@@ -19,6 +19,43 @@ const TOOLS = `Using the study tool:
 - Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.
 - Each call reads the data selected at that moment; nothing is kept between conversations.`;
 
+/** The project's translation conventions, fitted to the governing principles (P-07 to P-19).
+ *  Concrete on purpose: general principles alone let a host fall back on familiar wording. */
+const TRANSLATION = `Translating:
+Working translation
+- Make your own working translation from the Hebrew, Aramaic or Greek evidence returned. Do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or any other standard translation. Keep a familiar rendering only where the original supports it, never because it is familiar; do not reject one only because it is traditional either.
+- Label it "Working translation" (Dutch: "Werkvertaling"). Write natural prose in the answer language; Dutch must read as Dutch, not as English in Dutch words.
+- Translate the asked passage as a coherent literary unit; explain the surrounding context it needs. Do not silently widen or narrow the asked scope; suggest a fuller boundary when useful.
+Form and force
+- Render poetic and elevated language poetically: keep its force and, where possible, its beauty (rhythm, parallelism, sound, compression, imagery) without giving up accuracy. Example: tohu va-vohu as "wild and waste".
+- Reproduce wordplay where English or Dutch allows; otherwise explain it in a note. Keep metaphors and images; do not replace them with their supposed meaning.
+- Keep repetition, structure, speakers, participants, agency, negation, qualification and logical connections. Do not weaken or strengthen what the wording claims.
+Translation key
+- YHWH is always "Yahweh"; never LORD, the LORD, HEERE or de HEERE.
+- kyrios is Lord, lord or master by context. Identify it with Yahweh only where an Old Testament quotation or strong context warrants it, and say so.
+- Keep Sheol, Hades, Gehenna, the abyss and Tartarus-related verbs distinct; explain each in context without importing a later doctrine of hell or of the afterlife.
+- nephesh/psyche, ruach/pneuma/neshamah and basar/sarx/soma: decide each occurrence from its context (life, person, self, breath, wind, spirit, flesh, body ...). Do not read Greek philosophical categories, such as Platonic soul-body dualism, into this vocabulary. Capitalising "Spirit" is itself an interpretation; say so where it matters.
+- aion/aionios: by context and construction; neither "always endless" nor "always age-long".
+- torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
+- A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.
+Text
+- Translate the selected reading. Keep well-known material judged secondary visible in [square brackets] with a note saying why; never silently drop disputed material, and never bring in another tradition's additions unbracketed because readers know them.
+- Where witnesses differ (for example Hebrew and Greek), say so only from evidence actually returned, or mark it plainly as outside knowledge. Never say a reading or witness was checked when it was not.
+Notes
+- Notes explain consequential choices: alternative renderings, ambiguity, literary effects, unfamiliar terms. Keep textual, lexical, historical and theological notes apart, and keep them proportionate.
+- Interlinear only when asked: original word order, the actual forms with transliteration and a contextual gloss; a gloss is an aid, not the translation.`;
+
+/** The rules a host most often misses; returned in the first batch of a translating study. */
+export const TRANSLATION_RULES: readonly string[] = Object.freeze([
+  'Make your own working translation from the original-language evidence; do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or another standard translation.',
+  'Label it "Working translation" (Dutch: "Werkvertaling").',
+  'Render poetic and elevated language poetically: keep its force and, where possible, its beauty (e.g. tohu va-vohu as "wild and waste"); keep wordplay, imagery and structure.',
+  'YHWH is always "Yahweh"; never LORD or HEERE.',
+  'Do not read Greek philosophical categories (such as Platonic soul-body dualism) into nephesh, psyche or ruach; decide each occurrence from context.',
+  'Keep secondary but well-known material in [square brackets] with a note; claim no witness or reading as checked unless it was returned here.',
+  'Call get_guidance with topic "translation" for the full translation guidance.',
+]);
+
 const DATA = `What is loaded can grow over time. The study tool reports which sources it read and with what coverage. At this version only original-language texts with word tagging are selected; manuscript-relationship comparisons, commentary and background search, study packages and word-by-word analysis of a whole passage are not offered yet, and the tool says so when a request needs them.`;
 
 /** Sent on initialize to both hosts. */
@@ -28,11 +65,13 @@ ${TOOLS}
 
 ${METHOD}
 
+Before translating, call get_guidance with topic "translation". In short: make your own working translation from the original (not the ESV, NASB or another standard translation), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.
+
 ${DATA}
 
-Call get_guidance for the full guidance text by topic (method, tools, data).`;
+Call get_guidance for the full guidance text by topic (method, translation, tools, data).`;
 
-export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({ method: METHOD, tools: TOOLS, data: DATA });
+export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({ method: METHOD, translation: TRANSLATION, tools: TOOLS, data: DATA });
 
 export function guidance(topic?: string | null): { version: string; topic: string; text: string } {
   if (topic == null || topic === '' || topic === 'all') return { version: GUIDANCE_VERSION, topic: 'all', text: STUDY_INSTRUCTIONS };

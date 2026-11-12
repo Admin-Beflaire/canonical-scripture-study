@@ -231,3 +231,20 @@ test('R35-3 and R35-4: a missing first chapter and a named source without the ve
   assert.deepEqual(units([mixed]), ['Gen.1.1']);
   assert.ok(mixed.limitations.some(l => l.state === 'missing_evidence' && l.detail.startsWith(`${GRK} has none`)), JSON.stringify(mixed.limitations));
 });
+
+test('a translating study carries the key translation rules in its first batch only', async () => {
+  const { env } = buildPassageFixture();
+  const { TRANSLATION_RULES, guidance } = await import('../../services/study/src/guidance.ts');
+  const batches = await all(env, { mode: 'translation', references: ['Gen 1'] }) as (AnyBatch & { translation_rules?: string[] })[];
+  assert.ok(batches.length > 1);
+  assert.deepEqual(batches[0].translation_rules, [...TRANSLATION_RULES]);
+  for (const later of batches.slice(1)) assert.equal(later.translation_rules, undefined);
+  const [inspect] = await all(env, { mode: 'inspect_source', references: ['Gen 1:1'] }) as (AnyBatch & { translation_rules?: string[] })[];
+  assert.equal(inspect.translation_rules, undefined);
+  const rules = TRANSLATION_RULES.join('\n');
+  for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /poetically/, /ESV, NASB/, /Platonic/, /square brackets/]) assert.match(rules, needed);
+  const full = guidance('translation').text;
+  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/]) assert.match(full, needed);
+  assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/2');
+});

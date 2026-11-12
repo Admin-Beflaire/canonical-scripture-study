@@ -197,7 +197,7 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
 /** One bounded batch of passage evidence: the requested verses, and (with context) the rest of
  *  their chapters, in each source's native order. Continues across batches without narrowing. */
 export async function passageBatch(session: ReadSession, workload: PassageWorkload, continuation: string | null, guidanceVersion: string,
-                                   notes: Limitation[] = []): Promise<Batch> {
+                                   notes: Limitation[] = [], rules: readonly string[] | null = null): Promise<Batch> {
   const w = normalizePassageWorkload(workload);
   const refs: PassageRequest[] = w.references.map(parseReference);
   let pos: PassagePosition = { ref: 0, source: '', order: -1 };
@@ -269,7 +269,7 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
     context_scope: w.context ? { chapters: refs.map(r => `${r.book} ${r.from.chapter}${r.to.chapter !== r.from.chapter ? `-${r.to.chapter}` : ''}`),
       note: 'No literary-unit boundaries are recorded for these sources yet; the context is the whole chapter.' } : null,
     evidence: items.map(x => x.item), citations: [], searched_scope: [], coverage: [], limitations,
-    remaining: null, continuation: null, guidance_version: guidanceVersion,
+    remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}),
   }, session.budget);
   // Resume after the last verse actually delivered.
   const delivered = items.slice(0, items.length - deferred.length);

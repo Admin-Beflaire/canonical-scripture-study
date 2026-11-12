@@ -36,7 +36,7 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
   const server = platformServer('study', enhancements, STUDY_INSTRUCTIONS);
   server.registerTool('study', {
     title: 'Study Scripture evidence',
-    description: 'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word, form, lemma or grammar occurrences. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read.',
+    description: 'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word, form, lemma or grammar occurrences. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
     inputSchema: fromJsonSchema<StudyRequest>(STUDY_SCHEMA as unknown as Record<string, unknown>),
     annotations: readOnly,
   }, async (request: StudyRequest) => reply(await study(env, request)));

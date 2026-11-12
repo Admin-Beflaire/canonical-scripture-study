@@ -6,7 +6,8 @@ import { fakeGitHub } from './github.ts';
 import { GitHubActions } from '../../services/maintenance/control/src/github.ts';
 import { jobRoutes } from '../../services/maintenance/control/src/jobs.ts';
 import { advance } from '../../services/maintenance/control/src/progress.ts';
-import { membership, selectDirect, SCHEMA_VERSIONS, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { membership, selectDirect, SCHEMA_VERSIONS, READABLE_VERSIONS, unreadable, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { SUPPORTED_SCHEMA_VERSIONS } from '../../services/study/src/read/session.ts';
 import compatibility from '../../infrastructure/github/deployment/compatibility.json' with { type: 'json' };
 import { controlTask, requestTask, taskReport, type TaskRequest } from '../../services/maintenance/control/src/tasks.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
@@ -222,7 +223,7 @@ test('R34-1: rollback and restore never select a release the v2 reader cannot re
   await advance(w.db, w.github, rollbackId, w.objects);
   const rolled = (await taskReport(w.db, owner, rollbackId))!;
   assert.equal(rolled.data_current, false);
-  assert.ok(rolled.limitations.some(text => text.includes('does not use index format 2')), rolled.limitations.join(' | '));
+  assert.ok(rolled.limitations.some(text => text.includes('uses index_manifest format (none)')), rolled.limitations.join(' | '));
   assert.ok(rolled.limitations.some(text => text.includes('profile=index-directory file')), rolled.limitations.join(' | '));
   assert.deepEqual(selected(w), before);
   const restore = await requestTask(w.db, owner, { request_key: 'vr-v1', instruction: 'Select the old release',
@@ -231,6 +232,18 @@ test('R34-1: rollback and restore never select a release the v2 reader cannot re
   await advance(w.db, w.github, restoreId, w.objects);
   assert.equal((await taskReport(w.db, owner, restoreId))!.data_current, false);
   assert.equal(selected(w).current_release_id, current);
+});
+
+test('the rollback readability list is the deployed Study reader list', () => {
+  assert.deepEqual(READABLE_VERSIONS, compatibility);
+  assert.deepEqual({ ...READABLE_VERSIONS }, { ...SUPPORTED_SCHEMA_VERSIONS });
+  assert.deepEqual(unreadable('r', JSON.stringify(SCHEMA_VERSIONS)), [], 'what Control writes is readable');
+  for (const [recorded, expected] of [
+    ['not json', 'no readable format record'],
+    [JSON.stringify({ ...SCHEMA_VERSIONS, evidence_records: '9' }), 'evidence_records format 9'],
+    [JSON.stringify({ evidence_records: '1', index_manifest: '2' }), 'native_reference format (none)'],
+    [JSON.stringify({ ...SCHEMA_VERSIONS, future_layer: '1' }), 'future_layer, a format the Study reader does not know'],
+  ]) assert.ok(unreadable('r', recorded).some(text => text.includes(expected)), recorded);
 });
 
 test('re-preparing a book replaces its overlapping outputs and keeps the rest', async () => {

@@ -21,6 +21,12 @@ export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'applicati
 /** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
  *  lists them: deployment refuses code that does not support the selected release's versions. */
 export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', index_manifest: '2' };
+/** Formats the deployed Study can read, as `compatibility.json` lists them (a test keeps them equal).
+ *  Rollback and restore select only releases whose every recorded format is listed here; when a
+ *  format changes, this list changes with the reader and the check follows. */
+export const READABLE_VERSIONS: Readonly<Record<string, readonly string[]>> = {
+  evidence_records: ['1'], native_reference: ['1'], index_manifest: ['2'],
+};
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;
@@ -432,11 +438,24 @@ export async function validateRelease(db: D1Database, stored: Stored, releaseId:
   const listed = (await db.prepare('SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?').bind(releaseId).first<{ total: number }>())!.total;
   const check = await validateMembers(db, stored, items, { allCurrentFormat: true });
   if (listed !== items.length) check.problems.unshift(`release ${releaseId} lists ${listed - items.length} output(s) that are not saved`);
-  let recorded: unknown;
-  try { recorded = (JSON.parse(release.schema_versions_json) as Record<string, unknown>).index_manifest; } catch { recorded = undefined; }
-  if (recorded !== SCHEMA_VERSIONS.index_manifest)
-    check.problems.unshift(`release ${releaseId} does not use index format ${SCHEMA_VERSIONS.index_manifest}, which the Study reader needs`);
+  check.problems.unshift(...unreadable(releaseId, release.schema_versions_json));
   return check;
+}
+
+/** Why the deployed Study could not read a release with these recorded formats (empty if it can). */
+export function unreadable(releaseId: string, recordedJson: string): string[] {
+  let recorded: unknown;
+  try { recorded = JSON.parse(recordedJson); } catch { recorded = undefined; }
+  if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded))
+    return [`release ${releaseId} has no readable format record`];
+  const versions = recorded as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const [name, supported] of Object.entries(READABLE_VERSIONS))
+    if (!supported.includes(String(versions[name])))
+      problems.push(`release ${releaseId} uses ${name} format ${versions[name] === undefined ? '(none)' : String(versions[name])}; the Study reader reads ${supported.join(', ')}`);
+  for (const name of Object.keys(versions))
+    if (!(name in READABLE_VERSIONS)) problems.push(`release ${releaseId} records ${name}, a format the Study reader does not know`);
+  return problems;
 }
 
 /** Block every restored open task. A task whose revision moves is read again; one that cannot be

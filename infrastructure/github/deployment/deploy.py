@@ -40,6 +40,9 @@ def compatible(versions, supported):
         raise DeploymentError("Selected data is incompatible with this code")
 
 
+FIT_RELEASE = "fit-release"
+
+
 def selection(query, supported):
     exists = query("SELECT name FROM sqlite_master WHERE type='table' AND name='release_selection'")
     if not exists:
@@ -88,7 +91,6 @@ def deploy(root, trusted, work, role):
     if study_fit:
         if role != "study" or os.environ.get("APPROVAL") != "DEPLOY-FIT":
             raise DeploymentError("Fixture deployment approval required")
-        supported = {**supported, "index_manifest": ["1"]}
         config["observability"]["logs"].update({"invocation_logs": True, "head_sampling_rate": 1})
     account = config["account_id"]
     database = config["d1_databases"][0]["database_id"]
@@ -99,8 +101,10 @@ def deploy(root, trusted, work, role):
         return result[0]["results"]
     with (work / "deployment.log").open("a") as log:
         current = selection(query, supported)
-        if study_fit and current != "ix-release":
-            raise DeploymentError("Selected synthetic fixture required")
+        # The fit build reads a staged, unselected synthetic release; current data stays selected.
+        if study_fit and (current == FIT_RELEASE or not query(
+                f"SELECT 1 AS staged FROM release_outputs WHERE release_id='{FIT_RELEASE}' LIMIT 1")):
+            raise DeploymentError("Staged synthetic fixture required")
         # Use the trusted dispatch revision's single forward migration sequence,
         # including when selected code is an older compatible revert.
         migration_dir = trusted / "schemas/migrations"

@@ -1,18 +1,21 @@
-# Study fixture measurement
+# Study search fit measurement
 
-This temporary Study entry runs the checked IX-01 synthetic source-text search.
-It uses the ordinary Study route and verifies Access through the shared Worker
-guard. The deployment-check identity retains discovery-only access.
+This temporary Study entry (`study-fit.ts`) runs Study's real read adapter and batch code
+(`services/study/src/read`, `results`) against a staged synthetic fixture in the
+`index-manifest/2` format with 16 KB pages. It uses the ordinary Study route and verifies Access
+through the shared Worker guard. The deployment-check identity keeps discovery-only access.
 
-## Local preparation
+The fixture (`study-fit-fixture.ts`) is deterministic and entirely invented: one synthetic source
+revision, one source-search output whose search key `fitcommon` spans several pages, its three
+registered objects under `synthetic/fit/`, and an **unselected** release `fit-release`. The real
+current release stays selected and is never read or changed: the fit entry redirects only the
+current-release read to `fit-release`; every other query, check and budget is production code.
 
-Run `python3 tools/cloudflare/study_fit_fixture.py <new-directory>`. The
-generator checks all object lengths and digests, applies the repository migrations
-to in-memory SQLite, and rehearses the insert, select, clear and delete stages.
-The resulting SQL and object inventory are local files.
+## Local check
 
-For local inspection, build the temporary entry separately from the deployable
-Study bundle:
+`node --test tests/platform/study-fit.test.ts` stages the fixture in local SQLite with all
+migrations, runs the search to the end within the starting budgets, checks a corrupt object and
+removes the rows. For local inspection, build the entry separately from the Study bundle:
 
 ```sh
 node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
@@ -20,33 +23,20 @@ node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
   --outfile=dist/study-fit/index.js
 ```
 
-The protected workflow writes its fit build to `dist/study/index.js`, which is
-the path used by Wrangler. The ordinary Study build uses its normal entry.
+## Protected run
 
-## Protected run requirements
+Use the reviewed deployment workflow with Study, the fit input and the `DEPLOY-FIT` marker. The
+workflow refuses the fit build unless `fit-release` is staged and not selected. Restore with an
+ordinary Study deployment.
 
-Use the reviewed deployment workflow with Study, the fit input, and the
-`DEPLOY-FIT` marker for the temporary build. Use ordinary Study deployment
-for restoration after clearing the fixture selection. Live orchestration must serialize with other operations on
-the same instance and enforce these checks:
+1. Preflight: `fit-release`, the fixture row IDs and the `synthetic/fit/` keys are absent.
+2. Stage the objects (verify length and SHA-256 after upload), then run the generated inserts.
+3. Deploy the fit build. Call `fixture_search` through an owner-authorized Study connection,
+   passing each returned continuation until none remains. Record hits, D1 calls and rows,
+   R2 reads and bytes, response bytes, and each invocation's CPU time from Workers
+   Observability, separately from elapsed time.
+4. Restore the ordinary Study build and check the protected smoke check. Run the generated
+   deletes, delete the objects and verify their absence. Stop for reconciliation on any
+   unexpected row, object or selection change.
 
-1. Confirm both selection pointers are empty and all fixture SQL identities
-   and R2 keys are absent. Stop on a collision or any existing selection.
-2. Stage the verified objects and fixture rows. Recheck selection before
-   selecting the fixture. Abort unless precisely one selection row changes.
-3. Use an authorized Study identity to call `fixture_search`. Record the
-   expected three occurrences, D1 query counts and rows read, R2 requests
-   and bytes, and the deployed revision. The fit deployment enables invocation
-   logs at full sampling. Record the request timestamp and response correlation
-   information privately, read the corresponding invocation's CPU time from
-   Workers Observability, and record client elapsed time separately. Record
-   unavailable counters as unknown. The ordinary deployment restores its
-   existing logging configuration.
-4. Clear selection only if it still identifies this fixture and the previous
-   pointer is empty. Verify both pointers, restore the ordinary Study build,
-   and remove the matching fixture rows and verified objects. Verify their
-   absence and the protected smoke check. Stop for reconciliation
-   on changed ownership, changed selection or uncertain writes.
-
-The generator emits data and guarded pointer statements. It does not enforce
-the live orchestration or perform provider operations.
+The generator emits data and delete statements. It does not perform provider operations.

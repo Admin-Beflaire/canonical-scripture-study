@@ -1,116 +1,62 @@
 import { fromJsonSchema } from '@modelcontextprotocol/server';
 import { platformServer, protectedWorker, protocolHandler } from '../../packages/shared/src/platform.ts';
 import type { AccessSettings } from '../../packages/shared/src/platform.ts';
-import manifest from '../../tests/conformance/indexes/source.manifest.json' with { type: 'json' };
+import type { D1ReadDatabase, StudyReadEnvironment } from '../../services/study/src/read/bindings.ts';
+import { ReadSession } from '../../services/study/src/read/session.ts';
+import { PagedIndexSearch } from '../../services/study/src/read/search.ts';
+import { ReadError } from '../../services/study/src/read/states.ts';
+import { searchBatch } from '../../services/study/src/results/search-batch.ts';
+import { FIT_KEY, FIT_RELEASE, FIT_SOURCE } from './study-fit-fixture.ts';
 
-interface Artifact {
-  registered_locator: string;
-  byte_count: number;
-  sha256: string;
-}
-
-interface FixtureBindings {
-  DATA_DB: {
-    prepare(sql: string): {
-      bind(...values: string[]): {
-        all<T>(): Promise<{ results: T[]; meta: { rows_read?: number } }>;
-      };
-    };
-  };
-  PRIVATE_OBJECTS: {
-    get(key: string, options?: { range: { offset: number; length: number } }):
-      Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
-  };
-}
-
-const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
-
-async function checkedRead(bucket: FixtureBindings['PRIVATE_OBJECTS'], key: string,
-                           size: number, digest: string, offset?: number) {
-  const object = await bucket.get(key, offset === undefined ? undefined : { range: { offset, length: size } });
-  if (!object) throw new Error('Fixture object missing');
-  const raw = await object.arrayBuffer();
-  if (raw.byteLength !== size) throw new Error('Fixture object length mismatch');
-  const hash = await crypto.subtle.digest('SHA-256', raw);
-  const hex = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
-  if (hex !== digest) throw new Error('Fixture object digest mismatch');
-  return decoder.decode(raw);
-}
-
-/** Fixed IX-01 workload. The release and artifacts must be selected and registered in D1. */
-export async function runStudyFit({ DATA_DB, PRIVATE_OBJECTS }: FixtureBindings) {
-  const registered = await DATA_DB.prepare(`
-    SELECT a.id, a.registered_locator, a.byte_count, a.sha256
-    FROM release_selection s
-    JOIN release_outputs m ON m.release_id = s.current_release_id
-    JOIN artifacts a ON a.output_id = m.output_id
-    WHERE s.current_release_id = ? AND a.id IN (?, ?, ?)
-  `).bind('ix-release', 'ix-source-manifest', 'ix-source-directory', 'ix-source-postings').all<Artifact & { id: string }>();
-  const context = await DATA_DB.prepare(`
-    SELECT p.exact_text
-    FROM release_selection s
-    JOIN release_outputs m ON m.release_id = s.current_release_id
-    JOIN native_spans n ON n.output_id = m.output_id
-    JOIN text_payloads p ON p.content_id = n.content_id
-    WHERE s.current_release_id = ? AND n.id = ?
-  `).bind('ix-release', 'ix-passage').all<{ exact_text: string }>();
-  const directory = registered.results.find(row => row.id === 'ix-source-manifest');
-  const postings = registered.results.find(row => row.id === 'ix-source-postings');
-  const pageList = registered.results.find(row => row.id === 'ix-source-directory');
-  if (!directory || !postings || !pageList || context.results.length !== 1 || directory.byte_count > 2048) {
-    throw new Error('Selected fixture unavailable');
-  }
-
-  const rawDirectory = await checkedRead(PRIVATE_OBJECTS, directory.registered_locator, directory.byte_count, directory.sha256);
-  if (JSON.stringify(JSON.parse(rawDirectory)) !== JSON.stringify(manifest)) {
-    throw new Error('Unexpected fixture manifest');
-  }
-  const [file] = manifest.files;
-  const root = manifest.directory;
-  if (postings.byte_count !== file.byte_length || postings.sha256 !== file.sha256
-      || pageList.byte_count !== root.byte_length || pageList.sha256 !== root.sha256) {
-    throw new Error('Unexpected fixture postings or directory registration');
-  }
-
-  const key = 'א';
-  const overlaps = (page: { first_key: string; last_key: string }) => page.first_key <= key && key <= page.last_key;
-  const listed = [];
-  for (const entry of root.pages.filter(overlaps)) {
-    const raw = await checkedRead(PRIVATE_OBJECTS, pageList.registered_locator, entry.byte_length, entry.sha256, entry.byte_offset);
-    listed.push(...raw.trimEnd().split('\n').map(line => JSON.parse(line) as { first_key: string; last_key: string; byte_offset: number; byte_length: number; sha256: string }));
-  }
-  const pages = listed.filter(overlaps);
-  const matches = [];
-  for (const page of pages) {
-    const raw = await checkedRead(PRIVATE_OBJECTS, postings.registered_locator, page.byte_length, page.sha256, page.byte_offset);
-    if (!raw.endsWith('\n')) throw new Error('Unaligned fixture page');
-    for (const line of raw.slice(0, -1).split('\n')) {
-      const row = JSON.parse(line);
-      if (row.search_key === key) matches.push(row);
-    }
-  }
+/** Temporary measurement entry (never part of the ordinary Study bundle). It runs Study's real
+ *  read adapter and batch code against the staged synthetic release. Only the current-release
+ *  read is redirected to the unselected fixture release; every other query, check and budget is
+ *  the production code path. The real current release is not read or changed. */
+export function fitDatabase(db: D1ReadDatabase): D1ReadDatabase {
   return {
-    matches,
-    context: context.results[0].exact_text,
-    d1Calls: 2,
-    d1RowsRead: [registered.meta.rows_read ?? null, context.meta.rows_read ?? null],
-    r2Bytes: directory.byte_count + root.pages.filter(overlaps).reduce((bytes, page) => bytes + page.byte_length, 0)
-      + pages.reduce((bytes, page) => bytes + page.byte_length, 0),
-    r2Calls: 1 + root.pages.filter(overlaps).length + pages.length,
+    prepare(sql: string) {
+      if (sql.includes('FROM release_selection s')) {
+        const fixed = db.prepare(`SELECT r.id AS release_id, r.schema_versions_json FROM releases r WHERE r.id = ?`).bind(FIT_RELEASE);
+        const statement = { bind: () => statement, all: <T>() => fixed.all<T>() };
+        return statement;
+      }
+      return db.prepare(sql);
+    },
   };
 }
 
-// Separate build entry for the temporary fit run. The ordinary Study entry never imports this.
+const adapter = new PagedIndexSearch();
+const workload = { mode: 'word_study', depth: 'standard', language: 'en', lookup: 'word', key: FIT_KEY, sources: [FIT_SOURCE] };
+
+/** One bounded batch of the fixed fit search; returns what the batch delivered and the work it took. */
+export async function runStudyFit(env: StudyReadEnvironment, continuation: string | null) {
+  try {
+    const session = await ReadSession.open({ ...env, DATA_DB: fitDatabase(env.DATA_DB) });
+    const batch = await searchBatch(session, adapter, workload, continuation, 'fit/2');
+    return {
+      release_id: batch.release_id, hits: batch.evidence.length,
+      occurrences: batch.evidence.map(item => item.kind === 'search_hit' ? item.hit.occurrence_id : ''),
+      limitations: batch.limitations, continuation: batch.continuation, usage: session.budget.usage(), limits: session.budget.limits,
+      response_bytes: new TextEncoder().encode(JSON.stringify(batch)).length,
+    };
+  } catch (error) {
+    if (error instanceof ReadError) return { error: error.state, detail: error.message };
+    throw error;
+  }
+}
+
 const worker = protectedWorker('study', {
   host(request, settings) {
-    const bindings = settings as AccessSettings & FixtureBindings;
+    const env = settings as AccessSettings & StudyReadEnvironment;
     return protocolHandler(() => {
       const server = platformServer('study', settings.ENHANCEMENTS);
       server.registerTool('fixture_search', {
-        inputSchema: fromJsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
-      }, async () => ({
-        content: [{ type: 'text', text: JSON.stringify(await runStudyFit(bindings)) }],
-      }));
+        description: 'Temporary measurement: one bounded batch of the synthetic fit search. Pass the previous continuation to continue.',
+        inputSchema: fromJsonSchema({ type: 'object', properties: { continuation: { type: 'string', maxLength: 2048 } }, additionalProperties: false }),
+      }, async (args: unknown) => {
+        const given = (args as { continuation?: unknown } | undefined)?.continuation;
+        return { content: [{ type: 'text' as const, text: JSON.stringify(await runStudyFit(env, typeof given === 'string' ? given : null)) }] };
+      });
       return server;
     }, settings.ENHANCEMENTS).fetch(request);
   },

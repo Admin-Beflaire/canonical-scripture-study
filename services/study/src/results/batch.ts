@@ -79,7 +79,7 @@ export function assembleBatch(input: BatchInput, budget: RequestBudget): { batch
   while (serialized(batch) > budget.limits.resultBytes) {
     const at = batch.evidence.findLastIndex(item => !charged?.has(item));
     if (at < 0) throw new ReadError('exceeds_limits', 'The batch envelope does not fit the result allowance');
-    deferred.unshift(...batch.evidence.splice(at));
+    deferred.unshift(...batch.evidence.splice(at, 1));   // charged evidence is never deferred
     batch.citations = batch.citations.filter(c => supported(c, batch.evidence));
     if (!batch.limitations.some(l => l.state === 'budget' && l.scope === 'evidence'))
       batch.limitations.push(limitation('budget', 'evidence', 'Some items continue in the next batch'));

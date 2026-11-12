@@ -5,7 +5,7 @@ import { ReadError } from './states.ts';
 
 /** Release formats this Study reads. A release recording another version is not read. */
 export const SUPPORTED_SCHEMA_VERSIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  evidence_records: ['1'], native_reference: ['1'], index_manifest: ['1'],
+  evidence_records: ['1'], native_reference: ['1'], index_manifest: ['2'],
 });
 
 export interface CurrentRelease { id: string; schema_versions: Record<string, string> }

@@ -48,7 +48,9 @@ test('exact word search returns attributed native references across partitions i
   assert.equal(result.ranked, false);
   assert.deepEqual(result.hits.map(h => h.occurrence_id), expected(fixture, ['syn-src-1', 'syn-src-2'], 'alpha'));
   assert.ok(result.hits.every(h => h.source_revision_id === A && h.native_reference.segments.length === 1));
-  assert.deepEqual(result.searched.map(s => [s.unit_ids, s.complete, s.coverage_state]), [[['u1'], true, 'available'], [['u2'], true, 'available']]);
+  assert.deepEqual(result.searched.map(s => [s.first_unit, s.last_unit, s.unit_count, s.order_range, s.complete, s.coverage_state]),
+    [['u1', 'u1', 1, [0, 9999], true, 'available'], ['u2', 'u2', 1, [10000, 19999], true, 'available']]);
+  assert.equal(result.resume_after.length, result.hits.length);
   assert.equal(JSON.stringify(result).includes('synthetic/indexes'), false, 'object keys never reach results');
 });
 
@@ -208,4 +210,10 @@ test('local measurement: queries, rows, R2 reads and bytes per request (syntheti
   for (const [i, u] of run.usage.entries())
     t.diagnostic(`request ${i + 1}: D1 ${u.d1Calls} calls, R2 ${u.r2Reads} reads / ${u.r2Bytes} B, result ${u.resultBytes} B, hits ${run.results[i].hits.length}`);
   assert.equal(run.hits.length, 60);
+});
+
+test('R30-8: one output filling the whole D1 window is reported, not repeated as the same continuation', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  await assert.rejects(once(fixture, { lookup: 'word', key: 'alpha', sources: [A] }, { ...roomy, rowsPerQuery: 2 }), state('exceeds_limits'));
 });

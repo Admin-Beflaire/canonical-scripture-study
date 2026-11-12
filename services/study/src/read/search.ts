@@ -29,7 +29,9 @@ export interface SearchHit {
 /** What this request searched. `complete` covers the stated extent from `resumed_after`
  *  (exclusive) onwards; occurrences up to it were delivered by earlier batches. */
 export interface SearchedScope {
-  source_revision_id: string; capability: string; coverage_state: string; unit_ids: string[];
+  source_revision_id: string; capability: string; coverage_state: string;
+  /** The output's contiguous native extent: unit count, first and last unit, linear order range. */
+  unit_count: number; first_unit: string; last_unit: string; order_range: [number, number];
   normalization_rule: string; complete: boolean; resumed_after: [number, string] | null;
 }
 
@@ -43,6 +45,9 @@ export type SearchState = 'complete' | 'no_match' | 'incomplete' | 'continues' |
 export interface SearchResult {
   state: SearchState; lookup: string; key: string; hits: SearchHit[]; searched: SearchedScope[];
   limitations: Limitation[]; remaining: SearchPosition | null; ranked: false;
+  /** For each hit, the position that resumes directly after it, so a caller can deliver fewer hits
+   *  and still continue exactly. Same length as `hits`. */
+  resume_after: SearchPosition[];
 }
 
 export interface SearchAdapter { search(session: ReadSession, request: SearchRequest): Promise<SearchResult> }
@@ -95,7 +100,7 @@ function remember<T>(cache: Map<string, T>, key: string, value: T) {
 export class PagedIndexSearch implements SearchAdapter {
   async search(session: ReadSession, input: SearchRequest): Promise<SearchResult> {
     const request = checkRequest(input);
-    const result: SearchResult = { state: 'complete', lookup: request.lookup, key: request.key, hits: [], searched: [], limitations: [], remaining: null, ranked: false };
+    const result: SearchResult = { state: 'complete', lookup: request.lookup, key: request.key, hits: [], searched: [], limitations: [], remaining: null, ranked: false, resume_after: [] };
     if (UNSUPPORTED_LOOKUPS.includes(request.lookup as LookupKind)) {
       result.state = 'unsupported_capability';
       result.limitations.push(limitation('unsupported_capability', request.lookup, `${request.lookup} search is not offered by the current indexes; nothing was searched`));
@@ -111,8 +116,9 @@ export class PagedIndexSearch implements SearchAdapter {
     const groups = groupRows(rows);
     let next: Group | undefined;
     if (more) {
+      // One output filling the whole window would return the same position for ever.
+      if (groups.length < 2) throw new ReadError('exceeds_limits', 'One index output has more registered files than a query may return');
       next = groups.pop();
-      if (!next) throw new ReadError('exceeds_limits', 'One index output has more registered files than a query may return');
     }
     // A resume anchor must name an index output selected now, at the same order position.
     const anchor = groups[0] ?? next;
@@ -182,7 +188,8 @@ export class PagedIndexSearch implements SearchAdapter {
       if (d < 0) throw invalid();
     }
     const scope: SearchedScope = { source_revision_id: group.source, capability, coverage_state: manifest.coverage_state,
-      unit_ids: manifest.unit_ids, normalization_rule: manifest.normalization_rule, complete: false, resumed_after: resume?.after ?? null };
+      unit_count: manifest.unit_ids.length, first_unit: manifest.unit_ids[0], last_unit: manifest.unit_ids.at(-1)!,
+      order_range: manifest.order_range, normalization_rule: manifest.normalization_rule, complete: false, resumed_after: resume?.after ?? null };
     result.searched.push(scope);
     if (manifest.coverage_state !== 'available')
       result.limitations.push(limitation('missing_index', group.source, manifest.coverage_limitation ?? `Index coverage is ${manifest.coverage_state}`));
@@ -260,6 +267,7 @@ export class PagedIndexSearch implements SearchAdapter {
           result.hits.push(hit);
           last = position;
           lastPage = ref;
+          result.resume_after.push({ ...fresh, dir, entry: e, after: position, anchor: ref });
         }
         if (anchorPage && skipThrough) {    // the whole anchor page was delivered before
           if (!anchorSeen) throw invalid();

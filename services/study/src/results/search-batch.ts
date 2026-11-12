@@ -1,8 +1,8 @@
-import { compareUtf8 } from '../read/bytes.ts';
+import { compareUtf8, utf8Length } from '../read/bytes.ts';
 import { checkRequest, type SearchAdapter, type SearchPosition } from '../read/search.ts';
 import type { ReadSession } from '../read/session.ts';
-import { ReadError } from '../read/states.ts';
-import { ENVELOPE_RESERVE, assembleBatch, type Batch, type EvidenceItem } from './batch.ts';
+import { ReadError, limitation } from '../read/states.ts';
+import { ENVELOPE_RESERVE, type Batch, type EvidenceItem } from './batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from './continuation.ts';
 
 /** The search part of a Study workload, as an operator supplies it. */
@@ -39,18 +39,35 @@ export async function searchBatch(session: ReadSession, adapter: SearchAdapter, 
   // Keep room for the envelope; the adapter charges each hit as the batch wraps it (`hitBytes`).
   session.budget.spendResult(ENVELOPE_RESERVE);
   const result = await adapter.search(session, { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources, position });
-  const evidence: EvidenceItem[] = result.hits.map(hit => ({ kind: 'search_hit', hit }));
-  const next = result.remaining ? await encodeContinuation(normalized, { op: 'search',
-    pos: { source: result.remaining.source, output: result.remaining.output, order: result.remaining.order,
-      dir: result.remaining.dir, entry: result.remaining.entry, anchor: result.remaining.anchor },
-    key: result.remaining.after }) : null;
-  const { batch } = assembleBatch({
-    release_id: session.release.id, mode: normalized.mode, depth: normalized.depth,
-    delivered_scope: { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources }, context_scope: null,
-    evidence, citations: [], searched_scope: result.searched,
-    coverage: result.searched.map(s => ({ source_revision_id: s.source_revision_id, capability: s.capability, state: s.coverage_state, limitation: null })),
-    limitations: result.limitations, remaining: result.remaining ? { search: result.state, from_source: result.remaining.source } : null,
-    continuation: next, guidance_version: guidanceVersion, charged: new Set(evidence),
-  }, session.budget);
+  if (result.resume_after.length !== result.hits.length) throw new ReadError('corrupt', 'Search adapter broke its result contract');
+  const build = async (count: number): Promise<Batch> => {
+    // Delivering only the first `count` hits resumes after the last one delivered.
+    const remaining = count < result.hits.length ? result.resume_after[count - 1] : result.remaining;
+    const evidence: EvidenceItem[] = result.hits.slice(0, count).map(hit => ({ kind: 'search_hit', hit }));
+    const next = remaining ? await encodeContinuation(normalized, { op: 'search',
+      pos: { source: remaining.source, output: remaining.output, order: remaining.order, dir: remaining.dir, entry: remaining.entry, anchor: remaining.anchor },
+      key: remaining.after }) : null;
+    return {
+      release_id: session.release.id, mode: normalized.mode, depth: normalized.depth,
+      delivered_scope: { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources }, context_scope: null,
+      evidence, citations: [], searched_scope: result.searched,
+      coverage: result.searched.map(s => ({ source_revision_id: s.source_revision_id, capability: s.capability, state: s.coverage_state, limitation: null })),
+      limitations: count < result.hits.length
+        ? [...result.limitations, limitation('budget', 'evidence', `${result.hits.length - count} occurrence(s) continue in the next batch`)]
+        : result.limitations,
+      remaining: remaining ? { search: count < result.hits.length ? 'continues' : result.state, from_source: remaining.source } : null,
+      continuation: next, guidance_version: guidanceVersion,
+    };
+  };
+  // The envelope (scopes, limitations, continuation) can outgrow its reserve; then deliver fewer
+  // hits and continue after the last one delivered, rather than failing the whole batch.
+  let count = result.hits.length;
+  let batch = await build(count);
+  while (utf8Length(JSON.stringify(batch)) > session.budget.limits.resultBytes) {
+    // At least one hit must remain, or the next request would start where this one did.
+    if (count <= 1) throw new ReadError('exceeds_limits', 'The batch envelope does not fit the result allowance');
+    count -= 1;
+    batch = await build(count);
+  }
   return batch;
 }

@@ -163,7 +163,7 @@ class MemorySearch implements SearchAdapter {
     const request = checkRequest(input);
     const base = { lookup: request.lookup, key: request.key, searched: [], limitations: [], ranked: false as const };
     if (['phrase', 'proximity', 'fuzzy'].includes(request.lookup))
-      return { ...base, state: 'unsupported_capability', hits: [], remaining: null,
+      return { ...base, state: 'unsupported_capability', hits: [], remaining: null, resume_after: [],
         limitations: [{ state: 'unsupported_capability', scope: request.lookup, detail: 'not offered' }] };
     const all = (this.hits[request.key] ?? []).filter(h => request.sources.includes(h.source_revision_id))
       .sort((x, y) => compareUtf8(x.source_revision_id, y.source_revision_id) || x.native_order - y.native_order || compareUtf8(x.occurrence_id, y.occurrence_id));
@@ -174,7 +174,10 @@ class MemorySearch implements SearchAdapter {
     const rest = start >= 0 && start + slice.length < all.length;
     const last = slice.at(-1);
     return { ...base, hits: slice, state: rest ? 'continues' : slice.length ? 'complete' : 'no_match',
-      searched: request.sources.map(s => ({ source_revision_id: s, capability: 'word_exact', coverage_state: 'available', unit_ids: ['u1', 'u2'], normalization_rule: 'syn:identity/1', complete: !rest, resumed_after: request.position?.after ?? null })),
+      searched: request.sources.map(s => ({ source_revision_id: s, capability: 'word_exact', coverage_state: 'available', unit_count: 2, first_unit: 'u1', last_unit: 'u2',
+        order_range: [0, 19999] as [number, number], normalization_rule: 'syn:identity/1', complete: !rest, resumed_after: request.position?.after ?? null })),
+      resume_after: slice.map(h => ({ source: h.source_revision_id, output: 'memory', order: 0, dir: 0, entry: 0, after: [h.native_order, h.occurrence_id] as [number, string],
+        anchor: { file: 'memory', offset: 0, length: 1, sha256: '0'.repeat(64) } })),
       remaining: rest && last ? { source: last.source_revision_id, output: 'memory', order: 0, dir: 0, entry: 0, after: [last.native_order, last.occurrence_id],
         anchor: { file: 'memory', offset: 0, length: 1, sha256: '0'.repeat(64) } } : null };
   }
@@ -219,4 +222,43 @@ test('a large envelope defers uncharged evidence instead of exceeding the allowa
   assert.throws(() => assembleBatch({ release_id: 'rel-2', mode: 'passage', depth: 'standard', delivered_scope: null, context_scope: null,
     evidence: [], citations: [], searched_scope: [], coverage: [], limitations: many, remaining: null, continuation: null, guidance_version: 'g/1' },
     new RequestBudget({ ...roomy, resultBytes: 500 })), state('exceeds_limits'));
+});
+
+test('R30-3: a large envelope (many sources and limitations) delivers fewer hits and continues exactly', async () => {
+  clearSearchCache();
+  const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });
+  const absent = Array.from({ length: 18 }, (_, i) => `syn:absent-${String(i).padStart(2, '0')}:source_revision-with-a-long-identifier`);
+  const many: SearchWorkload = { ...workload, sources: [A, ...absent] };
+  const limits = { ...STARTING_LIMITS, resultBytes: 7000 };
+  const batches: Batch[] = [];
+  let continuation: string | null = null;
+  for (let i = 0; i < 200; i++) {
+    const batch = await searchBatch(await ReadSession.open(fixture.env, limits), new PagedIndexSearch(), many, continuation, 'g/1');
+    assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= limits.resultBytes, `batch ${i} fits`);
+    batches.push(batch);
+    continuation = batch.continuation;
+    if (!continuation) break;
+  }
+  assert.equal(batches[0].limitations.filter(l => l.state === 'missing_index').length, 18);
+  assert.ok(batches[0].limitations.some(l => l.state === 'budget' && l.scope === 'evidence'), 'the first batch delivered fewer hits than it read');
+  const ids = batches.flatMap(b => b.evidence.map(e => e.kind === 'search_hit' ? e.hit.occurrence_id : ''));
+  const want = fixture.postings['syn-src-1'].filter(p => p.search_key === 'common').map(p => p.occurrence_id).sort();
+  assert.deepEqual([...ids].sort(), want);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('R30-7: removing an uncharged item never defers charged evidence', async () => {
+  const fixture = buildFixture();
+  const session = await ReadSession.open(fixture.env, roomy);
+  const read = await readSpans(session, ['a-u1', 'a-u2']);
+  const charged = { kind: 'search_hit' as const, hit: { source_revision_id: A, span_id: 'a-u1', coordinate_version: 'c', native_order: 0, occurrence_id: 'o',
+    native_reference: { schema_version: 'native-reference/1', source_revision_id: A, coordinate_version: 'c', segments: [{ unit_id: 'u1', start: 0, end: 1 }] } } };
+  const items = [{ kind: 'source_text' as const, span: read.spans[0] }, charged, { kind: 'source_text' as const, span: read.spans[1] }];
+  const base = { release_id: 'rel-2', mode: 'passage', depth: 'standard', delivered_scope: null, context_scope: null, citations: [], searched_scope: [],
+    coverage: [], limitations: [], remaining: null, continuation: null, guidance_version: 'g/1' };
+  const cap = Buffer.byteLength(JSON.stringify({ ...base, evidence: [charged] })) + 150;
+  const { batch, deferred } = assembleBatch({ ...base, evidence: items, charged: new Set([charged]) }, new RequestBudget({ ...roomy, resultBytes: cap }));
+  assert.ok(batch.evidence.includes(charged));
+  assert.ok(!deferred.includes(charged));
+  assert.equal(deferred.length, 2);
 });

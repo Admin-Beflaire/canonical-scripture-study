@@ -117,3 +117,13 @@ test('a provider failure is a temporary failure, not an empty result', async () 
   fixture.db.sqlite.exec('DROP TABLE study_packages');
   await assert.rejects(session.query('packages', { subject: 'synthetic-subject' }), state('temporary_failure'));
 });
+
+test('R30-6: a release declaring index_manifest 2 opens; one declaring version 1 is incompatible', async () => {
+  for (const [version, ok] of [['2', true], ['1', false]] as const) {
+    const fixture = buildFixture();
+    fixture.db.sqlite.exec(`INSERT INTO releases VALUES ('rel-v${version}','m','r','{"evidence_records":"1","native_reference":"1","index_manifest":"${version}"}','c','q','s')`);
+    fixture.select(`rel-v${version}`, 'rel-2');
+    if (ok) assert.equal((await ReadSession.open(fixture.env, roomy)).release.schema_versions.index_manifest, '2');
+    else await assert.rejects(ReadSession.open(fixture.env, roomy), state('incompatible_release'));
+  }
+});

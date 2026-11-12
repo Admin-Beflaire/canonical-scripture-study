@@ -207,6 +207,32 @@ test('a kept index from an earlier release is not re-judged by the new directory
   assert.equal(members.length, old.outputs.length + 2, 'Exodus added');
 });
 
+test('R34-1: rollback and restore never select a release the v2 reader cannot read', async () => {
+  const w = world();
+  await runBook(w, prepareTask('gen', 'g1'));
+  const current = selected(w).current_release_id;
+  // An earlier release from before index format 2: no recorded index_manifest, no directory file.
+  const old = savePrepared(w, 'rev-1', 'old-exo', ['Exo.1.1'], 'old', { noDirectory: true });
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-v1', 'm', 'r', '{"evidence_records":"1","native_reference":"1"}', 'c', 'q', 's')`);
+  for (const output of old.outputs) w.db.sqlite.prepare(`INSERT INTO release_outputs VALUES ('release-v1', ?)`).run(output);
+  w.db.sqlite.exec(`UPDATE release_selection SET previous_release_id = 'release-v1'`);
+  const before = selected(w);
+  const rollback = await requestTask(w.db, owner, { request_key: 'rb-v1', instruction: 'Roll back', kind: 'rollback' });
+  const rollbackId = (rollback as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, rollbackId, w.objects);
+  const rolled = (await taskReport(w.db, owner, rollbackId))!;
+  assert.equal(rolled.data_current, false);
+  assert.ok(rolled.limitations.some(text => text.includes('does not use index format 2')), rolled.limitations.join(' | '));
+  assert.ok(rolled.limitations.some(text => text.includes('profile=index-directory file')), rolled.limitations.join(' | '));
+  assert.deepEqual(selected(w), before);
+  const restore = await requestTask(w.db, owner, { request_key: 'vr-v1', instruction: 'Select the old release',
+    kind: 'validate_restore', constraints: { select_release: 'release-v1' } });
+  const restoreId = (restore as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, restoreId, w.objects);
+  assert.equal((await taskReport(w.db, owner, restoreId))!.data_current, false);
+  assert.equal(selected(w).current_release_id, current);
+});
+
 test('re-preparing a book replaces its overlapping outputs and keeps the rest', async () => {
   const w = world();
   await runBook(w, prepareTask('exo', 'e1'));

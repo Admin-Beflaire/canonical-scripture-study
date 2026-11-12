@@ -105,7 +105,7 @@ const storageProblem = (stored: Stored) => stored === 'no_binding' ? 'stored obj
  *  closure, stored artifacts with recorded sizes and supported formats, admission for both
  *  hosts, active exclusions and statements. Promotion, removal, rollback and restore all use it. */
 export async function validateMembers(db: D1Database, stored: Stored, items: Output[],
-  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string>; adding?: Set<string> } = {}): Promise<Check> {
+  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string>; adding?: Set<string>; allCurrentFormat?: boolean } = {}): Promise<Check> {
   const problems: string[] = [];
   const notes: string[] = [];
   const ids = items.map(item => item.id);
@@ -121,7 +121,8 @@ export async function validateMembers(db: D1Database, stored: Stored, items: Out
   // Evidence may keep its wording in D1, so it needs no artifact.
   for (const item of items.filter(output => INDEX_FILES[output.kind])) {
     const formats = new Set(artifacts.filter(artifact => artifact.output_id === item.id).map(artifact => artifact.format));
-    const required = options.added?.has(item.id) ? [...INDEX_FILES[item.kind], ...NEW_INDEX_FILES] : INDEX_FILES[item.kind];
+    const current = options.allCurrentFormat || options.added?.has(item.id);
+    const required = current ? [...INDEX_FILES[item.kind], ...NEW_INDEX_FILES] : INDEX_FILES[item.kind];
     for (const format of required) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
   }
   for (const artifact of artifacts) if (!FORMATS.has(artifact.format)) problems.push(`artifact ${artifact.id} has unsupported format ${artifact.format}`);
@@ -420,14 +421,21 @@ export async function checkAndSelect(db: D1Database, objects: ObjectStore | null
   { ...outcome, checks: { ...outcome.checks, quality: 'passed' }, scope_report: report });
 }
 
-/** Validate a saved release whole, as for selection. */
+/** Validate a saved release whole before selecting it again (rollback, restore). The deployed
+ *  Study reader must be able to read it: it must record the current index format, and every
+ *  index must be complete in that format. */
 export async function validateRelease(db: D1Database, stored: Stored, releaseId: string): Promise<Check> {
-  const release = await db.prepare('SELECT id FROM releases WHERE id = ?').bind(releaseId).first();
+  const release = await db.prepare('SELECT id, schema_versions_json FROM releases WHERE id = ?').bind(releaseId)
+    .first<{ id: string; schema_versions_json: string }>();
   if (!release) return { problems: [`release ${releaseId} is not saved`], notes: [] };
   const items = await members(db, releaseId);
   const listed = (await db.prepare('SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?').bind(releaseId).first<{ total: number }>())!.total;
-  const check = await validateMembers(db, stored, items);
+  const check = await validateMembers(db, stored, items, { allCurrentFormat: true });
   if (listed !== items.length) check.problems.unshift(`release ${releaseId} lists ${listed - items.length} output(s) that are not saved`);
+  let recorded: unknown;
+  try { recorded = (JSON.parse(release.schema_versions_json) as Record<string, unknown>).index_manifest; } catch { recorded = undefined; }
+  if (recorded !== SCHEMA_VERSIONS.index_manifest)
+    check.problems.unshift(`release ${releaseId} does not use index format ${SCHEMA_VERSIONS.index_manifest}, which the Study reader needs`);
   return check;
 }
 

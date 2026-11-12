@@ -24,8 +24,11 @@ export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', i
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;
+const DIRECTORY = 'application/x-ndjson; profile=index-directory';
+/** Files every index output needs under index-manifest/2: postings, directory and manifest. */
 const INDEX_FILES: Record<string, string[]> = {
-  source_search: ['application/x-ndjson', 'application/json'], word_index: ['application/x-ndjson', 'application/json'],
+  source_search: ['application/x-ndjson', DIRECTORY, 'application/json'],
+  word_index: ['application/x-ndjson', DIRECTORY, 'application/json'],
 };
 
 interface OutputRow { id: string; kind: string; input_revisions_json: string; native_extent_json: string; validation_basis_json: string }

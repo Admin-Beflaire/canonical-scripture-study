@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import hashlib
 from typing import Any, Callable, Mapping, Sequence
 
-from ..prepare.records import RecordError, RecordSet
+from ..prepare.records import KEYS, RecordError, RecordSet, comparable
 from . import ControlState, execute_unit
 from .basis import check_unit_records
 
@@ -43,6 +43,24 @@ class SavedCandidate:
 
     output_ids: tuple[str, ...]
     artifact_refs: tuple[dict[str, Any], ...]
+
+
+def _check_saved_rows(records: RecordSet, output_id: str, storage: CandidateStore) -> None:
+    """A saved output is reused only if every row it owns equals the candidate's.
+
+    The output basis does not cover its owned rows (spans, segments, annotations,
+    relationships, coverage), so they are compared directly.
+    """
+    if storage.read_rows is None:
+        raise RecordError('Cannot verify a saved output without its saved rows')
+    for kind, rows in records.owned_rows(output_id).items():
+        if kind == 'prepared_output':
+            continue
+        expected = sorted((comparable(kind, row) for row in rows), key=lambda r: tuple(r[k] for k in KEYS[kind]))
+        saved = sorted((comparable(kind, dict(row)) for row in storage.read_rows(kind, [output_id])),
+                       key=lambda r: tuple(r[k] for k in KEYS[kind]))
+        if saved != expected:
+            raise RecordError('Existing candidate metadata is incomplete or different')
 
 
 def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:
@@ -88,6 +106,7 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
             continue
         if saved_output != output or saved_owned != owned:
             raise RecordError('Existing candidate metadata is incomplete or different')
+        _check_saved_rows(records, output['id'], storage)
         reused.append(output['id'])
     if not outputs or len(reused) < len(outputs):
         storage.write_rows(records.without_outputs(reused).statements())

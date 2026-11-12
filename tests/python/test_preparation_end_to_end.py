@@ -20,7 +20,7 @@ from css_preparation.executor.quality import check_candidate_quality
 from css_preparation.indexes.files import build_index_files
 from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.evidence import OutputBasis
-from css_preparation.prepare.records import RecordError, TABLES, decoded
+from css_preparation.prepare.records import RecordError, TABLES, decoded, scoped_query
 from css_preparation.validate.saved import CandidateInventory
 from preparation_fixture import COORDINATES, database, evidence_a, evidence_b, text_a
 from test_source_index_builder import RULES, configured_basis
@@ -111,8 +111,12 @@ class PreparationIntegratedStageSix(unittest.TestCase):
             for sql, values in statements:
                 self.db.execute(sql, values)
 
-    def rows(self, kind, *_):
-        return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
+    def rows(self, kind, output_ids=None):
+        # The storage contract scopes read_rows to the named outputs; row() reads whole tables.
+        if output_ids is None:
+            return decoded(self.db.execute('SELECT * FROM ' + TABLES[kind]).fetchall())
+        sql, params = scoped_query(kind, output_ids)
+        return decoded(self.db.execute(sql, params).fetchall())
 
     def row(self, kind, identity):
         keys = {'prepared_output': ('id',), 'artifact': ('id',)}

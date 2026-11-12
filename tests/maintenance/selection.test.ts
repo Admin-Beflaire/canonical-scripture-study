@@ -78,7 +78,7 @@ function source(db: World['db'], revision: string, eligible = 1) {
 
 /** What Preparation saves for one prepare unit: an evidence output with a body artifact in the
  *  bucket, and an index output depending on it, with available coverage. */
-type Damage = { format?: string; skipWordCoverage?: string; noManifest?: boolean };
+type Damage = { format?: string; skipWordCoverage?: string; noManifest?: boolean; noDirectory?: boolean };
 function savePrepared(w: World, revision: string, unit: string, units: string[], tag = '', damage: Damage = {}) {
   const extent = JSON.stringify({ coordinate_version: C, unit_ids: units });
   const evidence = `evidence:${sha(revision + unit + tag).slice(0, 32)}`;
@@ -88,7 +88,7 @@ function savePrepared(w: World, revision: string, unit: string, units: string[],
   insert.run(index, 'source_search', JSON.stringify([revision]), 'm1', '{}', extent, JSON.stringify({ reuse_basis: 'y', dependencies: [evidence] }));
   const refs = [];
   for (const [output, format, name] of [[evidence, 'text/utf-8', 'body'], [index, damage.format ?? 'application/x-ndjson', 'postings'],
-    [index, 'application/x-ndjson; profile=index-directory', 'directory'],
+    ...(damage.noDirectory ? [] : [[index, 'application/x-ndjson; profile=index-directory', 'directory']]),
     ...(damage.noManifest ? [] : [[index, 'application/json', 'manifest']])]) {
     const digest = sha(output + name);
     const locator = `prepared/${digest}/file`;
@@ -214,6 +214,7 @@ test('scope failures leave the current release unchanged and block the task', as
     ['not admitted', { revision: 'rev-na' }, 'not admitted for both hosts'],
     ['partial coverage', { damage: { skipWordCoverage: 'Gen.1.3' } }, 'word_exact is not available'],
     ['unsupported format', { damage: { format: 'image/png' } }, 'unsupported format'],
+    ['missing v2 directory', { damage: { noDirectory: true } }, 'has no application/x-ndjson; profile=index-directory file'],
   ];
   for (const [name, options, expected] of cases) {
     const w = world();

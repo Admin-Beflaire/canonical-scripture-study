@@ -84,6 +84,22 @@ class RecordSet:
     def output_ids(self) -> list[str]:
         return [row['id'] for row in self._rows['prepared_output'].values()]
 
+    def _owned_by(self, output_ids: Iterable[str]):
+        """Predicate: is this (kind, row) owned by one of these outputs?"""
+        drop = set(output_ids)
+        spans = {row['id'] for row in self._rows['native_span'].values() if row['output_id'] in drop}
+        relations = {row['id'] for row in self._rows['relationship'].values() if row['output_id'] in drop}
+        return lambda kind, row: ((kind == 'prepared_output' and row['id'] in drop)
+                                  or (kind in _BY_OUTPUT and row['output_id'] in drop)
+                                  or (kind == 'span_segment' and row['span_id'] in spans)
+                                  or (kind == 'relation_member' and row['relationship_id'] in relations))
+
+    def owned_rows(self, output_id: str) -> dict[str, list[dict[str, Any]]]:
+        """The rows one output owns, by kind (shared identities excluded)."""
+        owned = self._owned_by([output_id])
+        return {kind: [dict(row) for row in self._rows[kind].values() if owned(kind, row)]
+                for kind in ORDER if kind not in SHARED}
+
     def without_outputs(self, output_ids: Iterable[str]) -> 'RecordSet':
         """A copy without the rows and bytes owned by these outputs.
 
@@ -91,18 +107,12 @@ class RecordSet:
         again. Shared identities (sources, admissions, payloads) stay, because their
         inserts keep an identical saved row.
         """
-        drop = set(output_ids)
-        spans = {row['id'] for row in self._rows['native_span'].values() if row['output_id'] in drop}
-        relations = {row['id'] for row in self._rows['relationship'].values() if row['output_id'] in drop}
+        owned = self._owned_by(output_ids)
         result = RecordSet()
         for kind in ORDER:
             for key, row in self._rows[kind].items():
-                if ((kind == 'prepared_output' and row['id'] in drop)
-                        or (kind in _BY_OUTPUT and row['output_id'] in drop)
-                        or (kind == 'span_segment' and row['span_id'] in spans)
-                        or (kind == 'relation_member' and row['relationship_id'] in relations)):
-                    continue
-                result._rows[kind][key] = dict(row)
+                if not owned(kind, row):
+                    result._rows[kind][key] = dict(row)
         kept = {row['id'] for row in result._rows['artifact'].values()}
         result.blobs = {key: data for key, data in self.blobs.items() if key in kept}
         return result
@@ -129,6 +139,13 @@ class RecordSet:
 
 _BY_OUTPUT = ('artifact', 'native_span', 'annotation', 'relationship', 'coverage', 'study_package',
               'character_statement')
+
+
+def comparable(kind: str, row: dict[str, Any]) -> dict[str, Any]:
+    """A row as it reads back from storage: JSON columns decoded, booleans as integers."""
+    return {name: (json.loads(json.dumps(value)) if name.endswith('_json')
+                   else int(value) if isinstance(value, bool) else value)
+            for name, value in row.items()}
 
 
 def scoped_query(kind: str, output_ids: Sequence[str]) -> tuple[str, list[Any]]:

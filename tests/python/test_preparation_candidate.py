@@ -11,7 +11,7 @@ from css_preparation.executor import ControlState, UnitNotRunnable
 from css_preparation.executor.candidate import CandidateStore, persist_candidate, run_candidate_unit
 from css_preparation.indexes.files import build_index_files
 from css_preparation.indexes.source import build_source_postings
-from css_preparation.prepare.records import RecordError, RecordSet, decoded
+from css_preparation.prepare.records import RecordError, RecordSet, decoded, scoped_query
 
 from preparation_fixture import database, evidence_a, text_a
 from test_source_index_builder import RULES, configured_basis
@@ -26,7 +26,7 @@ class CandidateStageTwo(unittest.TestCase):
         self.blobs = {}
         self.puts = []
         self.saved_selection = list(self.db.execute('SELECT * FROM release_selection'))
-        self.store = CandidateStore(self.put, self.read, self.write, self.find)
+        self.store = CandidateStore(self.put, self.read, self.write, self.find, self.scoped)
 
     def put(self, key, data):
         self.puts.append(key)
@@ -46,6 +46,10 @@ class CandidateStageTwo(unittest.TestCase):
         table = {'prepared_output': 'prepared_outputs', 'artifact': 'artifacts'}[kind]
         rows = decoded(self.db.execute(f'SELECT * FROM {table} WHERE id = ?', (identity,)).fetchall())
         return rows[0] if rows else None
+
+    def scoped(self, kind, output_ids):
+        sql, params = scoped_query(kind, output_ids)
+        return decoded(self.db.execute(sql, params).fetchall())
 
     def candidate(self):
         text = text_a()
@@ -175,6 +179,23 @@ class CandidateStageTwo(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'incomplete or different'):
             self.invoke('prepare', lambda _: records, storage=replace(self.store, read_row=differing))
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM native_spans').fetchone()[0], 0)
+
+    def test_reused_output_needs_identical_owned_rows(self):
+        self.invoke('prepare', lambda _: evidence_a())
+        evidence_id = evidence_a().output_ids()[0]
+        def changed(kind, output_ids):
+            rows = self.scoped(kind, output_ids)
+            if kind == 'coverage':
+                rows = [dict(row, state='partial') if row['output_id'] == evidence_id else row for row in rows]
+            return rows
+        def missing(kind, output_ids):
+            return [] if kind == 'native_span' else self.scoped(kind, output_ids)
+        for read_rows in (changed, missing, None):
+            with self.subTest(read_rows=getattr(read_rows, '__name__', None)):
+                with self.assertRaisesRegex(RecordError, 'incomplete or different|saved rows'):
+                    self.invoke('prepare', lambda _: self.candidate(),
+                                storage=replace(self.store, read_rows=read_rows))
+                self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 1)
 
     def test_without_outputs_drops_only_owned_rows_and_bytes(self):
         records = self.candidate()

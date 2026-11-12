@@ -2,7 +2,7 @@ import type { StudyReadEnvironment } from './read/bindings.ts';
 import { ReadSession } from './read/session.ts';
 import { ReadError, limitation, type Limitation } from './read/states.ts';
 import type { Batch } from './results/batch.ts';
-import { GUIDANCE_VERSION } from './guidance.ts';
+import { GUIDANCE_VERSION, TRANSLATION_RULES } from './guidance.ts';
 import { languageBatch } from './operators/language.ts';
 import { passageBatch } from './operators/passage.ts';
 
@@ -16,6 +16,9 @@ export interface StudyRequest {
   mode: Mode; question?: string; depth?: string; language?: string; references?: string[]; search_leads?: SearchLead[];
   sources?: string[]; requested_result?: string; interactive?: boolean; continuation?: string;
 }
+
+/** Modes whose answer includes a translation: their first batch carries the key translation rules. */
+const TRANSLATING = new Set<Mode>(['translation', 'passage', 'exegesis', 'comparison']);
 
 /** What this version cannot supply, stated rather than returned as an empty result. */
 const NOT_OFFERED: Partial<Record<Mode, Limitation[]>> = {
@@ -58,7 +61,8 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest): P
     if (refs.length) {
       if (leads.length && !continuation) notes.push(limitation('invalid_request', 'search_leads', 'Search leads are not run together with references; call study again with the leads alone'));
       batch = await passageBatch(session, { ...base, references: refs, sources: request.sources ?? null,
-        context: mode !== 'inspect_source' && request.depth !== 'focused' }, continuation, GUIDANCE_VERSION, notes);
+        context: mode !== 'inspect_source' && request.depth !== 'focused' }, continuation, GUIDANCE_VERSION, notes,
+        !continuation && TRANSLATING.has(mode) ? TRANSLATION_RULES : null);
     } else {
       if (leads.length > 1) throw new ReadError('invalid_request', 'Give one search lead per call');
       const lead = leads[0];

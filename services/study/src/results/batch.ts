@@ -22,6 +22,8 @@ export interface Batch {
   release_id: string; mode: string; depth: string; delivered_scope: unknown; context_scope: unknown;
   evidence: EvidenceItem[]; citations: Citation[]; searched_scope: SearchedScope[]; coverage: CoverageNote[];
   limitations: Limitation[]; remaining: unknown; continuation: string | null; guidance_version: string;
+  /** Key translation rules, in the first batch of a translating study (counted in the result size). */
+  translation_rules?: readonly string[];
 }
 
 export interface BatchInput extends Omit<Batch, 'evidence' | 'citations' | 'limitations'> {

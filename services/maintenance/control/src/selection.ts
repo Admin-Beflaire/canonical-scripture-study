@@ -21,15 +21,24 @@ export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'applicati
 /** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
  *  lists them: deployment refuses code that does not support the selected release's versions. */
 export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', index_manifest: '2' };
+/** Formats the deployed Study can read, as `compatibility.json` lists them (a test keeps them equal).
+ *  Rollback and restore select only releases whose every recorded format is listed here; when a
+ *  format changes, this list changes with the reader and the check follows. */
+export const READABLE_VERSIONS: Readonly<Record<string, readonly string[]>> = {
+  evidence_records: ['1'], native_reference: ['1'], index_manifest: ['2'],
+};
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;
 const DIRECTORY = 'application/x-ndjson; profile=index-directory';
-/** Files every index output needs under index-manifest/2: postings, directory and manifest. */
+/** Files every index output needs, in any format version: postings and manifest. */
 const INDEX_FILES: Record<string, string[]> = {
-  source_search: ['application/x-ndjson', DIRECTORY, 'application/json'],
-  word_index: ['application/x-ndjson', DIRECTORY, 'application/json'],
+  source_search: ['application/x-ndjson', 'application/json'], word_index: ['application/x-ndjson', 'application/json'],
 };
+/** A task's new index outputs use index-manifest/2, which adds the paged directory. Kept members
+ *  were approved in an earlier release; they are checked for presence and integrity, not
+ *  re-judged by a newer format rule. Each source's index is read on its own. */
+const NEW_INDEX_FILES = [DIRECTORY];
 
 interface OutputRow { id: string; kind: string; input_revisions_json: string; native_extent_json: string; validation_basis_json: string }
 export interface Output { id: string; kind: string; revisions: string[]; extent: Record<string, unknown>; dependencies: string[] }
@@ -102,7 +111,7 @@ const storageProblem = (stored: Stored) => stored === 'no_binding' ? 'stored obj
  *  closure, stored artifacts with recorded sizes and supported formats, admission for both
  *  hosts, active exclusions and statements. Promotion, removal, rollback and restore all use it. */
 export async function validateMembers(db: D1Database, stored: Stored, items: Output[],
-  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string>; adding?: Set<string> } = {}): Promise<Check> {
+  options: { approved?: DecisionRef | null; added?: Set<string>; lifted?: Set<string>; adding?: Set<string>; allCurrentFormat?: boolean } = {}): Promise<Check> {
   const problems: string[] = [];
   const notes: string[] = [];
   const ids = items.map(item => item.id);
@@ -118,7 +127,9 @@ export async function validateMembers(db: D1Database, stored: Stored, items: Out
   // Evidence may keep its wording in D1, so it needs no artifact.
   for (const item of items.filter(output => INDEX_FILES[output.kind])) {
     const formats = new Set(artifacts.filter(artifact => artifact.output_id === item.id).map(artifact => artifact.format));
-    for (const format of INDEX_FILES[item.kind]) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
+    const current = options.allCurrentFormat || options.added?.has(item.id);
+    const required = current ? [...INDEX_FILES[item.kind], ...NEW_INDEX_FILES] : INDEX_FILES[item.kind];
+    for (const format of required) if (!formats.has(format)) problems.push(`index output ${item.id} has no ${format} file`);
   }
   for (const artifact of artifacts) if (!FORMATS.has(artifact.format)) problems.push(`artifact ${artifact.id} has unsupported format ${artifact.format}`);
   if (artifacts.length) {
@@ -416,15 +427,35 @@ export async function checkAndSelect(db: D1Database, objects: ObjectStore | null
   { ...outcome, checks: { ...outcome.checks, quality: 'passed' }, scope_report: report });
 }
 
-/** Validate a saved release whole, as for selection. */
+/** Validate a saved release whole before selecting it again (rollback, restore). The deployed
+ *  Study reader must be able to read it: it must record the current index format, and every
+ *  index must be complete in that format. */
 export async function validateRelease(db: D1Database, stored: Stored, releaseId: string): Promise<Check> {
-  const release = await db.prepare('SELECT id FROM releases WHERE id = ?').bind(releaseId).first();
+  const release = await db.prepare('SELECT id, schema_versions_json FROM releases WHERE id = ?').bind(releaseId)
+    .first<{ id: string; schema_versions_json: string }>();
   if (!release) return { problems: [`release ${releaseId} is not saved`], notes: [] };
   const items = await members(db, releaseId);
   const listed = (await db.prepare('SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?').bind(releaseId).first<{ total: number }>())!.total;
-  const check = await validateMembers(db, stored, items);
+  const check = await validateMembers(db, stored, items, { allCurrentFormat: true });
   if (listed !== items.length) check.problems.unshift(`release ${releaseId} lists ${listed - items.length} output(s) that are not saved`);
+  check.problems.unshift(...unreadable(releaseId, release.schema_versions_json));
   return check;
+}
+
+/** Why the deployed Study could not read a release with these recorded formats (empty if it can). */
+export function unreadable(releaseId: string, recordedJson: string): string[] {
+  let recorded: unknown;
+  try { recorded = JSON.parse(recordedJson); } catch { recorded = undefined; }
+  if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded))
+    return [`release ${releaseId} has no readable format record`];
+  const versions = recorded as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const [name, supported] of Object.entries(READABLE_VERSIONS))
+    if (!supported.includes(String(versions[name])))
+      problems.push(`release ${releaseId} uses ${name} format ${versions[name] === undefined ? '(none)' : String(versions[name])}; the Study reader reads ${supported.join(', ')}`);
+  for (const name of Object.keys(versions))
+    if (!(name in READABLE_VERSIONS)) problems.push(`release ${releaseId} records ${name}, a format the Study reader does not know`);
+  return problems;
 }
 
 /** Block every restored open task. A task whose revision moves is read again; one that cannot be

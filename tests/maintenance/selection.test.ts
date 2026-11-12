@@ -6,7 +6,8 @@ import { fakeGitHub } from './github.ts';
 import { GitHubActions } from '../../services/maintenance/control/src/github.ts';
 import { jobRoutes } from '../../services/maintenance/control/src/jobs.ts';
 import { advance } from '../../services/maintenance/control/src/progress.ts';
-import { membership, selectDirect, SCHEMA_VERSIONS, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { membership, selectDirect, SCHEMA_VERSIONS, READABLE_VERSIONS, unreadable, type ObjectStore } from '../../services/maintenance/control/src/selection.ts';
+import { SUPPORTED_SCHEMA_VERSIONS } from '../../services/study/src/read/session.ts';
 import compatibility from '../../infrastructure/github/deployment/compatibility.json' with { type: 'json' };
 import { controlTask, requestTask, taskReport, type TaskRequest } from '../../services/maintenance/control/src/tasks.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
@@ -191,6 +192,58 @@ test('a second book is added to the current release; parallel tasks each rebuild
   assert.equal(now.previous_release_id, first.task.selection.candidate_release_id);
   assert.equal(second.task.selection.base_release_id, first.task.selection.candidate_release_id);
   assert.equal(membersOf(w, now.current_release_id).length, 6, 'Genesis kept, Exodus added');
+});
+
+test('a kept index from an earlier release is not re-judged by the new directory rule', async () => {
+  const w = world();
+  // Genesis was approved in an earlier release, before indexes had a directory file.
+  const old = savePrepared(w, 'rev-1', 'old-gen', ['Gen.1.1'], 'old', { noDirectory: true });
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-old', 'm', 'r', '{}', 'c', 'q', 's')`);
+  for (const output of old.outputs) w.db.sqlite.prepare(`INSERT INTO release_outputs VALUES ('release-old', ?)`).run(output);
+  w.db.sqlite.exec(`UPDATE release_selection SET current_release_id = 'release-old'`);
+  const exodus = await runBook(w, prepareTask('exo', 'e1'));
+  assert.equal(exodus.task.state, 'completed', exodus.task.limitations.join(' | '));
+  const members = membersOf(w, selected(w).current_release_id);
+  for (const output of old.outputs) assert.ok(members.includes(output), 'old Genesis kept unchanged');
+  assert.equal(members.length, old.outputs.length + 2, 'Exodus added');
+});
+
+test('R34-1: rollback and restore never select a release the v2 reader cannot read', async () => {
+  const w = world();
+  await runBook(w, prepareTask('gen', 'g1'));
+  const current = selected(w).current_release_id;
+  // An earlier release from before index format 2: no recorded index_manifest, no directory file.
+  const old = savePrepared(w, 'rev-1', 'old-exo', ['Exo.1.1'], 'old', { noDirectory: true });
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-v1', 'm', 'r', '{"evidence_records":"1","native_reference":"1"}', 'c', 'q', 's')`);
+  for (const output of old.outputs) w.db.sqlite.prepare(`INSERT INTO release_outputs VALUES ('release-v1', ?)`).run(output);
+  w.db.sqlite.exec(`UPDATE release_selection SET previous_release_id = 'release-v1'`);
+  const before = selected(w);
+  const rollback = await requestTask(w.db, owner, { request_key: 'rb-v1', instruction: 'Roll back', kind: 'rollback' });
+  const rollbackId = (rollback as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, rollbackId, w.objects);
+  const rolled = (await taskReport(w.db, owner, rollbackId))!;
+  assert.equal(rolled.data_current, false);
+  assert.ok(rolled.limitations.some(text => text.includes('uses index_manifest format (none)')), rolled.limitations.join(' | '));
+  assert.ok(rolled.limitations.some(text => text.includes('profile=index-directory file')), rolled.limitations.join(' | '));
+  assert.deepEqual(selected(w), before);
+  const restore = await requestTask(w.db, owner, { request_key: 'vr-v1', instruction: 'Select the old release',
+    kind: 'validate_restore', constraints: { select_release: 'release-v1' } });
+  const restoreId = (restore as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, restoreId, w.objects);
+  assert.equal((await taskReport(w.db, owner, restoreId))!.data_current, false);
+  assert.equal(selected(w).current_release_id, current);
+});
+
+test('the rollback readability list is the deployed Study reader list', () => {
+  assert.deepEqual(READABLE_VERSIONS, compatibility);
+  assert.deepEqual({ ...READABLE_VERSIONS }, { ...SUPPORTED_SCHEMA_VERSIONS });
+  assert.deepEqual(unreadable('r', JSON.stringify(SCHEMA_VERSIONS)), [], 'what Control writes is readable');
+  for (const [recorded, expected] of [
+    ['not json', 'no readable format record'],
+    [JSON.stringify({ ...SCHEMA_VERSIONS, evidence_records: '9' }), 'evidence_records format 9'],
+    [JSON.stringify({ evidence_records: '1', index_manifest: '2' }), 'native_reference format (none)'],
+    [JSON.stringify({ ...SCHEMA_VERSIONS, future_layer: '1' }), 'future_layer, a format the Study reader does not know'],
+  ]) assert.ok(unreadable('r', recorded).some(text => text.includes(expected)), recorded);
 });
 
 test('re-preparing a book replaces its overlapping outputs and keeps the rest', async () => {

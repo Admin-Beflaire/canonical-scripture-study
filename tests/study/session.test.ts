@@ -20,7 +20,7 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
 
 test('budget counts work before it happens', () => {
   const budget = new RequestBudget(STARTING_LIMITS);
-  budget.spendQuery(); budget.spendQuery();
+  for (let i = 0; i < STARTING_LIMITS.d1Calls; i++) budget.spendQuery();
   assert.throws(() => budget.spendQuery(), state('budget'));
   assert.equal(budget.canRead(16385), false, 'a page read is capped by pageBytes');
   assert.equal(budget.canRead(20000, 'object'), true, 'a whole small object only by the remaining bytes');

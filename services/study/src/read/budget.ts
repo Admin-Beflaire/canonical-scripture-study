@@ -18,7 +18,7 @@ export interface BudgetLimits {
  *  page and two postings pages (`r2Bytes`, four pages). The 16 KB cap, `resultBytes` and
  *  `rowsPerQuery` await the Workers fit measurement before production limits are fixed. */
 export const STARTING_LIMITS: Readonly<BudgetLimits> = Object.freeze({
-  d1Calls: 2, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 50,
+  d1Calls: 6, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 50,
 });
 
 function configured(value: string | number | undefined): number | undefined {

@@ -57,3 +57,35 @@ export async function readArtifact(session: ReadSession, artifact: RegisteredArt
   try { return decoder.decode(bytes); }
   catch { throw new ReadError('corrupt', `Invalid UTF-8 in ${artifact.id}`); }
 }
+
+/** Reads one contiguous byte range of a registered object and returns the verified slices
+ *  inside it. Each slice is checked against its own SHA-256 and decoded as strict UTF-8, so
+ *  neighbouring records (for example consecutive verses) cost one read, and a corrupt slice is
+ *  reported alone (null) while the others stay usable. */
+export async function readSlices(session: ReadSession, artifact: RegisteredArtifact, offset: number, length: number,
+                                 slices: readonly { offset: number; length: number; sha256: string }[]): Promise<(string | null)[]> {
+  if (!SUPPORTED_FORMATS.has(artifact.format)) throw new ReadError('corrupt', `Unsupported artifact format for ${artifact.id}`);
+  if (!isSafeCount(offset) || !isSafeCount(length) || length === 0 || offset + length > artifact.byte_count
+      || slices.some(s => !isSafeCount(s.offset) || !isSafeCount(s.length) || s.offset < offset || s.offset + s.length > offset + length || !HEX.test(s.sha256)))
+    throw new ReadError('corrupt', `Range outside registered artifact ${artifact.id}`);
+  if (!session.budget.canRead(length, 'page')) {
+    if (length > session.budget.limits.pageBytes) throw new ReadError('exceeds_limits', `Range larger than the configured cap in ${artifact.id}`);
+    throw new ReadError('budget', 'R2 read allowance used');
+  }
+  session.budget.spendRead(length, 'page');
+  let object;
+  try { object = await session.objects.get(artifact.registered_locator, { range: { offset, length } }); }
+  catch { throw new ReadError('temporary_failure', `Object read failed for ${artifact.id}`); }
+  if (!object) throw new ReadError('corrupt', `Registered object absent for ${artifact.id}`);
+  let bytes: Uint8Array;
+  try { bytes = new Uint8Array(await object.arrayBuffer()); }
+  catch { throw new ReadError('temporary_failure', `Object read failed for ${artifact.id}`); }
+  if (bytes.byteLength !== length) throw new ReadError('corrupt', `Length mismatch in ${artifact.id}`);
+  const out: (string | null)[] = [];
+  for (const slice of slices) {
+    const part = bytes.subarray(slice.offset - offset, slice.offset - offset + slice.length);
+    if (await sha256Hex(part) !== slice.sha256) { out.push(null); continue; }
+    try { out.push(decoder.decode(part)); } catch { out.push(null); }
+  }
+  return out;
+}

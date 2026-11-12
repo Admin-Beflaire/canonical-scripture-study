@@ -1,7 +1,8 @@
 {
-  "format_version": "index-contracts/1",
+  "format_version": "index-contracts/2",
   "schemas": [
-    "manifest.v1.schema.json",
+    "manifest.v2.schema.json",
+    "directory-entry.v2.schema.json",
     "posting.v1.schema.json",
     "span-segment.v1.schema.json"
   ],

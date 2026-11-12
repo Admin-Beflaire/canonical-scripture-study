@@ -1,4 +1,5 @@
 {
   "evidence_records": ["1"],
-  "native_reference": ["1"]
+  "native_reference": ["1"],
+  "index_manifest": ["2"]
 }

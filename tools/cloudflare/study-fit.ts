@@ -44,8 +44,8 @@ export async function runStudyFit({ DATA_DB, PRIVATE_OBJECTS }: FixtureBindings)
     FROM release_selection s
     JOIN release_outputs m ON m.release_id = s.current_release_id
     JOIN artifacts a ON a.output_id = m.output_id
-    WHERE s.current_release_id = ? AND a.id IN (?, ?)
-  `).bind('ix-release', 'ix-source-manifest', 'ix-source-postings').all<Artifact & { id: string }>();
+    WHERE s.current_release_id = ? AND a.id IN (?, ?, ?)
+  `).bind('ix-release', 'ix-source-manifest', 'ix-source-directory', 'ix-source-postings').all<Artifact & { id: string }>();
   const context = await DATA_DB.prepare(`
     SELECT p.exact_text
     FROM release_selection s
@@ -56,7 +56,8 @@ export async function runStudyFit({ DATA_DB, PRIVATE_OBJECTS }: FixtureBindings)
   `).bind('ix-release', 'ix-passage').all<{ exact_text: string }>();
   const directory = registered.results.find(row => row.id === 'ix-source-manifest');
   const postings = registered.results.find(row => row.id === 'ix-source-postings');
-  if (!directory || !postings || context.results.length !== 1 || directory.byte_count > 2048) {
+  const pageList = registered.results.find(row => row.id === 'ix-source-directory');
+  if (!directory || !postings || !pageList || context.results.length !== 1 || directory.byte_count > 2048) {
     throw new Error('Selected fixture unavailable');
   }
 
@@ -65,12 +66,20 @@ export async function runStudyFit({ DATA_DB, PRIVATE_OBJECTS }: FixtureBindings)
     throw new Error('Unexpected fixture manifest');
   }
   const [file] = manifest.files;
-  if (postings.byte_count !== file.byte_length || postings.sha256 !== file.sha256) {
-    throw new Error('Unexpected fixture postings registration');
+  const root = manifest.directory;
+  if (postings.byte_count !== file.byte_length || postings.sha256 !== file.sha256
+      || pageList.byte_count !== root.byte_length || pageList.sha256 !== root.sha256) {
+    throw new Error('Unexpected fixture postings or directory registration');
   }
 
   const key = 'א';
-  const pages = file.pages.filter(page => page.first_key <= key && key <= page.last_key);
+  const overlaps = (page: { first_key: string; last_key: string }) => page.first_key <= key && key <= page.last_key;
+  const listed = [];
+  for (const entry of root.pages.filter(overlaps)) {
+    const raw = await checkedRead(PRIVATE_OBJECTS, pageList.registered_locator, entry.byte_length, entry.sha256, entry.byte_offset);
+    listed.push(...raw.trimEnd().split('\n').map(line => JSON.parse(line) as { first_key: string; last_key: string; byte_offset: number; byte_length: number; sha256: string }));
+  }
+  const pages = listed.filter(overlaps);
   const matches = [];
   for (const page of pages) {
     const raw = await checkedRead(PRIVATE_OBJECTS, postings.registered_locator, page.byte_length, page.sha256, page.byte_offset);
@@ -85,8 +94,9 @@ export async function runStudyFit({ DATA_DB, PRIVATE_OBJECTS }: FixtureBindings)
     context: context.results[0].exact_text,
     d1Calls: 2,
     d1RowsRead: [registered.meta.rows_read ?? null, context.meta.rows_read ?? null],
-    r2Bytes: directory.byte_count + pages.reduce((bytes, page) => bytes + page.byte_length, 0),
-    r2Calls: 1 + pages.length,
+    r2Bytes: directory.byte_count + root.pages.filter(overlaps).reduce((bytes, page) => bytes + page.byte_length, 0)
+      + pages.reduce((bytes, page) => bytes + page.byte_length, 0),
+    r2Calls: 1 + root.pages.filter(overlaps).length + pages.length,
   };
 }
 

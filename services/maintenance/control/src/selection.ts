@@ -18,7 +18,7 @@ export interface ObjectStore {
 export const FORMATS = new Set(['text/utf-8', 'application/x-ndjson', 'application/json']);
 /** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
  *  lists them: deployment refuses code that does not support the selected release's versions. */
-export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1' };
+export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', index_manifest: '2' };
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
 const BLOCK_TRIES = 5;

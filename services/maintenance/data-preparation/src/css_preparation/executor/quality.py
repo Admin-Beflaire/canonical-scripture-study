@@ -5,6 +5,7 @@ import hashlib
 import re
 from typing import Any, Callable, Sequence
 
+from ..indexes.files import PAGE_CAP
 from ..contracts import job_result, parse_job_input
 from ..prepare.evidence import NativeText
 from ..prepare.records import RecordError
@@ -25,7 +26,7 @@ def check_candidate_quality(
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
     receipts: CheckpointStore,
-    max_page_bytes: int = 2048,
+    max_page_bytes: int = PAGE_CAP,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)

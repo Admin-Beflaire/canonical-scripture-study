@@ -6,7 +6,7 @@ import { runStudyFit } from '../../tools/cloudflare/study-fit.ts';
 
 function bindings({ selected = true, corruptPostings = false } = {}) {
   const artifacts = fixture.evidence_delta.artifact.filter(row =>
-    row.id === 'ix-source-manifest' || row.id === 'ix-source-postings');
+    row.id === 'ix-source-manifest' || row.id === 'ix-source-postings' || row.id === 'ix-source-directory');
   const reads: string[] = [];
   const DATA_DB = {
     prepare: () => ({
@@ -25,11 +25,11 @@ function bindings({ selected = true, corruptPostings = false } = {}) {
       reads.push(key);
       const artifact = artifacts.find(row => row.registered_locator === key);
       assert.ok(artifact);
-      const filename = artifact.id === 'ix-source-manifest' ? 'source.manifest.json' : 'source.ndjson';
+      const filename = fixture.artifact_files[artifact.id as keyof typeof fixture.artifact_files];
       const data = await readFile(new URL('../conformance/indexes/' + filename, import.meta.url));
       const { offset, length } = options?.range ?? { offset: 0, length: data.length };
       const bytes = Uint8Array.from(data.subarray(offset, offset + length));
-      if (corruptPostings && options) bytes[0] ^= 1;
+      if (corruptPostings && options && artifact.id === 'ix-source-postings') bytes[0] ^= 1;   // postings only, not the directory
       return { arrayBuffer: async () => bytes.buffer };
     },
   };

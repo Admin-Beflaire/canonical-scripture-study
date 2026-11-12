@@ -22,17 +22,33 @@ from preparation_fixture import COORDINATES, database, identity, save
 from test_source_index_builder import RULES, configured_basis
 
 A, B = 'synthetic:analysis-a', 'synthetic:analysis-b'
-PAGE_CAP = 2048
-REQUEST_CAP = 4096
+PAGE_CAP = 3072
+REQUEST_CAP = 6144
+
+
+def _overlaps(page, key):
+    return page['first_key'].encode('utf-8') <= key.encode('utf-8') <= page['last_key'].encode('utf-8')
+
+
+def _entries(manifest, blobs):
+    root = manifest['directory']
+    body = blobs[root['artifact_id']]
+    return [json.loads(line) for page in root['pages']
+            for line in body[page['byte_offset']:page['byte_offset'] + page['byte_length']].splitlines()]
 
 
 def _lookup(manifest, blobs, key):
-    """Fixture-only byte-range enumerator: at most two pages per request."""
+    """Fixture-only byte-range enumerator: directory pages, then at most two postings pages per request."""
+    root = manifest['directory']
+    body = blobs[root['artifact_id']]
     matched = []
-    for directory in manifest['files']:
-        for page in directory['pages']:
-            if page['first_key'].encode('utf-8') <= key.encode('utf-8') <= page['last_key'].encode('utf-8'):
-                matched.append((directory['artifact_id'], page))
+    for directory_page in root['pages']:
+        if not _overlaps(directory_page, key):
+            continue
+        data = body[directory_page['byte_offset']:directory_page['byte_offset'] + directory_page['byte_length']]
+        for entry in map(json.loads, data.splitlines()):
+            if _overlaps(entry, key):
+                matched.append((entry['postings_artifact_id'], entry))
     results = []
     for start in range(0, len(matched), 2):
         batch = matched[start:start + 2]
@@ -81,7 +97,7 @@ class IndexIntegratedStageFive(unittest.TestCase):
         self.source_parts = build_source_postings(
             self.text, self.evidence,
             configured_basis(self.evidence, self.text, revision=revision),
-            RULES, max_units=1, max_scalars=128, max_occurrences=40,
+            RULES, max_units=1, max_scalars=128, max_occurrences=40, encoded_page_cap_bytes=PAGE_CAP,
         )
         self.assertEqual(len(self.source_parts), 2)
         self.observations = []
@@ -129,7 +145,7 @@ class IndexIntegratedStageFive(unittest.TestCase):
             self.text, self.source_parts, observations, self.expected, (A, B),
             self.word_basis, normalize=RULES.normalize,
             grammar_keys=lambda alt: ('grammar:' + alt.grammar['part_of_speech'],),
-            max_postings=100,
+            max_postings=100, encoded_page_cap_bytes=PAGE_CAP,
         )
 
     def test_complete_paged_search_round_trips_and_literary_context(self):
@@ -139,8 +155,8 @@ class IndexIntegratedStageFive(unittest.TestCase):
                 part.basis, saved, self.artifacts, self.coverage, self.blobs,
                 max_page_bytes=PAGE_CAP,
             ), built.manifest)
-            self.assertTrue(all(page['byte_length'] <= PAGE_CAP
-                for directory in built.manifest['files'] for page in directory['pages']))
+            self.assertTrue(all(page['byte_length'] <= PAGE_CAP for page in _entries(built.manifest, self.blobs)))
+            self.assertTrue(all(page['byte_length'] <= PAGE_CAP for page in built.manifest['directory']['pages']))
         source_manifest = self.files[0].manifest
         word_manifest = self.files[-1].manifest
         source_pages, source_rows = _lookup(source_manifest, self.blobs, 'א')

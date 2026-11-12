@@ -1,5 +1,5 @@
 {
-  "fixture_version": "index-contracts/1",
+  "fixture_version": "index-contracts/2",
   "manifests": {
     "source": "source.manifest.json",
     "word": "word.manifest.json",
@@ -17,7 +17,10 @@
     "ix-word-manifest": "word.manifest.json",
     "ix-lexicon-postings": "lexicon.ndjson",
     "ix-lexicon-manifest": "lexicon.manifest.json",
-    "ix-native-body": "native-body.txt"
+    "ix-native-body": "native-body.txt",
+    "ix-source-directory": "source.directory.ndjson",
+    "ix-word-directory": "word.directory.ndjson",
+    "ix-lexicon-directory": "lexicon.directory.ndjson"
   },
   "native_units": {
     "index-unit": "׃ אָ אָ אָ בּ",
@@ -290,8 +293,8 @@
         "id": "ix-source-manifest",
         "source_revision_id": "synthetic:a:source_revision",
         "output_id": "ix-source",
-        "sha256": "a00382f7f763b57e613b38eb9ac82a1d7c21e7b93fc600ea023a3ce285572b84",
-        "byte_count": 1615,
+        "sha256": "60099262ea37f4d0ffb2c2f4562567a941e6c1bf986b1178741c2d7683669ca2",
+        "byte_count": 1361,
         "format": "application/json",
         "registered_locator": "synthetic/indexes/ix-source-manifest"
       },
@@ -308,8 +311,8 @@
         "id": "ix-word-manifest",
         "source_revision_id": "synthetic:a:source_revision",
         "output_id": "ix-word",
-        "sha256": "dcdcbf18a000469d291dbf2b1cd07060fb5573d952b0d35f5fa7075293cc65e8",
-        "byte_count": 4103,
+        "sha256": "278134f60d0f4b08a81e2c36931794dc526dfcda85d64573c4d70834f57103e9",
+        "byte_count": 1782,
         "format": "application/json",
         "registered_locator": "synthetic/indexes/ix-word-manifest"
       },
@@ -326,8 +329,8 @@
         "id": "ix-lexicon-manifest",
         "source_revision_id": "synthetic:lex:source_revision",
         "output_id": "ix-lexicon",
-        "sha256": "e6b1930b9b5b028008101b5a6782a28e73f23274b44cf100c071106283259cc7",
-        "byte_count": 1162,
+        "sha256": "6d46f7e5f64266a33f563e244f33454d3c433b443a00fcca3ee7d3d8a94e24ac",
+        "byte_count": 1360,
         "format": "application/json",
         "registered_locator": "synthetic/indexes/ix-lexicon-manifest"
       },
@@ -339,6 +342,33 @@
         "byte_count": 22,
         "format": "text/utf-8",
         "registered_locator": "synthetic/indexes/native-body"
+      },
+      {
+        "id": "ix-source-directory",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-source",
+        "sha256": "0e2a9bb4b0743fd54cbf390a4a3ffeeb6bd56304369531665ed348538b1a9b11",
+        "byte_count": 570,
+        "format": "application/x-ndjson; profile=index-directory",
+        "registered_locator": "synthetic/indexes/ix-source-directory"
+      },
+      {
+        "id": "ix-word-directory",
+        "source_revision_id": "synthetic:a:source_revision",
+        "output_id": "ix-word",
+        "sha256": "a8795a181a83ec9dd34004a11aa94f410756fdb9f8b9dea9d9f4377f1009fd06",
+        "byte_count": 2595,
+        "format": "application/x-ndjson; profile=index-directory",
+        "registered_locator": "synthetic/indexes/ix-word-directory"
+      },
+      {
+        "id": "ix-lexicon-directory",
+        "source_revision_id": "synthetic:lex:source_revision",
+        "output_id": "ix-lexicon",
+        "sha256": "7c59a51c0afc227609f3eeea1048afc5ac6db3ff50d9594344601d60329cdc09",
+        "byte_count": 200,
+        "format": "application/x-ndjson; profile=index-directory",
+        "registered_locator": "synthetic/indexes/ix-lexicon-directory"
       }
     ],
     "text_payload": [
@@ -576,9 +606,13 @@
         "native_extent_json": {
           "unit_ids": [
             "index-unit"
+          ],
+          "order_range": [
+            0,
+            12
           ]
         },
-        "capability": "source_search",
+        "capability": "word_exact",
         "state": "available",
         "method_version": "synthetic:fixture-tokens/1",
         "index_artifact_id": "ix-source-manifest",
@@ -593,9 +627,55 @@
         "native_extent_json": {
           "unit_ids": [
             "index-unit"
+          ],
+          "order_range": [
+            0,
+            12
           ]
         },
-        "capability": "word_analysis",
+        "capability": "form_exact",
+        "state": "available",
+        "method_version": "synthetic:fixture-tokens/1",
+        "index_artifact_id": "ix-word-manifest",
+        "dependencies_json": [
+          "ix-evidence"
+        ],
+        "limitation": null
+      },
+      {
+        "output_id": "ix-word",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit"
+          ],
+          "order_range": [
+            0,
+            12
+          ]
+        },
+        "capability": "lemma_exact",
+        "state": "available",
+        "method_version": "synthetic:fixture-tokens/1",
+        "index_artifact_id": "ix-word-manifest",
+        "dependencies_json": [
+          "ix-evidence"
+        ],
+        "limitation": null
+      },
+      {
+        "output_id": "ix-word",
+        "source_revision_id": "synthetic:a:source_revision",
+        "native_extent_json": {
+          "unit_ids": [
+            "index-unit"
+          ],
+          "order_range": [
+            0,
+            12
+          ]
+        },
+        "capability": "grammar_exact",
         "state": "available",
         "method_version": "synthetic:fixture-tokens/1",
         "index_artifact_id": "ix-word-manifest",
@@ -610,9 +690,13 @@
         "native_extent_json": {
           "unit_ids": [
             "lex-unit"
+          ],
+          "order_range": [
+            0,
+            14
           ]
         },
-        "capability": "source_search",
+        "capability": "word_exact",
         "state": "available",
         "method_version": "synthetic:fixture-tokens/1",
         "index_artifact_id": "ix-lexicon-manifest",

@@ -122,6 +122,24 @@ class SourceIndexStageOne(unittest.TestCase):
         with self.assertRaisesRegex(RecordError, 'outside its native unit'):
             self.build(evidence=CorruptEvidence())
 
+    def test_order_ranges_of_adjacent_partitions_are_disjoint_around_an_empty_unit(self):
+        from css_preparation.prepare.evidence import SpanSpec, build_evidence
+        from preparation_fixture import basis
+        text = NativeText(COORDINATES, (('1.1', 'aa bb'), ('1.2', ''), ('1.3', 'cc dd'), ('2.1', 'ee')))
+        spans = [SpanSpec('v1.1', 'verse', '1:1', (('1.1', 0, 5),), 'transcribed', {'method': 'synthetic'}),
+                 SpanSpec('gap-1.2', 'witness_gap', '1:2', (('1.2', 0, 0),), 'gap', {'gap': 'synthetic empty unit'}),
+                 SpanSpec('v1.3', 'verse', '1:3', (('1.3', 0, 5),), 'transcribed', {'method': 'synthetic'}),
+                 SpanSpec('v2.1', 'verse', '2:1', (('2.1', 0, 2),), 'transcribed', {'method': 'synthetic'})]
+        evidence = build_evidence(identity('a'), text, spans, basis(identity('a')), d1_body_max_bytes=24)
+        first, second = self.build(text=text, evidence=evidence, basis=configured_basis(evidence, text))
+        self.assertEqual([first.basis.extent['unit_ids'], second.basis.extent['unit_ids']], [['1.1', '1.2'], ['1.3', '2.1']])
+        bases = text.scalar_bases()
+        self.assertEqual(first.order_range, (bases['1.1'], bases['1.1'] + 4))
+        self.assertEqual(second.order_range[0], bases['1.3'])
+        self.assertLess(first.order_range[1], second.order_range[0], 'the empty unit does not claim the next unit')
+        for part in (first, second):
+            self.assertTrue(all(part.order_range[0] <= row['native_order'] <= part.order_range[1] for row in part.postings))
+
     def test_partial_state_is_not_lost(self):
         partial = NativeText(COORDINATES,self.text.units, complete=False,limitation='Synthetic source incomplete')
         from css_preparation.prepare.evidence import build_evidence

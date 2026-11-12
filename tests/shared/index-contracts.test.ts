@@ -5,9 +5,10 @@ import { createHash } from "node:crypto";
 import { Ajv } from "ajv";
 import native from "../../schemas/native-reference.v1.schema.json" with { type: "json" };
 import evidence from "../../schemas/evidence-records.v1.schema.json" with { type: "json" };
-import manifestSchema from "../../schemas/indexes/manifest.v1.schema.json" with { type: "json" };
+import manifestSchema from "../../schemas/indexes/manifest.v2.schema.json" with { type: "json" };
 import postingSchema from "../../schemas/indexes/posting.v1.schema.json" with { type: "json" };
 import navigationSchema from "../../schemas/indexes/span-segment.v1.schema.json" with { type: "json" };
+import directorySchema from "../../schemas/indexes/directory-entry.v2.schema.json" with { type: "json" };
 import { extractScalarSegments } from "../../packages/shared/src/index.ts";
 import type { NativeReference } from "../../packages/shared/src/index.ts";
 
@@ -29,6 +30,7 @@ const ajv = new Ajv({ strict: true, allErrors: true }).addSchema(native).addSche
 const validateManifest = ajv.compile(manifestSchema);
 const validatePosting = ajv.compile(postingSchema);
 const validateNavigation = ajv.compile(navigationSchema);
+const validateDirectory = ajv.compile(directorySchema);
 const manifests = Object.fromEntries(Object.entries(fixture.manifests).map(([name, file]) => [name, json(file)]));
 
 for (const [name, manifest] of Object.entries(manifests)) {
@@ -52,7 +54,7 @@ for (const [name, manifest] of Object.entries(manifests)) {
 }
 
 test("index fixtures extend the evidence contracts and registered artifact identities", () => {
-  assert.equal(fixture.fixture_version, "index-contracts/1");
+  assert.equal(fixture.fixture_version, "index-contracts/2");
   for (const [kind, rows] of Object.entries(fixture.evidence_delta)) {
     const validate = ajv.compile({ $ref: `${evidence.$id}#/$defs/${kind}` });
     for (const row of rows) assert.equal(validate(row), true, `${kind}: ${JSON.stringify(validate.errors)}`);
@@ -63,7 +65,7 @@ test("index fixtures extend the evidence contracts and registered artifact ident
     assert.equal(fixture.artifact_files[String(artifact.id)], fixture.manifests[name]);
     assert.equal(artifact.output_id, manifest.prepared_output_id);
     assert.deepEqual(coverage.native_extent_json, manifest.native_extent);
-    for (const file of manifest.files) {
+    for (const file of [...manifest.files, manifest.directory]) {
       const registered = fixture.evidence_delta.artifact.find(row => row.id === file.artifact_id)!;
       assert.equal(registered.output_id, manifest.prepared_output_id);
       assert.equal(registered.byte_count, file.byte_length);
@@ -76,6 +78,31 @@ test("index fixtures extend the evidence contracts and registered artifact ident
     assert.equal(bytes.length, row.byte_count);
     assert.equal(createHash("sha256").update(bytes).digest("hex"), row.sha256);
   }
+});
+
+test("index-manifest/2: the manifest fits the cap and its directory names only registered postings pages", () => {
+  for (const manifest of Object.values(manifests)) {
+    assert.equal(manifest.format_version, "index-manifest/2");
+    const cap = manifest.encoded_page_cap_bytes;
+    assert.ok(readFileSync(new URL(fixture.manifests[Object.keys(manifests).find(k => manifests[k] === manifest)!], root)).length <= cap);
+    const body = readFileSync(new URL(fixture.artifact_files[manifest.directory.artifact_id], root));
+    const files = new Set(manifest.files.map((f: { artifact_id: string }) => f.artifact_id));
+    let offset = 0;
+    for (const page of manifest.directory.pages) {
+      assert.equal(page.byte_offset, offset);
+      assert.ok(page.byte_length <= cap);
+      const part = body.subarray(offset, offset + page.byte_length);
+      assert.equal(createHash("sha256").update(part).digest("hex"), page.sha256);
+      const entries = part.toString("utf8").trimEnd().split("\n").map(line => JSON.parse(line));
+      for (const entry of entries) { assert.equal(validateDirectory(entry), true); assert.ok(files.has(entry.postings_artifact_id)); }
+      assert.deepEqual([entries[0].first_key, entries.at(-1).last_key], [page.first_key, page.last_key]);
+      offset += page.byte_length;
+    }
+    assert.equal(offset, body.length);
+  }
+  assert.equal(validateManifest({ ...manifests.source, format_version: "index-manifest/1" }), false);
+  assert.equal(validateManifest({ ...manifests.source, native_extent: { unit_ids: ["index-unit"] } }), false);
+  assert.equal(validateDirectory({ first_key: "a", last_key: "a", byte_offset: 0, byte_length: 1, sha256: "0".repeat(64) }), false);
 });
 
 test("empty normalized keys remain addressable and key collation is UTF-8 bytewise", () => {

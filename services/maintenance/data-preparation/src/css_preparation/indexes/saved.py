@@ -13,10 +13,12 @@ from typing import Iterable, Mapping
 from ..prepare.evidence import OutputBasis, reusable
 from ..prepare.records import RecordError
 from ..validation import SchemaSubset
-from .files import _bytes, _object_key
+from .files import DIRECTORY_FORMAT, MANIFEST_VERSION, PAGE_CAP, POSTINGS_FORMAT, _bytes, _object_key
 
-_MANIFEST = SchemaSubset('indexes/manifest.v1.schema.json')
+_MANIFEST = SchemaSubset('indexes/manifest.v2.schema.json')
 _POSTING = SchemaSubset('indexes/posting.v1.schema.json')
+_DIRECTORY = SchemaSubset('indexes/directory-entry.v2.schema.json')
+_FILENAMES = {'application/json': 'manifest.json', POSTINGS_FORMAT: 'postings.ndjson', DIRECTORY_FORMAT: 'directory.ndjson'}
 _RECORDS = SchemaSubset('evidence-records.v1.schema.json')
 _SAFE_MAX = 2**53 - 1
 
@@ -49,16 +51,15 @@ def _checked_artifact(row: Mapping, blobs: Mapping[str, bytes],
     if _digest(content) != row['sha256']:
         raise RecordError(f'Saved artifact digest mismatch: {artifact_id}')
     # The Stage-3 writer uses portable, content-addressed private-R2 keys.
-    if row['registered_locator'] != _object_key(
-            output_id, row['sha256'],
-            'manifest.json' if row['format'] == 'application/json' else 'postings.ndjson'):
+    if row['format'] not in _FILENAMES or row['registered_locator'] != _object_key(
+            output_id, row['sha256'], _FILENAMES[row['format']]):
         raise RecordError('Saved artifact has an incompatible object key or format')
     return content
 
 
 def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Iterable[Mapping],
                        coverage: Iterable[Mapping], blobs: Mapping[str, bytes], *,
-                       max_page_bytes: int = 2048) -> dict:
+                       max_page_bytes: int = PAGE_CAP) -> dict:
     """Reject corrupt, incomplete, incompatible or out-of-budget saved indexes.
 
     Only 'available' coverage is eligible for reuse; partial candidate artifacts
@@ -105,14 +106,16 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
             or manifest['index_kind'] != ('word_language' if word else 'source_text')
             or manifest['source_revision_ids'] != [revision]
             or manifest['analysis_revision_ids'] != (list(basis.input_revisions[1:]) if word else [])
-            or manifest['native_extent'] != {'unit_ids': basis.extent.get('unit_ids')}
+            or manifest['format_version'] != MANIFEST_VERSION
+            or manifest['native_extent']['unit_ids'] != basis.extent.get('unit_ids')
+            or manifest['native_extent']['order_range'][0] > manifest['native_extent']['order_range'][1]
             or manifest['coordinate_version'] != basis.extent.get('coordinate_version')
             or manifest['parameters'] != dict(basis.parameters)
             or manifest['tokenizer_version'] != basis.parameters.get('tokenizer_version')
             or manifest['normalization_rule'] != basis.parameters.get('normalization_rule')):
         raise RecordError('Saved index manifest does not match its complete reuse basis')
     cap = manifest['encoded_page_cap_bytes']
-    if cap != basis.parameters.get('encoded_page_cap_bytes') or cap > max_page_bytes:
+    if cap != basis.parameters.get('encoded_page_cap_bytes') or cap > max_page_bytes or len(manifest_bytes) > cap:
         raise RecordError('Saved index page cap disagrees with reuse basis or configured limit')
     state = manifest['coverage']['state']
     if state != 'available' or manifest['coverage']['limitation'] is not None:
@@ -130,25 +133,29 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
             raise RecordError(f'Incompatible saved coverage: {capability}')
 
     file_ids = [file['artifact_id'] for file in manifest['files']]
-    if (len(set(file_ids)) != len(file_ids)
-            or set(artifact_by_id) != set(file_ids) | {manifest_id}):
+    directory_id = manifest['directory']['artifact_id']
+    if (len(set(file_ids)) != len(file_ids) or directory_id in file_ids or directory_id == manifest_id
+            or set(artifact_by_id) != set(file_ids) | {manifest_id, directory_id}):
         raise RecordError('Saved artifact inventory is incomplete or incompatible')
-    previous: tuple[bytes, int, bytes] | None = None
+    entries_by_file, directory_order = _directory_entries(manifest, artifact_by_id, blobs, cap=cap, max_page_bytes=max_page_bytes,
+                                         output_id=output_id, revision=revision)
+    order_low, order_high = manifest['native_extent']['order_range']
     seen: set[tuple[str, str]] = set()
+    page_orders: dict[tuple[str, int], list[tuple[bytes, int, bytes]]] = {}
     actual_capabilities: set[str] = set()
     # Source rows have one stored occurrence per normalized key. Word rows
     # carry all attributed alternatives even when several lookup keys match.
     observed: dict[str, set[str]] = {}
-    for directory in manifest['files']:
-        artifact_id = directory['artifact_id']
+    for listed in manifest['files']:
+        artifact_id = listed['artifact_id']
         row = artifact_by_id[artifact_id]
-        if row.get('format') != 'application/x-ndjson':
+        if row.get('format') != POSTINGS_FORMAT:
             raise RecordError('Invalid saved postings artifact format')
         content = _checked_artifact(row, blobs, output_id=output_id, source_revision=revision)
-        if directory['byte_length'] != len(content) or directory['sha256'] != _digest(content):
+        if listed['byte_length'] != len(content) or listed['sha256'] != _digest(content):
             raise RecordError('Saved postings do not match file directory')
         offset = 0
-        for page in directory['pages']:
+        for page in entries_by_file.get(artifact_id, []):
             length = page['byte_length']
             if (type(length) is not int or length < 1 or length > cap or length > max_page_bytes
                     or page['byte_offset'] != offset or offset + length > len(content)):
@@ -171,13 +178,11 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
                         or posting['native_reference']['source_revision_id'] != revision
                         or posting['native_reference']['coordinate_version'] != manifest['coordinate_version']
                         or any(seg['unit_id'] not in manifest['native_extent']['unit_ids']
-                               for seg in posting['native_reference']['segments'])):
+                               for seg in posting['native_reference']['segments'])
+                        or not order_low <= posting['native_order'] <= order_high):
                     raise RecordError('Incompatible saved posting source or native reference')
-                order = (posting['search_key'].encode('utf-8'), posting['native_order'],
-                         posting['occurrence_id'].encode('utf-8'))
-                if previous is not None and order < previous:
-                    raise RecordError('Saved postings out of bytewise order')
-                previous = order
+                page_orders.setdefault((artifact_id, page['byte_offset']), []).append(
+                    (posting['search_key'].encode('utf-8'), posting['native_order'], posting['occurrence_id'].encode('utf-8')))
                 identity = (posting['search_key'], posting['occurrence_id'])
                 if identity in seen:
                     raise RecordError('Duplicate saved index occurrence')
@@ -199,6 +204,13 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
             offset += length
         if offset != len(content):
             raise RecordError('Saved page directory does not cover entire file')
+    # Readers follow the directory, across postings files too, so order is checked in directory sequence.
+    previous: tuple[bytes, int, bytes] | None = None
+    for entry in directory_order:
+        for order in page_orders[(entry['postings_artifact_id'], entry['byte_offset'])]:
+            if previous is not None and order < previous:
+                raise RecordError('Saved postings out of bytewise order in directory sequence')
+            previous = order
     if not seen:
         raise RecordError('Empty saved index')
     if (set(capabilities) != (actual_capabilities if word else {'word_exact'})):
@@ -214,10 +226,56 @@ def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Ite
     return manifest
 
 
+def _directory_entries(manifest: dict, artifact_by_id: Mapping, blobs: Mapping[str, bytes], *, cap: int,
+                       max_page_bytes: int, output_id: str, revision: str) -> tuple[dict[str, list[dict]], list[dict]]:
+    """Verify the paged directory file; return its postings-page entries per postings artifact and in order."""
+    listed = manifest['directory']
+    row = artifact_by_id[listed['artifact_id']]
+    if row.get('format') != DIRECTORY_FORMAT:
+        raise RecordError('Invalid saved directory artifact format')
+    content = _checked_artifact(row, blobs, output_id=output_id, source_revision=revision)
+    if listed['byte_length'] != len(content) or listed['sha256'] != _digest(content):
+        raise RecordError('Saved directory does not match the manifest')
+    files = {file['artifact_id'] for file in manifest['files']}
+    by_file: dict[str, list[dict]] = {}
+    ordered: list[dict] = []
+    offset = 0
+    previous_last: bytes | None = None
+    for page in listed['pages']:
+        length = page['byte_length']
+        if (length > cap or length > max_page_bytes or page['byte_offset'] != offset
+                or offset + length > len(content)):
+            raise RecordError('Saved directory page is oversized, missing or noncontiguous')
+        block = content[offset:offset + length]
+        if _digest(block) != page['sha256'] or not block.endswith(b'\n'):
+            raise RecordError('Saved directory page digest or line alignment invalid')
+        lines = block.split(b'\n')[:-1]
+        if not lines or any(not line for line in lines):
+            raise RecordError('Saved directory page has incomplete or blank lines')
+        entries = []
+        for line in lines:
+            entry = _object(line, context='directory entry')
+            errors = _DIRECTORY.document_errors(entry)
+            if errors or entry['postings_artifact_id'] not in files:
+                raise RecordError('Invalid saved directory entry')
+            if previous_last is not None and entry['first_key'].encode('utf-8') < previous_last:
+                raise RecordError('Saved directory entries out of key order')
+            previous_last = entry['last_key'].encode('utf-8')
+            entries.append(entry)
+            ordered.append(entry)
+            by_file.setdefault(entry['postings_artifact_id'], []).append(entry)
+        if entries[0]['first_key'] != page['first_key'] or entries[-1]['last_key'] != page['last_key']:
+            raise RecordError('Saved directory page key boundaries do not match its entries')
+        offset += length
+    if offset != len(content) or set(by_file) != files:
+        raise RecordError('Saved directory does not cover every postings file')
+    return by_file, ordered
+
+
 def reusable_index_ids(bases: Iterable[OutputBasis], saved_outputs: Iterable[Mapping],
                        artifacts: Iterable[Mapping], coverage: Iterable[Mapping],
                        blobs: Mapping[str, bytes], *, valid_external_dependencies: Iterable[str],
-                       max_page_bytes: int = 2048) -> tuple[str, ...]:
+                       max_page_bytes: int = PAGE_CAP) -> tuple[str, ...]:
     """Select verified saved indexes only for the instructed target basis set.
 
     A missing/changed/removed upstream output invalidates its dependents. Outputs

@@ -1,5 +1,5 @@
 {
-  "format_version": "index-manifest/1",
+  "format_version": "index-manifest/2",
   "index_kind": "word_language",
   "prepared_output_id": "ix-word",
   "source_revision_ids": [
@@ -8,6 +8,10 @@
   "native_extent": {
     "unit_ids": [
       "index-unit"
+    ],
+    "order_range": [
+      0,
+      12
     ]
   },
   "coordinate_version": "synthetic:unicode-scalars/1",
@@ -29,95 +33,30 @@
     {
       "artifact_id": "ix-word-postings",
       "byte_length": 12141,
-      "sha256": "1d2612dbeeb243152731429e2c1ec89b8a37a3c415cf11bbfd2f54d867406ba2",
-      "pages": [
-        {
-          "first_key": "form:א",
-          "last_key": "form:א",
-          "byte_offset": 0,
-          "byte_length": 1002,
-          "sha256": "0a36b97a6ee0479f20cb7dbc082b0d9dc3efef36d0f41e172339635ebc6d8d72"
-        },
-        {
-          "first_key": "form:א",
-          "last_key": "form:א",
-          "byte_offset": 1002,
-          "byte_length": 1002,
-          "sha256": "8bd98c95e580b804ed060aa6d0336a3b03c867bae55015c5ea02b4ba6170f30e"
-        },
-        {
-          "first_key": "form:א",
-          "last_key": "form:א",
-          "byte_offset": 2004,
-          "byte_length": 1003,
-          "sha256": "26b78ca9e52d9e70c37e2e120a02638f27910b8f309677f916756a9c61a11cdc"
-        },
-        {
-          "first_key": "form:ב",
-          "last_key": "form:ב",
-          "byte_offset": 3007,
-          "byte_length": 1004,
-          "sha256": "5bd22a29d73bb9f40f977028663dd34dee30e8510c58fc16d2dbc9152f332eb0"
-        },
-        {
-          "first_key": "grammar:noun",
-          "last_key": "grammar:noun",
-          "byte_offset": 4011,
-          "byte_length": 1010,
-          "sha256": "5e827868c2a47fc9570200f1b27836cded5afa6ec8134721eb7e772f60d22eba"
-        },
-        {
-          "first_key": "grammar:noun",
-          "last_key": "grammar:noun",
-          "byte_offset": 5021,
-          "byte_length": 1010,
-          "sha256": "11484a74f4bf13b48ce92b0b19f6b38d945b286e99893441b5f2c9d069155c0b"
-        },
-        {
-          "first_key": "grammar:noun",
-          "last_key": "grammar:noun",
-          "byte_offset": 6031,
-          "byte_length": 1011,
-          "sha256": "55694dcf58353d0127250caea094b042a602914969c7cc0485ab1c1c54c7fc00"
-        },
-        {
-          "first_key": "grammar:noun",
-          "last_key": "grammar:noun",
-          "byte_offset": 7042,
-          "byte_length": 1012,
-          "sha256": "c23cc37baf081dd3735da50ce11cec2ff340a890f254b485eed3a1bfa1b6c18c"
-        },
-        {
-          "first_key": "lemma:provider-0:lemma-א",
-          "last_key": "lemma:provider-0:lemma-א",
-          "byte_offset": 8054,
-          "byte_length": 1021,
-          "sha256": "2725a30741ac608db85c9b8669062fa87f3b12b45a994035ad3bb6447590570c"
-        },
-        {
-          "first_key": "lemma:provider-0:lemma-א",
-          "last_key": "lemma:provider-0:lemma-א",
-          "byte_offset": 9075,
-          "byte_length": 1021,
-          "sha256": "c5d58dea0aef35b565937b40bf49321a27d544cab52ebd5e2122da498ba9cb45"
-        },
-        {
-          "first_key": "lemma:provider-0:lemma-א",
-          "last_key": "lemma:provider-0:lemma-א",
-          "byte_offset": 10096,
-          "byte_length": 1022,
-          "sha256": "5d8ab9a12f4d2b0ecc9741d58c1449ea0e9139328816ca095a3d94bb40f00367"
-        },
-        {
-          "first_key": "lemma:provider-0:lemma-ב",
-          "last_key": "lemma:provider-0:lemma-ב",
-          "byte_offset": 11118,
-          "byte_length": 1023,
-          "sha256": "33e394fa9b019eddd9032cf3d9b94ff909569762482a832b0e188a1422b8d79d"
-        }
-      ]
+      "sha256": "1d2612dbeeb243152731429e2c1ec89b8a37a3c415cf11bbfd2f54d867406ba2"
     }
   ],
+  "directory": {
+    "artifact_id": "ix-word-directory",
+    "byte_length": 2595,
+    "sha256": "a8795a181a83ec9dd34004a11aa94f410756fdb9f8b9dea9d9f4377f1009fd06",
+    "pages": [
+      {
+        "first_key": "form:א",
+        "last_key": "lemma:provider-0:lemma-א",
+        "byte_offset": 0,
+        "byte_length": 1882,
+        "sha256": "db893a3334aae80471e9a1af54f5ff16af83e9ac5e737aff54ff6994da1448a3"
+      },
+      {
+        "first_key": "lemma:provider-0:lemma-א",
+        "last_key": "lemma:provider-0:lemma-ב",
+        "byte_offset": 1882,
+        "byte_length": 713,
+        "sha256": "55d4835231d8f31a48f47484c8446dda655a47d84c2066792457d5c57c0a91da"
+      }
+    ]
+  },
   "coverage": {
     "capabilities": [
       "form_exact",

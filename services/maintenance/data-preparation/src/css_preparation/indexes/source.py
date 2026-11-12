@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from .limits import PAGE_CAP
 from ..prepare.evidence import NativeText, OutputBasis
 from ..prepare.records import RecordError, RecordSet
 
@@ -28,6 +29,8 @@ class SourcePartition:
     postings: tuple[dict, ...]
     coverage_state: str
     limitation: str | None
+    # Inclusive range of the revision's linear source order covered by this partition's units.
+    order_range: tuple[int, int] | None = None
 
 
 def _partitions(text: NativeText, units: tuple[str, ...], max_units: int,
@@ -51,7 +54,7 @@ def _partitions(text: NativeText, units: tuple[str, ...], max_units: int,
 
 def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBasis, rules: TextRules, *,
                           max_units: int, max_scalars: int, max_occurrences: int,
-                          encoded_page_cap_bytes: int = 2048) -> tuple[SourcePartition, ...]:
+                          encoded_page_cap_bytes: int = PAGE_CAP) -> tuple[SourcePartition, ...]:
     """Turn indexed native units into exact-referenced source postings, partitioned by recipe limits.
 
     Each partition has its own complete immutable reuse basis. Stage 3 serializes the
@@ -148,6 +151,13 @@ def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBa
         if len({(row['search_key'], row['occurrence_id']) for row in postings}) != len(postings):
             raise RecordError('Duplicate source occurrence')
         state = 'partial' if not text.complete or coverage[0]['state'] == 'partial' else 'available'
+        # The range covers the group's nonempty text only: an empty unit's position is the next
+        # unit's first position, which may belong to the following partition. An all-empty group
+        # has no postings and no range (the adapter registers no index for it).
+        filled = [unit for unit in group if len(text.unit(unit)) > 0]
+        order_range = (min(offsets[unit] for unit in filled),
+                       max(offsets[unit] + len(text.unit(unit)) - 1 for unit in filled)) if filled else None
         results.append(SourcePartition(group_basis, tuple(postings), state,
-                                       (text.limitation or coverage[0].get('limitation')) if state == 'partial' else None))
+                                       (text.limitation or coverage[0].get('limitation')) if state == 'partial' else None,
+                                       order_range))
     return tuple(results)

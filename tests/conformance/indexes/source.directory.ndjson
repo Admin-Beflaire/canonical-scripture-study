@@ -1,0 +1,3 @@
+{"byte_length":856,"byte_offset":0,"first_key":"","last_key":"א","postings_artifact_id":"ix-source-postings","sha256":"c2d4ba83e942cab1f5221378bfad0ebd56a8330567bf2ab2a305583cd27f6893"}
+{"byte_length":859,"byte_offset":856,"first_key":"א","last_key":"א","postings_artifact_id":"ix-source-postings","sha256":"3a7ba4e5567ccd141d1095dbff636764347cd158ef3b2dac35f73710903f7286"}
+{"byte_length":431,"byte_offset":1715,"first_key":"ב","last_key":"ב","postings_artifact_id":"ix-source-postings","sha256":"60c0667b7c7ef3613d0790cda142a3f5fa0c3da4727d79664ab359c21535a700"}

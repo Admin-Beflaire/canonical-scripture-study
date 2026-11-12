@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
-from ...indexes.files import build_index_files
+from ...indexes.files import PAGE_CAP, build_index_files
 from ...indexes.source import build_source_postings
 from ...indexes.word import WordObservation, build_word_postings
 from ...prepare.evidence import AnnotationSpec, NativeText, OutputBasis, SpanSpec, build_evidence
@@ -30,7 +30,6 @@ from .source import BOOK_STRIDE, BOOKS, PROVIDER, Component
 METHOD_VERSION = 'stepbible-tagged/1'
 BASE_EDITION = 'NA28'
 MAX_STATEMENTS = 1000      # One D1 batch per unit (runner limit).
-PAGE_CAP = 2048
 _READING = {'R': 'restored', 'X': 'reconstructed'}
 
 

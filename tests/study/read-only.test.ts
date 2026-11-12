@@ -15,6 +15,6 @@ test('Study code writes nothing, dispatches nothing and holds no credentials', (
     assert.doesNotMatch(text, /\b(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP)\s+(INTO|TABLE|FROM|OR)\b/, path);
     // No outbound calls, dispatch or credentials; Maintenance is never reached.
     // A global fetch( is an outbound call; `handler.fetch(request)` passes the inbound request to the MCP handler.
-    assert.doesNotMatch(text, /(?<![.\w])fetch\s*\(|GITHUB|\w*_TOKEN\b|\bTOKEN\b|SECRET|workflow_dispatch|services\/maintenance|data-preparation/, path);
+    assert.doesNotMatch(text, /(?<![.\w])fetch\s*\(|globalThis\.fetch|self\.fetch|GITHUB|\w*_TOKEN\b|\bTOKEN\b|SECRET|workflow_dispatch|services\/maintenance|data-preparation/, path);
   }
 });

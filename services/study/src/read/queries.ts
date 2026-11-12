@@ -40,7 +40,8 @@ export interface CountsInput { span_id: string }
 export interface CoverageInput { source_revision_ids: string[]; after?: [string, string, string] | null }
 export interface PackagesInput { subject: string; after?: [string] | null }
 export interface StatementInput { [key: string]: never }
-export interface ReleaseSourcesInput { after?: [string, string] | null }
+export interface ReleaseSourcesInput { capability?: string | null; after?: [string, string] | null }
+export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
 export interface UnitSpansInput { units: string[]; sources?: string[] | null; after?: [string, number] | null }
 export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, number, string] | null }
 
@@ -155,10 +156,10 @@ JOIN source_nodes s ON s.id = c.source_revision_id
 LEFT JOIN source_nodes r ON r.id = s.parent_id
 LEFT JOIN source_nodes e ON e.id = r.parent_id
 LEFT JOIN source_nodes w ON w.id = e.parent_id
-WHERE (c.source_revision_id, c.capability) > (?2, ?3)
+WHERE (?2 IS NULL OR c.capability = ?2) AND (c.source_revision_id, c.capability) > (?3, ?4)
 GROUP BY c.source_revision_id, c.capability
 ORDER BY c.source_revision_id, c.capability
-LIMIT ?4`;
+LIMIT ?5`;
 
 /** Verse spans for candidate native unit IDs, from the selected source-context outputs whose
  *  extent lists the unit. A verse span's ID is its output ID and unit ID (`output#unit`), as
@@ -166,7 +167,7 @@ LIMIT ?4`;
  *  linear order (first segment start), resumable after an order. Unknown candidates match nothing. */
 const UNIT_SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
-  p.exact_text, s.name AS source_name, s.attribution AS source_attribution, g.start_order,
+  p.exact_text, s.name AS source_name, s.attribution AS source_attribution, g.start_order, u.value AS unit_id,
   (SELECT json_group_array(json_object('id', a.id, 'sha256', a.sha256, 'byte_count', a.byte_count,
       'format', a.format, 'registered_locator', a.registered_locator))
     FROM artifacts a JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
@@ -184,6 +185,20 @@ WHERE c.capability = 'source_context' AND n.kind = 'verse'
   AND (n.source_revision_id, g.start_order) > (?4, ?5)
 ORDER BY n.source_revision_id, g.start_order
 LIMIT ?6`;
+
+/** Which candidate units each selected source has as verses: one row per source, the found unit
+ *  IDs joined by commas. Lets an operator report verses missing from a requested range. */
+const UNIT_PRESENCE = `SELECT n.source_revision_id, group_concat(u.value, ',') AS units
+FROM coverage c
+JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+JOIN json_each(c.native_extent_json, '$.unit_ids') AS u ON u.value IN (SELECT value FROM json_each(?2))
+JOIN native_spans n ON n.id = c.output_id || '#' || u.value
+WHERE c.capability = 'source_context' AND n.kind = 'verse'
+  AND json_extract(n.segments_json, '$[0].unit_id') = u.value
+  AND (?3 IS NULL OR c.source_revision_id IN (SELECT value FROM json_each(?3)))
+GROUP BY n.source_revision_id
+ORDER BY n.source_revision_id
+LIMIT ?4`;
 
 export const QUERIES = {
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
@@ -203,7 +218,9 @@ export const QUERIES = {
     [JSON.stringify(list(i.source_revision_ids)), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
   packages: { sql: PACKAGES, params: (i: PackagesInput) => [id(i.subject), ...(optionalAfter(i.after, 1) ?? [''])] },
   statement: { sql: STATEMENT, params: (_: StatementInput) => [] },
-  release_sources: { sql: RELEASE_SOURCES, params: (i: ReleaseSourcesInput) => [...(optionalAfter(i.after, 2) ?? ['', ''])] },
+  release_sources: { sql: RELEASE_SOURCES, params: (i: ReleaseSourcesInput) => [i.capability == null ? null : id(i.capability), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
+  unit_presence: { sql: UNIT_PRESENCE, params: (i: UnitPresenceInput) =>
+    [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources))] },
   unit_spans: { sql: UNIT_SPANS, params: (i: UnitSpansInput) =>
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources)), ...(optionalAfter(i.after, 2) ?? ['', -1])] },
   index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>

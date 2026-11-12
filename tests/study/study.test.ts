@@ -171,3 +171,50 @@ test('both tools work on the baseline protocol, read-only, with guidance sent on
   assert.ok(invalid.error || invalid.result.isError);
   await handler.close();
 });
+
+function dropTriggers(db: ReturnType<typeof buildPassageFixture>['db']) {
+  for (const t of db.sqlite.prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'`).all() as { name: string }[]) db.sqlite.exec(`DROP TRIGGER ${t.name}`);
+}
+
+test('R35-1: verses missing from an asked range are reported, also when context exists', async () => {
+  const { env, db } = buildPassageFixture();
+  dropTriggers(db);
+  db.sqlite.exec(`DELETE FROM annotations WHERE span_id = 'evidence:heb1#Gen.1.2'; DELETE FROM span_segments WHERE span_id = 'evidence:heb1#Gen.1.2';
+    DELETE FROM native_spans WHERE id = 'evidence:heb1#Gen.1.2'`);
+  const [gap] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:1-3'] });
+  assert.deepEqual(units([gap]), ['Gen.1.1', 'Gen.1.3']);
+  assert.ok(gap.limitations.some(l => l.state === 'missing_evidence' && /no verse Gen 1:2\b/.test(l.detail)), JSON.stringify(gap.limitations));
+  const beyond = await all(env, { mode: 'translation', references: ['Gen 1:99'] });
+  assert.ok(units(beyond).length > 0, 'the chapter is still delivered as context');
+  assert.ok(beyond[0].limitations.some(l => l.state === 'missing_evidence' && l.scope === 'Gen 1:99'));
+  assert.ok(beyond.flatMap(b => b.evidence).every(i => i.role === 'context'));
+  const tail = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 2:4-7'] });
+  assert.ok(tail[0].limitations.some(l => /no verse Gen 2:6-7/.test(l.detail)), JSON.stringify(tail[0].limitations));
+});
+
+test('missing ranges: gaps, missing chapters and an explicit end; an unknown chapter end is not a gap', async () => {
+  const { missingRanges } = await import('../../services/study/src/operators/passage.ts');
+  const ref = parseReference('Gen 1:2-3:4');
+  assert.deepEqual(missingRanges(ref, ['Gen.1.2', 'Gen.1.4', 'Gen.1.5', 'Gen.3.2', 'Gen.3.3']), ['Gen 1:3', 'Gen 2', 'Gen 3:1', 'Gen 3:4']);
+  assert.deepEqual(missingRanges(parseReference('Gen 1'), ['Gen.1.1', 'Gen.1.2', 'Gen.1.3']), []);
+  assert.deepEqual(missingRanges(parseReference('Gen 1:5'), []), ['Gen 1:5']);
+});
+
+test('R35-2: a missing or malformed body withholds only its verses; independent evidence is delivered', async () => {
+  const { env, bucket, db } = buildPassageFixture();
+  bucket.objects.delete('synthetic/body/evidence:heb2');
+  const [batch] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:40-2:2'] });
+  const text = new Map(batch.evidence.map(i => [i.span.segments[0].unit_id, i.span.text]));
+  assert.deepEqual(text.get('Gen.1.40'), [wording('Gen.1.40')]);
+  assert.equal(text.get('Gen.2.1'), null);
+  assert.equal(text.get('Gen.2.2'), null);
+  assert.ok(batch.limitations.some(l => l.state === 'corrupt' && l.scope === 'Gen 2:1'));
+  dropTriggers(db);
+  const row = db.sqlite.prepare(`SELECT body_ranges_json FROM native_spans WHERE id = 'evidence:heb1#Gen.1.5'`).get() as { body_ranges_json: string };
+  const ranges = JSON.parse(row.body_ranges_json);
+  ranges[0].byte_offset = -3;
+  db.sqlite.prepare(`UPDATE native_spans SET body_ranges_json = ? WHERE id = 'evidence:heb1#Gen.1.5'`).run(JSON.stringify(ranges));
+  const [malformed] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:4-6'] });
+  assert.deepEqual(units([malformed]), ['Gen.1.4', 'Gen.1.6']);
+  assert.ok(malformed.limitations.some(l => l.state === 'corrupt' && /malformed/.test(l.detail)));
+});

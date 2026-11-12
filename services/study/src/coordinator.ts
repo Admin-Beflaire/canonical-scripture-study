@@ -51,19 +51,20 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest): P
     if (!refs.length && !leads.length)
       throw new ReadError('invalid_request', 'Give references (for passages) or search_leads (for words); for example references ["Gen 1:1-2:3"] or search_leads [{"lookup":"lemma","key":"H7225"}]');
     const session = await ReadSession.open(env);
+    // Notes go in before the batch is sized, so the whole envelope stays within the result cap.
+    // Only on the first batch, so a continued study does not repeat them.
+    const notes: Limitation[] = continuation ? [] : [...(NOT_OFFERED[mode] ?? [])];
     let batch: Batch;
     if (refs.length) {
+      if (leads.length && !continuation) notes.push(limitation('invalid_request', 'search_leads', 'Search leads are not run together with references; call study again with the leads alone'));
       batch = await passageBatch(session, { ...base, references: refs, sources: request.sources ?? null,
-        context: mode !== 'inspect_source' && request.depth !== 'focused' }, continuation, GUIDANCE_VERSION);
-      if (leads.length) batch.limitations.push(limitation('invalid_request', 'search_leads', 'Search leads are not run together with references; call study again with the leads alone'));
+        context: mode !== 'inspect_source' && request.depth !== 'focused' }, continuation, GUIDANCE_VERSION, notes);
     } else {
       if (leads.length > 1) throw new ReadError('invalid_request', 'Give one search lead per call');
       const lead = leads[0];
       if (!lead || typeof lead !== 'object') throw new ReadError('invalid_request', 'A search lead is {lookup, key}');
-      batch = await languageBatch(session, { ...base, lookup: lead.lookup, key: lead.key, sources: request.sources ?? null }, continuation, GUIDANCE_VERSION);
+      batch = await languageBatch(session, { ...base, lookup: lead.lookup, key: lead.key, sources: request.sources ?? null }, continuation, GUIDANCE_VERSION, notes);
     }
-    // Only on the first batch, so a continued study does not repeat the same notes.
-    if (!continuation) batch.limitations.push(...(NOT_OFFERED[mode] ?? []));
     return batch;
   } catch (error) {
     if (error instanceof ReadError) return failure(error, request);

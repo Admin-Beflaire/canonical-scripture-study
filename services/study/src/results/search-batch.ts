@@ -1,7 +1,7 @@
 import { compareUtf8, utf8Length } from '../read/bytes.ts';
 import { checkRequest, type SearchAdapter, type SearchPosition } from '../read/search.ts';
 import type { ReadSession } from '../read/session.ts';
-import { ReadError, limitation } from '../read/states.ts';
+import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { ENVELOPE_RESERVE, type Batch, type EvidenceItem } from './batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from './continuation.ts';
 
@@ -29,7 +29,7 @@ export const SEARCH_CHECKS: Readonly<Record<string, PositionCheck>> = Object.fre
 
 /** One bounded search batch. Works with any adapter that honours the search contract. */
 export async function searchBatch(session: ReadSession, adapter: SearchAdapter, workload: SearchWorkload,
-                                  continuation: string | null, guidanceVersion: string): Promise<Batch> {
+                                  continuation: string | null, guidanceVersion: string, notes: Limitation[] = []): Promise<Batch> {
   const normalized = normalizeSearchWorkload(workload);
   let position: SearchPosition | null = null;
   if (continuation !== null) {
@@ -52,9 +52,8 @@ export async function searchBatch(session: ReadSession, adapter: SearchAdapter, 
       delivered_scope: { lookup: normalized.lookup, key: normalized.key, sources: normalized.sources }, context_scope: null,
       evidence, citations: [], searched_scope: result.searched,
       coverage: result.searched.map(s => ({ source_revision_id: s.source_revision_id, capability: s.capability, state: s.coverage_state, limitation: null })),
-      limitations: count < result.hits.length
-        ? [...result.limitations, limitation('budget', 'evidence', `${result.hits.length - count} occurrence(s) continue in the next batch`)]
-        : result.limitations,
+      limitations: [...notes, ...result.limitations,
+        ...(count < result.hits.length ? [limitation('budget', 'evidence', `${result.hits.length - count} occurrence(s) continue in the next batch`)] : [])],
       remaining: remaining ? { search: count < result.hits.length ? 'continues' : result.state, from_source: remaining.source } : null,
       continuation: next, guidance_version: guidanceVersion,
     };

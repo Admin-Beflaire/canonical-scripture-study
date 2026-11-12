@@ -74,15 +74,23 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
         if (not isinstance(saved, bytes) or saved != records.blobs[artifact['id']]):
             raise RecordError('Saved artifact bytes differ from the candidate')
 
-    # Retry after a saved candidate but before its checkpoint/report: only exact
-    # complete atomic row sets may be acknowledged again. Never overwrite identities.
-    saved_outputs = [storage.optional_row('prepared_output', row['id']) for row in outputs]
-    saved_artifacts = [storage.read_row('artifact', row['id']) for row in artifacts]
-    if any(row is not None for row in saved_outputs + saved_artifacts):
-        if (saved_outputs != outputs or saved_artifacts != artifacts):
+    # An output may already be saved: by a retry after a saved candidate but before its
+    # checkpoint/report, or by an earlier build when its basis is unchanged (a rebuild that
+    # reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
+    # exactly the candidate's; the remaining outputs are written in one atomic batch.
+    # Never overwrite identities.
+    reused = []
+    for output in outputs:
+        owned = [row for row in artifacts if row['output_id'] == output['id']]
+        saved_output = storage.optional_row('prepared_output', output['id'])
+        saved_owned = [storage.optional_row('artifact', row['id']) for row in owned]
+        if saved_output is None and all(row is None for row in saved_owned):
+            continue
+        if saved_output != output or saved_owned != owned:
             raise RecordError('Existing candidate metadata is incomplete or different')
-    else:
-        storage.write_rows(records.statements())
+        reused.append(output['id'])
+    if not outputs or len(reused) < len(outputs):
+        storage.write_rows(records.without_outputs(reused).statements())
     for output in outputs:
         if storage.read_row('prepared_output', output['id']) != output:
             raise RecordError('Saved candidate output identity differs')

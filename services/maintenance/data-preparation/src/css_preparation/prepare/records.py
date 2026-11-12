@@ -84,6 +84,29 @@ class RecordSet:
     def output_ids(self) -> list[str]:
         return [row['id'] for row in self._rows['prepared_output'].values()]
 
+    def without_outputs(self, output_ids: Iterable[str]) -> 'RecordSet':
+        """A copy without the rows and bytes owned by these outputs.
+
+        Used when an identical output is already saved: its owned rows are not written
+        again. Shared identities (sources, admissions, payloads) stay, because their
+        inserts keep an identical saved row.
+        """
+        drop = set(output_ids)
+        spans = {row['id'] for row in self._rows['native_span'].values() if row['output_id'] in drop}
+        relations = {row['id'] for row in self._rows['relationship'].values() if row['output_id'] in drop}
+        result = RecordSet()
+        for kind in ORDER:
+            for key, row in self._rows[kind].items():
+                if ((kind == 'prepared_output' and row['id'] in drop)
+                        or (kind in _BY_OUTPUT and row['output_id'] in drop)
+                        or (kind == 'span_segment' and row['span_id'] in spans)
+                        or (kind == 'relation_member' and row['relationship_id'] in relations)):
+                    continue
+                result._rows[kind][key] = dict(row)
+        kept = {row['id'] for row in result._rows['artifact'].values()}
+        result.blobs = {key: data for key, data in self.blobs.items() if key in kept}
+        return result
+
     def statements(self) -> list[tuple[str, list[Any]]]:
         """Parameterised inserts in foreign-key order, for SQLite or the D1 query interface."""
         result = []

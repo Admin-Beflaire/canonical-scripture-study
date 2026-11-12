@@ -136,6 +136,58 @@ class CandidateStageTwo(unittest.TestCase):
             self.invoke('prepare', lambda _: records, storage=replace(self.store, read_row=lambda *_: None))
         self.assertEqual(list(self.db.execute('SELECT * FROM release_selection')), self.saved_selection)
 
+    def test_rebuild_reuses_identical_saved_output_and_adds_new_ones(self):
+        # An earlier build saved the evidence; a rebuild with the same evidence basis adds a new index.
+        first = self.invoke('prepare', lambda _: evidence_a())
+        evidence_id = first.output_ids[0]
+        spans = self.db.execute('SELECT COUNT(*) FROM native_spans').fetchone()[0]
+        saved = self.invoke('prepare', lambda _: self.candidate())
+        self.assertEqual(len(saved.output_ids), 2)
+        self.assertIn(evidence_id, saved.output_ids)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 2)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM native_spans').fetchone()[0], spans)
+        index_id = next(i for i in saved.output_ids if i != evidence_id)
+        self.assertGreater(self.db.execute('SELECT COUNT(*) FROM artifacts WHERE output_id = ?',
+                                           (index_id,)).fetchone()[0], 0)
+        self.assertGreater(self.db.execute('SELECT COUNT(*) FROM coverage WHERE output_id = ?',
+                                           (index_id,)).fetchone()[0], 0)
+        # Repeating the whole candidate is acknowledged again without writing.
+        writes = []
+        counting = replace(self.store, write_rows=lambda st: (writes.append(st), self.write(st)))
+        self.assertEqual(self.invoke('prepare', lambda _: self.candidate(), storage=counting), saved)
+        self.assertEqual(writes, [])
+        self.assertEqual(list(self.db.execute('SELECT * FROM release_selection')), self.saved_selection)
+
+    def test_saved_output_that_differs_or_lacks_artifacts_is_refused(self):
+        records = self.candidate()
+        [index] = [row for row in records.rows('prepared_output') if row['kind'] == 'source_search']
+        # The output row is saved but its artifacts are not: incomplete.
+        self.write([(sql, params) for sql, params in records.statements()
+                    if sql.startswith('INSERT INTO prepared_outputs') and index['id'] in params])
+        with self.assertRaisesRegex(RecordError, 'incomplete or different'):
+            self.invoke('prepare', lambda _: records)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 1)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM artifacts').fetchone()[0], 0)
+        # A saved output whose recorded row differs is refused, never overwritten.
+        def differing(kind, identity):
+            row = self.find(kind, identity)
+            return dict(row, method_version='other/1') if row and kind == 'prepared_output' else row
+        with self.assertRaisesRegex(RecordError, 'incomplete or different'):
+            self.invoke('prepare', lambda _: records, storage=replace(self.store, read_row=differing))
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM native_spans').fetchone()[0], 0)
+
+    def test_without_outputs_drops_only_owned_rows_and_bytes(self):
+        records = self.candidate()
+        evidence_id = evidence_a().output_ids()[0]
+        rest = records.without_outputs([evidence_id])
+        self.assertNotIn(evidence_id, rest.output_ids())
+        for kind in ('native_span', 'annotation', 'relationship', 'coverage', 'artifact'):
+            self.assertFalse([r for r in rest.rows(kind) if r['output_id'] == evidence_id], kind)
+        self.assertEqual(rest.rows('span_segment'), [])
+        self.assertEqual(rest.rows('source_node'), records.rows('source_node'))
+        self.assertEqual(set(rest.blobs), {r['id'] for r in rest.rows('artifact')})
+        self.assertEqual(len(records.output_ids()), 2)  # the original is unchanged
+
     def test_missing_artifact_metadata_bytes_and_invalid_module_result(self):
         records = self.candidate()
         records.blobs.pop(next(iter(records.blobs)))

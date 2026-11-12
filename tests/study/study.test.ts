@@ -242,9 +242,9 @@ test('a translating study carries the key translation rules in its first batch o
   const [inspect] = await all(env, { mode: 'inspect_source', references: ['Gen 1:1'] }) as (AnyBatch & { translation_rules?: string[] })[];
   assert.equal(inspect.translation_rules, undefined);
   const rules = TRANSLATION_RULES.join('\n');
-  for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /poetically/, /ESV, NASB/, /Platonic/, /square brackets/]) assert.match(rules, needed);
+  for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /poetically/, /ESV, NASB/, /Platonic/, /square brackets/, /Decide key terms before writing/, /Traditions are evidence, not the answer/, /supports best, not merely/, /⚑/, /concerns dualism only/]) assert.match(rules, needed);
   const full = guidance('translation').text;
-  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/]) assert.match(full, needed);
+  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/]) assert.match(full, needed);
   assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/2');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/3');
 });

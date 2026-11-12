@@ -12,7 +12,7 @@ spec.loader.exec_module(profiles)
 
 class RoutingTests(unittest.TestCase):
     def test_wrong_language_files_run_both_boundary_checkers(self):
-        typescript_homes = ("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/")
+        typescript_homes = ("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/", "tests/study/")
         python_homes = ("services/maintenance/data-preparation/", "packages/shared-python/", "tests/python/")
         for path in [home + "misplaced.py" for home in typescript_homes] + [
                 home + "misplaced" + suffix for home in python_homes
@@ -30,7 +30,7 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(profiles.select_profiles([path]), ["python", "typescript"])
 
     def test_owning_modules_run_only_their_consumer(self):
-        for path in ("services/study/src/search.ts", "services/maintenance/control/src/index.ts", "packages/shared/src/index.ts"):
+        for path in ("services/study/src/search.ts", "services/maintenance/control/src/index.ts", "packages/shared/src/index.ts", "tests/study/search.test.ts"):
             self.assertEqual(profiles.select_profiles([path]), ["typescript"])
         for path in ("services/maintenance/data-preparation/src/acquire.py", "packages/shared-python/src/css_shared/references.py", "tests/python/test_conformance.py", ".python-version"):
             self.assertEqual(profiles.select_profiles([path]), ["python"])

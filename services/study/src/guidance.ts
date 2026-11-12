@@ -39,8 +39,10 @@ Translation key
 - torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
 - A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.
 Text
-- Translate the selected reading. Keep well-known material judged secondary visible in [square brackets] with a note saying why; never silently drop disputed material, and never bring in another tradition's additions unbracketed because readers know them.
-- Where witnesses differ (for example Hebrew and Greek), say so only from evidence actually returned, or mark it plainly as outside knowledge. Never say a reading or witness was checked when it was not.
+- This applies to every relevant source, witness, manuscript, edition or tradition; any names given here are examples, not a list.
+- Translate the selected reading faithfully. Keep substantive differences between the available witnesses visible and explain them; do not harmonise them silently, and do not treat any witness as secondary by default.
+- Where wording is textually disputed, make its status visible (in [square brackets] when you present the disputed wording) and explain the evidence. Never silently drop it, and never bring in another tradition's additions unbracketed because readers know them.
+- Attribute a reading to source evidence only when that evidence was returned here; mark anything else plainly as outside knowledge. Never say a reading or witness was checked when it was not.
 Notes
 - Notes explain consequential choices: alternative renderings, ambiguity, literary effects, unfamiliar terms. Keep textual, lexical, historical and theological notes apart, and keep them proportionate.
 - Interlinear only when asked: original word order, the actual forms with transliteration and a contextual gloss; a gloss is an aid, not the translation.`;
@@ -52,7 +54,7 @@ export const TRANSLATION_RULES: readonly string[] = Object.freeze([
   'Render poetic and elevated language poetically: keep its force and, where possible, its beauty (e.g. tohu va-vohu as "wild and waste"); keep wordplay, imagery and structure.',
   'YHWH is always "Yahweh"; never LORD or HEERE.',
   'Do not read Greek philosophical categories (such as Platonic soul-body dualism) into nephesh, psyche or ruach; decide each occurrence from context.',
-  'Keep secondary but well-known material in [square brackets] with a note; claim no witness or reading as checked unless it was returned here.',
+  'For every source, witness or tradition: translate the selected reading, keep substantive differences visible without harmonising, put textually disputed wording in [square brackets] with the evidence, and attribute a reading to source evidence only when it was returned here.',
   'Call get_guidance with topic "translation" for the full translation guidance.',
 ]);
 

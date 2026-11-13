@@ -7,7 +7,7 @@ import { GitHubActions } from '../../services/maintenance/control/src/github.ts'
 import { jobRoutes } from '../../services/maintenance/control/src/jobs.ts';
 import { advance, reconcile, MAX_ATTEMPTS } from '../../services/maintenance/control/src/progress.ts';
 import { controlTask, requestTask, taskReport } from '../../services/maintenance/control/src/tasks.ts';
-import { controlServer } from '../../services/maintenance/control/src/mcp.ts';
+import { controlServer, describeProgressFailure } from '../../services/maintenance/control/src/mcp.ts';
 import { protocolHandler } from '../../packages/shared/src/platform.ts';
 import type { JobInput } from '../../services/maintenance/control/src/contracts.ts';
 
@@ -442,4 +442,14 @@ test('R22-7: a lost dispatch is never retried on a partial run listing', async (
   assert.deepEqual(await reconcile(db, context.github, task.id),
     ['The list of unfinished runs was incomplete; unconfirmed dispatches are checked again later']);
   assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.state, 'intended');
+});
+
+test('Control progression failures distinguish D1 write quota from other errors without leaking details', () => {
+  assert.deepEqual(describeProgressFailure('advance',
+    new Error("D1_ERROR: Your account has exceeded D1's free tier daily row write limit. Upgrade or wait.")), {
+    operation: 'advance', code: 'd1_write_quota', message: 'Cloudflare D1 daily row write limit exceeded.',
+  });
+  assert.deepEqual(describeProgressFailure('reconcile', new Error('secret-token: unexpected database error')), {
+    operation: 'reconcile', code: 'failed', message: 'Progression failed; inspect Worker logs.',
+  });
 });

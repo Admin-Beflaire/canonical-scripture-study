@@ -244,7 +244,7 @@ test('a translating study carries the key translation rules in its first batch o
   const rules = TRANSLATION_RULES.join('\n');
   for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /poetically/, /ESV, NASB/, /Platonic/, /square brackets/, /Decide key terms before writing/, /Traditions are evidence, not the answer/, /supports best, not merely/, /⚑/, /concerns dualism only/, /Kaige earns no points/, /New Testament quotes wins/]) assert.match(rules, needed);
   const full = guidance('translation').text;
-  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/, /\+2 the reading that best explains/, /-2 a reading that steers the theology/, /earns no points/, /New Testament quotations decide/, /Weigh silently/]) assert.match(full, needed);
+  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/, /\+2 the reading that best explains/, /-2 a reading that steers the theology/, /earns no points/, /New Testament quotations decide/, /Weigh silently/, /weighed, not counted/, /not an allusion or echo/, /tiqqune sopherim/, /Keep Hebrew idioms in the text as written/, /mark it as a reconstruction/]) assert.match(full, needed);
   assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
   assert.equal(GUIDANCE_VERSION, 'study-guidance/4');
 });

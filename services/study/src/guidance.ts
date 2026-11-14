@@ -34,6 +34,7 @@ Key terms
 Form and force
 - Render poetic and elevated language poetically: keep its force and, where possible, its beauty (rhythm, parallelism, sound, compression, imagery) without giving up accuracy. Example: tohu va-vohu as "wild and waste". This concerns form, never the meaning of a key term.
 - Reproduce wordplay where English or Dutch allows; otherwise explain it in a note. Keep metaphors and images; do not replace them with their supposed meaning.
+- Keep Hebrew idioms in the text as written (for example merism such as "heaven and earth" for everything, or hendiadys, two words for one idea) and explain in a footnote what they mean.
 - Keep repetition, structure, speakers, participants, agency, negation, qualification and logical connections. Do not weaken or strengthen what the wording claims.
 Translation key
 - YHWH is always "Yahweh"; never LORD, the LORD, HEERE or de HEERE.
@@ -46,17 +47,20 @@ Translation key
 Text
 - This applies to every relevant source, witness, manuscript, edition or tradition; any names given here are examples, not a list.
 - Choose the reading to translate by weighing the available witnesses with the points below, then translate the winning reading faithfully. Weigh silently: do not show points or the weighing in the translation or explanation. Explain them when the reader asks how a reading was chosen.
-- Old Testament: the basic comparison is the Septuagint against the Masoretic Text. The Dead Sea Scrolls, the Samaritan Pentateuch and other witnesses add weight to the side they agree with. The same points apply to New Testament variants.
+- Old Testament: the basic comparison is the Septuagint against the Masoretic Text. The Dead Sea Scrolls, the Samaritan Pentateuch and other witnesses add weight to the side they agree with. In the kaige sections the Old Latin and Josephus, which reflect the Greek before that revision, are useful witnesses. The same points apply to New Testament variants.
+- Witnesses are weighed, not counted: many copies of one family or text type count as one voice.
 - Points for the likely original wording:
   +2 the reading that best explains how the others arose.
   +1 supported against the other side by an independent witness (for example the Dead Sea Scrolls agreeing with the Septuagint against the Masoretic Text, or with the Masoretic Text against the Septuagint). Witnesses that go back to one older text-form count once.
   +1 the older witness.
   +1 the shorter reading, measured in meaning: fewer words or less content once translated, not longer words for the same meaning or spelling. 0 when a copying slip explains the difference (the eye skipping between similar words, a repeated word, look-alike letters).
   +1 the harder reading.
-  -1 a reading that removes an embarrassing or difficult element, smooths the text, or copies a parallel passage (for example Gospel harmonisation, or Samuel matched to Chronicles).
-  -2 a reading that steers the theology (for example "sons of Israel" for "sons of God" in Deuteronomy 32:8, or softening God's human-like features).
+  +1 the reading that fits the author's own vocabulary, grammar and argument. This balances "harder": a reading that makes no sense in context is not rewarded.
+  -1 a reading that removes an embarrassing or difficult element, smooths the text, or copies a parallel passage (for example Gospel harmonisation, or Samuel matched to Chronicles). Typical scribal additions count here too: expanded divine names ("Jesus" to "the Lord Jesus Christ"), pious phrases, and a subject spelled out where the text left it implied.
+  -2 a reading that steers the theology (for example "sons of Israel" for "sons of God" in Deuteronomy 32:8, or softening God's human-like features). The scribal corrections the Masoretes themselves list (tiqqune sopherim) count here.
   A kaige reading, or another revision toward the Hebrew such as Hexaplaric additions, earns no points. Where it is the only witness, use it and mark it as kaige.
-- New Testament quotations decide. Where the New Testament quotes an Old Testament passage in a form that matches one witness (the Septuagint, the Masoretic Text or another), that reading wins, whichever witness it is. If New Testament quotations of the same passage follow different witnesses, or the New Testament wording matches no witness, no reading wins by quotation: the points decide, and a footnote explains the New Testament use.
+- New Testament quotations decide. Only a real quotation counts, not an allusion or echo. Where the New Testament quotes an Old Testament passage in a form that matches one witness (the Septuagint, the Masoretic Text or another), that reading wins, whichever witness it is. If New Testament quotations of the same passage follow different witnesses, or the New Testament wording matches no witness, no reading wins by quotation: the points decide, and a footnote explains the New Testament use.
+- Reconstruction: only where no witness makes sense, use the best scholarly reconstruction, mark it as a reconstruction in the translation, and footnote who proposed it and what the witnesses read.
 - Count only real textual differences. A Greek rendering that can come from the same Hebrew is translation technique, not a variant. A different vocalisation of the same Hebrew consonants is a different reading of the same text, not a different text. Large differences between editions of a book (for example Jeremiah, Job, 1 Samuel 17-18, the Greek additions to Esther and Daniel) are named once in a note, not weighed word by word.
 - Presentation: translate the winning reading. If a shorter reading wins, keep the extra wording of the longer reading in the translation in [square brackets] with a footnote saying why; where the interface allows, it may be collapsed by default. If a longer reading wins, add no brackets or footnote for that difference. Footnote any other difference only when it changes the meaning or the sense in context, not for flavour ("said" against "answered" usually does not). When a New Testament quotation decides, always footnote the other reading. Never silently drop wording, and never bring in another tradition's additions unbracketed because readers know them.
 - Attribute a reading to source evidence only when that evidence was returned here; mark anything else plainly as outside knowledge. Never say a reading or witness was checked when it was not.

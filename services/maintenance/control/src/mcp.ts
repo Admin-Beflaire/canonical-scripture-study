@@ -120,7 +120,7 @@ export function controlServer(db: D1Database, requester: string | undefined, enh
         const attempt = await progressSafely('advance', task_id, () => advance(db, github, task_id, objects));
         const progress = attempt.value;
         if (attempt.failure) failures.push(attempt.failure);
-        else if (progress.limitation === 'github_unavailable') notes.push('Dispatch postponed: GitHub was unavailable; it continues on the next check.');
+        else if (progress?.limitation === 'github_unavailable') notes.push('Dispatch postponed: GitHub was unavailable; it continues on the next check.');
       }
       const report = await taskReport(db, owner(), task_id);
       if (!report) return reply('No task with this ID.', { task_id }, true);

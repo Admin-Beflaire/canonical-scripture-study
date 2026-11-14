@@ -1,6 +1,6 @@
 /** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
  *  server instructions, the tool descriptions and get_guidance; no host skill is needed. */
-export const GUIDANCE_VERSION = 'study-guidance/3';
+export const GUIDANCE_VERSION = 'study-guidance/4';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) and summarise its argument before translating and explaining the asked verses.
@@ -45,8 +45,20 @@ Translation key
 - A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.
 Text
 - This applies to every relevant source, witness, manuscript, edition or tradition; any names given here are examples, not a list.
-- Translate the selected reading faithfully. Keep substantive differences between the available witnesses visible and explain them; do not harmonise them silently, and do not treat any witness as secondary by default.
-- Where wording is textually disputed, make its status visible (in [square brackets] when you present the disputed wording) and explain the evidence. Never silently drop it, and never bring in another tradition's additions unbracketed because readers know them.
+- Choose the reading to translate by weighing the available witnesses with the points below, then translate the winning reading faithfully. Weigh silently: do not show points or the weighing in the translation or explanation. Explain them when the reader asks how a reading was chosen.
+- Old Testament: the basic comparison is the Septuagint against the Masoretic Text. The Dead Sea Scrolls, the Samaritan Pentateuch and other witnesses add weight to the side they agree with. The same points apply to New Testament variants.
+- Points for the likely original wording:
+  +2 the reading that best explains how the others arose.
+  +1 supported against the other side by an independent witness (for example the Dead Sea Scrolls agreeing with the Septuagint against the Masoretic Text, or with the Masoretic Text against the Septuagint). Witnesses that go back to one older text-form count once.
+  +1 the older witness.
+  +1 the shorter reading, measured in meaning: fewer words or less content once translated, not longer words for the same meaning or spelling. 0 when a copying slip explains the difference (the eye skipping between similar words, a repeated word, look-alike letters).
+  +1 the harder reading.
+  -1 a reading that removes an embarrassing or difficult element, smooths the text, or copies a parallel passage (for example Gospel harmonisation, or Samuel matched to Chronicles).
+  -2 a reading that steers the theology (for example "sons of Israel" for "sons of God" in Deuteronomy 32:8, or softening God's human-like features).
+  A kaige reading, or another revision toward the Hebrew such as Hexaplaric additions, earns no points. Where it is the only witness, use it and mark it as kaige.
+- New Testament quotations decide. Where the New Testament quotes an Old Testament passage in a form that matches one witness (the Septuagint, the Masoretic Text or another), that reading wins, whichever witness it is. If New Testament quotations of the same passage follow different witnesses, or the New Testament wording matches no witness, no reading wins by quotation: the points decide, and a footnote explains the New Testament use.
+- Count only real textual differences. A Greek rendering that can come from the same Hebrew is translation technique, not a variant. A different vocalisation of the same Hebrew consonants is a different reading of the same text, not a different text. Large differences between editions of a book (for example Jeremiah, Job, 1 Samuel 17-18, the Greek additions to Esther and Daniel) are named once in a note, not weighed word by word.
+- Presentation: translate the winning reading. If a shorter reading wins, keep the extra wording of the longer reading in the translation in [square brackets] with a footnote saying why; where the interface allows, it may be collapsed by default. If a longer reading wins, add no brackets or footnote for that difference. Footnote any other difference only when it changes the meaning or the sense in context, not for flavour ("said" against "answered" usually does not). When a New Testament quotation decides, always footnote the other reading. Never silently drop wording, and never bring in another tradition's additions unbracketed because readers know them.
 - Attribute a reading to source evidence only when that evidence was returned here; mark anything else plainly as outside knowledge. Never say a reading or witness was checked when it was not.
 Notes
 - Notes explain consequential choices: alternative renderings, ambiguity, literary effects, unfamiliar terms. Keep textual, lexical, historical and theological notes apart, and keep them proportionate.
@@ -63,7 +75,8 @@ export const TRANSLATION_RULES: readonly string[] = Object.freeze([
   'Render poetic and elevated language poetically: keep its force and, where possible, its beauty (e.g. tohu va-vohu as "wild and waste"); keep wordplay, imagery and structure. This concerns form, never the meaning of a key term.',
   'YHWH is always "Yahweh"; never LORD or HEERE.',
   'Do not read Platonic soul-body dualism (an immortal, separable soul) into nephesh, psyche or ruach. This rule concerns dualism only; it does not make ruach or pneuma suspect, nor rule out "the Spirit of God" where the context supports it.',
-  'For every source, witness or tradition: translate the selected reading, keep substantive differences visible without harmonising, put textually disputed wording in [square brackets] with the evidence, and attribute a reading to source evidence only when it was returned here.',
+  'Weigh the witnesses silently with the points in the translation guidance and translate the winning reading. Kaige earns no points; a reading the New Testament quotes wins. Do not show points unless the reader asks how a reading was chosen.',
+  'If a shorter reading wins, keep the longer wording in [square brackets] with a footnote; if a longer reading wins, no brackets. Footnote other differences only when they change the meaning. Attribute a reading to source evidence only when it was returned here.',
   'Call get_guidance with topic "translation" for the full translation guidance.',
 ]);
 

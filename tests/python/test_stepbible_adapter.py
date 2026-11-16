@@ -188,7 +188,9 @@ class PrepareTest(unittest.TestCase):
 class RecipeTest(unittest.TestCase):
     def test_committed_recipes_resolve_and_fit_control_limits(self):
         recipes = load_recipes()
-        self.assertEqual(len(recipes), 66)
+        mappings = [name for name, recipe in recipes.items() if recipe.read_reader_references is not None]
+        self.assertEqual(mappings, ['stepbible-tahot-mal-reader/5de0a47f35f0/1'])
+        self.assertEqual(len(recipes) - len(mappings), 66)
         manifest = json.loads((ROOT / 'collection/manifests/stepbible-data-5de0a47f35f0.json').read_text())
         pinned = {item['component']: item for item in manifest['components']}
         for path in sorted((ROOT / 'collection/recipes').glob('stepbible-*.json')):

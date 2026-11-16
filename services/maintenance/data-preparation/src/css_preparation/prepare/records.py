@@ -14,19 +14,25 @@ from ..validation import SCHEMAS, SchemaSubset
 
 _RECORDS = SchemaSubset('evidence-records.v1.schema.json')
 _SEGMENTS = SchemaSubset('indexes/span-segment.v1.schema.json')
+_READER_REFERENCES = SchemaSubset('reader-references/records.v1.schema.json')
+_MANIFEST = json.loads((SCHEMAS / 'evidence.v1.manifest.json').read_text(encoding='utf-8'))
+_READER_TABLES = _MANIFEST['reader_references']['record_tables']
 TABLES: dict[str, str] = {
-    **json.loads((SCHEMAS / 'evidence.v1.manifest.json').read_text(encoding='utf-8'))['record_tables'],
+    **_MANIFEST['record_tables'],
+    **_READER_TABLES,
     'span_segment': 'span_segments',
 }
-# Insert order satisfies the foreign keys in migrations 0001-0002.
+# Place reader links after the native spans they reference.
 ORDER = ('source_node', 'admission', 'prepared_output', 'text_payload', 'artifact', 'native_span', 'span_segment',
-         'annotation', 'relationship', 'relation_member', 'coverage', 'study_package', 'character_statement')
+         'annotation', 'relationship', 'relation_member', 'coverage', 'study_package', 'character_statement',
+         *_READER_TABLES)
 KEYS: dict[str, tuple[str, ...]] = {
     'source_node': ('id',), 'admission': ('id',), 'prepared_output': ('id',), 'text_payload': ('content_id',),
     'artifact': ('id',), 'native_span': ('id',), 'span_segment': ('span_id', 'segment_ordinal'), 'annotation': ('id',),
     'relationship': ('id',), 'relation_member': ('relationship_id', 'role', 'ordinal'),
     'coverage': ('output_id', 'source_revision_id', 'capability'), 'study_package': ('id',),
     'character_statement': ('id',),
+    **{kind: ('id',) for kind in _READER_TABLES},
 }
 # Shared immutable identities may already be saved; an identical row is kept, a different one fails.
 # A component's admission record is the same for every task that acquires it.
@@ -55,7 +61,11 @@ class RecordSet:
     def add(self, kind: str, row: dict[str, Any]) -> dict[str, Any]:
         if kind not in self._rows:
             raise RecordError(f'Preparation does not write {kind} records')
-        errors = _SEGMENTS.document_errors(row) if kind == 'span_segment' else _RECORDS.errors(kind, row)
+        if kind == 'span_segment':
+            errors = _SEGMENTS.document_errors(row)
+        else:
+            schema = _READER_REFERENCES if kind in _READER_TABLES else _RECORDS
+            errors = schema.errors(kind, row)
         if errors:
             raise RecordError(f'Invalid {kind}: ' + '; '.join(errors[:5]))
         key = tuple(row[name] for name in KEYS[kind])
@@ -138,7 +148,7 @@ class RecordSet:
 
 
 _BY_OUTPUT = ('artifact', 'native_span', 'annotation', 'relationship', 'coverage', 'study_package',
-              'character_statement')
+              'character_statement', *_READER_TABLES)
 
 
 def comparable(kind: str, row: dict[str, Any]) -> dict[str, Any]:

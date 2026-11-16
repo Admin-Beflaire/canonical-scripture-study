@@ -114,10 +114,12 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
         if kind == 'quality':
             if recipe.read_source is None:
                 return _result(job, run_id, 'failed', diagnostics=_diagnostic('no_registered_recipe'))
+            read_mappings = recipe.read_reader_references
             return check_candidate_quality(
                 job_json, **gate, inventory=_inventory(job, storage), read_rows=storage.read_rows,
                 read_blob=storage.read_blob, read_source=lambda revision: recipe.read_source(revision, storage),
-                receipts=storage.record_store('receipts'))
+                receipts=storage.record_store('receipts'),
+                read_reader_references=(lambda job: read_mappings(job, storage)) if read_mappings else None)
         module = getattr(recipe, kind)
         if module is None:
             return _result(job, run_id, 'failed', diagnostics=_diagnostic('no_registered_recipe'))

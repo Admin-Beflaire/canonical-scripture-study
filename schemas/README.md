@@ -86,3 +86,27 @@ preparation executor (`$defs/job_input`, `$defs/job_result`). Both sides validat
 the same keyword subset at runtime and reject unknown fields; artifact references
 carry registered identity, SHA-256 digest and size. Envelopes pass task IDs and
 registered references, never scripts, branches, URLs or object paths.
+
+## Reader navigation
+
+`reader-references/nrsva-1.json` contains the versioned NRSVA reader numbering
+inventory. Its [provenance and notice](reader-references/NOTICE.md) describe the
+reference basis. Reader IDs use `Book.chapter.verse` with the catalogue book ID.
+`last_verses` is indexed by chapter starting at 1. A chapter starts at verse 1
+unless `first_verse_overrides` supplies a different first number. Numbering defines
+reference slots. Evidence and its availability come from admitted native sources.
+
+A baseline's `checked_extent_json.ranges` lists inclusive `first_verse` and
+`last_verse` ranges within a `book_id` and `chapter`. Preparation checks their
+bounds against the catalogue and admitted source markers and excludes each
+explicitly linked reader reference. Resolvers check explicit links first, then
+checked extents. An unresolved explicit link still takes precedence. Retrieve
+only links and baselines selected for the same release and source revision.
+A superscription links against reader verse 1, with a separately linked numbered
+span or explicit gap. Keep its native marker and precise boundaries in the
+evidence. Preparation checks linked span membership, group completeness and
+native scalar bounds before selection.
+
+Release `schema_versions_json.reader_scheme_version` records the exact
+catalogue version for mapping outputs. Deployment and application consumers
+declare support for that version as their reader and preparation paths ship.

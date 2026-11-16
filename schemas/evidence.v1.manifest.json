@@ -20,6 +20,16 @@
     "release_output": "release_outputs",
     "release_selection": "release_selection"
   },
+  "reader_references": {
+    "catalogue": "reader-references/nrsva-1.json",
+    "catalogue_schema": "reader-references/catalogue.v1.schema.json",
+    "record_schema": "reader-references/records.v1.schema.json",
+    "migration": "migrations/0005_reader_references.sql",
+    "record_tables": {
+      "reader_reference_base": "reader_reference_bases",
+      "reader_reference_link": "reader_reference_links"
+    }
+  },
   "json_columns": "Fields ending in _json contain decoded JSON in contracts and UTF-8 JSON text in SQL.",
   "booleans": "Contracts use JSON booleans; SQL stores 0 or 1.",
   "release_selection": "singleton_id=1; both release IDs null before the first selected release."

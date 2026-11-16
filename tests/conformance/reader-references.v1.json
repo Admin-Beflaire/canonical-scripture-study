@@ -1,0 +1,61 @@
+{
+  "reader_scheme_version": "nrsva/1",
+  "records": {
+    "reader_reference_base": [
+      {
+        "id": "base",
+        "output_id": "mapping",
+        "source_revision_id": "source",
+        "reader_scheme_version": "nrsva/1",
+        "native_scheme_version": "synthetic-native/1",
+        "checked_extent_json": {
+          "ranges": [
+            {"book_id": "Ps", "chapter": 3, "first_verse": 2, "last_verse": 3}
+          ]
+        },
+        "basis_json": {"check": "synthetic marker and reference agreement"}
+      }
+    ],
+    "reader_reference_link": [
+      {
+        "id": "psalm-3-title",
+        "output_id": "mapping",
+        "source_revision_id": "source",
+        "reader_scheme_version": "nrsva/1",
+        "reader_ref": "Ps.3.1",
+        "span_id": "title",
+        "role": "superscription",
+        "ordinal": 0,
+        "status": "exact",
+        "basis_json": {"native_marker": "Psa.3.0"},
+        "gap_reason": null
+      },
+      {
+        "id": "psalm-3-verse-1",
+        "output_id": "mapping",
+        "source_revision_id": "source",
+        "reader_scheme_version": "nrsva/1",
+        "reader_ref": "Ps.3.1",
+        "span_id": "numbered",
+        "role": "numbered_text",
+        "ordinal": 1,
+        "status": "partial",
+        "basis_json": {"native_marker": "Psa.3.1"},
+        "gap_reason": null
+      },
+      {
+        "id": "ambiguous-verse",
+        "output_id": "mapping",
+        "source_revision_id": "source",
+        "reader_scheme_version": "nrsva/1",
+        "reader_ref": "Ps.3.4",
+        "span_id": null,
+        "role": "numbered_text",
+        "ordinal": 0,
+        "status": "ambiguous",
+        "basis_json": {"candidate_markers": ["Psa.3.4", "Psa.3.5"]},
+        "gap_reason": "Synthetic competing native anchors."
+      }
+    ]
+  }
+}

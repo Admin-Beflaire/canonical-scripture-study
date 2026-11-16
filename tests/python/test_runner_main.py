@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from css_preparation.contracts import ContractError, contract_errors
-from css_preparation.prepare.records import TABLES, RecordError, RecordSet
+from css_preparation.prepare.records import RecordError, RecordSet
 from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.control import ControlClient, ControlConfig
@@ -178,24 +178,26 @@ class RunnerTest(unittest.TestCase):
         self.assertTrue(any(item.startswith('Matt.1.4 (numbered_text):') for item in receipt['limitations']))
         self.assertEqual(check(ids[:1])['state'], 'failed')
 
+        read_rows = self.storage.read_rows
         for kind, field, altered in (
-            ('reader_reference_base', 'checked_extent_json', '{"ranges":[]}'),
+            ('reader_reference_base', 'checked_extent_json',
+             {'ranges': [{'book_id': 'Matt', 'chapter': 1, 'first_verse': 2, 'last_verse': 2}]}),
             ('reader_reference_link', 'gap_reason', 'Invented reason'),
         ):
             with self.subTest(kind=kind):
-                where = " WHERE status = 'missing'" if kind == 'reader_reference_link' else ''
-                table = TABLES[kind]
-                saved = self.api.db.execute(f'SELECT id, {field} FROM {table}{where}').fetchone()
-                statement = f'UPDATE {table} SET {field} = ? WHERE id = ?'
-                with self.api.db:
-                    self.api.db.execute(statement, (altered, saved['id']))
-                try:
+                # Simulate an inconsistent read without changing the database's immutable rows.
+                def inconsistent_rows(requested, output_ids):
+                    rows = read_rows(requested, output_ids)
+                    if requested == kind:
+                        row = next(row for row in rows if kind == 'reader_reference_base'
+                                   or row['status'] == 'missing')
+                        row[field] = altered
+                    return rows
+
+                with mock.patch.object(self.storage, 'read_rows', side_effect=inconsistent_rows):
                     failed = check(ids)
-                    self.assertEqual(failed['state'], 'failed', failed)
-                    self.assertIsNone(failed['quality_receipt_ref'])
-                finally:
-                    with self.api.db:
-                        self.api.db.execute(statement, (saved[field], saved['id']))
+                self.assertEqual(failed['state'], 'failed', failed)
+                self.assertIsNone(failed['quality_receipt_ref'])
         self.assertEqual(self.selection(), self.initial_selection)
 
     def environ(self, raw):

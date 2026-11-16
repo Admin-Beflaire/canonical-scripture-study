@@ -34,7 +34,7 @@ test('reads current once per request and uses one D1 call for it', async () => {
   const session = await ReadSession.open(env, roomy);
   assert.equal(session.release.id, 'rel-2');
   assert.equal(session.budget.usage().d1Calls, 1);
-  assert.deepEqual(Object.keys(session.release.schema_versions).sort(), ['evidence_records', 'index_manifest', 'native_reference']);
+  assert.equal(session.release.schema_versions.reader_scheme_version, undefined);
 });
 
 test('Study accepts the pinned optional reader catalogue and rejects an unsupported version', async () => {

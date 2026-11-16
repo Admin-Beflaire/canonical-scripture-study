@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
 from ..contracts import job_result, parse_job_input
 from ..prepare.evidence import NativeText
-from ..prepare.records import RecordError
+from ..prepare.records import RecordError, RecordSet
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
 from . import ControlState, UnitNotRunnable, execute_unit
@@ -27,6 +27,7 @@ def check_candidate_quality(
     read_source: Callable[[str], NativeText],
     receipts: CheckpointStore,
     max_page_bytes: int = PAGE_CAP,
+    read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)
@@ -49,7 +50,7 @@ def check_candidate_quality(
                 raise RecordError('Quality job must require at least one capability')
             evidence = check_saved_semantics(entry, inventory, read_rows=read_rows,
                 read_blob=read_blob, read_source=read_source,
-                max_page_bytes=max_page_bytes)
+                max_page_bytes=max_page_bytes, read_reader_references=read_reader_references)
             if len(evidence.saved.artifact_refs) > 256 or len(evidence.coverage) > 256:
                 raise RecordError('Candidate exceeds result reference limits')
             # The coverage identifier is the digest of the saved D1 composite
@@ -78,7 +79,8 @@ def check_candidate_quality(
                 'actual_capabilities': list(evidence.capabilities),
                 'checks': ['saved_inventory', 'artifact_digest', 'source_fidelity',
                            'native_coordinates', 'index_postings',
-                           'relationship_endpoints', 'required_coverage'],
+                           'relationship_endpoints', 'required_coverage',
+                           *(['reader_references'] if read_reader_references is not None else [])],
                 'limitations': list(evidence.limitations),
                 'passed': True,
             }

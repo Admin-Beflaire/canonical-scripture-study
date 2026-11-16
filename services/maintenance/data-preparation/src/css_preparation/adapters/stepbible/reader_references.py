@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 from typing import Sequence
 
@@ -12,6 +13,7 @@ from ...validation import SCHEMAS
 from .prepare import MAX_STATEMENTS, book_text, book_verses, read_component
 from .source import Component
 
+READER_REFERENCE = 'reader_reference'
 _METHOD = 'stepbible-reader-reference/1'
 _TITLE = 'superscription'
 _TEXT = 'numbered_text'
@@ -127,7 +129,7 @@ def prepare_reader_reference_unit(
 
     supplied_units = literary_spans(text, literary_units)
     basis = OutputBasis(
-        'reader_reference', (component.revision_id,), _METHOD,
+        READER_REFERENCE, (component.revision_id,), _METHOD,
         {'reader_scheme_version': version, 'inventory_digest': canonical_digest(catalogue),
          'literary_units': [{'key': span.key, 'label': span.label, 'segments': span.segments,
                              'reading_kind': span.reading_kind, 'basis': dict(span.basis),
@@ -149,6 +151,39 @@ def prepare_reader_reference_unit(
         records.add('reader_reference_link', dict(
             **common, **link, id=f'{output_id}:{key}', span_id=span_id(output_id, key) if has_span else None,
         ))
+    # Control discovers prepared outputs through artifact refs, including
+    # baseline-only outputs with no wording artifact.
+    link_rows = records.rows('reader_reference_link')
+    manifest = {
+        'version': 'reader-reference-manifest/1',
+        'output_id': output_id,
+        'reader_scheme_version': version,
+        'checked_native_units': basis.extent['unit_ids'],
+        'baseline_anchor_count': len(baselines),
+        'explicit_link_count': len(link_rows),
+        'gaps': [{'reader_ref': row['reader_ref'], 'role': row['role'], 'reason': row['gap_reason']}
+                 for row in link_rows if row['status'] == 'missing'],
+        'literary_span_count': len(supplied_units),
+        'rows_digest': canonical_digest({
+            'baseline': records.rows('reader_reference_base'), 'links': link_rows,
+            'spans': records.rows('native_span'),
+        }),
+    }
+    payload = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    digest = hashlib.sha256(payload).hexdigest()
+    artifact_id = f'{output_id}:reader-manifest'
+    records.add('artifact', {'id': artifact_id, 'source_revision_id': component.revision_id,
+                             'output_id': output_id, 'sha256': digest, 'byte_count': len(payload),
+                             'format': 'application/json', 'registered_locator': f'prepared/{digest}.json'})
+    records.add_blob(artifact_id, payload)
+    # An explicit gap counts as a classified reference. Source wording coverage
+    # remains a separate capability.
+    records.add('coverage', {
+        'output_id': output_id, 'source_revision_id': component.revision_id, 'method_version': _METHOD,
+        'capability': READER_REFERENCE, 'state': 'available',
+        'native_extent_json': basis.extent, 'index_artifact_id': artifact_id,
+        'dependencies_json': [], 'limitation': None,
+    })
     if len(records.statements()) > MAX_STATEMENTS:
         raise RecordError('Reader-reference unit exceeds one D1 batch')
     return records

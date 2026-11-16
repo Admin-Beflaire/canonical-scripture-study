@@ -29,7 +29,8 @@ class PrepareReaderReferencesTest(unittest.TestCase):
         self.assertEqual(base['checked_extent_json']['ranges'], [
             {'book_id': 'Ps', 'chapter': 3, 'first_verse': 2, 'last_verse': 3},
         ])
-        self.assertEqual(records.rows('coverage'), [])
+        [coverage] = records.rows('coverage')
+        self.assertEqual((coverage['capability'], coverage['state']), ('reader_reference', 'available'))
         by_span = {span['id']: span for span in records.rows('native_span')}
         title, numbered = records.rows('reader_reference_link')
         self.assertEqual([title['reader_ref'], numbered['reader_ref']], ['Ps.3.1', 'Ps.3.1'])
@@ -72,6 +73,11 @@ class PrepareReaderReferencesTest(unittest.TestCase):
         [gap] = records.rows('reader_reference_link')
         self.assertEqual((gap['reader_ref'], gap['status'], gap['span_id']), ('Matt.1.4', 'missing', None))
         self.assertEqual(records.rows('reader_reference_base'), [])
+        [artifact] = records.rows('artifact')
+        manifest = json.loads(records.blobs[artifact['id']])
+        self.assertEqual(manifest['gaps'], [
+            {'reader_ref': 'Matt.1.4', 'role': 'numbered_text', 'reason': gap['gap_reason']},
+        ])
 
     def test_invalid_marker_and_split_reader_anchor_are_rejected(self):
         source, data = component(lines=[row('Mal.4.7(3.24)#01=L', 'פַ')])

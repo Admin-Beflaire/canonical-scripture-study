@@ -32,6 +32,7 @@ class Recipe:
     prepare: Callable[[dict[str, Any], Any], RecordSet] | None = None
     read_source: Callable[[str, Any], NativeText] | None = None
     declares: Callable[[Mapping[str, Any], str], bool] | None = None
+    read_reader_references: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
 
 
 def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
@@ -46,7 +47,9 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         book = BookRecipe.from_recipe(value)
         if value['revision'] in recipes:
             raise ValueError(f"Recipe revision {value['revision']} is declared twice")
-        recipes[value['revision']] = Recipe(book.acquire, book.prepare, book.read_source, book.declares)
+        recipes[value['revision']] = Recipe(
+            book.acquire, book.prepare, book.read_source, book.declares,
+            book.read_reader_references if book.maps_reader_references else None)
     return recipes
 
 

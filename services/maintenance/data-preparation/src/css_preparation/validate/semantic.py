@@ -13,7 +13,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
 from ..prepare.evidence import NativeText, span_wording
-from ..prepare.records import ORDER, RecordError
+from ..prepare.records import KEYS, ORDER, SHARED, RecordError, RecordSet, comparable
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
 
 
@@ -36,6 +36,7 @@ def check_saved_semantics(
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
     max_page_bytes: int = PAGE_CAP,
+    read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
 ) -> SemanticEvidence:
     """Never substitute a builder's success flag for saved candidate evidence."""
     saved = verify_candidate_inventory(inventory, read_rows=read_rows, read_blob=read_blob,
@@ -46,6 +47,26 @@ def check_saved_semantics(
                             for b in (*inventory.added, *inventory.reused)):
         raise RecordError('Candidate inputs disagree with dispatched registered sources')
     rows = {kind: [dict(row) for row in read_rows(kind, saved.output_ids)] for kind in ORDER}
+    mapping_ids = {basis.output_id for basis in (*inventory.added, *inventory.reused)
+                   if basis.kind == 'reader_reference'}
+    gaps = set()
+    if read_reader_references is not None:
+        expected = read_reader_references(job)
+        if mapping_ids != included or set(expected.output_ids()) != included:
+            raise RecordError('Saved reader-reference outputs differ from the reviewed partition')
+        for kind in ORDER:
+            if kind in SHARED:
+                continue
+            def key(row):
+                return tuple(row[k] for k in KEYS[kind])
+            wanted = [comparable(kind, row) for row in expected.rows(kind)]
+            if sorted(rows[kind], key=key) != sorted(wanted, key=key):
+                raise RecordError(f'Saved {kind} differs from the checked reader references')
+        gaps = {f"{row['reader_ref']} ({row['role']}): {row['gap_reason']}"
+                for row in rows['reader_reference_link'] if row['status'] == 'missing'}
+    elif mapping_ids or rows['reader_reference_base'] or rows['reader_reference_link']:
+        raise RecordError('No registered verification for saved reader references')
+
     artifacts = {r['id']: r for r in rows['artifact'] if r['output_id'] in included}
     blobs = {}
     for key, row in artifacts.items():
@@ -177,6 +198,6 @@ def check_saved_semantics(
                 actual_units.update(row['native_extent_json'].get('unit_ids', ()))
         if not set(required_units).issubset(actual_units):
             raise RecordError('Required capability coverage is incomplete')
-    limitations = tuple(sorted({row['limitation'] for row in coverage
-                                if row['state'] != 'available' and row['limitation']}))
+    limitations = tuple(sorted(gaps | {row['limitation'] for row in coverage
+                                       if row['state'] != 'available' and row['limitation']}))
     return SemanticEvidence(saved, coverage, tuple(covered_capabilities), limitations)

@@ -11,14 +11,15 @@ from pathlib import Path
 from unittest import mock
 
 from css_preparation.contracts import ContractError, contract_errors
-from css_preparation.prepare.records import RecordError, RecordSet
+from css_preparation.prepare.records import TABLES, RecordError, RecordSet
 from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.control import ControlClient, ControlConfig
-from css_preparation.runner.recipes import RECIPES, Recipe
+from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
 from css_preparation.runner.web import Origin
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi
+from stepbible_fixture import recipe as stepbible_recipe
 
 ROOT = Path(__file__).resolve().parents[2]
 WIRE = json.loads((ROOT / 'tests/conformance/dp04-control-wire.v1.json').read_text(encoding='utf-8'))
@@ -133,6 +134,69 @@ class RunnerTest(unittest.TestCase):
         for constraints in ({}, {'candidate': {'added': ['synthetic:not-saved']}}, {'candidate': {'added': 'x'}}):
             result = self.run_job(self.job('quality', constraints=constraints), kind='quality')
             self.assertEqual(result['state'], 'failed')
+
+    def test_mapping_recipe_checks_saved_rows_and_reports_gaps(self):
+        value, component, data = stepbible_recipe('tagnt', groups=[['Mat.1.1'], ['Mat.1.3', 'Mat.1.4']])
+        value['capabilities'] = ['reader_reference']
+        value['units'][-1]['required_capabilities'] = value['capabilities']
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / f"{value['id']}.json").write_text(json.dumps(value), encoding='utf-8')
+            recipes = load_recipes(path)
+
+        self.storage.put_blob(component.original_key, data)
+        inputs = [{'kind': 'acquisition', 'id': component.acquisition_id},
+                  {'kind': 'source_revision', 'id': component.revision_id}]
+
+        def run(unit, **changes):
+            raw = self.job(unit['kind'], recipe_revision=value['revision'], unit_id=unit['unit_id'],
+                           native_extent=unit['native_extent'], input_refs=inputs,
+                           required_capabilities=unit.get('required_capabilities', []), **changes)
+            return runner.run_job(raw, unit['kind'], run_id=RUN_ID, control=self.client,
+                                  storage=self.storage, recipes=recipes)
+
+        acquire, baseline, exceptions, quality = value['units']
+        self.assertEqual(run(acquire)['state'], 'succeeded')
+        baseline_result, exception_result = run(baseline), run(exceptions)
+        for result in (baseline_result, exception_result):
+            self.assertEqual(result['state'], 'succeeded', result['diagnostics'])
+        [manifest] = baseline_result['output_refs']
+        self.assertTrue(manifest['artifact_id'].endswith(':reader-manifest'))
+        artifacts = baseline_result['output_refs'] + exception_result['output_refs']
+        ids = sorted({self.storage.read_row('artifact', item['artifact_id'])['output_id'] for item in artifacts})
+        self.assertEqual(len(ids), 2)
+
+        def check(ids):
+            return run(quality, constraints={'candidate': {'added': ids}}, dependency_refs=artifacts)
+
+        result = check(ids)
+        self.assertEqual(result['state'], 'succeeded', result['diagnostics'])
+        ref = result['quality_receipt_ref']
+        receipt = json.loads(self.storage.record_store('receipts').load(ref))
+        self.assertEqual(receipt['actual_capabilities'], ['reader_reference'])
+        self.assertIn('reader_references', receipt['checks'])
+        self.assertTrue(any(item.startswith('Matt.1.4 (numbered_text):') for item in receipt['limitations']))
+        self.assertEqual(check(ids[:1])['state'], 'failed')
+
+        for kind, field, altered in (
+            ('reader_reference_base', 'checked_extent_json', '{"ranges":[]}'),
+            ('reader_reference_link', 'gap_reason', 'Invented reason'),
+        ):
+            with self.subTest(kind=kind):
+                where = " WHERE status = 'missing'" if kind == 'reader_reference_link' else ''
+                table = TABLES[kind]
+                saved = self.api.db.execute(f'SELECT id, {field} FROM {table}{where}').fetchone()
+                statement = f'UPDATE {table} SET {field} = ? WHERE id = ?'
+                with self.api.db:
+                    self.api.db.execute(statement, (altered, saved['id']))
+                try:
+                    failed = check(ids)
+                    self.assertEqual(failed['state'], 'failed', failed)
+                    self.assertIsNone(failed['quality_receipt_ref'])
+                finally:
+                    with self.api.db:
+                        self.api.db.execute(statement, (saved[field], saved['id']))
+        self.assertEqual(self.selection(), self.initial_selection)
 
     def environ(self, raw):
         holder = tempfile.TemporaryDirectory()

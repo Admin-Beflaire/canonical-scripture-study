@@ -18,8 +18,10 @@ from ..validation import SchemaSubset
 
 _RECORDS = SchemaSubset('evidence-records.v1.schema.json')
 _SEGMENTS = SchemaSubset('indexes/span-segment.v1.schema.json')
+_READER_REFERENCES = SchemaSubset('reader-references/records.v1.schema.json')
+_READER_KINDS = ('reader_reference_base', 'reader_reference_link')
 _SCOPED = ('artifact', 'native_span', 'annotation', 'relationship', 'coverage',
-           'study_package', 'character_statement')
+           'study_package', 'character_statement', *_READER_KINDS)
 
 
 @dataclass(frozen=True)
@@ -50,8 +52,11 @@ def _unique(rows: Iterable[Mapping], key: str, kind: str) -> dict[str, dict]:
 
 
 def _schema(kind: str, row: dict) -> None:
-    errors = (_SEGMENTS.document_errors(row) if kind == 'span_segment'
-              else _RECORDS.errors(kind, row))
+    if kind == 'span_segment':
+        errors = _SEGMENTS.document_errors(row)
+    else:
+        schema = _READER_REFERENCES if kind in _READER_KINDS else _RECORDS
+        errors = schema.errors(kind, row)
     if errors:
         raise RecordError(f'Invalid saved {kind}: ' + '; '.join(errors[:3]))
 
@@ -115,7 +120,7 @@ def verify_candidate_inventory(
     coverage = scoped['coverage']
     for basis in bases:
         own = [r for r in coverage if r['output_id'] == basis.output_id]
-        if basis.kind in ('evidence', 'source_search', 'word_index') and not own:
+        if basis.kind in ('evidence', 'source_search', 'word_index', 'reader_reference') and not own:
             raise RecordError('Missing saved output coverage')
         for row in own:
             if (row['source_revision_id'] != basis.input_revisions[0]
@@ -168,7 +173,7 @@ def verify_candidate_inventory(
     # Validate saved source-revision identities through their required ancestry.
     nodes = _unique(data['source_node'], 'id', 'source_node')
     for basis in bases:
-        if basis.kind not in ('evidence', 'source_search', 'word_index'):
+        if basis.kind not in ('evidence', 'source_search', 'word_index', 'reader_reference'):
             continue
         next_id = basis.input_revisions[0]
         for kind in ('source_revision', 'representation', 'edition', 'work'):

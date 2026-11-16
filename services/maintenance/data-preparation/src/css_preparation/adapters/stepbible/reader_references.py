@@ -76,7 +76,7 @@ def prepare_reader_reference_unit(
     groups: dict[Anchor, dict[str, _Reading]] = {}
     native_anchors: dict[str, set[Anchor]] = {}
     for verse in chosen:
-        previous = None
+        previous_wording = None
         anchors = native_anchors.setdefault(verse.unit_id, set())
         for word, bounds in zip(verse.words, verse.ranges, strict=True):
             anchor, role = _reader_anchor(word.reference, chapter_ends, book)
@@ -85,12 +85,12 @@ def prepare_reader_reference_unit(
             anchors.add(anchor)
             if bounds is not None and bounds[0] < bounds[1]:
                 start, end = bounds
-                if previous == (anchor, role) and reading.segments and reading.segments[-1][0] == verse.unit_id:
+                if previous_wording == (anchor, role) and reading.segments and reading.segments[-1][0] == verse.unit_id:
                     start = reading.segments[-1][1]
                     reading.segments[-1] = (verse.unit_id, start, end)
                 else:
                     reading.segments.append((verse.unit_id, start, end))
-            previous = (anchor, role)
+                previous_wording = (anchor, role)
 
     # A superscription and the numbered text it accompanies can cross native verse boundaries.
     for verse in verses:

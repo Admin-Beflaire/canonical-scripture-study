@@ -79,6 +79,25 @@ class PrepareReaderReferencesTest(unittest.TestCase):
             {'reader_ref': 'Matt.1.4', 'role': 'numbered_text', 'reason': gap['gap_reason']},
         ])
 
+    def test_empty_marker_does_not_bridge_wording_from_another_reference(self):
+        source, data = component(lines=[
+            row('Mal.1.1#01=L', 'א'),
+            row('Mal.1.2(1.1)#02=L', 'ב'),
+            row('Mal.1.1#03=L', ''),
+            row('Mal.1.1#04=L', 'ג'),
+        ])
+        records = prepare_reader_reference_unit(data, source, 'Mal', ['Mal.1.1'])
+        spans = {row['id']: row for row in records.rows('native_span')}
+        links = {row['reader_ref']: row for row in records.rows('reader_reference_link')}
+        first, second = links['Mal.1.1'], links['Mal.1.2']
+        self.assertEqual(first['status'], 'composite')
+        self.assertEqual(spans[first['span_id']]['segments_json'], [
+            {'unit_id': 'Mal.1.1', 'start': 0, 'end': 1},
+            {'unit_id': 'Mal.1.1', 'start': 4, 'end': 5},
+        ])
+        self.assertEqual(span_wording(spans[first['span_id']], {}, records.blobs), ['א', 'ג'])
+        self.assertEqual(span_wording(spans[second['span_id']], {}, records.blobs), ['ב'])
+
     def test_invalid_marker_and_split_reader_anchor_are_rejected(self):
         source, data = component(lines=[row('Mal.4.7(3.24)#01=L', 'פַ')])
         with self.assertRaisesRegex(RecordError, 'Mal.4.7 is outside the NRSVA catalogue'):

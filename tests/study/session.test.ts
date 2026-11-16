@@ -34,7 +34,21 @@ test('reads current once per request and uses one D1 call for it', async () => {
   const session = await ReadSession.open(env, roomy);
   assert.equal(session.release.id, 'rel-2');
   assert.equal(session.budget.usage().d1Calls, 1);
-  assert.deepEqual(Object.keys(SUPPORTED_SCHEMA_VERSIONS).sort(), ['evidence_records', 'index_manifest', 'native_reference']);
+  assert.deepEqual(Object.keys(session.release.schema_versions).sort(), ['evidence_records', 'index_manifest', 'native_reference']);
+});
+
+test('Study accepts the pinned optional reader catalogue and rejects an unsupported version', async () => {
+  const fixture = buildFixture();
+  for (const [release, version] of [['readable', 'nrsva/1'], ['unsupported', 'unknown/1']]) {
+    fixture.db.sqlite.prepare('INSERT INTO releases VALUES (?, ?, ?, ?, ?, ?, ?)').run(release, 'm', 'r',
+      JSON.stringify({ evidence_records: '1', reader_scheme_version: version }), 'c', 'q', 's');
+  }
+  fixture.select('readable');
+  const session = await ReadSession.open(fixture.env, roomy);
+  assert.deepEqual(SUPPORTED_SCHEMA_VERSIONS.reader_scheme_version, ['nrsva/1']);
+  assert.equal(session.release.schema_versions.reader_scheme_version, 'nrsva/1');
+  fixture.select('unsupported', 'readable');
+  await assert.rejects(ReadSession.open(fixture.env, roomy), state('incompatible_release'));
 });
 
 test('no selection or an incompatible release is unavailability, never the previous release', async () => {

@@ -27,3 +27,10 @@ selected-output immutability; preparation must verify complete segment coverage.
 
 `0004_job_results.sql` adds `maintenance_jobs.result_json`, the accepted result envelope
 Control uses to pass dependency outputs to later units and the candidate to quality.
+
+`0005_reader_references.sql` adds output-scoped reader-reference baselines and
+exception links. Mapping rows are prepared before release membership. Linking a
+mapping output requires its exact catalogue version in the release metadata.
+Existing releases without reader-reference outputs remain compatible with the
+previous schema. Preparation verifies semantic mapping and complete selected
+membership before use.

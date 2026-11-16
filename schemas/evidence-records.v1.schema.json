@@ -972,7 +972,13 @@
           "pattern": "^[^\\uD800-\\uDFFF]*$"
         },
         "schema_versions_json": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "reader_scheme_version": {
+              "type": "string",
+              "pattern": "^nrsva/[1-9][0-9]*$"
+            }
+          }
         },
         "coverage_basis": {
           "type": "string",

@@ -1,5 +1,6 @@
 {
   "evidence_records": ["1"],
   "native_reference": ["1"],
-  "index_manifest": ["2"]
+  "index_manifest": ["2"],
+  "reader_scheme_version": ["nrsva/1"]
 }

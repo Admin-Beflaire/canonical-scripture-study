@@ -183,6 +183,57 @@ test('a checked candidate becomes current in one guarded selection; the first pr
     assert.ok((compatibility as Record<string, string[]>)[key]?.includes(value), `${key} ${value} is supported by deployment`);
 });
 
+test('a release records the catalogue version for reader mappings it adds or keeps', async () => {
+  const w = world();
+  await runBook(w, prepareTask('gen', 'g1'));
+  source(w.db, 'rev-2');
+  const created = await requestTask(w.db, owner, prepareTask('exo', 'e1', {
+    inputs: [{ kind: 'source_revision', id: 'rev-2' }],
+  }));
+  assert.equal(created.status, 'created');
+  const id = (created as { task: { id: string } }).task.id;
+  await advance(w.db, w.github, id, w.objects);
+  await report(w, id, 'acquire');
+
+  const units = ['Exo.1.1'];
+  const { refs } = savePrepared(w, 'rev-2', 'prepare-1', units);
+  const mapping = 'reader_reference:exo';
+  const version = 'nrsva/1';
+  const extent = JSON.stringify({ coordinate_version: C, unit_ids: units });
+  w.db.sqlite.prepare('INSERT INTO prepared_outputs VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(mapping, 'reader_reference', '["rev-2"]', 'm1', JSON.stringify({ reader_scheme_version: version }),
+      extent, '{"reuse_basis":"mapping","dependencies":[]}');
+  w.db.sqlite.prepare('INSERT INTO reader_reference_bases VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run('base:exo', mapping, 'rev-2', version, C,
+      '{"ranges":[{"book_id":"Exod","chapter":1,"first_verse":1,"last_verse":1}]}', '{}');
+  const digest = sha(mapping);
+  const locator = `prepared/${digest}.json`;
+  w.db.sqlite.prepare("INSERT INTO artifacts VALUES (?, ?, ?, ?, 10, 'application/json', ?)")
+    .run('manifest:exo', 'rev-2', mapping, digest, locator);
+  w.objects.sizes.set(locator, 10);
+  refs.push({ artifact_id: 'manifest:exo', sha256: digest, byte_count: 10 });
+  await report(w, id, 'prepare-1', { output_refs: refs });
+  await report(w, id, 'quality', { output_refs: refs, quality_receipt_ref: receipt(w, id) });
+
+  const readVersion = () => {
+    const row = w.db.sqlite.prepare('SELECT schema_versions_json FROM releases WHERE id = ?')
+      .get(selected(w).current_release_id) as { schema_versions_json: string };
+    return JSON.parse(row.schema_versions_json).reader_scheme_version;
+  };
+  assert.equal((await taskReport(w.db, owner, id))!.state, 'completed');
+  assert.equal(readVersion(), version);
+  assert.ok(membersOf(w, selected(w).current_release_id).includes(mapping));
+
+  for (const revision of ['rev-1', 'rev-2']) {
+    const remove = await requestTask(w.db, owner, { request_key: `remove-${revision}`, instruction: 'Remove a source',
+      kind: 'remove', inputs: [{ kind: 'source_revision', id: revision }] });
+    const removalId = (remove as { task: { id: string } }).task.id;
+    await advance(w.db, w.github, removalId, w.objects);
+    assert.equal((await taskReport(w.db, owner, removalId))!.state, 'completed');
+    assert.equal(readVersion(), revision === 'rev-1' ? version : undefined);
+  }
+});
+
 test('a second book is added to the current release; parallel tasks each rebuild from current at check time', async () => {
   const w = world();
   const first = await runBook(w, prepareTask('gen', 'g1'));
@@ -238,6 +289,10 @@ test('the rollback readability list is the deployed Study reader list', () => {
   assert.deepEqual(READABLE_VERSIONS, compatibility);
   assert.deepEqual({ ...READABLE_VERSIONS }, { ...SUPPORTED_SCHEMA_VERSIONS });
   assert.deepEqual(unreadable('r', JSON.stringify(SCHEMA_VERSIONS)), [], 'what Control writes is readable');
+  assert.ok(unreadable('r', JSON.stringify(SCHEMA_VERSIONS), true)
+    .some(text => text.includes('reader_scheme_version format (none)')));
+  assert.ok(unreadable('r', JSON.stringify({ ...SCHEMA_VERSIONS, reader_scheme_version: 'unknown/1' }))
+    .some(text => text.includes('reader_scheme_version format unknown/1')));
   for (const [recorded, expected] of [
     ['not json', 'no readable format record'],
     [JSON.stringify({ ...SCHEMA_VERSIONS, evidence_records: '9' }), 'evidence_records format 9'],

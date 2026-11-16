@@ -225,7 +225,8 @@ def _ordered(specs: Iterable[SpanSpec]) -> list[SpanSpec]:
 
 
 def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[SpanSpec], basis: OutputBasis, *,
-                   d1_body_max_bytes: int, annotations: Iterable[AnnotationSpec] = ()) -> RecordSet:
+                   d1_body_max_bytes: int, annotations: Iterable[AnnotationSpec] = (),
+                   source_context_coverage: bool = True) -> RecordSet:
     """Prepare one output for one source revision: identities, spans, bodies, annotations, coverage."""
     revision = source.revision.id
     if basis.input_revisions[:1] != (revision,):
@@ -297,6 +298,8 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                                    'source_revision_id': revision, 'span_id': span_id(output_id, note.span_key),
                                    'kind': note.kind, 'provider': note.provider, 'basis_json': dict(note.basis),
                                    'details_json': dict(note.details)})
+    if not source_context_coverage:
+        return records
     covered = [unit_id for unit_id, body in text.units if _fully_reached(len(body), reachable.get(unit_id, []))]
     unreached = [unit_id for unit_id, _ in text.units if unit_id not in covered]
     limitations = ([text.limitation] if not text.complete else []) + (

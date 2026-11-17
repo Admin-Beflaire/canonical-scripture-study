@@ -2,10 +2,12 @@ import type { D1ReadDatabase, R2ReadBucket, StudyReadEnvironment } from './bindi
 import { RequestBudget, limitsFor, type BudgetLimits } from './budget.ts';
 import { QUERIES, isQueryName, type QueryInput, type QueryName } from './queries.ts';
 import { ReadError } from './states.ts';
+import readerCatalogue from '../../../../schemas/reader-references/nrsva-1.json' with { type: 'json' };
 
 /** Release formats this Study reads. A release recording another version is not read. */
 export const SUPPORTED_SCHEMA_VERSIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   evidence_records: ['1'], native_reference: ['1'], index_manifest: ['2'],
+  reader_scheme_version: [readerCatalogue.reader_scheme_version],
 });
 
 export interface CurrentRelease { id: string; schema_versions: Record<string, string> }

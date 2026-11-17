@@ -1,6 +1,7 @@
 import { canonicalJson, sha256, type D1Database } from './d1.ts';
 import type { ArtifactRef, JobResult, Recipe } from './contracts.ts';
 import type { DecisionRef, Outcome, Scope, TaskRow } from './tasks.ts';
+import readerCatalogue from '../../../../schemas/reader-references/nrsva-1.json' with { type: 'json' };
 
 /** Scope check, release construction and checked selection (Maintenance Control To-Be §4, MC-03).
  *
@@ -26,6 +27,7 @@ export const SCHEMA_VERSIONS = { evidence_records: '1', native_reference: '1', i
  *  format changes, this list changes with the reader and the check follows. */
 export const READABLE_VERSIONS: Readonly<Record<string, readonly string[]>> = {
   evidence_records: ['1'], native_reference: ['1'], index_manifest: ['2'],
+  reader_scheme_version: [readerCatalogue.reader_scheme_version],
 };
 const MAX_LIST_PAGES = 100;   // At most 100,000 stored objects checked in one request.
 const CHUNK = 50;             // D1 binds at most 100 parameters per statement.
@@ -53,6 +55,11 @@ const parseOutput = (row: OutputRow): Output => ({
   extent: JSON.parse(row.native_extent_json) as Record<string, unknown>,
   dependencies: ((JSON.parse(row.validation_basis_json) as { dependencies?: string[] }).dependencies) ?? [],
 });
+const hasReaderMappings = (items: Output[]) => items.some(item => item.kind === 'reader_reference');
+const releaseVersions = (items: Output[]) => hasReaderMappings(items)
+  ? { ...SCHEMA_VERSIONS, reader_scheme_version: readerCatalogue.reader_scheme_version }
+  : SCHEMA_VERSIONS;
+
 const units = (extent: Record<string, unknown>) =>
   Array.isArray(extent.unit_ids) && extent.unit_ids.length && extent.unit_ids.every(unit => typeof unit === 'string') ? extent.unit_ids as string[] : null;
 
@@ -317,7 +324,7 @@ function exclusionChanges(db: D1Database, scope: Scope, taskId: string, revision
 
 /** Promote a checked release: record the release and `checked` in one guarded batch, then select
  *  it in a second batch guarded by base, task revision, candidate and the checked exclusion state. */
-async function promote(db: D1Database, task: TaskRow, release: { members: string[]; manifest: string; recipe: string;
+async function promote(db: D1Database, task: TaskRow, release: { members: string[]; formats: Record<string, string>; manifest: string; recipe: string;
   quality: string; scope: string; coverage: string; base: string | null; exclusions: string }, outcome: Outcome): Promise<SelectResult> {
   const scope = JSON.parse(task.scope_json) as Scope;
   const releaseId = `release-${(await sha256(canonicalJson({ members: release.members, quality: release.quality, scope: release.scope }))).slice(0, 32)}`;
@@ -326,7 +333,7 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
   const [, , record] = await db.batch([
     db.prepare(`INSERT INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
       SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${guardTask} AND NOT EXISTS (SELECT 1 FROM releases WHERE id = ?)`)
-      .bind(releaseId, release.manifest, release.recipe, canonicalJson(SCHEMA_VERSIONS), release.coverage, release.quality, release.scope,
+      .bind(releaseId, release.manifest, release.recipe, canonicalJson(release.formats), release.coverage, release.quality, release.scope,
         task.id, task.revision, releaseId),
     db.prepare(`INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?)
       WHERE ${guardTask} AND NOT EXISTS (SELECT 1 FROM release_selection WHERE ? IN (current_release_id, previous_release_id))`)
@@ -422,7 +429,7 @@ export async function checkAndSelect(db: D1Database, objects: ObjectStore | null
   if (problems.length) return block(db, task, outcome, problems, report, quality);
   const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
   const coverage = `sha256:${await sha256(canonicalJson(checked.coverage.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
-  return promote(db, task, { members: built.ids, manifest: recipe.manifest_revision!, recipe: recipe.revision,
+  return promote(db, task, { members: built.ids, formats: releaseVersions(built.all), manifest: recipe.manifest_revision!, recipe: recipe.revision,
     quality: quality!, scope: scopeRef, coverage, base: current.current_release_id, exclusions },
   { ...outcome, checks: { ...outcome.checks, quality: 'passed' }, scope_report: report });
 }
@@ -438,21 +445,23 @@ export async function validateRelease(db: D1Database, stored: Stored, releaseId:
   const listed = (await db.prepare('SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?').bind(releaseId).first<{ total: number }>())!.total;
   const check = await validateMembers(db, stored, items, { allCurrentFormat: true });
   if (listed !== items.length) check.problems.unshift(`release ${releaseId} lists ${listed - items.length} output(s) that are not saved`);
-  check.problems.unshift(...unreadable(releaseId, release.schema_versions_json));
+  check.problems.unshift(...unreadable(releaseId, release.schema_versions_json, hasReaderMappings(items)));
   return check;
 }
 
 /** Why the deployed Study could not read a release with these recorded formats (empty if it can). */
-export function unreadable(releaseId: string, recordedJson: string): string[] {
+export function unreadable(releaseId: string, recordedJson: string, needsReaderScheme = false): string[] {
   let recorded: unknown;
   try { recorded = JSON.parse(recordedJson); } catch { recorded = undefined; }
   if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded))
     return [`release ${releaseId} has no readable format record`];
   const versions = recorded as Record<string, unknown>;
   const problems: string[] = [];
-  for (const [name, supported] of Object.entries(READABLE_VERSIONS))
+  for (const [name, supported] of Object.entries(READABLE_VERSIONS)) {
+    if (name === 'reader_scheme_version' && versions[name] === undefined && !needsReaderScheme) continue;
     if (!supported.includes(String(versions[name])))
       problems.push(`release ${releaseId} uses ${name} format ${versions[name] === undefined ? '(none)' : String(versions[name])}; the Study reader reads ${supported.join(', ')}`);
+  }
   for (const name of Object.keys(versions))
     if (!(name in READABLE_VERSIONS)) problems.push(`release ${releaseId} records ${name}, a format the Study reader does not know`);
   return problems;
@@ -510,7 +519,7 @@ export async function selectDirect(db: D1Database, objects: ObjectStore | null, 
     const digest = `sha256:${await sha256(canonicalJson(report))}`;
     const prior = await db.prepare('SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?')
       .bind(current.current_release_id).first<{ manifest_revision: string; recipe_revision: string; coverage_basis: string }>();
-    return promote(db, task, { members: built.ids, manifest: prior!.manifest_revision, recipe: prior!.recipe_revision,
+    return promote(db, task, { members: built.ids, formats: releaseVersions(built.all), manifest: prior!.manifest_revision, recipe: prior!.recipe_revision,
       quality: `control-removal:${digest}`, scope: digest, coverage: prior!.coverage_basis, base: current.current_release_id, exclusions },
     { ...outcome, removal_report: report });
   }

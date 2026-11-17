@@ -35,6 +35,97 @@ function mappedFixture(title = false, gapBetween = false) {
   return { env, db };
 }
 
+function literaryFixture(useR2 = false, corrupt = false) {
+  const { env, db, bucket } = (() => {
+    const fixture = mappedFixture();
+    return { ...fixture, bucket: fixture.env.PRIVATE_OBJECTS as import('./fixture.ts').MemoryBucket };
+  })();
+  db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('lit','evidence',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
+  const segments = [{ unit_id: 'Gen.1.1', start: 0, end: 5 }, { unit_id: 'Gen.2.1', start: 0, end: 5 }];
+  const text = 'firstthird';
+  const digest = createHash('sha256').update(text).digest('hex');
+  if (useR2) {
+    const body = new TextEncoder().encode('firstXthird');
+    db.sqlite.prepare(`INSERT INTO artifacts VALUES ('lit-body', ?, 'lit', ?, ?, 'text/utf-8', 'synthetic/literary')`)
+      .run(HEB, createHash('sha256').update(body).digest('hex'), body.length);
+    bucket.objects.set('synthetic/literary', body);
+    const ranges = [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: 5, sha256: createHash('sha256').update('first').digest('hex') },
+      { segment_ordinal: 1, artifact_id: 'lit-body', byte_offset: 6, byte_length: 5, sha256: createHash('sha256').update('third').digest('hex') }];
+    db.sqlite.prepare(`INSERT INTO native_spans VALUES ('lit-unit','lit',?,NULL,'literary_unit','Synthetic unit',0,'syn/1',?,?,NULL,?,'extracted')`)
+      .run(HEB, JSON.stringify(segments), JSON.stringify({ disputed: true }), JSON.stringify(ranges));
+  } else {
+    db.sqlite.prepare('INSERT INTO text_payloads VALUES (?, ?)').run(digest, text);
+    db.sqlite.prepare(`INSERT INTO native_spans VALUES ('lit-unit','lit',?,NULL,'literary_unit','Synthetic unit',0,'syn/1',?,?,?,'[]','preserved')`)
+      .run(HEB, corrupt ? '[{},{}]' : JSON.stringify(segments), JSON.stringify({ disputed: true }), digest);
+  }
+  const locate = db.sqlite.prepare('SELECT start_order FROM span_segments WHERE span_id=? AND segment_ordinal=0');
+  const insert = db.sqlite.prepare(`INSERT INTO span_segments VALUES ('lit-unit', ?, ?, 'literary_unit', ?, ?)`);
+  for (const [index, unit] of ['Gen.1.1', 'Gen.2.1'].entries()) {
+    const row = locate.get(`evidence:heb${index + 1}#${unit}`) as { start_order: number };
+    insert.run(index, HEB, row.start_order, row.start_order + 4);
+  }
+  db.sqlite.prepare(`INSERT INTO releases VALUES ('rel-lit','m','r',?,'c','q','s')`)
+    .run(JSON.stringify({ evidence_records: '1', reader_scheme_version: 'nrsva/1' }));
+  db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-lit', output_id FROM release_outputs WHERE release_id='rel-m'`);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-lit', 'lit')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-lit' WHERE singleton_id=1`);
+  return { env, db };
+}
+
+test('literary context lookup returns the selected overlapping unit once', async () => {
+  const { env } = literaryFixture();
+  const session = await ReadSession.open(env);
+  const input = { references: [{ ref: 'Gen.1.1', book: 'Gen', chapter: 1, verse: 1, native_units: ['Gen.1.1'] }], scheme: 'nrsva/1', sources: [HEB] };
+  const found = await session.query('literary_contexts', input);
+  assert.deepEqual(found.rows.map(r => r.span_id), ['lit-unit']);
+  assert.equal(found.more, false);
+});
+
+test('an unselected literary-unit output cannot supply context', async () => {
+  const { env, db } = literaryFixture();
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-m' WHERE singleton_id=1`);
+  const session = await ReadSession.open(env);
+  const input = { references: [{ ref: 'Gen.1.1', book: 'Gen', chapter: 1, verse: 1, native_units: ['Gen.1.1'] }], scheme: 'nrsva/1', sources: [HEB] };
+  assert.equal((await session.query('literary_contexts', input)).rows.length, 0);
+});
+
+test('a corrupt literary unit is withheld and the requested passage remains available', async () => {
+  const { env } = literaryFixture(false, true);
+  const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
+  const first = await study(env, request) as { limitations: { state: string; scope: string }[]; continuation: string };
+  assert.ok(first.limitations.some(l => l.state === 'corrupt' && l.scope === 'lit-unit'));
+  assert.ok(first.continuation);
+  const next = await study(env, { ...request, continuation: first.continuation }) as {
+    evidence: { role: string; reader_reference?: string }[];
+  };
+  assert.ok(next.evidence.some(e => e.role === 'requested' && e.reader_reference === 'Gen.1.1'));
+});
+
+for (const useR2 of [false, true]) test(`discontinuous literary context is delivered in order from ${useR2 ? 'R2' : 'D1'}`, async () => {
+  const { env } = literaryFixture(useR2);
+  const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
+  let continuation: string | undefined;
+  const parts: { text: string; unit: string; part: number; disputed: boolean }[] = [];
+  let requested = false;
+  for (let i = 0; i < 12; i++) {
+    const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
+      evidence: { kind: string; role: string; reader_reference?: string; span: { span_id: string; segments: { unit_id: string }[]; text: string[] } }[];
+      context_scope?: { literary_unit?: { part: number; parts: number; basis: { disputed?: boolean } } }; continuation: string | null;
+    };
+    for (const item of batch.evidence) {
+      if (item.span.span_id === 'lit-unit') parts.push({ text: item.span.text[0], unit: item.span.segments[0].unit_id,
+        part: batch.context_scope!.literary_unit!.part, disputed: batch.context_scope!.literary_unit!.basis.disputed === true });
+      if (item.role === 'requested' && item.reader_reference === 'Gen.1.1') requested = true;
+    }
+    continuation = batch.continuation ?? undefined;
+    if (!continuation) break;
+  }
+  assert.equal(continuation, undefined);
+  assert.deepEqual(parts, [{ text: 'first', unit: 'Gen.1.1', part: 1, disputed: true },
+    { text: 'third', unit: 'Gen.2.1', part: 2, disputed: true }]);
+  assert.equal(requested, true);
+});
+
 test('mapping lookup selects checked ranges and selected explicit links, with stable paging and cache', async () => {
   const { env } = mappedFixture();
   const session = await ReadSession.open(env, { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 2 });

@@ -328,14 +328,80 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     return key === null && Array.isArray(pos) && pos.length === 5 && Number.isSafeInteger(pos[0]) && pos[0] >= -1 && pos[0] < references.length
       && (pos[1] === '' || isIdentifier(pos[1])) && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 1
       && Number.isSafeInteger(pos[3]) && pos[3] >= -1 && (pos[4] === '' || isIdentifier(pos[4]));
+  }, literary(pos, key) {
+    return key === null && w.context && Array.isArray(pos) && pos.length === 3
+      && (pos[0] === '' || isIdentifier(pos[0])) && (pos[1] === '' || isIdentifier(pos[1]))
+      && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 100000;
   } };
-  const start: MappingKey = continuation ? (await resumeContinuation(continuation, w, checks)).pos as MappingKey : [-1, '', -1, -1, ''];
+  const state = continuation ? await resumeContinuation(continuation, w, checks) : null;
+  const start: MappingKey = state?.op === 'reader' ? state.pos as MappingKey : [-1, '', -1, -1, ''];
   session.budget.spendResult(ENVELOPE_RESERVE);
+  if (w.context && (!state || state.op === 'literary')) {
+    const cursor: [string, string, number] = state?.op === 'literary' ? state.pos as [string, string, number] : ['', '', -1];
+    const contextReferences = references.filter(ref => requested.has(ref.ref));
+    const context = await session.queryIfAvailable('literary_contexts', { references: contextReferences, scheme: 'nrsva/1', sources: w.sources,
+      after: [cursor[0], cursor[1]], include_current: cursor[2] >= 0 });
+    if (context === null) throw new ReadError('budget', 'Literary-unit lookup could not be read within this request');
+    if (context.rows.length) {
+      const unit = context.rows[0];
+      const unitId = String(unit.span_id), source = String(unit.source_revision_id);
+      const part = cursor[2] >= 0 && cursor[0] === source && cursor[1] === unitId ? cursor[2] : 0;
+      try {
+      const found = await session.queryIfAvailable('spans', { ids: [unitId] });
+      if (found === null) throw new ReadError('budget', 'Literary-unit text could not be read within this request');
+      if (!found.rows.length) throw new ReadError('missing_evidence', 'The literary unit is not selected in the current release');
+      const row = await toRow(found.rows[0]);
+      if (row.evidence.kind !== 'literary_unit' || row.evidence.source_revision_id !== source || part >= row.evidence.segments.length)
+        throw new ReadError('invalid_request', 'The literary-unit continuation is outside the selected unit');
+      const segment = row.evidence.segments[part];
+      const piece: Row = { ...row, evidence: { ...row.evidence, segments: [segment], text: null }, ranges: [] };
+      if (row.textFromD1) {
+        const chars = Array.from(row.evidence.text![0]);
+        const lengths = row.evidence.segments.map(s => s.end - s.start);
+        if (lengths.reduce((a, b) => a + b, 0) !== chars.length) throw new ReadError('corrupt', 'Literary-unit text does not match its ordered segments');
+        const offset = lengths.slice(0, part).reduce((a, b) => a + b, 0);
+        piece.evidence.text = [chars.slice(offset, offset + lengths[part]).join('')];
+      } else if (row.ranges.length) {
+        piece.ranges = [{ ...row.ranges[part], segment_ordinal: 0 }];
+      }
+      const limitations: Limitation[] = [...notes];
+      const pending = await fillBodies(session, [piece], limitations);
+      if (pending.size) throw new ReadError('budget', 'Literary-unit segment could not be read within this request');
+      const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context' };
+      const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
+        delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' },
+        context_scope: { literary_unit: { source_revision_id: source, span_id: unitId,
+          basis: row.evidence.basis, part: part + 1, parts: row.evidence.segments.length } },
+        evidence: [item], citations: [], searched_scope: [], coverage: [], limitations,
+        remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}) }, session.budget);
+      if (deferred.length) throw new ReadError('exceeds_limits', 'One literary-unit segment does not fit a result batch');
+      const lastPart = part + 1 === row.evidence.segments.length;
+      const next = lastPart ? [source, unitId, -1] : [source, unitId, part + 1];
+      batch.continuation = lastPart && !context.more
+        ? await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null })
+        : await encodeContinuation(w, { op: 'literary', pos: next, key: null });
+      batch.remaining = { passage: 'continues', literary_unit: lastPart ? 'complete' : 'continues' };
+      return batch;
+      } catch (error) {
+        if (!(error instanceof ReadError) || !['corrupt', 'missing_evidence', 'exceeds_limits'].includes(error.state)) throw error;
+        const { batch } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
+          delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' }, context_scope: {},
+          evidence: [], citations: [], searched_scope: [], coverage: [],
+          limitations: [...notes, limitation(error.state, unitId, `${error.message}; literary-unit context is withheld`)],
+          remaining: { passage: 'continues' }, continuation: null, guidance_version: guidanceVersion,
+          ...(rules ? { translation_rules: rules } : {}) }, session.budget);
+        batch.continuation = context.more
+          ? await encodeContinuation(w, { op: 'literary', pos: [source, unitId, -1], key: null })
+          : await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null });
+        return batch;
+      }
+    }
+    if (!state) notes.push(limitation('missing_evidence', 'literary_unit', 'No selected literary-unit boundary matched the requested text; the mapped chapter supplies context'));
+  }
   const page = await session.queryIfAvailable('reader_mappings', { references, scheme: 'nrsva/1', sources: w.sources, after: start });
   if (!page) throw new ReadError('budget', 'Reader mapping lookup could not be read within this request');
   const limits: Limitation[] = [...notes];
   if (!page.rows.length && start[0] === -1) limits.push(limitation('unresolved_mapping', w.references.join(', '), 'No checked reader mappings are available for these references and sources'));
-  if (w.context) limits.push(limitation('unsupported_capability', 'context', 'Literary-unit boundaries are not yet resolved; the mapped chapter provides surrounding context'));
   const ids = [...new Set(page.rows.map(row => row.span_id).filter(value => isIdentifier(value)))] as string[];
   const found = ids.length ? await session.queryIfAvailable('spans', { ids }) : { rows: [], more: false };
   if (found === null) throw new ReadError('budget', 'Mapped spans could not be read within this request');

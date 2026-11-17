@@ -50,6 +50,7 @@ export interface ReaderMappingInput {
   sources: string[] | null;
   after?: [number, string, number, number, string] | null;
 }
+export interface LiteraryContextInput extends Omit<ReaderMappingInput, 'after'> { after?: [string, string] | null; include_current?: boolean }
 
 const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
@@ -286,6 +287,31 @@ const READER_MAPPINGS = `WITH requested AS (
 SELECT * FROM all_mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id) > (?5, ?6, ?7, ?8, ?9)
 ORDER BY position, source_revision_id, role_order, ordinal, mapping_id LIMIT ?10`;
 
+/** Resolve overlapping units from the same checked targets; seek units independently of
+ * reader-mapping pages so a unit spanning several pages is returned only once. */
+const LITERARY_CONTEXTS = READER_MAPPINGS.slice(0, READER_MAPPINGS.indexOf('\nSELECT * FROM all_mappings WHERE')) + `
+SELECT DISTINCT unit.source_revision_id, unit.id AS span_id
+FROM all_mappings mapped
+CROSS JOIN span_segments anchor INDEXED BY sqlite_autoindex_span_segments_1
+  ON anchor.span_id = mapped.span_id AND anchor.source_revision_id = mapped.source_revision_id
+CROSS JOIN span_segments overlap INDEXED BY span_segments_source_kind_order
+  ON overlap.source_revision_id = anchor.source_revision_id AND overlap.kind = 'literary_unit'
+  AND overlap.start_order <= anchor.end_order AND overlap.end_order >= anchor.start_order
+CROSS JOIN native_spans unit ON unit.id = overlap.span_id AND unit.source_revision_id = overlap.source_revision_id
+CROSS JOIN release_outputs ro ON ro.output_id = unit.output_id AND ro.release_id = ?1
+WHERE (unit.source_revision_id, unit.id) > (?10, ?11)
+   OR (?12 = 1 AND unit.source_revision_id = ?10 AND unit.id = ?11)
+ORDER BY unit.source_revision_id, unit.id LIMIT ?13`;
+
+function readerParams(i: ReaderMappingInput): unknown[] {
+  if (!Array.isArray(i.references) || !i.references.length || i.references.length > MAX_UNITS ||
+      i.references.some(r => !isIdentifier(r.ref) || !isIdentifier(r.book) || !isSafeCount(r.chapter) || !isSafeCount(r.verse) ||
+        !Array.isArray(r.native_units) || !r.native_units.length || r.native_units.length > 20 || !r.native_units.every(x => isIdentifier(x))))
+    throw new ReadError('invalid_request', 'Invalid reader references');
+  return [JSON.stringify(i.references), id(i.scheme), i.sources == null ? null : JSON.stringify(list(i.sources)),
+    ...(optionalAfter(i.after, 5) ?? [-1, '', -1, -1, ''])];
+}
+
 export const QUERIES = {
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
   literary_overlap: { sql: OVERLAP, params: (i: OverlapInput) => {
@@ -311,14 +337,9 @@ export const QUERIES = {
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources))] },
   unit_spans: { sql: UNIT_SPANS, params: (i: UnitSpansInput) =>
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources)), ...(optionalAfter(i.after, 2) ?? ['', -1])] },
-  reader_mappings: { sql: READER_MAPPINGS, params: (i: ReaderMappingInput) => {
-    if (!Array.isArray(i.references) || !i.references.length || i.references.length > MAX_UNITS ||
-        i.references.some(r => !isIdentifier(r.ref) || !isIdentifier(r.book) || !isSafeCount(r.chapter) || !isSafeCount(r.verse) ||
-          !Array.isArray(r.native_units) || !r.native_units.length || r.native_units.length > 20 || !r.native_units.every(x => isIdentifier(x))))
-      throw new ReadError('invalid_request', 'Invalid reader references');
-    return [JSON.stringify(i.references), id(i.scheme), i.sources == null ? null : JSON.stringify(list(i.sources)),
-      ...(optionalAfter(i.after, 5) ?? [-1, '', -1, -1, ''])];
-  } },
+  reader_mappings: { sql: READER_MAPPINGS, params: readerParams },
+  literary_contexts: { sql: LITERARY_CONTEXTS, params: (i: LiteraryContextInput) =>
+    [...readerParams({ ...i, after: null }), ...(optionalAfter(i.after, 2) ?? ['', '']), i.include_current ? 1 : 0] },
   index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>
     [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 3) ?? ['', -1, ''])] },
 } satisfies Record<string, Declaration<never>>;

@@ -56,7 +56,7 @@ test('a passage delivers the asked verses and the whole chapter, in native order
   assert.deepEqual(items.filter(i => i.role === 'requested').map(i => i.span.segments[0].unit_id), ['Gen.1.3', 'Gen.1.4']);
   assert.equal(items.find(i => i.span.segments[0].unit_id === 'Gen.1.7')!.span.text![0], wording('Gen.1.7'));
   assert.ok(batches.length > 1, 'the chapter needs more than one batch');
-  assert.ok(batches[0].limitations.some(l => l.state === 'unsupported_capability' && /Literary-unit/.test(l.detail)));
+  assert.ok(batches[0].limitations.some(l => l.state === 'missing_evidence' && l.scope === 'literary_unit'));
   const noted = items.find(i => i.span.segments[0].unit_id === 'Gen.1.2')!;
   assert.deepEqual((noted.annotations as { kind: string }[]).map(a => a.kind), ['textual_variants']);
   // One body read per batch at most: neighbouring verses are read together.

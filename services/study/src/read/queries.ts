@@ -44,6 +44,12 @@ export interface ReleaseSourcesInput { capability?: string | null; after?: [stri
 export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
 export interface UnitSpansInput { units: string[]; sources?: string[] | null; after?: [string, number] | null }
 export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, number, string] | null }
+export interface ReaderMappingInput {
+  references: { ref: string; book: string; chapter: number; verse: number; native_units: string[] }[];
+  scheme: string;
+  sources: string[] | null;
+  after?: [number, string, number, number, string] | null;
+}
 
 const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
@@ -201,6 +207,44 @@ GROUP BY n.source_revision_id
 ORDER BY n.source_revision_id
 LIMIT ?4`;
 
+/** One page of explicit links and checked identity ranges. Both the mapping and its target
+ * must be selected in the same release. The native candidate names are catalogue aliases;
+ * identity is allowed only where a checked source-specific range explicitly permits it. */
+const READER_MAPPINGS = `WITH requested AS (
+  SELECT CAST(j.key AS INTEGER) AS position, json_extract(j.value, '$.ref') AS reader_ref,
+    json_extract(j.value, '$.book') AS book, json_extract(j.value, '$.chapter') AS chapter,
+    json_extract(j.value, '$.verse') AS verse, json_extract(j.value, '$.native_units') AS native_units
+  FROM json_each(?2) j
+), mappings AS (
+  SELECT q.position, q.reader_ref, l.source_revision_id, l.role, l.ordinal, l.id AS mapping_id,
+    l.status, l.basis_json, l.gap_reason,
+    CASE WHEN EXISTS (SELECT 1 FROM native_spans n JOIN release_outputs nr
+      ON nr.output_id = n.output_id AND nr.release_id = ?1
+      WHERE n.id = l.span_id AND n.source_revision_id = l.source_revision_id)
+      THEN l.span_id ELSE NULL END AS span_id,
+    CASE WHEN l.role = 'superscription' THEN 0 ELSE 1 END AS role_order
+  FROM requested q JOIN reader_reference_links l ON l.reader_ref = q.reader_ref AND l.reader_scheme_version = ?3
+  JOIN release_outputs ro ON ro.output_id = l.output_id AND ro.release_id = ?1
+  WHERE (?4 IS NULL OR l.source_revision_id IN (SELECT value FROM json_each(?4)))
+  UNION ALL
+  SELECT q.position, q.reader_ref, b.source_revision_id, 'numbered_text', 0, b.id,
+    'exact', b.basis_json, NULL, n.id, 1
+  FROM requested q JOIN reader_reference_bases b ON b.reader_scheme_version = ?3
+  JOIN release_outputs ro ON ro.output_id = b.output_id AND ro.release_id = ?1
+  JOIN json_each(b.checked_extent_json, '$.ranges') rg
+    ON json_extract(rg.value, '$.book_id') = q.book AND json_extract(rg.value, '$.chapter') = q.chapter
+    AND q.verse BETWEEN json_extract(rg.value, '$.first_verse') AND json_extract(rg.value, '$.last_verse')
+  JOIN json_each(q.native_units) nu
+  CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+    ON json_extract(n.segments_json, '$[0].unit_id') = nu.value AND n.kind = 'verse' AND n.source_revision_id = b.source_revision_id
+  JOIN release_outputs nr ON nr.output_id = n.output_id AND nr.release_id = ?1
+  WHERE (?4 IS NULL OR b.source_revision_id IN (SELECT value FROM json_each(?4)))
+    AND NOT EXISTS (SELECT 1 FROM reader_reference_links l JOIN release_outputs lr ON lr.output_id = l.output_id AND lr.release_id = ?1
+      WHERE l.source_revision_id = b.source_revision_id AND l.reader_scheme_version = ?3 AND l.reader_ref = q.reader_ref AND l.role = 'numbered_text')
+)
+SELECT * FROM mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id) > (?5, ?6, ?7, ?8, ?9)
+ORDER BY position, source_revision_id, role_order, ordinal, mapping_id LIMIT ?10`;
+
 export const QUERIES = {
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
   literary_overlap: { sql: OVERLAP, params: (i: OverlapInput) => {
@@ -224,6 +268,14 @@ export const QUERIES = {
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources))] },
   unit_spans: { sql: UNIT_SPANS, params: (i: UnitSpansInput) =>
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources)), ...(optionalAfter(i.after, 2) ?? ['', -1])] },
+  reader_mappings: { sql: READER_MAPPINGS, params: (i: ReaderMappingInput) => {
+    if (!Array.isArray(i.references) || !i.references.length || i.references.length > MAX_UNITS ||
+        i.references.some(r => !isIdentifier(r.ref) || !isIdentifier(r.book) || !isSafeCount(r.chapter) || !isSafeCount(r.verse) ||
+          !Array.isArray(r.native_units) || !r.native_units.length || r.native_units.length > 20 || !r.native_units.every(x => isIdentifier(x))))
+      throw new ReadError('invalid_request', 'Invalid reader references');
+    return [JSON.stringify(i.references), id(i.scheme), i.sources == null ? null : JSON.stringify(list(i.sources)),
+      ...(optionalAfter(i.after, 5) ?? [-1, '', -1, -1, ''])];
+  } },
   index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>
     [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 3) ?? ['', -1, ''])] },
 } satisfies Record<string, Declaration<never>>;

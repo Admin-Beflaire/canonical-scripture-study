@@ -100,6 +100,7 @@ for (const useR2 of [false, true]) test(`long literary segments continue within 
   const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
   let continuation: string | undefined;
   let text = '', expectedStart = 0, delivered = false;
+  let contextBatches = 0;
   for (let i = 0; i < 40; i++) {
     const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
       evidence: { role: string; reader_reference?: string; span: { span_id: string; segments: { start: number; end: number }[]; text: string[] } }[];
@@ -107,6 +108,7 @@ for (const useR2 of [false, true]) test(`long literary segments continue within 
     };
     for (const item of batch.evidence) {
       if (item.span.span_id === 'lit-unit') {
+        contextBatches++;
         assert.equal(item.span.segments[0].start, expectedStart);
         expectedStart = item.span.segments[0].end;
         text += item.span.text[0];
@@ -119,6 +121,7 @@ for (const useR2 of [false, true]) test(`long literary segments continue within 
   assert.equal(continuation, undefined);
   assert.equal(text, 'αa'.repeat(10000));
   assert.equal(expectedStart, 20000);
+  assert.ok(contextBatches < 10, `too many context batches: ${contextBatches}`);
   assert.ok(delivered);
 });
 
@@ -134,13 +137,14 @@ test('an R2 range larger than the request allowance is explicitly withheld', asy
 test('a chunked R2 range larger than the request allowance continues with verified text', async () => {
   const { env } = literaryFixture(true, false, 50000, true);
   const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
-  let continuation: string | undefined, text = '', position = 0;
+  let continuation: string | undefined, text = '', position = 0, contextBatches = 0;
   for (let i = 0; i < 250; i++) {
     const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
       evidence: { span: { span_id: string; segments: { start: number; end: number }[]; text: string[] } }[];
       continuation: string | null;
     };
     for (const e of batch.evidence) if (e.span.span_id === 'lit-unit') {
+      contextBatches++;
       assert.equal(e.span.segments[0].start, position);
       position = e.span.segments[0].end;
       text += e.span.text[0];
@@ -150,6 +154,7 @@ test('a chunked R2 range larger than the request allowance continues with verifi
   }
   assert.equal(continuation, undefined);
   assert.equal(position, 100000);
+  assert.ok(contextBatches < 40, `too many context batches: ${contextBatches}`);
   assert.equal(text, 'αa'.repeat(50000));
 });
 

@@ -1,4 +1,4 @@
-import { compareUtf8, isIdentifier, isSafeCount, sha256Hex } from '../read/bytes.ts';
+import { compareUtf8, isIdentifier, isSafeCount, sha256Hex, utf8Length } from '../read/bytes.ts';
 import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
 import { artifactFrom, readVerifiedRange, readSlices, type RegisteredArtifact } from '../read/objects.ts';
 import type { ReadSession } from '../read/session.ts';
@@ -379,11 +379,24 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
           }
           if (scalarPos !== segment.end - segment.start || bytePos !== range.byte_offset + range.byte_length)
             throw new ReadError('corrupt', 'Literary-unit chunks do not cover the segment');
-          const chunk = range.chunks.find(c => c.start <= within && within < c.end);
-          if (!chunk) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
-          textStart = chunk.start;
-          piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: chunk.byte_offset, length: chunk.byte_length, sha256: chunk.sha256 })];
-          if (Array.from(piece.evidence.text[0]).length !== chunk.end - chunk.start) throw new ReadError('corrupt', 'Literary-unit chunk length is inconsistent');
+          const first = range.chunks.findIndex(c => c.start <= within && within < c.end);
+          if (first < 0) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
+          const selected: BodyChunk[] = [];
+          const offset = range.chunks[first].byte_offset;
+          const cap = Math.min(session.budget.limits.pageBytes, 8192);
+          for (const chunk of range.chunks.slice(first)) {
+            const length = chunk.byte_offset + chunk.byte_length - offset;
+            if (length > cap || !session.budget.canRead(length, 'page')) break;
+            selected.push(chunk);
+          }
+          if (!selected.length) throw new ReadError('budget', 'Literary-unit chunks cannot fit the read allowance');
+          textStart = selected[0].start;
+          const length = selected.at(-1)!.byte_offset + selected.at(-1)!.byte_length - offset;
+          const texts = await readSlices(session, artifact, offset, length,
+            selected.map(c => ({ offset: c.byte_offset, length: c.byte_length, sha256: c.sha256 })));
+          if (texts.some((value, i) => value === null || Array.from(value).length !== selected[i].end - selected[i].start))
+            throw new ReadError('corrupt', 'Literary-unit chunk failed its integrity check');
+          piece.evidence.text = [texts.join('')];
         } else {
           piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 })];
         }
@@ -395,7 +408,16 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
           if (chars.length !== segment.end - segment.start) throw new ReadError('corrupt', 'Literary-unit text does not match its native segment');
         }
         if (within < textStart || within >= textStart + chars.length) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
-        const end = Math.min(textStart + chars.length, within + 1024);
+        // Bound the encoded JSON wording, including escaping, leaving room for the envelope.
+        const textBudget = Math.max(1, Math.min(8192, session.budget.limits.resultBytes - ENVELOPE_RESERVE - 2048));
+        let low = within, high = textStart + chars.length;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          if (utf8Length(JSON.stringify(chars.slice(within - textStart, mid - textStart).join(''))) <= textBudget) low = mid;
+          else high = mid - 1;
+        }
+        const end = low;
+        if (end === within) throw new ReadError('exceeds_limits', 'One literary-unit character does not fit a result batch');
         piece.evidence.text = [chars.slice(within - textStart, end - textStart).join('')];
         piece.evidence.segments = [{ ...segment, start: segment.start + within, end: segment.start + end }];
       }

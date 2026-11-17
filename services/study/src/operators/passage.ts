@@ -7,6 +7,7 @@ import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
 import { candidateUnits, contextUnits, parseReference, type PassageRequest } from '../scope/references.ts';
+import { readerBook, readerVerses } from '../../../../packages/shared/src/reader-catalogue.ts';
 
 /** The passage part of a Study workload: references in each source's own numbering, the
  *  sources to read (all selected sources when null) and whether to add the surrounding chapter. */
@@ -51,14 +52,14 @@ async function toRow(r: Record<string, unknown>): Promise<Row> {
   const segments = parsed(r.segments_json);
   const basis = parsed(r.basis_json);
   if (!Array.isArray(segments) || !segments.length || !segments.every(s => isObject(s) && isIdentifier(s.unit_id) && isSafeCount(s.start) && isSafeCount(s.end))
-      || !isObject(basis) || !isSafeCount(r.start_order))
+      || !isObject(basis) || !isSafeCount(r.start_order ?? r.native_order))
     throw new ReadError('corrupt', 'Inconsistent verse record');
   const evidence: SpanEvidence = {
     span_id: String(r.id), source_revision_id: String(r.source_revision_id), source_name: String(r.source_name),
     attribution: String(r.source_attribution), kind: String(r.kind), label: String(r.label), native_order: Number(r.native_order),
     coordinate_version: String(r.coordinate_version), segments: segments as NativeSegment[], basis, reading_kind: String(r.reading_kind), text: null,
   };
-  const row: Row = { evidence, order: r.start_order as number, ranges: [], artifacts: new Map(), textFromD1: false };
+  const row: Row = { evidence, order: (r.start_order ?? r.native_order) as number, ranges: [], artifacts: new Map(), textFromD1: false };
   if (r.content_id !== null && r.content_id !== undefined) {
     if (typeof r.exact_text !== 'string' || await sha256Hex(r.exact_text) !== r.content_id)
       throw new ReadError('corrupt', 'Text payload does not match its digest');
@@ -201,6 +202,8 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
 export async function passageBatch(session: ReadSession, workload: PassageWorkload, continuation: string | null, guidanceVersion: string,
                                    notes: Limitation[] = [], rules: readonly string[] | null = null): Promise<Batch> {
   const w = normalizePassageWorkload(workload);
+  if (w.mode !== 'inspect_source') return readerPassageBatch(session, w, continuation, guidanceVersion, notes, rules);
+  if (!w.sources || w.sources.length !== 1) throw new ReadError('invalid_request', 'Native source inspection requires exactly one source revision');
   const refs: PassageRequest[] = w.references.map(parseReference);
   let pos: PassagePosition = { ref: 0, source: '', order: -1 };
   if (continuation !== null) pos = (await resumeContinuation(continuation, w, PASSAGE_CHECKS)).pos as PassagePosition;
@@ -288,5 +291,88 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
     throw new ReadError('exceeds_limits', 'Not one verse of this passage fits a batch');
   batch.continuation = resume ? await encodeContinuation(w, { op: 'passage', pos: resume, key: null }) : null;
   batch.remaining = resume ? { passage: 'continues', reference: w.references[resume.ref] } : null;
+  return batch;
+}
+
+type MappingKey = [number, string, number, number, string];
+const mappingKey = (row: Record<string, unknown>): MappingKey => [Number(row.position), String(row.source_revision_id), Number(row.role_order), Number(row.ordinal), String(row.mapping_id)];
+
+/** Reader requests never fall back to same-number native text outside checked mappings. */
+async function readerPassageBatch(session: ReadSession, w: PassageWorkload, continuation: string | null, guidanceVersion: string,
+                                  notes: Limitation[], rules: readonly string[] | null): Promise<Batch> {
+  if (session.release.schema_versions.reader_scheme_version !== 'nrsva/1')
+    throw new ReadError('unresolved_mapping', 'The current release does not contain the NRSVA reader catalogue; use source-qualified inspection');
+  const refs = w.references.map(parseReference);
+  const requested = new Set<string>();
+  const references = refs.flatMap(ref => {
+    const book = readerBook(ref.book);
+    if (!book) throw new ReadError('invalid_request', `Unknown reader catalogue book ${ref.book}`);
+    let verses: string[];
+    try {
+      for (const verse of readerVerses(book, ref.from, ref.to)) requested.add(verse);
+      verses = w.context ? readerVerses(book, { chapter: ref.from.chapter, verse: null }, { chapter: ref.to.chapter, verse: null })
+        : readerVerses(book, ref.from, ref.to);
+    }
+    catch { throw new ReadError('invalid_request', `Reference ${ref.text} is outside the NRSVA catalogue`); }
+    const aliases = [book.book_id, ...book.aliases].filter(alias => /^[1-4]?[A-Za-z][A-Za-z0-9]*$/.test(alias));
+    return verses.map(reader_ref => {
+      const [, chapter, verse] = reader_ref.split('.');
+      return { ref: reader_ref, book: book.book_id, chapter: Number(chapter), verse: Number(verse),
+        native_units: [...new Set(aliases.map(alias => `${alias}.${chapter}.${verse}`))] };
+    });
+  });
+  if (references.length > 540) throw new ReadError('exceeds_limits', 'The requested references are too long');
+  const checks: Readonly<Record<string, PositionCheck>> = { reader(pos, key) {
+    return key === null && Array.isArray(pos) && pos.length === 5 && Number.isSafeInteger(pos[0]) && pos[0] >= -1 && pos[0] < references.length
+      && (pos[1] === '' || isIdentifier(pos[1])) && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 1
+      && Number.isSafeInteger(pos[3]) && pos[3] >= -1 && (pos[4] === '' || isIdentifier(pos[4]));
+  } };
+  const start: MappingKey = continuation ? (await resumeContinuation(continuation, w, checks)).pos as MappingKey : [-1, '', -1, -1, ''];
+  session.budget.spendResult(ENVELOPE_RESERVE);
+  const page = await session.queryIfAvailable('reader_mappings', { references, scheme: 'nrsva/1', sources: w.sources, after: start });
+  if (!page) throw new ReadError('budget', 'Reader mapping lookup could not be read within this request');
+  const limits: Limitation[] = [...notes];
+  if (!page.rows.length && start[0] === -1) limits.push(limitation('unresolved_mapping', w.references.join(', '), 'No checked reader mappings are available for these references and sources'));
+  if (w.context) limits.push(limitation('unsupported_capability', 'context', 'Literary-unit boundaries are not yet resolved; the mapped chapter provides surrounding context'));
+  const ids = [...new Set(page.rows.map(row => row.span_id).filter(value => isIdentifier(value)))] as string[];
+  const found = ids.length ? await session.queryIfAvailable('spans', { ids }) : { rows: [], more: false };
+  if (found === null) throw new ReadError('budget', 'Mapped spans could not be read within this request');
+  const rows = new Map<string, Row>();
+  for (const row of found.rows) {
+    try { const parsedRow = await toRow(row); rows.set(parsedRow.evidence.span_id, parsedRow); }
+    catch (error) { if (error instanceof ReadError) limits.push(limitation(error.state, String(row.id), error.message)); else throw error; }
+  }
+  const pending = await fillBodies(session, [...rows.values()], limits);
+  const annotations = rows.size ? await annotationsFor(session, [...rows.values()]) : new Map<string, PassageAnnotation[]>();
+  if (annotations === null) limits.push(limitation('budget', 'annotations', 'Textual notes were not supplied'));
+  const items: { item: EvidenceItem; key: MappingKey }[] = [];
+  let processed = start;
+  for (const mapping of page.rows) {
+    const key = mappingKey(mapping);
+    if (!mapping.span_id) {
+      limits.push(limitation(mapping.status === 'uncovered' ? 'missing_evidence' : 'unresolved_mapping', String(mapping.reader_ref),
+        `${String(mapping.source_revision_id)}: ${String(mapping.gap_reason ?? 'The mapped native span is not selected')}`));
+      processed = key; continue;
+    }
+    const row = rows.get(String(mapping.span_id));
+    if (row && pending.has(row)) break;
+    if (!row) { limits.push(limitation('missing_evidence', String(mapping.reader_ref), 'Mapped span was unavailable or invalid')); processed = key; continue; }
+    const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
+      reader_reference: String(mapping.reader_ref), display_role: mapping.role === 'superscription' ? 'superscription' : 'numbered_text',
+      mapping_status: String(mapping.status), mapping_basis: parsed(mapping.basis_json),
+      ...(annotations ? { annotations: annotations.get(row.evidence.span_id) ?? [] } : {}) };
+    items.push({ item, key }); processed = key;
+  }
+  const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
+    delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' }, context_scope: w.context ? { chapters: refs.map(r => `${r.book} ${r.from.chapter}`) } : null,
+    evidence: items.map(i => i.item), citations: [], searched_scope: [], coverage: [], limitations: limits,
+    remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}) }, session.budget);
+  const delivered = items.length - deferred.length;
+  const last = deferred.length ? (delivered ? items[delivered - 1].key : start) : processed;
+  const more = deferred.length > 0 || pending.size > 0 || page.more;
+  if (more && JSON.stringify(last) === JSON.stringify(start)) throw new ReadError('exceeds_limits', 'No mapping fits in this request');
+  if (page.more) batch.limitations.push(limitation('budget', 'mapping', 'The final reference group may be incomplete until continuation'));
+  batch.continuation = more ? await encodeContinuation(w, { op: 'reader', pos: last, key: null }) : null;
+  batch.remaining = more ? { passage: 'continues' } : null;
   return batch;
 }

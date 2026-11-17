@@ -87,7 +87,8 @@ export class ReadSession {
   async queryIfAvailable<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult | null> {
     if (!isQueryName(name)) throw new ReadError('invalid_request', 'Unknown query');
     const declaration = QUERIES[name] as { sql: string; params(input: unknown): unknown[] };
-    const limit = this.budget.limits.rowsPerQuery;
+    // One mapping page must also fit the bounded span lookup used to fetch its targets.
+    const limit = name === 'reader_mappings' ? Math.min(this.budget.limits.rowsPerQuery, 20) : this.budget.limits.rowsPerQuery;
     const values = [this.release.id, ...declaration.params(input ?? {}), limit + 1];
     const key = JSON.stringify([name, ...values]);
     const cached = this.#cache.get(key);

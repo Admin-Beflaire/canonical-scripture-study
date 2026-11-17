@@ -1,7 +1,7 @@
 import catalogue from '../../../schemas/reader-references/nrsva-1.json' with { type: 'json' };
 
 type Book = (typeof catalogue.books)[number];
-const fold = (s: string) => s.toLowerCase().replace(/[\s.()]/g, '').replace(/^(i{1,3})(?=[a-z])/, m => String(m.length));
+const fold = (s: string) => s.toLowerCase().replace(/[\s.()]/g, '').replace(/^(iv|i{1,3})(?=[a-z])/, m => String(m === 'iv' ? 4 : m.length));
 
 /** Resolve a reader-facing book name against the pinned catalogue, not a native edition. */
 export function readerBook(name: string): Book | undefined {

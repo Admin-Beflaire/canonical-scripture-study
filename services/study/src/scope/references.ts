@@ -1,5 +1,6 @@
 import { ReadError } from '../read/states.ts';
 import { bookCode } from './books.ts';
+import { readerBook } from '../../../../packages/shared/src/reader-catalogue.ts';
 
 /** One reference as written by the host, in the source's own chapter and verse numbering.
  *  `verses` null means the whole chapter(s). Nothing here assumes another source's numbering. */
@@ -13,7 +14,7 @@ export const MAX_VERSES = 180;
 /** At most this many chapters per reference, so one reference stays a bounded read. */
 export const MAX_CHAPTERS = 3;
 
-const PATTERN = /^\s*((?:[1-3]|i{1,3})?\s*[A-Za-z][A-Za-z .]*?)\s*(\d+)(?:\s*[:.]\s*(\d+))?(?:\s*[-–—]\s*(\d+)(?:\s*[:.]\s*(\d+))?)?\s*$/i;
+const PATTERN = /^\s*((?:[1-4]|iv|i{1,3})?\s*[A-Za-z][A-Za-z .()]*?)\s*(\d+)(?:\s*[:.]\s*(\d+))?(?:\s*[-–—]\s*(\d+)(?:\s*[:.]\s*(\d+))?)?\s*$/i;
 
 /** Parses "Gen 1:1-2:3", "Genesis 1", "Mt 5:3-12" or "John 1:1". Unknown books, reversed or
  *  oversized ranges are rejected with a useful message; no reference is guessed. */
@@ -21,7 +22,7 @@ export function parseReference(text: string): PassageRequest {
   if (typeof text !== 'string' || text.length > 80) throw new ReadError('invalid_request', 'A reference is a short text such as "Gen 1:1-2:3"');
   const match = text.match(PATTERN);
   if (!match) throw new ReadError('invalid_request', `Could not read the reference "${text}"; write it like "Gen 1:1-2:3" or "Matthew 5"`);
-  const book = bookCode(match[1]);
+  const book = bookCode(match[1]) ?? readerBook(match[1])?.book_id;
   if (!book) throw new ReadError('invalid_request', `Unknown book "${match[1].trim()}" in "${text}"`);
   const c1 = Number(match[2]);
   const v1 = match[3] === undefined ? null : Number(match[3]);

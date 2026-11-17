@@ -19,7 +19,7 @@ export interface PassageFixture { env: StudyReadEnvironment; db: ReturnType<type
 
 /** Two sources. HEB: book Gen, chapter 1 with 40 verses and chapter 2 with 5, split over two
  *  evidence outputs (chapter 1 / chapter 2) as Preparation splits a book into units. GRK: Mat 1:1-3. */
-export function buildPassageFixture(): PassageFixture {
+export function buildPassageFixture(mapped = true): PassageFixture {
   const db = localD1();
   const bucket = new MemoryBucket();
   const insert = (table: string, row: Record<string, unknown>) => {
@@ -77,8 +77,20 @@ export function buildPassageFixture(): PassageFixture {
   evidence('evidence:grk1', GRK, ['Mat.1.1', 'Mat.1.2', 'Mat.1.3'], 'syn:grk-verses/1');
   insert('annotations', { id: 'note-1', output_id: 'evidence:heb1', source_revision_id: HEB, span_id: 'evidence:heb1#Gen.1.2', kind: 'textual_variants',
     provider: 'syn-provider', basis_json: { columns: 'synthetic' }, details_json: { words: [{ row: 1, spelling_variants: 'synthetic variant' }] } });
+  if (mapped) {
+    for (const [source, id, ranges] of [
+      [HEB, 'mapping:heb', [{ book_id: 'Gen', chapter: 1, first_verse: 1, last_verse: 31 }, { book_id: 'Gen', chapter: 2, first_verse: 1, last_verse: 5 }]],
+      [GRK, 'mapping:grk', [{ book_id: 'Matt', chapter: 1, first_verse: 1, last_verse: 3 }]],
+    ] as const) {
+      insert('prepared_outputs', { id, kind: 'reader_reference', input_revisions_json: [source], method_version: 'syn:method/1',
+        parameters_json: {}, native_extent_json: {}, validation_basis_json: {} });
+      insert('reader_reference_bases', { id: `${id}:base`, output_id: id, source_revision_id: source, reader_scheme_version: 'nrsva/1',
+        native_scheme_version: 'syn/1', checked_extent_json: { ranges }, basis_json: { check: 'synthetic' } });
+      outputs.push(id);
+    }
+  }
   insert('releases', { id: 'rel-p', manifest_revision: 'syn:manifest/1', recipe_revision: 'syn:recipe/1',
-    schema_versions_json: { evidence_records: '1', native_reference: '1', index_manifest: '2' }, coverage_basis: 'synthetic', quality_receipt: 'syn:q', scope_receipt: 'syn:s' });
+    schema_versions_json: { evidence_records: '1', native_reference: '1', index_manifest: '2', ...(mapped ? { reader_scheme_version: 'nrsva/1' } : {}) }, coverage_basis: 'synthetic', quality_receipt: 'syn:q', scope_receipt: 'syn:s' });
   for (const output_id of outputs) insert('release_outputs', { release_id: 'rel-p', output_id });
   db.sqlite.prepare('UPDATE release_selection SET current_release_id = ? WHERE singleton_id = 1').run('rel-p');
   const env: StudyReadEnvironment = { DATA_DB: db, PRIVATE_OBJECTS: bucket, MAX_PAGE_BYTES: 65536, REQUEST_BYTES: 262144, MAX_D1_CALLS: 25, MAX_SUBREQUESTS: 40 };

@@ -214,7 +214,13 @@ const READER_MAPPINGS = `WITH requested AS (
   SELECT CAST(j.key AS INTEGER) AS position, json_extract(j.value, '$.ref') AS reader_ref,
     json_extract(j.value, '$.book') AS book, json_extract(j.value, '$.chapter') AS chapter,
     json_extract(j.value, '$.verse') AS verse, json_extract(j.value, '$.native_units') AS native_units
-  FROM json_each(?2) j
+  FROM json_each(?2) j WHERE CAST(j.key AS INTEGER) >= ?5
+), scope_sources AS (
+  SELECT s.id AS source_revision_id FROM source_nodes s
+  WHERE s.kind = 'source_revision' AND (?4 IS NULL OR s.id IN (SELECT value FROM json_each(?4)))
+    AND EXISTS (SELECT 1 FROM coverage c INDEXED BY coverage_source
+      CROSS JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+      WHERE c.source_revision_id = s.id AND c.capability = 'source_context')
 ), mappings AS (
   SELECT q.position, q.reader_ref, l.source_revision_id, l.role, l.ordinal, l.id AS mapping_id,
     l.status, l.basis_json, l.gap_reason,
@@ -223,14 +229,17 @@ const READER_MAPPINGS = `WITH requested AS (
       WHERE n.id = l.span_id AND n.source_revision_id = l.source_revision_id)
       THEN l.span_id ELSE NULL END AS span_id,
     CASE WHEN l.role = 'superscription' THEN 0 ELSE 1 END AS role_order
-  FROM requested q JOIN reader_reference_links l ON l.reader_ref = q.reader_ref AND l.reader_scheme_version = ?3
-  JOIN release_outputs ro ON ro.output_id = l.output_id AND ro.release_id = ?1
-  WHERE (?4 IS NULL OR l.source_revision_id IN (SELECT value FROM json_each(?4)))
+  FROM scope_sources s CROSS JOIN requested q
+  CROSS JOIN reader_reference_links l INDEXED BY sqlite_autoindex_reader_reference_links_2
+    ON l.source_revision_id = s.source_revision_id AND l.reader_ref = q.reader_ref AND l.reader_scheme_version = ?3
+  CROSS JOIN release_outputs ro ON ro.output_id = l.output_id AND ro.release_id = ?1
   UNION ALL
   SELECT q.position, q.reader_ref, b.source_revision_id, 'numbered_text', 0, b.id,
     'exact', b.basis_json, NULL, n.id, 1
-  FROM requested q JOIN reader_reference_bases b ON b.reader_scheme_version = ?3
-  JOIN release_outputs ro ON ro.output_id = b.output_id AND ro.release_id = ?1
+  FROM scope_sources s CROSS JOIN requested q
+  CROSS JOIN reader_reference_bases b INDEXED BY reader_reference_bases_lookup
+    ON b.source_revision_id = s.source_revision_id AND b.reader_scheme_version = ?3
+  CROSS JOIN release_outputs ro ON ro.output_id = b.output_id AND ro.release_id = ?1
   JOIN json_each(b.checked_extent_json, '$.ranges') rg
     ON json_extract(rg.value, '$.book_id') = q.book AND json_extract(rg.value, '$.chapter') = q.chapter
     AND q.verse BETWEEN json_extract(rg.value, '$.first_verse') AND json_extract(rg.value, '$.last_verse')
@@ -238,11 +247,17 @@ const READER_MAPPINGS = `WITH requested AS (
   CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
     ON json_extract(n.segments_json, '$[0].unit_id') = nu.value AND n.kind = 'verse' AND n.source_revision_id = b.source_revision_id
   JOIN release_outputs nr ON nr.output_id = n.output_id AND nr.release_id = ?1
-  WHERE (?4 IS NULL OR b.source_revision_id IN (SELECT value FROM json_each(?4)))
-    AND NOT EXISTS (SELECT 1 FROM reader_reference_links l JOIN release_outputs lr ON lr.output_id = l.output_id AND lr.release_id = ?1
+  WHERE NOT EXISTS (SELECT 1 FROM reader_reference_links l JOIN release_outputs lr ON lr.output_id = l.output_id AND lr.release_id = ?1
       WHERE l.source_revision_id = b.source_revision_id AND l.reader_scheme_version = ?3 AND l.reader_ref = q.reader_ref AND l.role = 'numbered_text')
+), all_mappings AS (
+  SELECT * FROM mappings
+  UNION ALL
+  SELECT q.position, q.reader_ref, s.source_revision_id, 'numbered_text', 0, '',
+    'uncovered', '{}', 'No checked mapping with selected native evidence is available', NULL, 1
+  FROM requested q CROSS JOIN scope_sources s
+  WHERE NOT EXISTS (SELECT 1 FROM mappings m WHERE m.position = q.position AND m.source_revision_id = s.source_revision_id AND m.role = 'numbered_text')
 )
-SELECT * FROM mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id) > (?5, ?6, ?7, ?8, ?9)
+SELECT * FROM all_mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id) > (?5, ?6, ?7, ?8, ?9)
 ORDER BY position, source_revision_id, role_order, ordinal, mapping_id LIMIT ?10`;
 
 export const QUERIES = {

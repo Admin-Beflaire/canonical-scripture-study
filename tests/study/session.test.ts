@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildFixture, A, B } from './fixture.ts';
+import { buildPassageFixture, HEB } from './passage-fixture.ts';
 import { ReadSession, SUPPORTED_SCHEMA_VERSIONS } from '../../services/study/src/read/session.ts';
 import { QUERIES } from '../../services/study/src/read/queries.ts';
 import { limitsFor, RequestBudget, STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
@@ -70,6 +71,28 @@ test('two releases: reads are scoped to current release membership only', async 
   session = await ReadSession.open(fixture.env, roomy);
   spans = await session.query('spans', { ids: ['a-u1', 'a-old'] });
   assert.deepEqual(spans.rows.map(r => [r.id, r.exact_text]), [['a-old', 'OLD wording']]);
+});
+
+test('passage lookups seek requested verse units and exact body artifacts', async () => {
+  const { db, env } = buildPassageFixture();
+  const session = await ReadSession.open(env, roomy);
+  const input = { units: ['Gen.1.2', 'Gen.2.1', 'Mat.1.1', 'Gen.2.999'], sources: [HEB] };
+  const spans = await session.query('unit_spans', input);
+  assert.deepEqual(spans.rows.map(row => row.unit_id), ['Gen.1.2', 'Gen.2.1']);
+  assert.deepEqual(spans.rows.map(row => JSON.parse(String(row.body_artifacts_json)).map((a: { id: string }) => a.id)),
+    [['evidence:heb1:body'], ['evidence:heb2:body']]);
+  const presence = await session.query('unit_presence', input);
+  assert.equal(presence.rows.length, 1);
+  assert.deepEqual(String(presence.rows[0].units).split(',').sort(), ['Gen.1.2', 'Gen.2.1']);
+
+  for (const name of ['unit_presence', 'unit_spans'] as const) {
+    const query = QUERIES[name];
+    const args = [session.release.id, ...query.params(input), 20] as (string | number | null)[];
+    const plan = db.sqlite.prepare(`EXPLAIN QUERY PLAN ${query.sql}`).all(...args).map(row => String(row.detail));
+    assert.ok(plan.some(detail => detail.includes('SEARCH n USING INDEX native_spans_verse_unit')), plan.join('\n'));
+    if (name === 'unit_spans')
+      assert.ok(plan.some(detail => /SEARCH a USING INDEX .*\(id=\?\)/.test(detail)), plan.join('\n'));
+  }
 });
 
 test('invalid references return nothing rather than another source', async () => {

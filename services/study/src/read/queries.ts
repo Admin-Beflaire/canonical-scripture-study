@@ -50,7 +50,7 @@ const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.ki
   p.exact_text, s.name AS source_name, s.attribution AS source_attribution,
   (SELECT json_group_array(json_object('id', a.id, 'sha256', a.sha256, 'byte_count', a.byte_count,
       'format', a.format, 'registered_locator', a.registered_locator))
-    FROM artifacts a JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
+    FROM artifacts a CROSS JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
     WHERE a.id IN (SELECT json_extract(b.value, '$.artifact_id') FROM json_each(n.body_ranges_json) AS b)) AS body_artifacts_json
 FROM native_spans n
 JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
@@ -161,41 +161,42 @@ GROUP BY c.source_revision_id, c.capability
 ORDER BY c.source_revision_id, c.capability
 LIMIT ?5`;
 
-/** Verse spans for candidate native unit IDs, from the selected source-context outputs whose
- *  extent lists the unit. A verse span's ID is its output ID and unit ID (`output#unit`), as
- *  Preparation records it; the first segment must also name that unit. Ordered by the source's
- *  linear order (first segment start), resumable after an order. Unknown candidates match nothing. */
+/** Drive both passage lookups from the requested units and use the verse-unit index.
+ *  The fixed join order keeps the planner from starting with every output in the release.
+ *  Check coverage membership only for matching verse spans. */
+const MATCHED_VERSES = `FROM json_each(?2) AS u
+CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+  ON json_extract(n.segments_json, '$[0].unit_id') = u.value AND n.kind = 'verse'
+CROSS JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
+CROSS JOIN coverage c ON c.output_id = n.output_id AND c.source_revision_id = n.source_revision_id
+  AND c.capability = 'source_context'`;
+
+const COVERED_UNIT = `n.id = c.output_id || '#' || u.value
+  AND (?3 IS NULL OR c.source_revision_id IN (SELECT value FROM json_each(?3)))
+  AND EXISTS (SELECT 1 FROM json_each(c.native_extent_json, '$.unit_ids') AS covered WHERE covered.value = u.value)`;
+
+/** Verse spans ordered by source and its linear order, resumable after an order.
+ *  Look up body artifacts by ID before checking release membership. */
 const UNIT_SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
   p.exact_text, s.name AS source_name, s.attribution AS source_attribution, g.start_order, u.value AS unit_id,
   (SELECT json_group_array(json_object('id', a.id, 'sha256', a.sha256, 'byte_count', a.byte_count,
       'format', a.format, 'registered_locator', a.registered_locator))
-    FROM artifacts a JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
+    FROM artifacts a CROSS JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
     WHERE a.id IN (SELECT json_extract(b.value, '$.artifact_id') FROM json_each(n.body_ranges_json) AS b)) AS body_artifacts_json
-FROM coverage c
-JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-JOIN json_each(c.native_extent_json, '$.unit_ids') AS u ON u.value IN (SELECT value FROM json_each(?2))
-JOIN native_spans n ON n.id = c.output_id || '#' || u.value
-JOIN span_segments g ON g.span_id = n.id AND g.segment_ordinal = 0
-JOIN source_nodes s ON s.id = n.source_revision_id
+${MATCHED_VERSES}
+CROSS JOIN span_segments g ON g.span_id = n.id AND g.segment_ordinal = 0
+CROSS JOIN source_nodes s ON s.id = n.source_revision_id
 LEFT JOIN text_payloads p ON p.content_id = n.content_id
-WHERE c.capability = 'source_context' AND n.kind = 'verse'
-  AND json_extract(n.segments_json, '$[0].unit_id') = u.value
-  AND (?3 IS NULL OR c.source_revision_id IN (SELECT value FROM json_each(?3)))
+WHERE ${COVERED_UNIT}
   AND (n.source_revision_id, g.start_order) > (?4, ?5)
 ORDER BY n.source_revision_id, g.start_order
 LIMIT ?6`;
 
-/** Which candidate units each selected source has as verses: one row per source, the found unit
- *  IDs joined by commas. Lets an operator report verses missing from a requested range. */
+/** Which candidate units each selected source has as verses: one row per source. */
 const UNIT_PRESENCE = `SELECT n.source_revision_id, group_concat(u.value, ',') AS units
-FROM coverage c
-JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-JOIN json_each(c.native_extent_json, '$.unit_ids') AS u ON u.value IN (SELECT value FROM json_each(?2))
-JOIN native_spans n ON n.id = c.output_id || '#' || u.value
-WHERE c.capability = 'source_context' AND n.kind = 'verse'
-  AND json_extract(n.segments_json, '$[0].unit_id') = u.value
-  AND (?3 IS NULL OR c.source_revision_id IN (SELECT value FROM json_each(?3)))
+${MATCHED_VERSES}
+WHERE ${COVERED_UNIT}
 GROUP BY n.source_revision_id
 ORDER BY n.source_revision_id
 LIMIT ?4`;

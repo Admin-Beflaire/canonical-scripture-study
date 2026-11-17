@@ -11,7 +11,7 @@ export type EvidenceItem =
   | { kind: 'search_hit'; hit: SearchHit };
 
 /** A recorded note on a verse (for example textual variants), attributed to its provider. */
-export interface PassageAnnotation { kind: string; provider: string; details: Record<string, unknown> }
+export interface PassageAnnotation { kind: string; provider: string; details: Record<string, unknown>; native_span_id?: string }
 
 export interface Citation { source_revision_id: string; span_id: string; coordinate_version: string; segments: NativeSegment[]; quote?: string }
 

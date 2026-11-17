@@ -5,6 +5,7 @@ import { buildPassageFixture, GRK, HEB } from './passage-fixture.ts';
 import { study } from '../../services/study/src/coordinator.ts';
 import { createHash } from 'node:crypto';
 import { QUERIES } from '../../services/study/src/read/queries.ts';
+import { passageBatch } from '../../services/study/src/operators/passage.ts';
 
 function mappedFixture(title = false) {
   const { env, db } = buildPassageFixture(false);
@@ -55,6 +56,21 @@ test('reader results place a selected superscription before numbered text', asyn
   };
   assert.deepEqual(result.evidence.map(e => [e.reader_reference, e.display_role]), [['Gen.1.1', 'superscription'], ['Gen.1.1', 'numbered_text']]);
   assert.equal(result.evidence[0].span.text[0], 'synthetic title');
+});
+
+test('a page boundary between a superscription and its verse resumes in order', async () => {
+  const { env } = mappedFixture(true);
+  const limits = { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 1 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:1'], sources: [HEB], context: false };
+  const first = await passageBatch(await ReadSession.open(env, limits), request, null, 'test');
+  assert.equal(first.evidence.length, 1);
+  assert.equal(first.evidence[0].kind === 'source_text' && first.evidence[0].display_role, 'superscription');
+  assert.ok(first.continuation);
+  assert.ok(first.limitations.some(l => /incomplete until continuation/.test(l.detail)));
+  const second = await passageBatch(await ReadSession.open(env, limits), request, first.continuation, 'test');
+  assert.equal(second.evidence.length, 1);
+  assert.equal(second.evidence[0].kind === 'source_text' && second.evidence[0].display_role, 'numbered_text');
+  assert.equal(second.continuation, null);
 });
 
 test('passage retrieves a mapped native exception and reports an explicit gap', async () => {
@@ -155,4 +171,53 @@ test('multi-source mapped chapters continue without losing or repeating a mappin
   assert.equal(new Set(found).size, 33);
   for (let verse = 1; verse <= 31; verse++) if (verse !== 4) assert.ok(found.includes(`Gen.1.${verse}:${HEB}`));
   for (let verse = 1; verse <= 3; verse++) assert.ok(found.includes(`Gen.1.${verse}:${GRK}`));
+});
+
+test('Malachi reader chapter 4 resolves to native chapter 3 in a synthetic release', async () => {
+  const { env, db } = mappedFixture();
+  const prepared = db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES (?, ?, ?, 'fixture/1','{}','{}','{}')`);
+  prepared.run('mal-text', 'evidence', JSON.stringify([HEB]));
+  prepared.run('mal-map', 'reader_reference', JSON.stringify([HEB]));
+  const payload = db.sqlite.prepare('INSERT INTO text_payloads VALUES (?, ?)');
+  const span = db.sqlite.prepare(`INSERT INTO native_spans VALUES (?, 'mal-text', ?, NULL, 'verse', ?, ?, 'syn/1', ?, '{}', ?, '[]', 'preserved')`);
+  const link = db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES (?, 'mal-map', ?, 'nrsva/1', ?, ?, 'numbered_text', 0, 'exact', '{}', NULL)`);
+  for (let verse = 1; verse <= 6; verse++) {
+    const unit = `Mal.3.${verse + 18}`;
+    const text = `synthetic ${unit}`;
+    const digest = createHash('sha256').update(text).digest('hex');
+    payload.run(digest, text);
+    span.run(`mal-span-${verse}`, HEB, unit, verse, JSON.stringify([{ unit_id: unit, start: 0, end: text.length }]), digest);
+    link.run(`mal-link-${verse}`, HEB, `Mal.4.${verse}`, `mal-span-${verse}`);
+  }
+  db.sqlite.prepare(`INSERT INTO releases VALUES ('rel-mal','m','r',?,'c','q','s')`)
+    .run(JSON.stringify({ evidence_records: '1', reader_scheme_version: 'nrsva/1' }));
+  db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-mal', output_id FROM release_outputs WHERE release_id='rel-m'`);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-mal', 'mal-text'), ('rel-mal', 'mal-map')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-mal' WHERE singleton_id=1`);
+  const result = await study(env, { mode: 'passage', depth: 'focused', references: ['Mal 4:1-6'], sources: [HEB] }) as {
+    evidence: { reader_reference: string; span: { segments: { unit_id: string }[] } }[];
+  };
+  assert.deepEqual(result.evidence.map(e => [e.reader_reference, e.span.segments[0].unit_id]),
+    Array.from({ length: 6 }, (_, i) => [`Mal.4.${i + 1}`, `Mal.3.${i + 19}`]));
+});
+
+test('an extracted mapping slice retains the selected native verse notes with their scope', async () => {
+  const { env, db } = buildPassageFixture(false);
+  db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('slice-map','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
+  const text = 'synthetic slice';
+  const digest = createHash('sha256').update(text).digest('hex');
+  db.sqlite.prepare('INSERT INTO text_payloads VALUES (?, ?)').run(digest, text);
+  db.sqlite.prepare(`INSERT INTO native_spans VALUES ('slice','slice-map',?,NULL,'numbered_text','Gen 1:2 slice',0,'syn/1',?,'{}',?,'[]','extracted')`)
+    .run(HEB, JSON.stringify([{ unit_id: 'Gen.1.2', start: 0, end: text.length }]), digest);
+  db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('slice-link','slice-map',?,'nrsva/1','Gen.1.2','slice','numbered_text',0,'partial','{}',NULL)`).run(HEB);
+  db.sqlite.prepare(`INSERT INTO releases VALUES ('rel-slice','m','r',?,'c','q','s')`)
+    .run(JSON.stringify({ evidence_records: '1', reader_scheme_version: 'nrsva/1' }));
+  db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-slice', output_id FROM release_outputs WHERE release_id='rel-p'`);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-slice', 'slice-map')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-slice' WHERE singleton_id=1`);
+  const result = await study(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:2'], sources: [HEB] }) as {
+    evidence: { annotations: { kind: string; native_span_id?: string }[] }[];
+  };
+  assert.equal(result.evidence[0].annotations[0].kind, 'textual_variants');
+  assert.equal(result.evidence[0].annotations[0].native_span_id, 'evidence:heb1#Gen.1.2');
 });

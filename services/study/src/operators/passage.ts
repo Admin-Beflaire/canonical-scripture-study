@@ -173,7 +173,7 @@ export function missingRanges(ref: PassageRequest, found: string[]): string[] {
   return out;
 }
 
-async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<string, PassageAnnotation[]> | null> {
+async function annotationsFor(session: ReadSession, rows: Row[], mapped = false): Promise<Map<string, PassageAnnotation[]> | null> {
   const ids = rows.map(r => r.evidence.span_id);
   const out = new Map<string, PassageAnnotation[]>();
   for (let i = 0; i < ids.length; i += 20) {
@@ -181,17 +181,19 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
     let after: [string, string] | null = null;
     for (;;) {
       const input: AnnotationsInput = { span_ids: chunk, after };
-      const result = await session.queryIfAvailable('annotations', input);
+      const result = mapped ? await session.queryIfAvailable('mapped_annotations', input) : await session.queryIfAvailable('annotations', input);
       if (result === null) return null;
       const { rows: found, more } = result;
       for (const a of found) {
         const details = parsed(a.details_json);
-        const list = out.get(String(a.span_id)) ?? [];
-        list.push({ kind: String(a.kind), provider: String(a.provider), details: isObject(details) ? details : {} });
-        out.set(String(a.span_id), list);
+        const mappedId = String(mapped ? a.mapped_span_id : a.span_id);
+        const list = out.get(mappedId) ?? [];
+        list.push({ kind: String(a.kind), provider: String(a.provider), details: isObject(details) ? details : {},
+          ...(mapped && a.span_id !== a.mapped_span_id ? { native_span_id: String(a.span_id) } : {}) });
+        out.set(mappedId, list);
       }
       if (!more || !found.length) break;
-      after = [String(found.at(-1)!.span_id), String(found.at(-1)!.id)];
+      after = [String(mapped ? found.at(-1)!.mapped_span_id : found.at(-1)!.span_id), String(found.at(-1)!.id)];
     }
   }
   return out;
@@ -343,7 +345,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     catch (error) { if (error instanceof ReadError) limits.push(limitation(error.state, String(row.id), error.message)); else throw error; }
   }
   const pending = await fillBodies(session, [...rows.values()], limits);
-  const annotations = rows.size ? await annotationsFor(session, [...rows.values()]) : new Map<string, PassageAnnotation[]>();
+  const annotations = rows.size ? await annotationsFor(session, [...rows.values()], true) : new Map<string, PassageAnnotation[]>();
   if (annotations === null) limits.push(limitation('budget', 'annotations', 'Textual notes were not supplied'));
   const items: { item: EvidenceItem; key: MappingKey }[] = [];
   let processed = start;

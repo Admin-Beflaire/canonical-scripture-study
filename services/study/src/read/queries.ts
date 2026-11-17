@@ -58,11 +58,11 @@ const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.ki
       'format', a.format, 'registered_locator', a.registered_locator))
     FROM artifacts a CROSS JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
     WHERE a.id IN (SELECT json_extract(b.value, '$.artifact_id') FROM json_each(n.body_ranges_json) AS b)) AS body_artifacts_json
-FROM native_spans n
-JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
-JOIN source_nodes s ON s.id = n.source_revision_id
+FROM json_each(?2) requested
+CROSS JOIN native_spans n ON n.id = requested.value
+CROSS JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
+CROSS JOIN source_nodes s ON s.id = n.source_revision_id
 LEFT JOIN text_payloads p ON p.content_id = n.content_id
-WHERE n.id IN (SELECT value FROM json_each(?2))
 ORDER BY n.source_revision_id, n.native_order, n.id
 LIMIT ?3`;
 
@@ -83,6 +83,32 @@ JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
 WHERE a.span_id IN (SELECT value FROM json_each(?2)) AND (a.span_id, a.id) > (?3, ?4)
 ORDER BY a.span_id, a.id
 LIMIT ?5`;
+
+/** A mapping may point to an extracted slice while source-authored notes are attached to the
+ * original native verse. Return notes on either selected span, scoped to that source. */
+const MAPPED_ANNOTATIONS = `WITH selected AS (
+  SELECT n.id, n.source_revision_id, n.segments_json FROM json_each(?2) requested
+  CROSS JOIN native_spans n ON n.id = requested.value
+  CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = n.output_id
+), note_targets AS (
+  SELECT id AS mapped_span_id, source_revision_id, id AS native_span_id FROM selected
+  UNION
+  SELECT m.id, m.source_revision_id, n.id FROM selected m
+  CROSS JOIN json_each(m.segments_json) seg
+  CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+    ON json_extract(n.segments_json, '$[0].unit_id') = json_extract(seg.value, '$.unit_id')
+    AND n.kind = 'verse' AND n.source_revision_id = m.source_revision_id
+  CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = n.output_id
+  CROSS JOIN coverage c ON c.output_id = n.output_id AND c.source_revision_id = n.source_revision_id AND c.capability = 'source_context'
+  WHERE n.id = n.output_id || '#' || json_extract(seg.value, '$.unit_id')
+    AND EXISTS (SELECT 1 FROM json_each(c.native_extent_json, '$.unit_ids') u WHERE u.value = json_extract(seg.value, '$.unit_id'))
+)
+SELECT DISTINCT t.mapped_span_id, a.id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
+FROM note_targets t CROSS JOIN annotations a INDEXED BY annotations_span
+  ON a.span_id = t.native_span_id AND a.source_revision_id = t.source_revision_id
+CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = a.output_id
+WHERE (t.mapped_span_id, a.id) > (?3, ?4)
+ORDER BY t.mapped_span_id, a.id LIMIT ?5`;
 
 /** Endpoints are returned only when their own span belongs to the current release;
  *  an unselected endpoint is reported, never filled from another release. */
@@ -269,6 +295,8 @@ export const QUERIES = {
     return [id(i.source_revision_id), JSON.stringify(list(i.kinds, 8)), start, end, ...after];
   } },
   annotations: { sql: ANNOTATIONS, params: (i: AnnotationsInput) =>
+    [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
+  mapped_annotations: { sql: MAPPED_ANNOTATIONS, params: (i: AnnotationsInput) =>
     [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
   relationships: { sql: RELATIONSHIPS, params: (i: RelationshipsInput) =>
     [id(i.span_id), i.kinds == null ? null : JSON.stringify(list(i.kinds, 8)), ...(optionalAfter(i.after, 1) ?? ['']),

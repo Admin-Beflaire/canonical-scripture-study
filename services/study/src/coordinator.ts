@@ -23,7 +23,7 @@ const TRANSLATING = new Set<Mode>(['translation', 'passage', 'exegesis', 'compar
 
 /** What this version cannot supply, stated rather than returned as an empty result. */
 const NOT_OFFERED: Partial<Record<Mode, Limitation[]>> = {
-  comparison: [limitation('unsupported_capability', 'comparison', 'No manuscript or witness relationships are offered yet. Each source is returned in its own numbering; verses with the same number are not assumed to correspond.')],
+  comparison: [limitation('unsupported_capability', 'comparison', 'No manuscript or witness relationships are offered yet. Reader mappings retain native citations; verses with the same number are not assumed to correspond without checked mappings.')],
   theme: [limitation('unsupported_capability', 'discovery', 'Commentary, background and quotation/allusion search are not offered yet; only exact word, form, lemma and grammar search over the original texts.')],
   word_analysis: [limitation('unsupported_capability', 'word_analysis', 'Word-by-word analysis of a whole passage is not indexed yet. Search a word, form or lemma to get each occurrence with its attributed analyses.')],
   exegesis: [limitation('unsupported_capability', 'discovery', 'Commentary and background search are not offered yet.')],

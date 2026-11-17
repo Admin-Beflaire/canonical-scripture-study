@@ -75,16 +75,24 @@ export class ReadSession {
     return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, { id: row.release_id, schema_versions: checkVersions(row.schema_versions_json) });
   }
 
-  canQuery() { return this.budget.canQuery(); }
+  canQuery<N extends QueryName>(name: N, input: QueryInput<N>) {
+    return this.budget.canQuery() || this.#cache.has(this.#queryPlan(name, input).key);
+  }
 
-  /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`
-   *  rows and whether more remain. Cache hits spend no D1 allowance. */
-  async query<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult> {
+  #queryPlan<N extends QueryName>(name: N, input: QueryInput<N>) {
     if (!isQueryName(name)) throw new ReadError('invalid_request', 'Unknown query');
     const declaration = QUERIES[name] as { sql: string; params(input: unknown): unknown[] };
     const limit = this.budget.limits.rowsPerQuery;
     const values = [this.release.id, ...declaration.params(input ?? {}), limit + 1];
     const key = JSON.stringify([name, ...values]);
+    return { sql: declaration.sql, values, key };
+  }
+
+  /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`
+   *  rows and whether more remain. Cache hits spend no D1 allowance. */
+  async query<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult> {
+    const { sql, values, key } = this.#queryPlan(name, input);
+    const limit = this.budget.limits.rowsPerQuery;
     const cached = this.#cache.get(key);
     if (cached !== undefined) {
       this.#cache.delete(key);
@@ -92,7 +100,7 @@ export class ReadSession {
       return JSON.parse(cached) as QueryResult;
     }
 
-    const rows = await run<Record<string, unknown>>(this.#db, this.budget, declaration.sql, values);
+    const rows = await run<Record<string, unknown>>(this.#db, this.budget, sql, values);
     const result = { rows: rows.slice(0, limit), more: rows.length > limit };
     const body = JSON.stringify(result);
     if (key.length + body.length <= CACHE_ENTRY_BYTES

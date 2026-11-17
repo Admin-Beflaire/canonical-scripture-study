@@ -2,6 +2,7 @@ import { canonicalJson, compareUtf8, isIdentifier, isSafeCount, utf8Length } fro
 import { candidateDirectoryPages, checkManifest, directoryEntries, entryOverlaps, type DirectoryEntry, type IndexManifest } from './manifest.ts';
 import { artifactFrom, readArtifact, type RegisteredArtifact } from './objects.ts';
 import type { ReadSession } from './session.ts';
+import type { IndexFilesInput } from './queries.ts';
 import { ReadError, limitation, type Limitation } from './states.ts';
 
 /** Source-scoped search contract used by Study operators. Only the adapter knows the
@@ -110,9 +111,10 @@ export class PagedIndexSearch implements SearchAdapter {
     const capability = CAPABILITY[request.lookup];
     const searchKey = request.lookup === 'word' ? request.key : `${request.lookup}:${request.key}`;
     const start: SearchPosition = request.position ?? { source: request.sources[0], output: '', order: 0, dir: 0, entry: 0, after: null, anchor: null };
-    if (!session.canQuery()) return finish(result, start, resumed);
-    const { rows, more } = await session.query('index_files', { source_revision_ids: request.sources, capability,
-      after: [start.source, start.output === '' ? -1 : start.order, start.output] });
+    const indexInput: IndexFilesInput = { source_revision_ids: request.sources, capability,
+      after: [start.source, start.output === '' ? -1 : start.order, start.output] };
+    if (!session.canQuery('index_files', indexInput)) return finish(result, start, resumed);
+    const { rows, more } = await session.query('index_files', indexInput);
     const groups = groupRows(rows);
     let next: Group | undefined;
     if (more) {

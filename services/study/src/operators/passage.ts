@@ -2,6 +2,7 @@ import { compareUtf8, isIdentifier, isSafeCount, sha256Hex } from '../read/bytes
 import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
 import { artifactFrom, readSlices, type RegisteredArtifact } from '../read/objects.ts';
 import type { ReadSession } from '../read/session.ts';
+import type { UnitSpansInput } from '../read/queries.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
@@ -175,12 +176,12 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
   const ids = rows.map(r => r.evidence.span_id);
   const out = new Map<string, PassageAnnotation[]>();
   for (let i = 0; i < ids.length; i += 20) {
-    if (!session.canQuery()) return null;
     const chunk = ids.slice(i, i + 20);
     let after: [string, string] | null = null;
     for (;;) {
-      if (!session.canQuery()) return null;
-      const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('annotations', { span_ids: chunk, after });
+      const input = { span_ids: chunk, after };
+      if (!session.canQuery('annotations', input)) return null;
+      const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('annotations', input);
       for (const a of found) {
         const details = parsed(a.details_json);
         const list = out.get(String(a.span_id)) ?? [];
@@ -208,14 +209,15 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
   let next: PassagePosition | null = pos;
   // Read references in order while the request allowance lasts.
   while (next) {
-    if (!session.canQuery()) break;
     if (items.length && session.budget.usage().r2Reads >= session.budget.limits.r2Reads) break;
     const ref: PassageRequest = refs[next.ref];
     const requested = new Set(candidateUnits(ref));
     const units: string[] = w.context ? contextUnits(ref) : [...requested];
     if (next.source === '' && next.order === -1) {
       // At the start of a reference: which asked verses each source has, so gaps are reported.
-      const { rows: present }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_presence', { units: [...requested], sources: w.sources });
+      const input = { units: [...requested], sources: w.sources };
+      if (!session.canQuery('unit_presence', input)) break;
+      const { rows: present }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_presence', input);
       if (!present.length) limitations.push(limitation('missing_evidence', ref.text,
         w.sources ? 'None of the named sources has the asked verses in the current release' : 'No selected source has the asked verses in the current release'));
       else if (w.sources) {
@@ -229,9 +231,10 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
         if (gaps.length) limitations.push(limitation('missing_evidence', ref.text,
           `${String(row.source_revision_id)} has no verse ${gaps.join(', ')} in the current release`));
       }
-      if (!session.canQuery()) break;
     }
-    const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_spans', { units, sources: w.sources, after: [next.source, next.order] });
+    const input: UnitSpansInput = { units, sources: w.sources, after: [next.source, next.order] };
+    if (!session.canQuery('unit_spans', input)) break;
+    const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_spans', input);
     const rows: Row[] = [];
     for (const r of found) {
       try { rows.push(await toRow(r)); }

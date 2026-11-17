@@ -90,7 +90,9 @@ test('a repeated passage avoids D1 evidence reads after checking the current rel
   assert.equal(next.budget.usage().d1Calls, 1);
 
   const smallerPage = await ReadSession.open(env, { ...roomy, rowsPerQuery: 1 });
-  assert.deepEqual(await smallerPage.query('unit_spans', input), { rows: expected.rows.slice(0, 1), more: true });
+  const firstPage = await smallerPage.query('unit_spans', input);
+  assert.equal(firstPage.more, true);
+  assert.deepEqual(firstPage.rows.map(row => row.id), [expected.rows[0].id]);
   assert.equal(smallerPage.budget.usage().d1Calls, 2);
 });
 

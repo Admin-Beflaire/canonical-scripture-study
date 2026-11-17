@@ -1,5 +1,6 @@
 import type { StudyReadEnvironment } from './read/bindings.ts';
 import { ReadSession } from './read/session.ts';
+import type { BudgetUsage } from './read/budget.ts';
 import { ReadError, limitation, type Limitation } from './read/states.ts';
 import type { Batch } from './results/batch.ts';
 import { GUIDANCE_VERSION, TRANSLATION_RULES } from './guidance.ts';
@@ -42,7 +43,9 @@ function failure(error: ReadError, request: StudyRequest): Record<string, unknow
 /** Routes one study request to its operator and returns one bounded batch. Passage references
  *  are read first; otherwise the first search lead is searched. The coordinator routes reads;
  *  it never produces an interpretation. */
-export async function study(env: StudyReadEnvironment, request: StudyRequest): Promise<Batch | Record<string, unknown>> {
+export async function study(env: StudyReadEnvironment, request: StudyRequest,
+                            reportUsage?: (usage: BudgetUsage) => void): Promise<Batch | Record<string, unknown>> {
+  let session: ReadSession | undefined;
   try {
     checkRequest(request);
     const mode = request.mode;
@@ -50,10 +53,10 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest): P
     const continuation = request.continuation ?? null;
     const refs = request.references?.filter(r => typeof r === 'string' && r.trim()) ?? [];
     const leads = request.search_leads ?? [];
-    if (mode === 'conclusion_check') return await conclusionCheck(env, base);
-    if (!refs.length && !leads.length)
+    if (mode !== 'conclusion_check' && !refs.length && !leads.length)
       throw new ReadError('invalid_request', 'Give references (for passages) or search_leads (for words); for example references ["Gen 1:1-2:3"] or search_leads [{"lookup":"lemma","key":"H7225"}]');
-    const session = await ReadSession.open(env);
+    session = await ReadSession.open(env);
+    if (mode === 'conclusion_check') return await conclusionCheck(session, base);
     // Notes go in before the batch is sized, so the whole envelope stays within the result cap.
     // Only on the first batch, so a continued study does not repeat them.
     const notes: Limitation[] = continuation ? [] : [...(NOT_OFFERED[mode] ?? [])];
@@ -73,13 +76,14 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest): P
   } catch (error) {
     if (error instanceof ReadError) return failure(error, request);
     throw error;
+  } finally {
+    if (session) reportUsage?.(session.budget.usage());
   }
 }
 
 /** The selected approved statement and its scriptural basis, or its explicit absence. It checks
  *  conclusions after interpretation and never supplies a premise. */
-async function conclusionCheck(env: StudyReadEnvironment, base: { mode: string; depth: string; language: string }) {
-  const session = await ReadSession.open(env);
+async function conclusionCheck(session: ReadSession, base: { mode: string; depth: string; language: string }) {
   const { rows } = await session.query('statement', {} as never);
   const statement = rows[0];
   return {

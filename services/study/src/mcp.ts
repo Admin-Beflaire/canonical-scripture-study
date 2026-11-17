@@ -39,7 +39,11 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
     description: 'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word, form, lemma or grammar occurrences. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
     inputSchema: fromJsonSchema<StudyRequest>(STUDY_SCHEMA as unknown as Record<string, unknown>),
     annotations: readOnly,
-  }, async (request: StudyRequest) => reply(await study(env, request)));
+  }, async (request: StudyRequest) => reply(await study(env, request, usage => {
+    // Only operational counts go to Workers Logs. Keep the tool response limited to study evidence.
+    console.log({ event: 'study_d1_cache', hits: usage.d1CacheHits, misses: usage.d1CacheMisses,
+      d1_calls: usage.d1Calls, d1_rows_read: usage.d1RowsRead });
+  })));
   server.registerTool('get_guidance', {
     title: 'Study guidance',
     description: `Returns the versioned study guidance: method, how to use the study tool, and what data is offered. Topics: ${Object.keys(GUIDANCE_TOPICS).join(', ')}, all.`,

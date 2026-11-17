@@ -172,6 +172,41 @@ test('both tools work on the baseline protocol, read-only, with guidance sent on
   await handler.close();
 });
 
+test('Study MCP reuses a full passage, including notes, after its D1 allowance is spent', async t => {
+  const events: unknown[] = [];
+  t.mock.method(console, 'log', (entry: unknown) => {
+    if (typeof entry === 'object' && entry !== null && 'event' in entry && entry.event === 'study_d1_cache') events.push(entry);
+  });
+  const { env, db } = buildPassageFixture();
+  const prepare = db.prepare.bind(db);
+  const reads: string[] = [];
+  db.prepare = sql => { reads.push(sql); return prepare(sql); };
+  const handler = protocolHandler(() => studyServer(env, false), false);
+  try {
+    await rpc(handler, 'initialize', { protocolVersion: LEGACY_VERSIONS[0], capabilities: {}, clientInfo: { name: 'host', version: '1' } });
+    const args = { name: 'study', arguments: { mode: 'passage', depth: 'focused', references: ['Gen 1:2'] } };
+    const first = await rpc(handler, 'tools/call', args);
+    const batch = JSON.parse(first.result.content[0].text) as AnyBatch;
+    assert.equal(batch.evidence.length, 1);
+    assert.equal(batch.evidence[0].annotations?.length, 1);
+    assert.equal(batch.continuation, null);
+    assert.equal(reads.length, 4, 'first call reads current, coverage, spans and notes');
+
+    env.MAX_D1_CALLS = 1;
+    reads.length = 0;
+    const repeated = await rpc(handler, 'tools/call', args);
+    assert.deepEqual(JSON.parse(repeated.result.content[0].text), batch);
+    assert.equal(reads.length, 1);
+    assert.match(reads[0], /FROM release_selection/);
+    assert.deepEqual(events, [
+      { event: 'study_d1_cache', hits: 0, misses: 3, d1_calls: 4, d1_rows_read: 0 },
+      { event: 'study_d1_cache', hits: 3, misses: 0, d1_calls: 1, d1_rows_read: 0 },
+    ]);
+  } finally {
+    await handler.close();
+  }
+});
+
 function dropTriggers(db: ReturnType<typeof buildPassageFixture>['db']) {
   for (const t of db.sqlite.prepare(`SELECT name FROM sqlite_master WHERE type = 'trigger'`).all() as { name: string }[]) db.sqlite.exec(`DROP TRIGGER ${t.name}`);
 }

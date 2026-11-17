@@ -54,6 +54,19 @@ test('exact word search returns attributed native references across partitions i
   assert.equal(JSON.stringify(result).includes('synthetic/indexes'), false, 'object keys never reach results');
 });
 
+test('exact search can use cached index metadata after its D1 allowance is spent', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  const request: SearchRequest = { lookup: 'word', key: 'alpha', sources: [A] };
+  const cold = await once(fixture, request);
+  assert.equal(cold.usage.d1Calls, 2);
+  assert.ok(cold.result.hits.length > 0);
+
+  const warm = await once(fixture, request, { ...roomy, d1Calls: 1 });
+  assert.deepEqual(warm.result, cold.result);
+  assert.equal(warm.usage.d1Calls, 1);
+});
+
 test('a key spanning many pages is enumerated across bounded requests without duplicates or false exhaustion', async () => {
   clearSearchCache();
   const fixture = buildFixture({ pageCap: 2048, commonCount: 48 });

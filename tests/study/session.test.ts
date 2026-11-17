@@ -73,6 +73,49 @@ test('two releases: reads are scoped to current release membership only', async 
   assert.deepEqual(spans.rows.map(r => [r.id, r.exact_text]), [['a-old', 'OLD wording']]);
 });
 
+test('a repeated passage avoids D1 evidence reads after checking the current release', async () => {
+  const { env } = buildPassageFixture();
+  const input = { units: ['Gen.1.1', 'Gen.1.2'], sources: [HEB] };
+  const first = await ReadSession.open(env, roomy);
+  const result = await first.query('unit_spans', input);
+  assert.equal(first.budget.usage().d1Calls, 2);
+  assert.equal(result.rows.length, 2);
+  const expected = structuredClone(result);
+  result.rows[0].label = 'caller mutation';
+
+  const next = await ReadSession.open(env, { ...roomy, d1Calls: 1 });
+  assert.deepEqual(await next.query('unit_spans', input), expected);
+  assert.equal(next.budget.usage().d1Calls, 1);
+  assert.deepEqual(await next.query('unit_spans', input), expected);
+  assert.equal(next.budget.usage().d1Calls, 1);
+  assert.equal(await next.queryIfAvailable('unit_spans', { units: ['Gen.1.3'], sources: [HEB] }), null);
+  assert.equal(next.budget.usage().d1CacheHits, 2);
+  assert.equal(next.budget.usage().d1CacheMisses, 0);
+
+  const smallerPage = await ReadSession.open(env, { ...roomy, rowsPerQuery: 1 });
+  const firstPage = await smallerPage.query('unit_spans', input);
+  assert.equal(firstPage.more, true);
+  assert.deepEqual(firstPage.rows.map(row => row.id), [expected.rows[0].id]);
+  assert.equal(smallerPage.budget.usage().d1Calls, 2);
+});
+
+test('query reuse is scoped to the selected release and its database binding', async () => {
+  const fixture = buildFixture();
+  const input = { ids: ['a-u1', 'a-old'] };
+  const first = await ReadSession.open(fixture.env, roomy);
+  assert.deepEqual((await first.query('spans', input)).rows.map(r => r.id), ['a-u1']);
+
+  const other = await ReadSession.open(buildFixture().env, roomy);
+  assert.deepEqual((await other.query('spans', input)).rows.map(r => r.id), ['a-u1']);
+  assert.equal(other.budget.usage().d1Calls, 2);
+
+  fixture.select('rel-1', 'rel-2');
+  const current = await ReadSession.open(fixture.env, roomy);
+  assert.deepEqual((await current.query('spans', input)).rows.map(r => r.id), ['a-old']);
+  assert.equal(current.budget.usage().d1Calls, 2);
+  assert.deepEqual((await first.query('spans', input)).rows.map(r => r.id), ['a-u1']);
+});
+
 test('passage lookups seek requested verse units and exact body artifacts', async () => {
   const { db, env } = buildPassageFixture();
   const session = await ReadSession.open(env, roomy);
@@ -144,7 +187,7 @@ test('raw SQL, unknown queries and mutations are rejected; budget stops further 
     assert.match(q.sql, /release_outputs \w+ ON \w+\.output_id = \w+\.output_id AND \w+\.release_id = \?1|ro\.release_id = \?1/, name);
   }
   await session.query('spans', { ids: ['a-u1'] });
-  await assert.rejects(session.query('spans', { ids: ['a-u1'] }), state('budget'));
+  await assert.rejects(session.query('spans', { ids: ['a-u2'] }), state('budget'));
   assert.equal(fixture.db.sqlite.prepare('SELECT current_release_id FROM release_selection').get()?.current_release_id, 'rel-2');
 });
 

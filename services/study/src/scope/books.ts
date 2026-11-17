@@ -1,3 +1,5 @@
+import { foldBookName } from '../../../../packages/shared/src/book-names.ts';
+
 /** Book codes as the loaded sources use them in their native unit IDs (`Gen.1.1`), with the
  *  names a host is likely to write. Names only choose the code; they never establish that a
  *  source contains the book or how it numbers it. */
@@ -20,11 +22,10 @@ const BOOKS: ReadonlyArray<readonly [string, string, ...string[]]> = [
   ['Rev', 'Revelation', 'Apocalypse', 'Rv'],
 ];
 
-const fold = (name: string) => name.toLowerCase().replace(/[\s.]/g, '').replace(/^(i{1,3})(?=[a-z])/, m => String(m.length));
 const LOOKUP = new Map<string, string>();
-for (const [code, ...names] of BOOKS) for (const name of [code, ...names]) LOOKUP.set(fold(name), code);
+for (const [code, ...names] of BOOKS) for (const name of [code, ...names]) LOOKUP.set(foldBookName(name), code);
 
 /** The book code for a written name, or null if no book matches. */
 export function bookCode(name: string): string | null {
-  return LOOKUP.get(fold(name)) ?? null;
+  return LOOKUP.get(foldBookName(name)) ?? null;
 }

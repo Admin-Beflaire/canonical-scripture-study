@@ -271,8 +271,27 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                 uses_body = True
                 for ordinal, ((unit_id, start, _), data) in enumerate(zip(spec.segments, encoded)):
                     offset = byte_bases[unit_id] + len(text.unit(unit_id)[:start].encode('utf-8'))
-                    ranges.append({'segment_ordinal': ordinal, 'artifact_id': body_artifact, 'byte_offset': offset,
-                                   'byte_length': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+                    body_range = {'segment_ordinal': ordinal, 'artifact_id': body_artifact, 'byte_offset': offset,
+                                  'byte_length': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+                    # Large ranges need independently verifiable UTF-8 pieces for bounded reads.
+                    if spec.kind == 'literary_unit' and len(data) > 1024:
+                        if basis.parameters.get('literary_chunk_bytes') != 1024:
+                            raise RecordError('Large literary units require literary_chunk_bytes=1024 in the output basis')
+                        chunks, part, part_bytes, scalar, byte_pos = [], '', 0, 0, offset
+                        for character in pieces[ordinal]:
+                            character_bytes = len(character.encode('utf-8'))
+                            if part_bytes + character_bytes > 1024:
+                                raw = part.encode('utf-8')
+                                chunks.append({'start': scalar, 'end': scalar + len(part), 'byte_offset': byte_pos,
+                                               'byte_length': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
+                                scalar += len(part); byte_pos += len(raw); part = ''; part_bytes = 0
+                            part += character; part_bytes += character_bytes
+                        if part:
+                            raw = part.encode('utf-8')
+                            chunks.append({'start': scalar, 'end': scalar + len(part), 'byte_offset': byte_pos,
+                                           'byte_length': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
+                        body_range['chunks'] = chunks
+                    ranges.append(body_range)
         if uses_body and ranges and not any(row['id'] == body_artifact for row in records.rows('artifact')):
             records.add('artifact', {'id': body_artifact, 'source_revision_id': revision, 'output_id': output_id,
                                      'sha256': body_digest, 'byte_count': len(body_bytes), 'format': 'text/utf-8',

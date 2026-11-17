@@ -58,6 +58,34 @@ export async function readArtifact(session: ReadSession, artifact: RegisteredArt
   catch { throw new ReadError('corrupt', `Invalid UTF-8 in ${artifact.id}`); }
 }
 
+/** Verify a range before releasing any text, while honoring the per-read page cap. */
+export async function readVerifiedRange(session: ReadSession, artifact: RegisteredArtifact,
+  range: { offset: number; length: number; sha256: string }): Promise<string> {
+  if (!SUPPORTED_FORMATS.has(artifact.format) || !isSafeCount(range.offset) || !isSafeCount(range.length)
+      || !range.length || range.offset + range.length > artifact.byte_count || !HEX.test(range.sha256))
+    throw new ReadError('corrupt', `Range outside registered artifact ${artifact.id}`);
+  const { pageBytes, r2Bytes, r2Reads } = session.budget.limits;
+  const reads = Math.ceil(range.length / pageBytes);
+  if (range.length > r2Bytes || reads > r2Reads) throw new ReadError('exceeds_limits', 'The verified range exceeds a request allowance');
+  const usage = session.budget.usage();
+  if (usage.r2Bytes + range.length > r2Bytes || usage.r2Reads + reads > r2Reads) throw new ReadError('budget', 'R2 read allowance used');
+  const bytes = new Uint8Array(range.length);
+  for (let offset = 0; offset < range.length; offset += pageBytes) {
+    const length = Math.min(pageBytes, range.length - offset);
+    session.budget.spendRead(length, 'page');
+    let object;
+    try { object = await session.objects.get(artifact.registered_locator, { range: { offset: range.offset + offset, length } }); }
+    catch { throw new ReadError('temporary_failure', `Object read failed for ${artifact.id}`); }
+    if (!object) throw new ReadError('corrupt', `Registered object absent for ${artifact.id}`);
+    let chunk: ArrayBuffer;
+    try { chunk = await object.arrayBuffer(); } catch { throw new ReadError('temporary_failure', `Object read failed for ${artifact.id}`); }
+    if (chunk.byteLength !== length) throw new ReadError('corrupt', `Length mismatch in ${artifact.id}`);
+    bytes.set(new Uint8Array(chunk), offset);
+  }
+  if (await sha256Hex(bytes) !== range.sha256) throw new ReadError('corrupt', `Digest mismatch in ${artifact.id}`);
+  try { return decoder.decode(bytes); } catch { throw new ReadError('corrupt', `Invalid UTF-8 in ${artifact.id}`); }
+}
+
 /** Reads one contiguous byte range of a registered object and returns the verified slices
  *  inside it. Each slice is checked against its own SHA-256 and decoded as strict UTF-8, so
  *  neighbouring records (for example consecutive verses) cost one read, and a corrupt slice is

@@ -49,14 +49,14 @@ test('host keys are normalized like the stored keys', () => {
 test('a passage delivers the asked verses and the whole chapter, in native order, across batches without loss', async () => {
   const { env, bucket } = buildPassageFixture();
   bucket.reads.length = 0;
-  const batches = await all(env, { mode: 'translation', references: ['Gen 1:3-4'] });
+  const batches = await all(env, { mode: 'translation', references: ['Gen 1:3-4'], sources: [HEB] });
   const delivered = units(batches);
-  assert.deepEqual(delivered, Array.from({ length: 40 }, (_, i) => `Gen.1.${i + 1}`), 'whole chapter once, in order');
+  assert.deepEqual(delivered, Array.from({ length: 31 }, (_, i) => `Gen.1.${i + 1}`), 'whole NRSVA chapter once, in order');
   const items = batches.flatMap(b => b.evidence);
   assert.deepEqual(items.filter(i => i.role === 'requested').map(i => i.span.segments[0].unit_id), ['Gen.1.3', 'Gen.1.4']);
   assert.equal(items.find(i => i.span.segments[0].unit_id === 'Gen.1.7')!.span.text![0], wording('Gen.1.7'));
   assert.ok(batches.length > 1, 'the chapter needs more than one batch');
-  assert.match(JSON.stringify(batches[0].context_scope), /No literary-unit boundaries/);
+  assert.ok(batches[0].limitations.some(l => l.state === 'missing_evidence' && l.scope === 'literary_unit'));
   const noted = items.find(i => i.span.segments[0].unit_id === 'Gen.1.2')!;
   assert.deepEqual((noted.annotations as { kind: string }[]).map(a => a.kind), ['textual_variants']);
   // One body read per batch at most: neighbouring verses are read together.
@@ -66,10 +66,10 @@ test('a passage delivers the asked verses and the whole chapter, in native order
 
 test('a range across two prepared units, focused depth and several references', async () => {
   const { env } = buildPassageFixture();
-  const across = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:39-2:2'] });
-  assert.deepEqual(units(across), ['Gen.1.39', 'Gen.1.40', 'Gen.2.1', 'Gen.2.2']);
+  const across = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:30-2:2'], sources: [HEB] });
+  assert.deepEqual(units(across), ['Gen.1.30', 'Gen.1.31', 'Gen.2.1', 'Gen.2.2']);
   assert.equal(across[0].context_scope, null);
-  const two = await all(env, { mode: 'inspect_source', references: ['Mat 1:2', 'Gen 2:5'] });
+  const two = await all(env, { mode: 'passage', depth: 'focused', references: ['Mat 1:2', 'Gen 2:5'] });
   assert.deepEqual(units(two), ['Mat.1.2', 'Gen.2.5']);
 });
 
@@ -77,9 +77,9 @@ test('sources are kept apart; a reference no source has is reported, not filled'
   const { env } = buildPassageFixture();
   const [none] = await all(env, { mode: 'passage', references: ['Gen 1:1'], sources: [GRK] });
   assert.equal(none.evidence.length, 0);
-  assert.ok(none.limitations.some(l => l.state === 'missing_evidence' && l.scope === 'Gen 1:1'));
+  assert.ok(none.limitations.some(l => l.state === 'missing_evidence' && l.scope === 'Gen.1.1'));
   const [missing] = await all(env, { mode: 'passage', depth: 'focused', references: ['Exo 3:14'] });
-  assert.ok(missing.limitations.some(l => l.state === 'missing_evidence' && /No selected source/.test(l.detail)));
+  assert.ok(missing.limitations.some(l => l.state === 'missing_evidence' && /No checked mapping/.test(l.detail)));
   const [only] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:1'], sources: [HEB] });
   assert.deepEqual(units([only]), ['Gen.1.1']);
 });
@@ -216,14 +216,12 @@ test('R35-1: verses missing from an asked range are reported, also when context 
   dropTriggers(db);
   db.sqlite.exec(`DELETE FROM annotations WHERE span_id = 'evidence:heb1#Gen.1.2'; DELETE FROM span_segments WHERE span_id = 'evidence:heb1#Gen.1.2';
     DELETE FROM native_spans WHERE id = 'evidence:heb1#Gen.1.2'`);
-  const [gap] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:1-3'] });
+  const [gap] = await all(env, { mode: 'inspect_source', references: ['Gen 1:1-3'], sources: [HEB] });
   assert.deepEqual(units([gap]), ['Gen.1.1', 'Gen.1.3']);
   assert.ok(gap.limitations.some(l => l.state === 'missing_evidence' && /no verse Gen 1:2\b/.test(l.detail)), JSON.stringify(gap.limitations));
   const beyond = await all(env, { mode: 'translation', references: ['Gen 1:99'] });
-  assert.ok(units(beyond).length > 0, 'the chapter is still delivered as context');
-  assert.ok(beyond[0].limitations.some(l => l.state === 'missing_evidence' && l.scope === 'Gen 1:99'));
-  assert.ok(beyond.flatMap(b => b.evidence).every(i => i.role === 'context'));
-  const tail = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 2:4-7'] });
+  assert.equal(beyond[0].limitations[0].state, 'invalid_request', 'reader references beyond the catalogue are rejected');
+  const tail = await all(env, { mode: 'inspect_source', references: ['Gen 2:4-7'], sources: [HEB] });
   assert.ok(tail[0].limitations.some(l => /no verse Gen 2:6-7/.test(l.detail)), JSON.stringify(tail[0].limitations));
 });
 
@@ -241,7 +239,7 @@ test('missing ranges: gaps, missing chapters and an explicit end; an unknown cha
 test('R35-2: a missing or malformed body withholds only its verses; independent evidence is delivered', async () => {
   const { env, bucket, db } = buildPassageFixture();
   bucket.objects.delete('synthetic/body/evidence:heb2');
-  const [batch] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:40-2:2'] });
+  const [batch] = await all(env, { mode: 'inspect_source', references: ['Gen 1:40-2:2'], sources: [HEB] });
   const text = new Map(batch.evidence.map(i => [i.span.segments[0].unit_id, i.span.text]));
   assert.deepEqual(text.get('Gen.1.40'), [wording('Gen.1.40')]);
   assert.equal(text.get('Gen.2.1'), null);
@@ -252,19 +250,19 @@ test('R35-2: a missing or malformed body withholds only its verses; independent 
   const ranges = JSON.parse(row.body_ranges_json);
   ranges[0].byte_offset = -3;
   db.sqlite.prepare(`UPDATE native_spans SET body_ranges_json = ? WHERE id = 'evidence:heb1#Gen.1.5'`).run(JSON.stringify(ranges));
-  const [malformed] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:4-6'] });
+  const [malformed] = await all(env, { mode: 'inspect_source', references: ['Gen 1:4-6'], sources: [HEB] });
   assert.deepEqual(units([malformed]), ['Gen.1.4', 'Gen.1.6']);
   assert.ok(malformed.limitations.some(l => l.state === 'corrupt' && /malformed/.test(l.detail)));
 });
 
 test('R35-3 and R35-4: a missing first chapter and a named source without the verses are reported', async () => {
   const { env } = buildPassageFixture();
-  const [cross] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:99-2:2'] });
+  const [cross] = await all(env, { mode: 'inspect_source', references: ['Gen 1:99-2:2'], sources: [HEB] });
   assert.deepEqual(units([cross]), ['Gen.2.1', 'Gen.2.2']);
   assert.ok(cross.limitations.some(l => l.state === 'missing_evidence' && /Gen 1:99 to the end of chapter 1/.test(l.detail)), JSON.stringify(cross.limitations));
   const [mixed] = await all(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:1'], sources: [HEB, GRK] });
   assert.deepEqual(units([mixed]), ['Gen.1.1']);
-  assert.ok(mixed.limitations.some(l => l.state === 'missing_evidence' && l.detail.startsWith(`${GRK} has none`)), JSON.stringify(mixed.limitations));
+  assert.ok(mixed.limitations.some(l => l.state === 'missing_evidence' && l.detail.startsWith(`${GRK}:`)), JSON.stringify(mixed.limitations));
 });
 
 test('a translating study carries the key translation rules in its first batch only', async () => {
@@ -281,5 +279,5 @@ test('a translating study carries the key translation rules in its first batch o
   const full = guidance('translation').text;
   for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/, /\+2 the reading that best explains/, /-2 a reading that steers the theology/, /earns no points/, /New Testament quotations decide/, /Weigh silently/, /weighed, not counted/, /not an allusion or echo/, /tiqqune sopherim/, /Keep Hebrew idioms in the text as written/, /mark it as a reconstruction/, /exaggerates or glorifies/, /On a tie in the Old Testament, translate the Masoretic Text/, /ask which edition to translate/, /Longer text that does not win goes in \[square brackets\] with a footnote, whatever its kind/, /Only when the difference is too large to bracket/, /a single added line \(the ending of the Lord's Prayer in Matthew 6:13\)/, /follow established scholarly assessments where known/, /if it is one of the tied readings/, /a tie without the Masoretic Text, a New Testament tie/, /provisional translation; say plainly that the evidence does not settle it/, /a debated boundary range is shown as possible kaige and not discounted/, /whose own reading differs, or whose clear omission is attested, at those words/, /Without such a witness the flagged reading is the only usable Greek reading: keep it/, /an edition that only names manuscripts/, /mark it with its actual label/, /A range mark alone does not discount a reading the non-kaige witnesses share/, /only after checking their wording and source at that passage/]) assert.match(full, needed);
   assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/5');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/6');
 });

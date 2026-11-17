@@ -56,6 +56,46 @@ class LiteraryTest(unittest.TestCase):
         self.assertEqual([s['unit_id'] for s in frame['segments_json']], ['1.1', '2.1'])
         self.assertEqual(frame['basis_json']['boundary_status'], 'agreed')
 
+    def test_long_literary_range_has_contiguous_verifiable_utf8_chunks(self):
+        import hashlib
+        body = 'α😀x' * 2000
+        text = NativeText(COORDINATES, (('1.1', body),))
+        source = identity('chunked')
+        unit = LiteraryUnit('large', 'Large', (('1.1', 0, len(body)),), 'Synthetic', 'Synthetic')
+        with self.assertRaises(RecordError):
+            build_evidence(source, text, literary_spans(text, [unit]), basis(source), d1_body_max_bytes=24)
+        result = build_evidence(source, text, literary_spans(text, [unit]),
+                                basis(source, parameters={'d1_body_max_bytes': 24, 'literary_chunk_bytes': 1024}),
+                                d1_body_max_bytes=24)
+        [span] = result.rows('native_span')
+        [body_range] = span['body_ranges_json']
+        raw = body.encode('utf-8')
+        chunks = body_range['chunks']
+        self.assertGreater(len(chunks), 1)
+        scalar, offset = 0, 0
+        for chunk in chunks:
+            data = raw[chunk['byte_offset']:chunk['byte_offset'] + chunk['byte_length']]
+            self.assertLessEqual(len(data), 1024)
+            self.assertEqual((chunk['start'], chunk['byte_offset']), (scalar, offset))
+            self.assertEqual(hashlib.sha256(data).hexdigest(), chunk['sha256'])
+            scalar += len(data.decode('utf-8')); offset += len(data)
+            self.assertEqual(chunk['end'], scalar)
+        self.assertEqual((scalar, offset), (len(body), len(raw)))
+        from css_preparation.validate.saved import CandidateInventory, verify_candidate_inventory
+        output_basis = basis(source, parameters={'d1_body_max_bytes': 24, 'literary_chunk_bytes': 1024})
+        inventory = CandidateInventory(added=(output_basis,))
+        blobs = {row['registered_locator']: result.blobs[row['id']] for row in result.rows('artifact')}
+        def checked_rows(kind, _ids):
+            return result.rows(kind)
+        verify_candidate_inventory(inventory, read_rows=checked_rows, read_blob=blobs.__getitem__)
+        def damaged_rows(kind, _ids):
+            rows = deepcopy(result.rows(kind))
+            if kind == 'native_span':
+                rows[0]['body_ranges_json'][0]['chunks'][0]['sha256'] = '0' * 64
+            return rows
+        with self.assertRaisesRegex(RecordError, 'chunks are inconsistent'):
+            verify_candidate_inventory(inventory, read_rows=damaged_rows, read_blob=blobs.__getitem__)
+
     def test_navigation_rows_cover_every_segment_and_find_overlapping_units(self):
         spans = self.db.execute('SELECT id, segments_json FROM native_spans').fetchall()
         rows = self.db.execute('SELECT span_id, count(*) FROM span_segments GROUP BY span_id').fetchall()

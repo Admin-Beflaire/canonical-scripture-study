@@ -30,6 +30,10 @@ Adapters hand `prepare` a source identity, exact unit texts and the spans they
 recognised. Wording is never normalised. A short single-segment body becomes a D1
 text payload; longer or discontinuous bodies become digest-checked byte ranges in
 one uncompressed R2 artifact per output. The size limit is a recipe parameter.
+Literary-unit ranges over 1,024 bytes also carry independently verified UTF-8
+chunks. Their output basis must set `literary_chunk_bytes` to `1024`, so older
+outputs are not reused as though they contained those chunks. A selected older
+oversized range without chunks needs a new prepared output before bounded reading.
 Every span gets `span_segments` rows: inclusive intervals in linear source order
 (Unicode scalars across the revision's units in native order, or the order bases an
 adapter declares for part of a revision; STEPBible uses book ordinal × 2^32 plus scalars

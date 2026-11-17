@@ -44,6 +44,13 @@ export interface ReleaseSourcesInput { capability?: string | null; after?: [stri
 export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
 export interface UnitSpansInput { units: string[]; sources?: string[] | null; after?: [string, number] | null }
 export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, number, string] | null }
+export interface ReaderMappingInput {
+  references: { ref: string; book: string; chapter: number; verse: number; native_units: string[] }[];
+  scheme: string;
+  sources: string[] | null;
+  after?: [number, string, number, number, string, string] | null;
+}
+export interface LiteraryContextInput extends Omit<ReaderMappingInput, 'after'> { after?: [string, string] | null; include_current?: boolean }
 
 const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
@@ -52,11 +59,11 @@ const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.ki
       'format', a.format, 'registered_locator', a.registered_locator))
     FROM artifacts a CROSS JOIN release_outputs ra ON ra.output_id = a.output_id AND ra.release_id = ?1
     WHERE a.id IN (SELECT json_extract(b.value, '$.artifact_id') FROM json_each(n.body_ranges_json) AS b)) AS body_artifacts_json
-FROM native_spans n
-JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
-JOIN source_nodes s ON s.id = n.source_revision_id
+FROM json_each(?2) requested
+CROSS JOIN native_spans n ON n.id = requested.value
+CROSS JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
+CROSS JOIN source_nodes s ON s.id = n.source_revision_id
 LEFT JOIN text_payloads p ON p.content_id = n.content_id
-WHERE n.id IN (SELECT value FROM json_each(?2))
 ORDER BY n.source_revision_id, n.native_order, n.id
 LIMIT ?3`;
 
@@ -77,6 +84,32 @@ JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
 WHERE a.span_id IN (SELECT value FROM json_each(?2)) AND (a.span_id, a.id) > (?3, ?4)
 ORDER BY a.span_id, a.id
 LIMIT ?5`;
+
+/** A mapping may point to an extracted slice while source-authored notes are attached to the
+ * original native verse. Return notes on either selected span, scoped to that source. */
+const MAPPED_ANNOTATIONS = `WITH selected AS (
+  SELECT n.id, n.source_revision_id, n.segments_json FROM json_each(?2) requested
+  CROSS JOIN native_spans n ON n.id = requested.value
+  CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = n.output_id
+), note_targets AS (
+  SELECT id AS mapped_span_id, source_revision_id, id AS native_span_id FROM selected
+  UNION
+  SELECT m.id, m.source_revision_id, n.id FROM selected m
+  CROSS JOIN json_each(m.segments_json) seg
+  CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+    ON json_extract(n.segments_json, '$[0].unit_id') = json_extract(seg.value, '$.unit_id')
+    AND n.kind = 'verse' AND n.source_revision_id = m.source_revision_id
+  CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = n.output_id
+  CROSS JOIN coverage c ON c.output_id = n.output_id AND c.source_revision_id = n.source_revision_id AND c.capability = 'source_context'
+  WHERE n.id = n.output_id || '#' || json_extract(seg.value, '$.unit_id')
+    AND EXISTS (SELECT 1 FROM json_each(c.native_extent_json, '$.unit_ids') u WHERE u.value = json_extract(seg.value, '$.unit_id'))
+)
+SELECT DISTINCT t.mapped_span_id, a.id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
+FROM note_targets t CROSS JOIN annotations a INDEXED BY annotations_span
+  ON a.span_id = t.native_span_id AND a.source_revision_id = t.source_revision_id
+CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = a.output_id
+WHERE (t.mapped_span_id, a.id) > (?3, ?4)
+ORDER BY t.mapped_span_id, a.id LIMIT ?5`;
 
 /** Endpoints are returned only when their own span belongs to the current release;
  *  an unselected endpoint is reported, never filled from another release. */
@@ -201,6 +234,84 @@ GROUP BY n.source_revision_id
 ORDER BY n.source_revision_id
 LIMIT ?4`;
 
+/** One page of explicit links and checked identity ranges. Both the mapping and its target
+ * must be selected in the same release. The native candidate names are catalogue aliases;
+ * identity is allowed only where a checked source-specific range explicitly permits it. */
+const READER_MAPPINGS = `WITH requested AS (
+  SELECT CAST(j.key AS INTEGER) AS position, json_extract(j.value, '$.ref') AS reader_ref,
+    json_extract(j.value, '$.book') AS book, json_extract(j.value, '$.chapter') AS chapter,
+    json_extract(j.value, '$.verse') AS verse, json_extract(j.value, '$.native_units') AS native_units
+  FROM json_each(?2) j WHERE CAST(j.key AS INTEGER) >= ?5
+), scope_sources AS (
+  SELECT s.id AS source_revision_id FROM source_nodes s
+  WHERE s.kind = 'source_revision' AND (?4 IS NULL OR s.id IN (SELECT value FROM json_each(?4)))
+    AND EXISTS (SELECT 1 FROM coverage c INDEXED BY coverage_source
+      CROSS JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+      WHERE c.source_revision_id = s.id AND c.capability = 'source_context')
+), mappings AS (
+  SELECT q.position, q.reader_ref, l.source_revision_id, l.role, l.ordinal, l.id AS mapping_id,
+    l.status, l.basis_json, l.gap_reason,
+    CASE WHEN EXISTS (SELECT 1 FROM native_spans n JOIN release_outputs nr
+      ON nr.output_id = n.output_id AND nr.release_id = ?1
+      WHERE n.id = l.span_id AND n.source_revision_id = l.source_revision_id)
+      THEN l.span_id ELSE NULL END AS span_id,
+    CASE WHEN l.role = 'superscription' THEN 0 ELSE 1 END AS role_order
+  FROM scope_sources s CROSS JOIN requested q
+  CROSS JOIN reader_reference_links l INDEXED BY sqlite_autoindex_reader_reference_links_2
+    ON l.source_revision_id = s.source_revision_id AND l.reader_ref = q.reader_ref AND l.reader_scheme_version = ?3
+  CROSS JOIN release_outputs ro ON ro.output_id = l.output_id AND ro.release_id = ?1
+  UNION ALL
+  SELECT q.position, q.reader_ref, b.source_revision_id, 'numbered_text', 0, b.id,
+    'exact', b.basis_json, NULL, n.id, 1
+  FROM scope_sources s CROSS JOIN requested q
+  CROSS JOIN reader_reference_bases b INDEXED BY reader_reference_bases_lookup
+    ON b.source_revision_id = s.source_revision_id AND b.reader_scheme_version = ?3
+  CROSS JOIN release_outputs ro ON ro.output_id = b.output_id AND ro.release_id = ?1
+  JOIN json_each(b.checked_extent_json, '$.ranges') rg
+    ON json_extract(rg.value, '$.book_id') = q.book AND json_extract(rg.value, '$.chapter') = q.chapter
+    AND q.verse BETWEEN json_extract(rg.value, '$.first_verse') AND json_extract(rg.value, '$.last_verse')
+  JOIN json_each(q.native_units) nu
+  CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+    ON json_extract(n.segments_json, '$[0].unit_id') = nu.value AND n.kind = 'verse' AND n.source_revision_id = b.source_revision_id
+  JOIN release_outputs nr ON nr.output_id = n.output_id AND nr.release_id = ?1
+  WHERE NOT EXISTS (SELECT 1 FROM reader_reference_links l JOIN release_outputs lr ON lr.output_id = l.output_id AND lr.release_id = ?1
+      WHERE l.source_revision_id = b.source_revision_id AND l.reader_scheme_version = ?3 AND l.reader_ref = q.reader_ref AND l.role = 'numbered_text')
+), all_mappings AS (
+  SELECT * FROM mappings
+  UNION ALL
+  SELECT q.position, q.reader_ref, s.source_revision_id, 'numbered_text', 0, '',
+    'uncovered', '{}', 'No checked mapping with selected native evidence is available', NULL, 1
+  FROM requested q CROSS JOIN scope_sources s
+  WHERE NOT EXISTS (SELECT 1 FROM mappings m WHERE m.position = q.position AND m.source_revision_id = s.source_revision_id AND m.role = 'numbered_text')
+)
+SELECT * FROM all_mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id, COALESCE(span_id, '')) > (?5, ?6, ?7, ?8, ?9, ?10)
+ORDER BY position, source_revision_id, role_order, ordinal, mapping_id, COALESCE(span_id, '') LIMIT ?11`;
+
+/** Resolve overlapping units from the same checked targets; seek units independently of
+ * reader-mapping pages so a unit spanning several pages is returned only once. */
+const LITERARY_CONTEXTS = READER_MAPPINGS.slice(0, READER_MAPPINGS.indexOf('\nSELECT * FROM all_mappings WHERE')) + `
+SELECT DISTINCT unit.source_revision_id, unit.id AS span_id
+FROM all_mappings mapped
+CROSS JOIN span_segments anchor INDEXED BY sqlite_autoindex_span_segments_1
+  ON anchor.span_id = mapped.span_id AND anchor.source_revision_id = mapped.source_revision_id
+CROSS JOIN span_segments overlap INDEXED BY span_segments_source_kind_order
+  ON overlap.source_revision_id = anchor.source_revision_id AND overlap.kind = 'literary_unit'
+  AND overlap.start_order <= anchor.end_order AND overlap.end_order >= anchor.start_order
+CROSS JOIN native_spans unit ON unit.id = overlap.span_id AND unit.source_revision_id = overlap.source_revision_id
+CROSS JOIN release_outputs ro ON ro.output_id = unit.output_id AND ro.release_id = ?1
+WHERE (unit.source_revision_id, unit.id) > (?11, ?12)
+   OR (?13 = 1 AND unit.source_revision_id = ?11 AND unit.id = ?12)
+ORDER BY unit.source_revision_id, unit.id LIMIT ?14`;
+
+function readerParams(i: ReaderMappingInput): unknown[] {
+  if (!Array.isArray(i.references) || !i.references.length || i.references.length > MAX_UNITS ||
+      i.references.some(r => !isIdentifier(r.ref) || !isIdentifier(r.book) || !isSafeCount(r.chapter) || !isSafeCount(r.verse) ||
+        !Array.isArray(r.native_units) || !r.native_units.length || r.native_units.length > 20 || !r.native_units.every(x => isIdentifier(x))))
+    throw new ReadError('invalid_request', 'Invalid reader references');
+  return [JSON.stringify(i.references), id(i.scheme), i.sources == null ? null : JSON.stringify(list(i.sources)),
+    ...(optionalAfter(i.after, 6) ?? [-1, '', -1, -1, '', ''])];
+}
+
 export const QUERIES = {
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
   literary_overlap: { sql: OVERLAP, params: (i: OverlapInput) => {
@@ -210,6 +321,8 @@ export const QUERIES = {
     return [id(i.source_revision_id), JSON.stringify(list(i.kinds, 8)), start, end, ...after];
   } },
   annotations: { sql: ANNOTATIONS, params: (i: AnnotationsInput) =>
+    [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
+  mapped_annotations: { sql: MAPPED_ANNOTATIONS, params: (i: AnnotationsInput) =>
     [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
   relationships: { sql: RELATIONSHIPS, params: (i: RelationshipsInput) =>
     [id(i.span_id), i.kinds == null ? null : JSON.stringify(list(i.kinds, 8)), ...(optionalAfter(i.after, 1) ?? ['']),
@@ -224,6 +337,9 @@ export const QUERIES = {
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources))] },
   unit_spans: { sql: UNIT_SPANS, params: (i: UnitSpansInput) =>
     [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources)), ...(optionalAfter(i.after, 2) ?? ['', -1])] },
+  reader_mappings: { sql: READER_MAPPINGS, params: readerParams },
+  literary_contexts: { sql: LITERARY_CONTEXTS, params: (i: LiteraryContextInput) =>
+    [...readerParams({ ...i, after: null }), ...(optionalAfter(i.after, 2) ?? ['', '']), i.include_current ? 1 : 0] },
   index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>
     [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 3) ?? ['', -1, ''])] },
 } satisfies Record<string, Declaration<never>>;

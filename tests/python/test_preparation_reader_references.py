@@ -11,6 +11,17 @@ from stepbible_fixture import component, row
 
 
 class PrepareReaderReferencesTest(unittest.TestCase):
+    def test_long_literary_range_declares_chunking_in_reuse_basis(self):
+        body = 'א' * 1500
+        source, data = component(lines=[row('Mal.1.1#01=L', body)])
+        unit = LiteraryUnit('long', 'Long', (('Mal.1.1', 0, len(body)),), 'fixture', 'fixture/1')
+        records = prepare_reader_reference_unit(data, source, 'Mal', ['Mal.1.1'], literary_units=[unit])
+        [output] = records.rows('prepared_output')
+        self.assertEqual(output['parameters_json']['literary_chunk_bytes'], 1024)
+        [span] = [row for row in records.rows('native_span') if row['kind'] == 'literary_unit']
+        self.assertGreater(len(span['body_ranges_json'][0]['chunks']), 1)
+        self.assertEqual(span_wording(span, {}, records.blobs), [body])
+
     def test_mixed_psalm_and_discontinuous_literary_unit_keep_scalar_ranges(self):
         source, data = component(lines=[
             row('Psa.3.0(3.1)#01=L', 'עַ־'),

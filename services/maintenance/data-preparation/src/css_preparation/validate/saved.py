@@ -169,6 +169,22 @@ def verify_candidate_inventory(
             if (start + length > len(content)
                     or hashlib.sha256(content[start:start + length]).hexdigest() != br['sha256']):
                 raise RecordError('Saved native body range has incorrect bytes or digest')
+            if 'chunks' in br:
+                byte_pos, scalar_pos = start, 0
+                for chunk in br['chunks']:
+                    raw = content[chunk['byte_offset']:chunk['byte_offset'] + chunk['byte_length']]
+                    try:
+                        text = raw.decode('utf-8', errors='strict')
+                    except UnicodeDecodeError:
+                        raise RecordError('Saved body chunk has invalid UTF-8') from None
+                    if (chunk['byte_offset'] != byte_pos or chunk['start'] != scalar_pos
+                            or chunk['end'] != scalar_pos + len(text) or len(raw) != chunk['byte_length']
+                            or hashlib.sha256(raw).hexdigest() != chunk['sha256']):
+                        raise RecordError('Saved body chunks are inconsistent')
+                    byte_pos += len(raw); scalar_pos += len(text)
+                segment = span['segments_json'][br['segment_ordinal']]
+                if byte_pos != start + length or scalar_pos != segment['end'] - segment['start']:
+                    raise RecordError('Saved body chunks do not cover the segment')
 
     # Validate saved source-revision identities through their required ancestry.
     nodes = _unique(data['source_node'], 'id', 'source_node')

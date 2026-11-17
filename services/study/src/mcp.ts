@@ -11,7 +11,7 @@ export const STUDY_SCHEMA = {
   properties: {
     mode: { enum: [...MODES], description: 'What the user wants: translation, passage, exegesis, comparison, word_analysis, word_study, theme, inspect_source or conclusion_check.' },
     question: { ...text(2000), description: "The user's question, for context. The tool does not interpret it." },
-    references: { type: 'array', minItems: 1, maxItems: 4, items: text(80), description: 'Passages in the source numbering, e.g. "Gen 1:1-2:3", "Genesis 1", "Mt 5:3-12" (up to 3 chapters each).' },
+    references: { type: 'array', minItems: 1, maxItems: 4, items: text(80), description: 'Passages use NRSVA reader numbering by default, e.g. "Mal 4:1-6". For native numbering use inspect_source with exactly one source revision in sources (up to 3 chapters each).' },
     search_leads: { type: 'array', minItems: 1, maxItems: 1, description: 'One search per call.', items: { type: 'object', additionalProperties: false, required: ['lookup', 'key'], properties: {
       lookup: { enum: ['word', 'form', 'lemma', 'grammar', 'phrase', 'proximity', 'fuzzy'] }, key: text(256) } } },
     sources: { type: 'array', minItems: 1, maxItems: 20, items: text(200), description: 'Limit to these source revision IDs (as returned in evidence). Default: every selected source.' },

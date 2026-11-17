@@ -133,7 +133,10 @@ def prepare_reader_reference_unit(
         {'reader_scheme_version': version, 'inventory_digest': canonical_digest(catalogue),
          'literary_units': [{'key': span.key, 'label': span.label, 'segments': span.segments,
                              'reading_kind': span.reading_kind, 'basis': dict(span.basis),
-                             'parent_key': span.parent_key} for span in supplied_units]},
+                             'parent_key': span.parent_key} for span in supplied_units],
+         **({'literary_chunk_bytes': 1024} if any(
+             len(text.unit(unit)[start:end].encode('utf-8')) > 1024
+             for span in supplied_units for unit, start, end in span.segments) else {})},
         {'coordinate_version': text.coordinate_version, 'unit_ids': [verse.unit_id for verse in chosen]},
     )
     records = build_evidence(component.identity(), text, [*spans, *supplied_units], basis,

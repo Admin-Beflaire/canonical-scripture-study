@@ -35,7 +35,7 @@ function mappedFixture(title = false, gapBetween = false) {
   return { env, db };
 }
 
-function literaryFixture(useR2 = false, corrupt = false, long: boolean | number = false) {
+function literaryFixture(useR2 = false, corrupt = false, long: boolean | number = false, chunked = false) {
   const { env, db, bucket } = (() => {
     const fixture = mappedFixture();
     return { ...fixture, bucket: fixture.env.PRIVATE_OBJECTS as import('./fixture.ts').MemoryBucket };
@@ -54,6 +54,17 @@ function literaryFixture(useR2 = false, corrupt = false, long: boolean | number 
     const ranges = long ? [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: body.length, sha256: createHash('sha256').update(body).digest('hex') }] :
       [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: 5, sha256: createHash('sha256').update('first').digest('hex') },
       { segment_ordinal: 1, artifact_id: 'lit-body', byte_offset: 6, byte_length: 5, sha256: createHash('sha256').update('third').digest('hex') }];
+    if (long && chunked) {
+      const chunks = [];
+      let scalar = 0, byte = 0;
+      for (let i = 0; i < longText.length; i += 512) {
+        const part = longText.slice(i, i + 512), raw = new TextEncoder().encode(part);
+        chunks.push({ start: scalar, end: scalar + Array.from(part).length, byte_offset: byte, byte_length: raw.length,
+          sha256: createHash('sha256').update(raw).digest('hex') });
+        scalar += Array.from(part).length; byte += raw.length;
+      }
+      Object.assign(ranges[0], { chunks });
+    }
     db.sqlite.prepare(`INSERT INTO native_spans VALUES ('lit-unit','lit',?,NULL,'literary_unit','Synthetic unit',0,'syn/1',?,?,NULL,?,'extracted')`)
       .run(HEB, JSON.stringify(segments), JSON.stringify({ disputed: true }), JSON.stringify(ranges));
   } else {
@@ -120,6 +131,41 @@ test('an R2 range larger than the request allowance is explicitly withheld', asy
   assert.ok(batch.continuation);
 });
 
+test('a chunked R2 range larger than the request allowance continues with verified text', async () => {
+  const { env } = literaryFixture(true, false, 50000, true);
+  const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
+  let continuation: string | undefined, text = '', position = 0;
+  for (let i = 0; i < 250; i++) {
+    const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
+      evidence: { span: { span_id: string; segments: { start: number; end: number }[]; text: string[] } }[];
+      continuation: string | null;
+    };
+    for (const e of batch.evidence) if (e.span.span_id === 'lit-unit') {
+      assert.equal(e.span.segments[0].start, position);
+      position = e.span.segments[0].end;
+      text += e.span.text[0];
+    }
+    continuation = batch.continuation ?? undefined;
+    if (!continuation) break;
+  }
+  assert.equal(continuation, undefined);
+  assert.equal(position, 100000);
+  assert.equal(text, 'αa'.repeat(50000));
+});
+
+test('a damaged R2 chunk is withheld before any text is returned', async () => {
+  const { env } = literaryFixture(true, false, 50000, true);
+  const bucket = env.PRIVATE_OBJECTS as import('./fixture.ts').MemoryBucket;
+  const body = bucket.objects.get('synthetic/literary')!;
+  body[0] ^= 1;
+  const batch = await study(env, { mode: 'passage', references: ['Gen 1:1'], sources: [HEB] }) as {
+    evidence: { span: { span_id: string } }[]; limitations: { state: string; scope: string }[]; continuation: string | null;
+  };
+  assert.ok(batch.limitations.some(l => l.state === 'corrupt' && l.scope === 'lit-unit'));
+  assert.ok(!batch.evidence.some(e => e.span.span_id === 'lit-unit'));
+  assert.ok(batch.continuation);
+});
+
 test('an unselected literary-unit output cannot supply context', async () => {
   const { env, db } = literaryFixture();
   db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-m' WHERE singleton_id=1`);
@@ -174,12 +220,51 @@ test('mapping lookup selects checked ranges and selected explicit links, with st
   assert.equal(first.more, true);
   assert.deepEqual(first.rows.map(r => [r.reader_ref, r.span_id]), [['Gen.1.1', 'evidence:heb1#Gen.1.1'], ['Gen.1.2', 'evidence:heb1#Gen.1.3']]);
   const last = first.rows.at(-1)!;
-  const second = await session.query('reader_mappings', { ...input, after: [Number(last.position), String(last.source_revision_id), Number(last.role_order), Number(last.ordinal), String(last.mapping_id)] });
+  const second = await session.query('reader_mappings', { ...input, after: [Number(last.position), String(last.source_revision_id), Number(last.role_order), Number(last.ordinal), String(last.mapping_id), String(last.span_id ?? '')] });
   assert.equal(second.rows[0].status, 'missing');
   assert.equal(second.rows[0].span_id, null);
   const calls = session.budget.usage().d1Calls;
   assert.equal(JSON.stringify(await session.query('reader_mappings', input)), JSON.stringify(first));
   assert.equal(session.budget.usage().d1Calls, calls);
+});
+
+test('mapping cursor distinguishes verse spans with the same baseline', async () => {
+  const { env, db } = mappedFixture();
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-p' WHERE singleton_id=1`);
+  const text = 'alternate', digest = createHash('sha256').update(text).digest('hex');
+  db.sqlite.prepare('INSERT INTO text_payloads VALUES (?, ?)').run(digest, text);
+  db.sqlite.prepare(`INSERT INTO native_spans VALUES ('alternate','map',?,NULL,'verse','Alternate',0,'syn/1',?,'{}',?,'[]','preserved')`)
+    .run(HEB, JSON.stringify([{ unit_id: 'Gen.1.1', start: 0, end: text.length }]), digest);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-m' WHERE singleton_id=1`);
+  const session = await ReadSession.open(env, { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 1 });
+  const input = { references: [{ ref: 'Gen.1.1', book: 'Gen', chapter: 1, verse: 1, native_units: ['Gen.1.1'] }], scheme: 'nrsva/1', sources: [HEB] };
+  const first = await session.query('reader_mappings', input);
+  const row = first.rows[0];
+  assert.ok(first.more);
+  const next = await session.query('reader_mappings', { ...input, after: [Number(row.position), String(row.source_revision_id), Number(row.role_order), Number(row.ordinal), String(row.mapping_id), String(row.span_id)] });
+  assert.deepEqual(new Set([row.span_id, next.rows[0].span_id]), new Set(['alternate', 'evidence:heb1#Gen.1.1']));
+});
+
+test('mapped bodies are read in delivery order when R2 reads are limited', async () => {
+  const { env, db } = mappedFixture();
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-p' WHERE singleton_id=1`);
+  const text = 'first mapping', data = new TextEncoder().encode(text), sha = createHash('sha256').update(data).digest('hex');
+  (env.PRIVATE_OBJECTS as import('./fixture.ts').MemoryBucket).objects.set('synthetic/late', data);
+  db.sqlite.prepare(`INSERT INTO artifacts VALUES ('z-late', ?, 'map', ?, ?, 'text/utf-8', 'synthetic/late')`).run(HEB, sha, data.length);
+  const ranges = [{ segment_ordinal: 0, artifact_id: 'z-late', byte_offset: 0, byte_length: data.length, sha256: sha }];
+  db.sqlite.prepare(`INSERT INTO native_spans VALUES ('z-first','map',?,NULL,'verse','First',0,'syn/1',?,'{}',NULL,?,'extracted')`)
+    .run(HEB, JSON.stringify([{ unit_id: 'Gen.1.1', start: 0, end: text.length }]), JSON.stringify(ranges));
+  db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('map2','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
+  db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('first-link','map2',?,'nrsva/1','Gen.1.1','z-first','numbered_text',0,'exact','{}',NULL)`).run(HEB);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-m','map2')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-m' WHERE singleton_id=1`);
+  const limits = { d1Calls: 10, r2Reads: 1, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 20 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:1-2'], sources: [HEB], context: false };
+  const first = await passageBatch(await ReadSession.open(env, limits), request, null, 'test');
+  assert.ok(first.evidence.some(e => e.kind === 'source_text' && e.span.span_id === 'z-first'));
+  assert.ok(first.continuation);
+  const second = await passageBatch(await ReadSession.open(env, limits), request, first.continuation, 'test');
+  assert.ok(second.evidence.some(e => e.kind === 'source_text' && e.reader_reference === 'Gen.1.2'));
 });
 
 test('reader results place a selected superscription before numbered text', async () => {

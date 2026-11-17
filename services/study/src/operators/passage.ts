@@ -42,7 +42,8 @@ export const PASSAGE_CHECKS: Readonly<Record<string, PositionCheck>> = Object.fr
   },
 });
 
-interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset: number; byte_length: number; sha256: string }
+interface BodyChunk { start: number; end: number; byte_offset: number; byte_length: number; sha256: string }
+interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset: number; byte_length: number; sha256: string; chunks?: BodyChunk[] }
 interface Row { evidence: SpanEvidence; order: number; ranges: BodyRange[]; artifacts: Map<string, RegisteredArtifact>; textFromD1: boolean }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -98,7 +99,6 @@ async function fillBodies(session: ReadSession, rows: Row[], limitations: Limita
     if (!artifact) withhold(row, 'missing_evidence', 'The stored wording is not selected in the current release and is withheld');
     else pieces.push({ row, index, range, artifact });
   });
-  pieces.sort((a, b) => compareUtf8(a.artifact.id, b.artifact.id) || a.range.byte_offset - b.range.byte_offset);
   const cap = session.budget.limits.pageBytes;
   const groups: Piece[][] = [];
   for (const piece of pieces) {
@@ -106,7 +106,7 @@ async function fillBodies(session: ReadSession, rows: Row[], limitations: Limita
     const group = groups.at(-1);
     const start = group?.[0].range.byte_offset ?? 0;
     const end = piece.range.byte_offset + piece.range.byte_length;
-    if (group && group[0].artifact.id === piece.artifact.id && end - start <= cap
+    if (group && group[0].artifact.id === piece.artifact.id && piece.range.byte_offset >= group.at(-1)!.range.byte_offset && end - start <= cap
         && piece.range.byte_offset - (group.at(-1)!.range.byte_offset + group.at(-1)!.range.byte_length) <= 256) group.push(piece);
     else groups.push([piece]);
   }
@@ -296,8 +296,8 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
   return batch;
 }
 
-type MappingKey = [number, string, number, number, string];
-const mappingKey = (row: Record<string, unknown>): MappingKey => [Number(row.position), String(row.source_revision_id), Number(row.role_order), Number(row.ordinal), String(row.mapping_id)];
+type MappingKey = [number, string, number, number, string, string];
+const mappingKey = (row: Record<string, unknown>): MappingKey => [Number(row.position), String(row.source_revision_id), Number(row.role_order), Number(row.ordinal), String(row.mapping_id), row.span_id == null ? '' : String(row.span_id)];
 
 /** Reader requests never fall back to same-number native text outside checked mappings. */
 async function readerPassageBatch(session: ReadSession, w: PassageWorkload, continuation: string | null, guidanceVersion: string,
@@ -325,16 +325,16 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
   });
   if (references.length > 540) throw new ReadError('exceeds_limits', 'The requested references are too long');
   const checks: Readonly<Record<string, PositionCheck>> = { reader(pos, key) {
-    return key === null && Array.isArray(pos) && pos.length === 5 && Number.isSafeInteger(pos[0]) && pos[0] >= -1 && pos[0] < references.length
+    return key === null && Array.isArray(pos) && pos.length === 6 && Number.isSafeInteger(pos[0]) && pos[0] >= -1 && pos[0] < references.length
       && (pos[1] === '' || isIdentifier(pos[1])) && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 1
-      && Number.isSafeInteger(pos[3]) && pos[3] >= -1 && (pos[4] === '' || isIdentifier(pos[4]));
+      && Number.isSafeInteger(pos[3]) && pos[3] >= -1 && (pos[4] === '' || isIdentifier(pos[4])) && (pos[5] === '' || isIdentifier(pos[5]));
   }, literary(pos, key) {
     return key === null && w.context && Array.isArray(pos) && pos.length === 4
       && (pos[0] === '' || isIdentifier(pos[0])) && (pos[1] === '' || isIdentifier(pos[1]))
       && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 100000 && isSafeCount(pos[3]);
   } };
   const state = continuation ? await resumeContinuation(continuation, w, checks) : null;
-  const start: MappingKey = state?.op === 'reader' ? state.pos as MappingKey : [-1, '', -1, -1, ''];
+  const start: MappingKey = state?.op === 'reader' ? state.pos as MappingKey : [-1, '', -1, -1, '', ''];
   session.budget.spendResult(ENVELOPE_RESERVE);
   if (w.context && (!state || state.op === 'literary')) {
     const cursor: [string, string, number, number] = state?.op === 'literary' ? state.pos as [string, string, number, number] : ['', '', -1, 0];
@@ -356,6 +356,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         throw new ReadError('invalid_request', 'The literary-unit continuation is outside the selected unit');
       const segment = row.evidence.segments[part];
       const piece: Row = { ...row, evidence: { ...row.evidence, segments: [segment], text: null }, ranges: [] };
+      let textStart = 0;
       if (row.textFromD1) {
         const chars = Array.from(row.evidence.text![0]);
         const lengths = row.evidence.segments.map(s => s.end - s.start);
@@ -366,15 +367,36 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         const range = row.ranges[part];
         const artifact = row.artifacts.get(range.artifact_id);
         if (!artifact) throw new ReadError('missing_evidence', 'The stored wording is not selected in the current release');
-        piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 })];
+        if (range.chunks !== undefined) {
+          if (!Array.isArray(range.chunks) || !range.chunks.length) throw new ReadError('corrupt', 'Literary-unit chunks are malformed');
+          let bytePos = range.byte_offset, scalarPos = 0;
+          for (const chunk of range.chunks) {
+            if (!isObject(chunk) || !isSafeCount(chunk.start) || !isSafeCount(chunk.end) || chunk.start !== scalarPos || chunk.end <= chunk.start
+                || chunk.byte_offset !== bytePos || !isSafeCount(chunk.byte_length) || !chunk.byte_length
+                || typeof chunk.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(chunk.sha256))
+              throw new ReadError('corrupt', 'Literary-unit chunks are inconsistent');
+            scalarPos = chunk.end; bytePos += chunk.byte_length;
+          }
+          if (scalarPos !== segment.end - segment.start || bytePos !== range.byte_offset + range.byte_length)
+            throw new ReadError('corrupt', 'Literary-unit chunks do not cover the segment');
+          const chunk = range.chunks.find(c => c.start <= within && within < c.end);
+          if (!chunk) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
+          textStart = chunk.start;
+          piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: chunk.byte_offset, length: chunk.byte_length, sha256: chunk.sha256 })];
+          if (Array.from(piece.evidence.text[0]).length !== chunk.end - chunk.start) throw new ReadError('corrupt', 'Literary-unit chunk length is inconsistent');
+        } else {
+          piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 })];
+        }
       }
       const limitations: Limitation[] = [...notes];
       if (piece.evidence.text) {
         const chars = Array.from(piece.evidence.text[0]);
-        if (chars.length !== segment.end - segment.start) throw new ReadError('corrupt', 'Literary-unit text does not match its native segment');
-        if (within >= chars.length && (within !== 0 || chars.length !== 0)) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
-        const end = Math.min(chars.length, within + 1024);
-        piece.evidence.text = [chars.slice(within, end).join('')];
+        if (row.textFromD1 || !row.ranges[part]?.chunks) {
+          if (chars.length !== segment.end - segment.start) throw new ReadError('corrupt', 'Literary-unit text does not match its native segment');
+        }
+        if (within < textStart || within >= textStart + chars.length) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
+        const end = Math.min(textStart + chars.length, within + 1024);
+        piece.evidence.text = [chars.slice(within - textStart, end - textStart).join('')];
         piece.evidence.segments = [{ ...segment, start: segment.start + within, end: segment.start + end }];
       }
       const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context' };
@@ -390,7 +412,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       const lastPart = segmentComplete && part + 1 === row.evidence.segments.length;
       const next = lastPart ? [source, unitId, -1, 0] : segmentComplete ? [source, unitId, part + 1, 0] : [source, unitId, part, nextOffset];
       batch.continuation = lastPart && !context.more
-        ? await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null })
+        ? await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, '', ''], key: null })
         : await encodeContinuation(w, { op: 'literary', pos: next, key: null });
       batch.remaining = { passage: 'continues', literary_unit: lastPart ? 'complete' : 'continues' };
       return batch;
@@ -404,7 +426,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
           ...(rules ? { translation_rules: rules } : {}) }, session.budget);
         batch.continuation = context.more
           ? await encodeContinuation(w, { op: 'literary', pos: [source, unitId, -1, 0], key: null })
-          : await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null });
+          : await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, '', ''], key: null });
         return batch;
       }
     }
@@ -422,7 +444,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     try { const parsedRow = await toRow(row); rows.set(parsedRow.evidence.span_id, parsedRow); }
     catch (error) { if (error instanceof ReadError) limits.push(limitation(error.state, String(row.id), error.message)); else throw error; }
   }
-  const pending = await fillBodies(session, [...rows.values()], limits);
+  const pending = await fillBodies(session, ids.map(id => rows.get(id)).filter((row): row is Row => row !== undefined), limits);
   const annotations = rows.size ? await annotationsFor(session, [...rows.values()], true) : new Map<string, PassageAnnotation[]>();
   if (annotations === null) limits.push(limitation('budget', 'annotations', 'Textual notes were not supplied'));
   const items: { item: EvidenceItem; key: MappingKey }[] = [];

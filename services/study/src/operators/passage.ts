@@ -180,8 +180,9 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
     let after: [string, string] | null = null;
     for (;;) {
       const input: AnnotationsInput = { span_ids: chunk, after };
-      if (!session.canQuery('annotations', input)) return null;
-      const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('annotations', input);
+      const result = await session.queryIfAvailable('annotations', input);
+      if (result === null) return null;
+      const { rows: found, more } = result;
       for (const a of found) {
         const details = parsed(a.details_json);
         const list = out.get(String(a.span_id)) ?? [];
@@ -216,8 +217,9 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
     if (next.source === '' && next.order === -1) {
       // At the start of a reference: which asked verses each source has, so gaps are reported.
       const input = { units: [...requested], sources: w.sources };
-      if (!session.canQuery('unit_presence', input)) break;
-      const { rows: present }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_presence', input);
+      const presence = await session.queryIfAvailable('unit_presence', input);
+      if (presence === null) break;
+      const { rows: present } = presence;
       if (!present.length) limitations.push(limitation('missing_evidence', ref.text,
         w.sources ? 'None of the named sources has the asked verses in the current release' : 'No selected source has the asked verses in the current release'));
       else if (w.sources) {
@@ -233,8 +235,9 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
       }
     }
     const input: UnitSpansInput = { units, sources: w.sources, after: [next.source, next.order] };
-    if (!session.canQuery('unit_spans', input)) break;
-    const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('unit_spans', input);
+    const spans = await session.queryIfAvailable('unit_spans', input);
+    if (spans === null) break;
+    const { rows: found, more } = spans;
     const rows: Row[] = [];
     for (const r of found) {
       try { rows.push(await toRow(r)); }

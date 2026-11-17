@@ -40,11 +40,14 @@ export function limitsFor(env: Partial<StudyReadEnvironment>, starting: BudgetLi
   return { ...starting, d1Calls, r2Reads, r2Bytes, pageBytes: Math.min(starting.pageBytes, page ?? Infinity, r2Bytes) };
 }
 
-export interface BudgetUsage { d1Calls: number; d1RowsRead: number; r2Reads: number; r2Bytes: number; resultBytes: number }
+export interface BudgetUsage {
+  d1Calls: number; d1RowsRead: number; d1CacheHits: number; d1CacheMisses: number;
+  r2Reads: number; r2Bytes: number; resultBytes: number;
+}
 
 /** Counts work before it happens so callers can stop and continue in another request. */
 export class RequestBudget {
-  private used: BudgetUsage = { d1Calls: 0, d1RowsRead: 0, r2Reads: 0, r2Bytes: 0, resultBytes: 0 };
+  private used: BudgetUsage = { d1Calls: 0, d1RowsRead: 0, d1CacheHits: 0, d1CacheMisses: 0, r2Reads: 0, r2Bytes: 0, resultBytes: 0 };
   readonly limits: BudgetLimits;
   constructor(limits: BudgetLimits) { this.limits = limits; }
 
@@ -63,6 +66,9 @@ export class RequestBudget {
     this.used.d1RowsRead += rowsRead;
   }
   recordRows(rowsRead: number) { this.used.d1RowsRead += rowsRead; }
+  recordCache(hit: boolean) {
+    this.used[hit ? 'd1CacheHits' : 'd1CacheMisses'] += 1;
+  }
   spendRead(bytes: number, kind: 'page' | 'object' = 'page') {
     if (!this.canRead(bytes, kind)) throw new ReadError('budget', 'R2 read allowance used');
     this.used.r2Reads += 1;

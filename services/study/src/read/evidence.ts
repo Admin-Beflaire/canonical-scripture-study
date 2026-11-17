@@ -32,8 +32,9 @@ interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset:
  *  not-yet-read spans are reported separately; valid spans are returned regardless. */
 export async function readSpans(session: ReadSession, ids: string[]): Promise<SpanRead> {
   const out: SpanRead = { spans: [], limitations: [], remaining: [] };
-  if (!session.canQuery('spans', { ids })) return { ...out, remaining: [...ids] };
-  const { rows } = await session.query('spans', { ids });
+  const result = await session.queryIfAvailable('spans', { ids });
+  if (result === null) return { ...out, remaining: [...ids] };
+  const { rows } = result;
   const found = new Map(rows.map(row => [row.id as string, row]));
   for (const id of ids) {
     const row = found.get(id);

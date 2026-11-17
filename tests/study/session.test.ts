@@ -88,6 +88,9 @@ test('a repeated passage avoids D1 evidence reads after checking the current rel
   assert.equal(next.budget.usage().d1Calls, 1);
   assert.deepEqual(await next.query('unit_spans', input), expected);
   assert.equal(next.budget.usage().d1Calls, 1);
+  assert.equal(await next.queryIfAvailable('unit_spans', { units: ['Gen.1.3'], sources: [HEB] }), null);
+  assert.equal(next.budget.usage().d1CacheHits, 2);
+  assert.equal(next.budget.usage().d1CacheMisses, 0);
 
   const smallerPage = await ReadSession.open(env, { ...roomy, rowsPerQuery: 1 });
   const firstPage = await smallerPage.query('unit_spans', input);

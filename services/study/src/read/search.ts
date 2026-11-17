@@ -113,8 +113,9 @@ export class PagedIndexSearch implements SearchAdapter {
     const start: SearchPosition = request.position ?? { source: request.sources[0], output: '', order: 0, dir: 0, entry: 0, after: null, anchor: null };
     const indexInput: IndexFilesInput = { source_revision_ids: request.sources, capability,
       after: [start.source, start.output === '' ? -1 : start.order, start.output] };
-    if (!session.canQuery('index_files', indexInput)) return finish(result, start, resumed);
-    const { rows, more } = await session.query('index_files', indexInput);
+    const indexRows = await session.queryIfAvailable('index_files', indexInput);
+    if (indexRows === null) return finish(result, start, resumed);
+    const { rows, more } = indexRows;
     const groups = groupRows(rows);
     let next: Group | undefined;
     if (more) {

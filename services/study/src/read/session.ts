@@ -75,32 +75,32 @@ export class ReadSession {
     return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, { id: row.release_id, schema_versions: checkVersions(row.schema_versions_json) });
   }
 
-  canQuery<N extends QueryName>(name: N, input: QueryInput<N>) {
-    return this.budget.canQuery() || this.#cache.has(this.#queryPlan(name, input).key);
+  /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`
+   *  rows and whether more remain. Cache hits spend no D1 allowance. */
+  async query<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult> {
+    const result = await this.queryIfAvailable(name, input);
+    if (result === null) throw new ReadError('budget', 'D1 query allowance used');
+    return result;
   }
 
-  #queryPlan<N extends QueryName>(name: N, input: QueryInput<N>) {
+  /** Cache first, then use a D1 call if available. A null result means the caller can continue later. */
+  async queryIfAvailable<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult | null> {
     if (!isQueryName(name)) throw new ReadError('invalid_request', 'Unknown query');
     const declaration = QUERIES[name] as { sql: string; params(input: unknown): unknown[] };
     const limit = this.budget.limits.rowsPerQuery;
     const values = [this.release.id, ...declaration.params(input ?? {}), limit + 1];
     const key = JSON.stringify([name, ...values]);
-    return { sql: declaration.sql, values, key };
-  }
-
-  /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`
-   *  rows and whether more remain. Cache hits spend no D1 allowance. */
-  async query<N extends QueryName>(name: N, input: QueryInput<N>): Promise<QueryResult> {
-    const { sql, values, key } = this.#queryPlan(name, input);
-    const limit = this.budget.limits.rowsPerQuery;
     const cached = this.#cache.get(key);
     if (cached !== undefined) {
       this.#cache.delete(key);
       this.#cache.set(key, cached);
+      this.budget.recordCache(true);
       return JSON.parse(cached) as QueryResult;
     }
 
-    const rows = await run<Record<string, unknown>>(this.#db, this.budget, sql, values);
+    if (!this.budget.canQuery()) return null;
+    this.budget.recordCache(false);
+    const rows = await run<Record<string, unknown>>(this.#db, this.budget, declaration.sql, values);
     const result = { rows: rows.slice(0, limit), more: rows.length > limit };
     const body = JSON.stringify(result);
     if (key.length + body.length <= CACHE_ENTRY_BYTES

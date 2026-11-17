@@ -1,6 +1,6 @@
 import { compareUtf8, isIdentifier, isSafeCount, sha256Hex } from '../read/bytes.ts';
 import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
-import { artifactFrom, readSlices, type RegisteredArtifact } from '../read/objects.ts';
+import { artifactFrom, readVerifiedRange, readSlices, type RegisteredArtifact } from '../read/objects.ts';
 import type { ReadSession } from '../read/session.ts';
 import type { AnnotationsInput, UnitSpansInput } from '../read/queries.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
@@ -329,15 +329,15 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       && (pos[1] === '' || isIdentifier(pos[1])) && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 1
       && Number.isSafeInteger(pos[3]) && pos[3] >= -1 && (pos[4] === '' || isIdentifier(pos[4]));
   }, literary(pos, key) {
-    return key === null && w.context && Array.isArray(pos) && pos.length === 3
+    return key === null && w.context && Array.isArray(pos) && pos.length === 4
       && (pos[0] === '' || isIdentifier(pos[0])) && (pos[1] === '' || isIdentifier(pos[1]))
-      && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 100000;
+      && Number.isSafeInteger(pos[2]) && pos[2] >= -1 && pos[2] <= 100000 && isSafeCount(pos[3]);
   } };
   const state = continuation ? await resumeContinuation(continuation, w, checks) : null;
   const start: MappingKey = state?.op === 'reader' ? state.pos as MappingKey : [-1, '', -1, -1, ''];
   session.budget.spendResult(ENVELOPE_RESERVE);
   if (w.context && (!state || state.op === 'literary')) {
-    const cursor: [string, string, number] = state?.op === 'literary' ? state.pos as [string, string, number] : ['', '', -1];
+    const cursor: [string, string, number, number] = state?.op === 'literary' ? state.pos as [string, string, number, number] : ['', '', -1, 0];
     const contextReferences = references.filter(ref => requested.has(ref.ref));
     const context = await session.queryIfAvailable('literary_contexts', { references: contextReferences, scheme: 'nrsva/1', sources: w.sources,
       after: [cursor[0], cursor[1]], include_current: cursor[2] >= 0 });
@@ -346,6 +346,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       const unit = context.rows[0];
       const unitId = String(unit.span_id), source = String(unit.source_revision_id);
       const part = cursor[2] >= 0 && cursor[0] === source && cursor[1] === unitId ? cursor[2] : 0;
+      const within = part === cursor[2] && cursor[0] === source && cursor[1] === unitId ? cursor[3] : 0;
       try {
       const found = await session.queryIfAvailable('spans', { ids: [unitId] });
       if (found === null) throw new ReadError('budget', 'Literary-unit text could not be read within this request');
@@ -362,11 +363,20 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         const offset = lengths.slice(0, part).reduce((a, b) => a + b, 0);
         piece.evidence.text = [chars.slice(offset, offset + lengths[part]).join('')];
       } else if (row.ranges.length) {
-        piece.ranges = [{ ...row.ranges[part], segment_ordinal: 0 }];
+        const range = row.ranges[part];
+        const artifact = row.artifacts.get(range.artifact_id);
+        if (!artifact) throw new ReadError('missing_evidence', 'The stored wording is not selected in the current release');
+        piece.evidence.text = [await readVerifiedRange(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 })];
       }
       const limitations: Limitation[] = [...notes];
-      const pending = await fillBodies(session, [piece], limitations);
-      if (pending.size) throw new ReadError('budget', 'Literary-unit segment could not be read within this request');
+      if (piece.evidence.text) {
+        const chars = Array.from(piece.evidence.text[0]);
+        if (chars.length !== segment.end - segment.start) throw new ReadError('corrupt', 'Literary-unit text does not match its native segment');
+        if (within >= chars.length && (within !== 0 || chars.length !== 0)) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
+        const end = Math.min(chars.length, within + 1024);
+        piece.evidence.text = [chars.slice(within, end).join('')];
+        piece.evidence.segments = [{ ...segment, start: segment.start + within, end: segment.start + end }];
+      }
       const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context' };
       const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
         delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' },
@@ -375,8 +385,10 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         evidence: [item], citations: [], searched_scope: [], coverage: [], limitations,
         remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}) }, session.budget);
       if (deferred.length) throw new ReadError('exceeds_limits', 'One literary-unit segment does not fit a result batch');
-      const lastPart = part + 1 === row.evidence.segments.length;
-      const next = lastPart ? [source, unitId, -1] : [source, unitId, part + 1];
+      const nextOffset = piece.evidence.segments[0].end - segment.start;
+      const segmentComplete = nextOffset === segment.end - segment.start;
+      const lastPart = segmentComplete && part + 1 === row.evidence.segments.length;
+      const next = lastPart ? [source, unitId, -1, 0] : segmentComplete ? [source, unitId, part + 1, 0] : [source, unitId, part, nextOffset];
       batch.continuation = lastPart && !context.more
         ? await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null })
         : await encodeContinuation(w, { op: 'literary', pos: next, key: null });
@@ -391,7 +403,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
           remaining: { passage: 'continues' }, continuation: null, guidance_version: guidanceVersion,
           ...(rules ? { translation_rules: rules } : {}) }, session.budget);
         batch.continuation = context.more
-          ? await encodeContinuation(w, { op: 'literary', pos: [source, unitId, -1], key: null })
+          ? await encodeContinuation(w, { op: 'literary', pos: [source, unitId, -1, 0], key: null })
           : await encodeContinuation(w, { op: 'reader', pos: [-1, '', -1, -1, ''], key: null });
         return batch;
       }

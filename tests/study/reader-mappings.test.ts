@@ -35,21 +35,24 @@ function mappedFixture(title = false, gapBetween = false) {
   return { env, db };
 }
 
-function literaryFixture(useR2 = false, corrupt = false) {
+function literaryFixture(useR2 = false, corrupt = false, long: boolean | number = false) {
   const { env, db, bucket } = (() => {
     const fixture = mappedFixture();
     return { ...fixture, bucket: fixture.env.PRIVATE_OBJECTS as import('./fixture.ts').MemoryBucket };
   })();
   db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('lit','evidence',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
-  const segments = [{ unit_id: 'Gen.1.1', start: 0, end: 5 }, { unit_id: 'Gen.2.1', start: 0, end: 5 }];
-  const text = 'firstthird';
+  const longText = 'αa'.repeat(typeof long === 'number' ? long : 10000);
+  const segments = long ? [{ unit_id: 'Gen.1.1', start: 0, end: Array.from(longText).length }] :
+    [{ unit_id: 'Gen.1.1', start: 0, end: 5 }, { unit_id: 'Gen.2.1', start: 0, end: 5 }];
+  const text = long ? longText : 'firstthird';
   const digest = createHash('sha256').update(text).digest('hex');
   if (useR2) {
-    const body = new TextEncoder().encode('firstXthird');
+    const body = new TextEncoder().encode(long ? longText : 'firstXthird');
     db.sqlite.prepare(`INSERT INTO artifacts VALUES ('lit-body', ?, 'lit', ?, ?, 'text/utf-8', 'synthetic/literary')`)
       .run(HEB, createHash('sha256').update(body).digest('hex'), body.length);
     bucket.objects.set('synthetic/literary', body);
-    const ranges = [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: 5, sha256: createHash('sha256').update('first').digest('hex') },
+    const ranges = long ? [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: body.length, sha256: createHash('sha256').update(body).digest('hex') }] :
+      [{ segment_ordinal: 0, artifact_id: 'lit-body', byte_offset: 0, byte_length: 5, sha256: createHash('sha256').update('first').digest('hex') },
       { segment_ordinal: 1, artifact_id: 'lit-body', byte_offset: 6, byte_length: 5, sha256: createHash('sha256').update('third').digest('hex') }];
     db.sqlite.prepare(`INSERT INTO native_spans VALUES ('lit-unit','lit',?,NULL,'literary_unit','Synthetic unit',0,'syn/1',?,?,NULL,?,'extracted')`)
       .run(HEB, JSON.stringify(segments), JSON.stringify({ disputed: true }), JSON.stringify(ranges));
@@ -60,7 +63,7 @@ function literaryFixture(useR2 = false, corrupt = false) {
   }
   const locate = db.sqlite.prepare('SELECT start_order FROM span_segments WHERE span_id=? AND segment_ordinal=0');
   const insert = db.sqlite.prepare(`INSERT INTO span_segments VALUES ('lit-unit', ?, ?, 'literary_unit', ?, ?)`);
-  for (const [index, unit] of ['Gen.1.1', 'Gen.2.1'].entries()) {
+  for (const [index, unit] of (long ? ['Gen.1.1'] : ['Gen.1.1', 'Gen.2.1']).entries()) {
     const row = locate.get(`evidence:heb${index + 1}#${unit}`) as { start_order: number };
     insert.run(index, HEB, row.start_order, row.start_order + 4);
   }
@@ -79,6 +82,42 @@ test('literary context lookup returns the selected overlapping unit once', async
   const found = await session.query('literary_contexts', input);
   assert.deepEqual(found.rows.map(r => r.span_id), ['lit-unit']);
   assert.equal(found.more, false);
+});
+
+for (const useR2 of [false, true]) test(`long literary segments continue within the segment from ${useR2 ? 'R2' : 'D1'}`, async () => {
+  const { env } = literaryFixture(useR2, false, true);
+  const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
+  let continuation: string | undefined;
+  let text = '', expectedStart = 0, delivered = false;
+  for (let i = 0; i < 40; i++) {
+    const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
+      evidence: { role: string; reader_reference?: string; span: { span_id: string; segments: { start: number; end: number }[]; text: string[] } }[];
+      continuation: string | null;
+    };
+    for (const item of batch.evidence) {
+      if (item.span.span_id === 'lit-unit') {
+        assert.equal(item.span.segments[0].start, expectedStart);
+        expectedStart = item.span.segments[0].end;
+        text += item.span.text[0];
+      }
+      if (item.role === 'requested' && item.reader_reference === 'Gen.1.1') delivered = true;
+    }
+    continuation = batch.continuation ?? undefined;
+    if (!continuation) break;
+  }
+  assert.equal(continuation, undefined);
+  assert.equal(text, 'αa'.repeat(10000));
+  assert.equal(expectedStart, 20000);
+  assert.ok(delivered);
+});
+
+test('an R2 range larger than the request allowance is explicitly withheld', async () => {
+  const { env } = literaryFixture(true, false, 50000);
+  const batch = await study(env, { mode: 'passage', references: ['Gen 1:1'], sources: [HEB] }) as {
+    limitations: { state: string; scope: string }[]; continuation: string | null;
+  };
+  assert.ok(batch.limitations.some(l => l.state === 'exceeds_limits' && l.scope === 'lit-unit'));
+  assert.ok(batch.continuation);
 });
 
 test('an unselected literary-unit output cannot supply context', async () => {

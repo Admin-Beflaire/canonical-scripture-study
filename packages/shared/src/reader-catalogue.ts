@@ -1,12 +1,12 @@
 import catalogue from '../../../schemas/reader-references/nrsva-1.json' with { type: 'json' };
+import { foldBookName } from './book-names.ts';
 
 type Book = (typeof catalogue.books)[number];
-const fold = (s: string) => s.toLowerCase().replace(/[\s.()]/g, '').replace(/^(iv|i{1,3})(?=[a-z])/, m => String(m === 'iv' ? 4 : m.length));
 
 /** Resolve a reader-facing book name against the pinned catalogue, not a native edition. */
 export function readerBook(name: string): Book | undefined {
-  const key = fold(name);
-  return catalogue.books.find(book => [book.book_id, book.name, ...book.aliases].some(alias => fold(alias) === key));
+  const key = foldBookName(name);
+  return catalogue.books.find(book => [book.book_id, book.name, ...book.aliases].some(alias => foldBookName(alias) === key));
 }
 
 /** Return exact catalogue references, refusing invalid explicit endpoints. */

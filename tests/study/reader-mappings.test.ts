@@ -7,13 +7,16 @@ import { createHash } from 'node:crypto';
 import { QUERIES } from '../../services/study/src/read/queries.ts';
 import { passageBatch } from '../../services/study/src/operators/passage.ts';
 
-function mappedFixture(title = false) {
+function mappedFixture(title = false, gapBetween = false) {
   const { env, db } = buildPassageFixture(false);
   db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('map','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
   db.sqlite.prepare(`INSERT INTO reader_reference_bases VALUES ('base','map',?,'nrsva/1','syn/1',?, '{}')`)
     .run(HEB, JSON.stringify({ ranges: [{ book_id: 'Gen', chapter: 1, first_verse: 1, last_verse: 3 }] }));
-  db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('override','map',?,'nrsva/1','Gen.1.2','evidence:heb1#Gen.1.3','numbered_text',0,'exact','{}',NULL)`)
-    .run(HEB);
+  if (gapBetween) {
+    db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('gap-between','map',?,'nrsva/1','Gen.1.2',NULL,'numbered_text',0,'missing','{}','Not supplied')`).run(HEB);
+  } else {
+    db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('override','map',?,'nrsva/1','Gen.1.2','evidence:heb1#Gen.1.3','numbered_text',0,'exact','{}',NULL)`).run(HEB);
+  }
   db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('gap','map',?,'nrsva/1','Gen.1.4',NULL,'numbered_text',0,'missing','{}','Not supplied')`)
     .run(HEB);
   if (title) {
@@ -73,6 +76,40 @@ test('a page boundary between a superscription and its verse resumes in order', 
   assert.equal(second.continuation, null);
 });
 
+test('a gap between delivered and deferred evidence is reported once across continuation', async () => {
+  const { env } = mappedFixture(false, true);
+  const limits = { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 4900, rowsPerQuery: 20 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:1-3'], sources: [HEB], context: false };
+  const first = await passageBatch(await ReadSession.open(env, limits), request, null, 'test');
+  assert.equal(first.evidence.length, 1);
+  assert.ok(first.continuation);
+  assert.equal(first.limitations.filter(l => l.scope === 'Gen.1.2').length, 1);
+  const second = await passageBatch(await ReadSession.open(env, limits), request, first.continuation, 'test');
+  assert.equal(second.evidence.length, 1);
+  assert.equal(second.limitations.filter(l => l.scope === 'Gen.1.2').length, 0);
+  assert.equal(second.continuation, null);
+});
+
+test('a gap after deferred evidence waits for its own continuation and is not lost', async () => {
+  const { env } = mappedFixture();
+  const limits = { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 4900, rowsPerQuery: 20 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:1-4'], sources: [HEB], context: false };
+  let continuation: string | null = null;
+  let gaps = 0;
+  const delivered: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const batch = await passageBatch(await ReadSession.open(env, limits), request, continuation, 'test');
+    if (i === 0) assert.equal(batch.limitations.filter(l => l.scope === 'Gen.1.4').length, 0);
+    gaps += batch.limitations.filter(l => l.scope === 'Gen.1.4').length;
+    delivered.push(...batch.evidence.map(item => item.kind === 'source_text' ? item.reader_reference ?? '' : ''));
+    continuation = batch.continuation;
+    if (!continuation) break;
+  }
+  assert.equal(continuation, null);
+  assert.equal(gaps, 1);
+  assert.deepEqual(delivered, ['Gen.1.1', 'Gen.1.2', 'Gen.1.3']);
+});
+
 test('passage retrieves a mapped native exception and reports an explicit gap', async () => {
   const { env } = mappedFixture();
   const batch = await study(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:2-4'], sources: [HEB] }) as {
@@ -101,6 +138,28 @@ test('source filtering and release selection never substitute another source or 
   const absent = await next.query('reader_mappings', { references, scheme: 'nrsva/1', sources: [HEB] });
   assert.equal(absent.rows[0].status, 'exact');
   assert.equal(absent.rows[0].span_id, null, 'link target is withheld when its output is not selected');
+});
+
+test('Isaiah and First Samuel retrieve their own reader mappings', async () => {
+  const { env, db } = mappedFixture();
+  db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('book-map','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
+  const link = db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES (?, 'book-map', ?, 'nrsva/1', ?, ?, 'numbered_text', 0, 'exact', '{}', NULL)`);
+  link.run('isa', HEB, 'Isa.1.1', 'evidence:heb1#Gen.1.1');
+  link.run('sam', HEB, '1Sam.1.1', 'evidence:heb1#Gen.1.2');
+  db.sqlite.prepare(`INSERT INTO releases VALUES ('rel-books','m','r',?,'c','q','s')`)
+    .run(JSON.stringify({ evidence_records: '1', reader_scheme_version: 'nrsva/1' }));
+  db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-books', output_id FROM release_outputs WHERE release_id='rel-m'`);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-books', 'book-map')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-books' WHERE singleton_id=1`);
+  for (const [input, expectedRef, expectedUnit] of [
+    ['Isa', 'Isa.1.1', 'Gen.1.1'], ['Isaiah', 'Isa.1.1', 'Gen.1.1'],
+    ['1Sa', '1Sam.1.1', 'Gen.1.2'], ['1 Samuel', '1Sam.1.1', 'Gen.1.2'],
+  ]) {
+    const result = await study(env, { mode: 'passage', depth: 'focused', references: [`${input} 1:1`], sources: [HEB] }) as {
+      evidence: { reader_reference: string; span: { segments: { unit_id: string }[] } }[];
+    };
+    assert.deepEqual(result.evidence.map(e => [e.reader_reference, e.span.segments[0].unit_id]), [[expectedRef, expectedUnit]], input);
+  }
 });
 
 test('a warm mapped passage remains available with only the current-release D1 call allowed', async () => {

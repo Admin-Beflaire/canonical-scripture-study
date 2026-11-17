@@ -348,17 +348,22 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
   const annotations = rows.size ? await annotationsFor(session, [...rows.values()], true) : new Map<string, PassageAnnotation[]>();
   if (annotations === null) limits.push(limitation('budget', 'annotations', 'Textual notes were not supplied'));
   const items: { item: EvidenceItem; key: MappingKey }[] = [];
+  const mappingLimits: { index: number; limit: Limitation }[] = [];
   let processed = start;
-  for (const mapping of page.rows) {
+  for (const [index, mapping] of page.rows.entries()) {
     const key = mappingKey(mapping);
     if (!mapping.span_id) {
-      limits.push(limitation(mapping.status === 'uncovered' ? 'missing_evidence' : 'unresolved_mapping', String(mapping.reader_ref),
-        `${String(mapping.source_revision_id)}: ${String(mapping.gap_reason ?? 'The mapped native span is not selected')}`));
+      const limit = limitation(mapping.status === 'uncovered' ? 'missing_evidence' : 'unresolved_mapping', String(mapping.reader_ref),
+        `${String(mapping.source_revision_id)}: ${String(mapping.gap_reason ?? 'The mapped native span is not selected')}`);
+      limits.push(limit); mappingLimits.push({ index, limit });
       processed = key; continue;
     }
     const row = rows.get(String(mapping.span_id));
     if (row && pending.has(row)) break;
-    if (!row) { limits.push(limitation('missing_evidence', String(mapping.reader_ref), 'Mapped span was unavailable or invalid')); processed = key; continue; }
+    if (!row) {
+      const limit = limitation('missing_evidence', String(mapping.reader_ref), 'Mapped span was unavailable or invalid');
+      limits.push(limit); mappingLimits.push({ index, limit }); processed = key; continue;
+    }
     const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
       reader_reference: String(mapping.reader_ref), display_role: mapping.role === 'superscription' ? 'superscription' : 'numbered_text',
       mapping_status: String(mapping.status), mapping_basis: parsed(mapping.basis_json),
@@ -370,7 +375,16 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     evidence: items.map(i => i.item), citations: [], searched_scope: [], coverage: [], limitations: limits,
     remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}) }, session.budget);
   const delivered = items.length - deferred.length;
-  const last = deferred.length ? (delivered ? items[delivered - 1].key : start) : processed;
+  let last = processed;
+  if (deferred.length) {
+    const firstDeferredKey = items[delivered].key;
+    const cutoff = page.rows.findIndex(row => JSON.stringify(mappingKey(row)) === JSON.stringify(firstDeferredKey));
+    if (cutoff < 0) throw new ReadError('corrupt', 'Deferred mapping is not in the current page');
+    const laterLimits = new Set(mappingLimits.filter(entry => entry.index >= cutoff).map(entry => entry.limit));
+    batch.limitations = batch.limitations.filter(limit => !laterLimits.has(limit));
+    // Gaps before the deferred evidence were already reported, so resume after them.
+    last = cutoff > 0 ? mappingKey(page.rows[cutoff - 1]) : start;
+  }
   const more = deferred.length > 0 || pending.size > 0 || page.more;
   if (more && JSON.stringify(last) === JSON.stringify(start)) throw new ReadError('exceeds_limits', 'No mapping fits in this request');
   if (page.more) batch.limitations.push(limitation('budget', 'mapping', 'The final reference group may be incomplete until continuation'));

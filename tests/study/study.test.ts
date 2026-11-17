@@ -179,6 +179,7 @@ test('Study MCP reuses a full passage, including notes, after its D1 allowance i
   db.prepare = sql => { reads.push(sql); return prepare(sql); };
   const handler = protocolHandler(() => studyServer(env, false), false);
   try {
+    await rpc(handler, 'initialize', { protocolVersion: LEGACY_VERSIONS[0], capabilities: {}, clientInfo: { name: 'host', version: '1' } });
     const args = { name: 'study', arguments: { mode: 'passage', depth: 'focused', references: ['Gen 1:2'] } };
     const first = await rpc(handler, 'tools/call', args);
     const batch = JSON.parse(first.result.content[0].text) as AnyBatch;

@@ -2,7 +2,7 @@ import { compareUtf8, isIdentifier, isSafeCount, sha256Hex } from '../read/bytes
 import type { NativeSegment, SpanEvidence } from '../read/evidence.ts';
 import { artifactFrom, readSlices, type RegisteredArtifact } from '../read/objects.ts';
 import type { ReadSession } from '../read/session.ts';
-import type { UnitSpansInput } from '../read/queries.ts';
+import type { AnnotationsInput, UnitSpansInput } from '../read/queries.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
@@ -179,7 +179,7 @@ async function annotationsFor(session: ReadSession, rows: Row[]): Promise<Map<st
     const chunk = ids.slice(i, i + 20);
     let after: [string, string] | null = null;
     for (;;) {
-      const input = { span_ids: chunk, after };
+      const input: AnnotationsInput = { span_ids: chunk, after };
       if (!session.canQuery('annotations', input)) return null;
       const { rows: found, more }: { rows: Record<string, unknown>[]; more: boolean } = await session.query('annotations', input);
       for (const a of found) {

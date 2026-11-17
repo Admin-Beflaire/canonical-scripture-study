@@ -196,15 +196,16 @@ for (const useR2 of [false, true]) test(`discontinuous literary context is deliv
   const request = { mode: 'passage' as const, references: ['Gen 1:1'], sources: [HEB] };
   let continuation: string | undefined;
   const parts: { text: string; unit: string; part: number; disputed: boolean }[] = [];
-  let requested = false;
+  let requested = false, contextBatches = 0;
   for (let i = 0; i < 12; i++) {
     const batch = await study(env, { ...request, ...(continuation ? { continuation } : {}) }) as {
-      evidence: { kind: string; role: string; reader_reference?: string; span: { span_id: string; segments: { unit_id: string }[]; text: string[] } }[];
+      evidence: { kind: string; role: string; reader_reference?: string; literary_part: number; span: { span_id: string; segments: { unit_id: string }[]; text: string[] } }[];
       context_scope?: { literary_unit?: { part: number; parts: number; basis: { disputed?: boolean } } }; continuation: string | null;
     };
+    if (batch.evidence.some(item => item.span.span_id === 'lit-unit')) contextBatches++;
     for (const item of batch.evidence) {
       if (item.span.span_id === 'lit-unit') parts.push({ text: item.span.text[0], unit: item.span.segments[0].unit_id,
-        part: batch.context_scope!.literary_unit!.part, disputed: batch.context_scope!.literary_unit!.basis.disputed === true });
+        part: item.literary_part, disputed: batch.context_scope!.literary_unit!.basis.disputed === true });
       if (item.role === 'requested' && item.reader_reference === 'Gen.1.1') requested = true;
     }
     continuation = batch.continuation ?? undefined;
@@ -214,6 +215,7 @@ for (const useR2 of [false, true]) test(`discontinuous literary context is deliv
   assert.deepEqual(parts, [{ text: 'first', unit: 'Gen.1.1', part: 1, disputed: true },
     { text: 'third', unit: 'Gen.2.1', part: 2, disputed: true }]);
   assert.equal(requested, true);
+  assert.equal(contextBatches, 1);
 });
 
 test('mapping lookup selects checked ranges and selected explicit links, with stable paging and cache', async () => {

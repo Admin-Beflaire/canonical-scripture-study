@@ -204,7 +204,26 @@ async function annotationsFor(session: ReadSession, rows: Row[], mapped = false)
 export async function passageBatch(session: ReadSession, workload: PassageWorkload, continuation: string | null, guidanceVersion: string,
                                    notes: Limitation[] = [], rules: readonly string[] | null = null): Promise<Batch> {
   const w = normalizePassageWorkload(workload);
-  if (w.mode !== 'inspect_source') return readerPassageBatch(session, w, continuation, guidanceVersion, notes, rules);
+  if (w.mode !== 'inspect_source') {
+    const batch = await readerPassageBatch(session, w, continuation, guidanceVersion, notes, rules);
+    // Consecutive pieces of one literary unit can share the same host response.
+    while (batch.continuation && isObject(batch.remaining) && batch.remaining.literary_unit === 'continues'
+        && session.budget.canReturn(2048)) {
+      let next: Batch;
+      try { next = await readerPassageBatch(session, w, batch.continuation, guidanceVersion, [], null, false); }
+      catch (error) { if (error instanceof ReadError && error.state === 'budget') break; throw error; }
+      const currentScope = isObject(batch.context_scope) ? batch.context_scope.literary_unit : null;
+      const nextScope = isObject(next.context_scope) ? next.context_scope.literary_unit : null;
+      if (!isObject(currentScope) || !isObject(nextScope) || currentScope.span_id !== nextScope.span_id
+          || currentScope.source_revision_id !== nextScope.source_revision_id || !next.evidence.length) break;
+      const merged = { ...batch, evidence: [...batch.evidence, ...next.evidence],
+        limitations: [...batch.limitations, ...next.limitations], remaining: next.remaining, continuation: next.continuation,
+        context_scope: { literary_unit: { ...currentScope, last_part: nextScope.part } } };
+      if (utf8Length(JSON.stringify(merged)) > session.budget.limits.resultBytes) break;
+      Object.assign(batch, merged);
+    }
+    return batch;
+  }
   if (!w.sources || w.sources.length !== 1) throw new ReadError('invalid_request', 'Native source inspection requires exactly one source revision');
   const refs: PassageRequest[] = w.references.map(parseReference);
   let pos: PassagePosition = { ref: 0, source: '', order: -1 };
@@ -301,7 +320,7 @@ const mappingKey = (row: Record<string, unknown>): MappingKey => [Number(row.pos
 
 /** Reader requests never fall back to same-number native text outside checked mappings. */
 async function readerPassageBatch(session: ReadSession, w: PassageWorkload, continuation: string | null, guidanceVersion: string,
-                                  notes: Limitation[], rules: readonly string[] | null): Promise<Batch> {
+                                  notes: Limitation[], rules: readonly string[] | null, reserve = true): Promise<Batch> {
   if (session.release.schema_versions.reader_scheme_version !== 'nrsva/1')
     throw new ReadError('unresolved_mapping', 'The current release does not contain the NRSVA reader catalogue; use source-qualified inspection');
   const refs = w.references.map(parseReference);
@@ -335,7 +354,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
   } };
   const state = continuation ? await resumeContinuation(continuation, w, checks) : null;
   const start: MappingKey = state?.op === 'reader' ? state.pos as MappingKey : [-1, '', -1, -1, '', ''];
-  session.budget.spendResult(ENVELOPE_RESERVE);
+  if (reserve) session.budget.spendResult(ENVELOPE_RESERVE);
   if (w.context && (!state || state.op === 'literary')) {
     const cursor: [string, string, number, number] = state?.op === 'literary' ? state.pos as [string, string, number, number] : ['', '', -1, 0];
     const contextReferences = references.filter(ref => requested.has(ref.ref));
@@ -409,7 +428,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         }
         if (within < textStart || within >= textStart + chars.length) throw new ReadError('invalid_request', 'Literary-unit offset is outside the segment');
         // Bound the encoded JSON wording, including escaping, leaving room for the envelope.
-        const textBudget = Math.max(1, Math.min(8192, session.budget.limits.resultBytes - ENVELOPE_RESERVE - 2048));
+        const textBudget = Math.max(1, Math.min(8192, session.budget.limits.resultBytes - session.budget.usage().resultBytes - 2048));
         let low = within, high = textStart + chars.length;
         while (low < high) {
           const mid = Math.ceil((low + high) / 2);
@@ -421,7 +440,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         piece.evidence.text = [chars.slice(within - textStart, end - textStart).join('')];
         piece.evidence.segments = [{ ...segment, start: segment.start + within, end: segment.start + end }];
       }
-      const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context' };
+      const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context', literary_part: part + 1 };
       const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
         delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' },
         context_scope: { literary_unit: { source_revision_id: source, span_id: unitId,

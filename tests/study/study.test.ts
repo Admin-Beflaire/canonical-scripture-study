@@ -293,7 +293,7 @@ test('a translating study carries the key translation rules in its first batch o
     assert.match(rules, needed);
     assert.match(full, needed);
   }
-  for (const needed of [/concise.*focused/i, /without footnotes or explanation/, /standard.*default/i, /full.*comprehensive/i, /every choice that is not straightforward/, /explicit request/i, /material limitation/i, /same actual translation at every level/, /say what changed and why/, /ordinary language and context/, /translation only/, /thorough/, /not exhaustive/, /use standard without asking/, /unclear or conflicting/]) {
+  for (const needed of [/without footnotes or explanation/, /standard.*default/i, /every choice that is not straightforward/, /explicit request/i, /material limitation/i, /same actual translation at every level/, /say what changed and why/, /ordinary language and context/, /translation only/, /thorough/, /not exhaustive/, /use standard without asking/, /unclear or conflicting/, /explanation level never changes the evidence depth parameter/, /different (amount or )?(detail or )?format/i, /Work efficiently at every level/, /avoid repeated searches/, /Do not skip evidence needed to translate or force a time limit/]) {
     assert.match(rules, needed);
     assert.match(full, needed);
   }

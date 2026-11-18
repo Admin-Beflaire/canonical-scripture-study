@@ -318,7 +318,7 @@ export async function passageBatch(session: ReadSession, workload: PassageWorklo
 type MappingKey = [number, string, number, number, string, string];
 const mappingKey = (row: Record<string, unknown>): MappingKey => [Number(row.position), String(row.source_revision_id), Number(row.role_order), Number(row.ordinal), String(row.mapping_id), row.span_id == null ? '' : String(row.span_id)];
 
-/** Reader requests never fall back to same-number native text outside checked mappings. */
+/** Unmapped same-number native text is returned only as an explicitly unverified candidate. */
 async function readerPassageBatch(session: ReadSession, w: PassageWorkload, continuation: string | null, guidanceVersion: string,
                                   notes: Limitation[], rules: readonly string[] | null, reserve = true): Promise<Batch> {
   if (session.release.schema_versions.reader_scheme_version !== 'nrsva/1')
@@ -505,10 +505,15 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       const limit = limitation('missing_evidence', String(mapping.reader_ref), 'Mapped span was unavailable or invalid');
       limits.push(limit); mappingLimits.push({ index, limit }); processed = key; continue;
     }
-    const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
-      reader_reference: String(mapping.reader_ref), display_role: mapping.role === 'superscription' ? 'superscription' : 'numbered_text',
+    const candidate = mapping.status === 'native_candidate';
+    const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: candidate ? 'context' : requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
+      ...(candidate ? {} : { reader_reference: String(mapping.reader_ref), display_role: mapping.role === 'superscription' ? 'superscription' as const : 'numbered_text' as const }),
       mapping_status: String(mapping.status), mapping_basis: parsed(mapping.basis_json),
       ...(annotations ? { annotations: annotations.get(row.evidence.span_id) ?? [] } : {}) };
+    if (candidate) {
+      const limit = limitation('unresolved_mapping', String(mapping.reader_ref), `${row.evidence.source_revision_id}: same-number native candidate; correspondence to the reader reference is not checked`);
+      limits.push(limit); mappingLimits.push({ index, limit });
+    }
     items.push({ item, key }); processed = key;
   }
   const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,

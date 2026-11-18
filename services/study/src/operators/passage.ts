@@ -506,12 +506,12 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       limits.push(limit); mappingLimits.push({ index, limit }); processed = key; continue;
     }
     const candidate = mapping.status === 'native_candidate';
-    const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: candidate ? 'context' : requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
+    const item: EvidenceItem = { kind: 'source_text', span: row.evidence, role: requested.has(String(mapping.reader_ref)) ? 'requested' : 'context',
       ...(candidate ? {} : { reader_reference: String(mapping.reader_ref), display_role: mapping.role === 'superscription' ? 'superscription' as const : 'numbered_text' as const }),
       mapping_status: String(mapping.status), mapping_basis: parsed(mapping.basis_json),
       ...(annotations ? { annotations: annotations.get(row.evidence.span_id) ?? [] } : {}) };
     if (candidate) {
-      const limit = limitation('unresolved_mapping', String(mapping.reader_ref), `${row.evidence.source_revision_id}: same-number native candidate; correspondence to the reader reference is not checked`);
+      const limit = limitation('missing_evidence', String(mapping.reader_ref), `${row.evidence.source_revision_id}: No checked mapping with selected native evidence is available`);
       limits.push(limit); mappingLimits.push({ index, limit });
     }
     items.push({ item, key }); processed = key;

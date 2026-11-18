@@ -45,6 +45,7 @@ def check_candidate_quality(
             state=state, diagnostics=fields.get('diagnostics', []))
 
     def process(entry: dict[str, Any]) -> dict[str, Any]:
+        stage = 'validating_candidate'
         try:
             if not entry['required_capabilities']:
                 raise RecordError('Quality job must require at least one capability')
@@ -89,7 +90,9 @@ def check_candidate_quality(
             # cancelled/superseded task. Control also rejects late results.
             execute_unit(job_json, run_id=run_id, read_control=read_control,
                          registered=registered, process=lambda _: None)
+            stage = 'saving_receipt'
             reference = receipts.save(data)
+            stage = 'verifying_receipt'
             _check_ref(reference, receipts.load(reference))
             if receipts.load(reference) != data:
                 raise RecordError('Saved quality receipt bytes differ')
@@ -100,7 +103,7 @@ def check_candidate_quality(
             raise  # A late cancellation is not a failed quality check.
         except (RecordError, KeyError, ValueError, UnicodeError):
             return result('failed', diagnostics=[{
-                'code': 'quality_failed', 'message': 'Saved candidate failed quality checks'}])
+                'code': 'quality_failed', 'message': f'Quality failure during {stage}; detail unavailable'}])
 
     return execute_unit(job_json, run_id=run_id, read_control=read_control,
                         registered=registered, process=process)

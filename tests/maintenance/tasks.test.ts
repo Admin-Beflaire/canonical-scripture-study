@@ -154,6 +154,9 @@ test('task report shows safe diagnostics and never exposes arbitrary saved excep
   assert.ok(created.status === 'created');
   const result = JSON.stringify({ diagnostics: [
     { code: 'reader_boundary', message: 'Reader marker 1Ch.12.5 crosses the requested native unit boundary' },
+    { code: 'provider_failure', message: 'Provider request failed with HTTP 429' },
+    { code: 'quality_failed', message: 'Quality failure during saving_receipt; detail unavailable' },
+    { code: 'transient_exhausted', message: 'Transient failure during saving_output; retries exhausted' },
     { code: 'runner_error', message: 'private secret material' },
     { code: 'reader_boundary', message: 'private secret material' },
   ] });
@@ -162,7 +165,10 @@ test('task report shows safe diagnostics and never exposes arbitrary saved excep
   const report = await taskReport(db, owner, created.task.id);
   assert.deepEqual(report?.jobs[0].diagnostics, [
     { code: 'reader_boundary', message: 'Reader marker 1Ch.12.5 crosses the requested native unit boundary' },
-    { code: 'runner_error', message: 'runner_error' },
+    { code: 'provider_failure', message: 'Provider request failed with HTTP 429' },
+    { code: 'quality_failed', message: 'Quality failure during saving_receipt; detail unavailable' },
+    { code: 'transient_exhausted', message: 'Transient failure during saving_output; retries exhausted' },
+    { code: 'runner_error', message: 'The preparation runner encountered an unexpected error.' },
     { code: 'reader_boundary', message: 'reader_boundary' },
   ]);
   assert.equal(JSON.stringify(report).includes('private secret material'), false);

@@ -17,7 +17,7 @@ from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
-from css_preparation.runner.web import Origin
+from css_preparation.runner.web import Origin, ProviderError
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi
 from stepbible_fixture import recipe as stepbible_recipe
@@ -115,6 +115,15 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(result['diagnostics'], [{'code': 'reader_boundary', 'message':
                          'Reader marker 1Ch.12.5 crosses the requested native unit boundary'}])
         self.assertEqual(result['remaining_extent'], self.extent)
+
+    def test_provider_failure_reports_status_without_response_or_credentials(self):
+        def fail(job, storage):
+            raise ProviderError('private response and secret', status=429, transient=True)
+        self.recipe = Recipe(prepare=fail)
+        result = self.run_job(self.job())
+        self.assertEqual(result['diagnostics'], [{'code': 'provider_failure',
+                         'message': 'Provider request failed with HTTP 429'}])
+        self.assertNotIn('secret', str(result))
 
     def test_unknown_recipe_and_missing_module_fail_without_writes(self):
         with mock.patch.dict(RECIPES, {}, clear=True):

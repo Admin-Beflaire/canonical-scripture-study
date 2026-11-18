@@ -138,7 +138,11 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
         return _from_progress(job, run_id, progress)
     except UnitNotRunnable as error:
         return _result(job, run_id, 'cancelled', diagnostics=_diagnostic('not_runnable', error))
-    except (RecordError, ProviderError, KeyError, ValueError, TypeError) as error:
+    except ProviderError as error:
+        status = error.status if type(error.status) is int and 100 <= error.status <= 599 else None
+        message = f'Provider request failed with HTTP {status}' if status else 'Provider request failed; HTTP status unavailable'
+        return _result(job, run_id, 'failed', diagnostics=[{'code': 'provider_failure', 'message': message}])
+    except (RecordError, KeyError, ValueError, TypeError) as error:
         return _result(job, run_id, 'failed', diagnostics=_diagnostic('runner_failed', error))
 
 

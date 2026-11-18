@@ -100,6 +100,19 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed['remaining_extent'], self.job['native_extent'])
         self.assertEqual(self.received, {})
 
+    def test_quality_stage_is_reported_without_exception_text(self):
+        def fail_rows(*_):
+            raise RecordError('secret or source wording')
+        failed = self.invoke(rows=fail_rows)
+        self.assertEqual(failed['diagnostics'], [{'code': 'quality_failed',
+                         'message': 'Quality failure during validating_candidate; detail unavailable'}])
+        def fail_save(_):
+            raise RecordError('secret or source wording')
+        failed = self.invoke(receipts=CheckpointStore(fail_save, self.load))
+        self.assertEqual(failed['diagnostics'], [{'code': 'quality_failed',
+                         'message': 'Quality failure during saving_receipt; detail unavailable'}])
+        self.assertIsNone(failed['quality_receipt_ref'])
+
     def test_forged_saved_text_with_valid_digest_fails_source_fidelity(self):
         original = next(r for r in self.saved.rows('native_span') if r['content_id'] is not None)
         forged = 'forged wording'

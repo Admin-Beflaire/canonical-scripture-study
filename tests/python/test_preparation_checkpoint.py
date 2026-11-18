@@ -237,6 +237,7 @@ class CheckpointStageThree(unittest.TestCase):
             raise RetryableUnitError('unavailable')
         failed = self.invoke(builder=never, max_retries=2)
         self.assertEqual(failed.diagnostics, ('transient_exhausted',))
+        self.assertEqual(failed.diagnostic_detail, 'Transient failure during building_output; retries exhausted')
         self.assertEqual(len(calls), 3)
         self.assertEqual(failed.completed_extent, {})
         def permanent(_):
@@ -255,6 +256,12 @@ class CheckpointStageThree(unittest.TestCase):
                          'Reader marker 1Ch.12.5 crosses the requested native unit boundary')
         with self.assertRaises(RecordError):
             ReaderBoundaryError('1Ch.12.5 secret=bad')
+
+    def test_acquisition_failure_reports_stage_without_private_detail(self):
+        def fail(_):
+            raise RecordError('secret source detail')
+        result = self.invoke(job={**self.job, 'kind': 'acquire'}, builder=fail)
+        self.assertEqual(result.diagnostic_detail, 'Failure during acquiring_input; detail unavailable')
 
 
 if __name__ == '__main__':

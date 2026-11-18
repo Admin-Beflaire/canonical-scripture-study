@@ -239,7 +239,7 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             rows = [storage.read_row('prepared_output', i) for i in resumed.saved.output_ids]
             check_output_basis(entry, rows, registered_dependency_outputs(entry, storage))
             return resumed
-        stage = 'building_output'
+        stage = 'acquiring_input' if entry['kind'] == 'acquire' else 'building_output'
         records = handlers[entry['kind']](entry)
         stage = 'validating_output'
         check_unit_records(entry, records, storage)
@@ -271,7 +271,7 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             return failure(error.reason)
         except (RetryableUnitError, TimeoutError, ConnectionError):
             if retry == max_retries:
-                return failure('transient_exhausted')
+                return failure('transient_exhausted', f'Transient failure during {stage}; retries exhausted')
         except ReaderBoundaryError as error:
             return failure('reader_boundary', f'Reader marker {error.marker} crosses the requested native unit boundary')
         except (RecordError, OSError):

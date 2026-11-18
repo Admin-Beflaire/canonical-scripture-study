@@ -7,11 +7,11 @@ import { createHash } from 'node:crypto';
 import { QUERIES } from '../../services/study/src/read/queries.ts';
 import { passageBatch } from '../../services/study/src/operators/passage.ts';
 
-function mappedFixture(title = false, gapBetween = false) {
+function mappedFixture(title = false, gapBetween = false, narrow = false) {
   const { env, db } = buildPassageFixture(false);
   db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('map','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
   db.sqlite.prepare(`INSERT INTO reader_reference_bases VALUES ('base','map',?,'nrsva/1','syn/1',?, '{}')`)
-    .run(HEB, JSON.stringify({ ranges: [{ book_id: 'Gen', chapter: 1, first_verse: 1, last_verse: 3 }] }));
+    .run(HEB, JSON.stringify({ ranges: [{ book_id: 'Gen', chapter: 1, first_verse: 1, last_verse: narrow ? 2 : 3 }] }));
   if (gapBetween) {
     db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES ('gap-between','map',?,'nrsva/1','Gen.1.2',NULL,'numbered_text',0,'missing','{}','Not supplied')`).run(HEB);
   } else {
@@ -344,6 +344,66 @@ test('passage retrieves a mapped native exception and reports an explicit gap', 
   assert.equal(batch.continuation, null);
 });
 
+test('uncovered references return clearly marked native candidates without overriding checked mappings or gaps', async () => {
+  const { env } = mappedFixture();
+  const batch = await study(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:2-5'], sources: [HEB] }) as {
+    evidence: { reader_reference?: string; mapping_status?: string; role?: string; span: { segments: { unit_id: string }[] } }[];
+    limitations: { state: string; scope: string; detail: string }[];
+  };
+  assert.ok(batch.evidence.some(e => e.reader_reference === 'Gen.1.2' && e.span.segments[0].unit_id === 'Gen.1.3'));
+  assert.ok(!batch.evidence.some(e => e.span.segments[0].unit_id === 'Gen.1.4'), 'explicit gap must not be replaced');
+  const candidate = batch.evidence.find(e => e.span.segments[0].unit_id === 'Gen.1.5');
+  assert.equal(candidate?.mapping_status, 'native_candidate');
+  assert.equal(candidate?.reader_reference, undefined);
+  assert.equal(candidate?.role, 'requested');
+  assert.equal(batch.limitations.filter(l => l.scope === 'Gen.1.5').length, 1);
+});
+
+test('mapped and uncovered native candidates continue without omission or duplication', async () => {
+  const { env } = mappedFixture();
+  const request = { mode: 'passage' as const, depth: 'focused', references: ['Gen 1'], sources: [HEB] };
+  const candidates: string[] = [];
+  let token: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const result = await study(env, { ...request, ...(token ? { continuation: token } : {}) }) as {
+      evidence: { mapping_status?: string; reader_reference?: string; span: { segments: { unit_id: string }[] } }[];
+      continuation: string | null;
+    };
+    for (const e of result.evidence) if (e.mapping_status === 'native_candidate') {
+      assert.equal(e.reader_reference, undefined);
+      candidates.push(e.span.segments[0].unit_id);
+    }
+    token = result.continuation ?? undefined;
+    if (!token) break;
+  }
+  assert.equal(token, undefined);
+  assert.equal(candidates.length, 27);
+  assert.equal(new Set(candidates).size, 27);
+  for (let verse = 5; verse <= 31; verse++) assert.ok(candidates.includes(`Gen.1.${verse}`));
+});
+
+test('native fallback does not repeat a span used by a checked mapping', async () => {
+  const { env } = mappedFixture(false, false, true);
+  const result = await study(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:2-3'], sources: [HEB] }) as {
+    evidence: { span: { segments: { unit_id: string }[] } }[]; limitations: { scope: string }[];
+  };
+  assert.deepEqual(result.evidence.map(e => e.span.segments[0].unit_id), ['Gen.1.3']);
+  assert.ok(result.limitations.some(l => l.scope === 'Gen.1.3'));
+});
+
+test('native fallback does not repeat a checked span from an earlier page', async () => {
+  const { env } = mappedFixture(false, false, true);
+  const limits = { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 12000, rowsPerQuery: 1 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:2-3'], sources: [HEB], context: false };
+  const first = await passageBatch(await ReadSession.open(env, limits), request, null, 'test');
+  assert.ok(first.continuation);
+  assert.equal(first.evidence.length, 1);
+  const second = await passageBatch(await ReadSession.open(env, limits), request, first.continuation, 'test');
+  assert.equal(second.evidence.length, 0);
+  assert.ok(second.limitations.some(l => l.scope === 'Gen.1.3'));
+  assert.equal(second.continuation, null);
+});
+
 test('source filtering and release selection never substitute another source or unselected text', async () => {
   const { env, db } = mappedFixture();
   const session = await ReadSession.open(env);
@@ -417,6 +477,7 @@ test('full-corpus baseline fixture uses indexed source, mapping and verse seeks'
   assert.match(plan, /SEARCH b USING INDEX reader_reference_bases_lookup/);
   assert.match(plan, /SEARCH l USING INDEX sqlite_autoindex_reader_reference_links_2/);
   assert.match(plan, /SEARCH n USING INDEX native_spans_verse_unit/);
+  assert.match(plan, /SEARCH used USING INDEX reader_reference_links_span/);
   assert.doesNotMatch(plan, /SEARCH ro USING COVERING INDEX sqlite_autoindex_release_outputs_1 \(release_id=\?\)\n/);
   const result = await (await ReadSession.open(env)).query('reader_mappings', input);
   assert.deepEqual(result.rows.map(r => r.reader_ref), ['Gen.1.1']);

@@ -293,5 +293,9 @@ test('a translating study carries the key translation rules in its first batch o
     assert.match(rules, needed);
     assert.match(full, needed);
   }
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/8');
+  for (const needed of [/concise.*focused/i, /without footnotes or explanation/, /standard.*default/i, /full.*comprehensive/i, /every choice that is not straightforward/, /explicit request/i, /material limitation/i]) {
+    assert.match(rules, needed);
+    assert.match(full, needed);
+  }
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/9');
 });

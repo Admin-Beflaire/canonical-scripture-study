@@ -477,6 +477,7 @@ test('full-corpus baseline fixture uses indexed source, mapping and verse seeks'
   assert.match(plan, /SEARCH b USING INDEX reader_reference_bases_lookup/);
   assert.match(plan, /SEARCH l USING INDEX sqlite_autoindex_reader_reference_links_2/);
   assert.match(plan, /SEARCH n USING INDEX native_spans_verse_unit/);
+  assert.match(plan, /SEARCH used USING INDEX reader_reference_links_span/);
   assert.doesNotMatch(plan, /SEARCH ro USING COVERING INDEX sqlite_autoindex_release_outputs_1 \(release_id=\?\)\n/);
   const result = await (await ReadSession.open(env)).query('reader_mappings', input);
   assert.deepEqual(result.rows.map(r => r.reader_ref), ['Gen.1.1']);

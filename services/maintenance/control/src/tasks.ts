@@ -226,7 +226,7 @@ export async function taskReport(db: D1Database, requester: string, taskId: stri
           (code === 'reader_boundary' && /^Reader marker [1-3]?[A-Za-z]{2,8}\.[0-9]{1,3}\.[0-9]{1,3} crosses the requested native unit boundary$/.test(message)) ||
           (code === 'invalid_or_unavailable_output' && /^Failure during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint); detail unavailable$/.test(message)) ||
           (code === 'transient_exhausted' && /^Transient failure during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint); retries exhausted$/.test(message)) ||
-          (code === 'quality_failed' && /^Quality failure during (validating_candidate|saving_receipt|verifying_receipt); detail unavailable$/.test(message)) ||
+          (code === 'quality_failed' && /^Quality failure during (control_check|validating_candidate|saving_receipt|verifying_receipt); detail unavailable$/.test(message)) ||
           (code === 'provider_failure' && /^Provider request failed( during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint|validating_candidate|saving_receipt|verifying_receipt))?( with HTTP [1-5][0-9]{2}|; HTTP status unavailable)$/.test(message)));
         const descriptions: Record<string, string> = {
           quota: 'A provider quota stopped the unit.',

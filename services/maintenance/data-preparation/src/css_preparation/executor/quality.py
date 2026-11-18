@@ -89,6 +89,7 @@ def check_candidate_quality(
             data = _canonical(receipt)
             # State can change during quality; do not issue a receipt for a
             # cancelled/superseded task. Control also rejects late results.
+            stage = 'control_check'
             execute_unit(job_json, run_id=run_id, read_control=read_control,
                          registered=registered, process=lambda _: None)
             stage = 'saving_receipt'
@@ -106,9 +107,16 @@ def check_candidate_quality(
             return result('failed', diagnostics=[{'code': 'reader_boundary', 'message': str(error)}])
         except ProviderError as error:
             return result('failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error, stage)}])
-        except (RecordError, KeyError, ValueError, UnicodeError):
+        except (RecordError, KeyError, ValueError, UnicodeError, OSError):
             return result('failed', diagnostics=[{
                 'code': 'quality_failed', 'message': quality_diagnostic(stage)}])
 
-    return execute_unit(job_json, run_id=run_id, read_control=read_control,
-                        registered=registered, process=process)
+    try:
+        return execute_unit(job_json, run_id=run_id, read_control=read_control,
+                            registered=registered, process=process)
+    except ProviderError as error:
+        return result('failed', diagnostics=[{'code': 'provider_failure',
+                      'message': provider_diagnostic(error, 'control_check')}])
+    except OSError:
+        return result('failed', diagnostics=[{'code': 'quality_failed',
+                      'message': quality_diagnostic('control_check')}])

@@ -278,6 +278,8 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
         except ReaderBoundaryError as error:
             return failure('reader_boundary', f'Reader marker {error.marker} crosses the requested native unit boundary')
         except ProviderError as error:
+            if error.transient and stage == 'saving_checkpoint' and retry < max_retries:
+                continue
             return failure('provider_failure', provider_diagnostic(error, stage))
         except (RecordError, OSError):
             return failure('invalid_or_unavailable_output', stage_diagnostic(stage))

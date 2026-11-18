@@ -278,6 +278,28 @@ class CheckpointStageThree(unittest.TestCase):
         self.assertEqual(result.diagnostics, ('provider_failure',))
         self.assertEqual(result.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')
 
+    def test_transient_checkpoint_provider_failures_retry_within_bound(self):
+        calls = []
+        def eventually(data):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ProviderError('private', status=503, transient=True)
+            return self.save_checkpoint(data)
+        result = self.invoke(checkpoint_store=replace(self.checkpoints, save=eventually))
+        self.assertEqual(result.state, 'checkpointed')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result.diagnostics, ())
+
+        for transient, expected in ((True, 2), (False, 1)):
+            with self.subTest(transient=transient):
+                calls.clear()
+                def fail(_):
+                    calls.append(1)
+                    raise ProviderError('private', status=503, transient=transient)
+                failed = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
+                self.assertEqual(len(calls), expected)
+                self.assertEqual(failed.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')
+
     def test_acquisition_failure_reports_stage_without_private_detail(self):
         def fail(_):
             raise RecordError('secret source detail')

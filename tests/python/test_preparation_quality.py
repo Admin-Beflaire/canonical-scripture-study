@@ -121,6 +121,20 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed['diagnostics'], [{'code': 'provider_failure',
                          'message': 'Provider request failed during verifying_receipt with HTTP 503'}])
 
+    def test_initial_and_pre_receipt_control_failures_identify_control_stage(self):
+        for fail_at in (1, 2):
+            with self.subTest(fail_at=fail_at):
+                calls = []
+                def control(*_):
+                    calls.append(1)
+                    if len(calls) == fail_at:
+                        raise ProviderError('private', status=503)
+                    return self.state
+                failed = self.invoke(control=control)
+                self.assertEqual(failed['diagnostics'], [{'code': 'provider_failure',
+                                 'message': 'Provider request failed during control_check with HTTP 503'}])
+                self.assertIsNone(failed['quality_receipt_ref'])
+
     def test_quality_preserves_reader_boundary(self):
         from unittest.mock import patch
         with patch('css_preparation.executor.quality.check_saved_semantics', side_effect=ReaderBoundaryError('1Ch.12.5')):

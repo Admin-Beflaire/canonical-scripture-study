@@ -193,13 +193,15 @@ for stage in stages:
     for code, message in [('invalid_or_unavailable_output', stage_diagnostic(stage)), ('transient_exhausted', stage_diagnostic(stage, transient=True)), ('provider_failure', provider_diagnostic(ProviderError('secret', status=503), stage))]:
         progress = UnitProgress('failed', {}, job['native_extent'], None, None, None, (code,), message)
         out.extend(_from_progress(job, '123', progress)['diagnostics'])
-for stage in ['validating_candidate','saving_receipt','verifying_receipt']:
-    out.append({'code': 'provider_failure', 'message': provider_diagnostic(ProviderError('secret', status=503), stage)})
+for stage in ['validating_candidate','saving_receipt','verifying_receipt','control_check']:
+    if stage != 'control_check':
+        out.append({'code': 'provider_failure', 'message': provider_diagnostic(ProviderError('secret', status=503), stage)})
     out.append({'code': 'quality_failed', 'message': quality_diagnostic(stage)})
 out.append({'code': 'reader_boundary', 'message': str(ReaderBoundaryError('1Ch.12.5'))})
 print(json.dumps(out))`;
-  const env = { ...process.env, PYTHONPATH: 'packages/shared-python/src:services/maintenance/data-preparation/src:tests/python' };
-  const diagnostics = JSON.parse(execFileSync('python3', ['-c', script], { encoding: 'utf8', env })) as {code: string; message: string}[];
+  const env = { ...process.env, PYTHONPATH: ['packages/shared-python/src', 'services/maintenance/data-preparation/src', 'tests/python'].join(process.platform === 'win32' ? ';' : ':') };
+  const python = process.env.PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
+  const diagnostics = JSON.parse(execFileSync(python, ['-c', script], { encoding: 'utf8', env })) as {code: string; message: string}[];
   const db = localD1(); admitted(db);
   const created = await requestTask(db, owner, prepare());
   assert.ok(created.status === 'created');

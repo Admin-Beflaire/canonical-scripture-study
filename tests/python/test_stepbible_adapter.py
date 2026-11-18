@@ -189,10 +189,10 @@ class RecipeTest(unittest.TestCase):
     def test_committed_recipes_resolve_and_fit_control_limits(self):
         recipes = load_recipes()
         mappings = [name for name, recipe in recipes.items() if recipe.read_reader_references is not None]
-        self.assertEqual(mappings, ['stepbible-tagnt-jhn-reader/5de0a47f35f0/1',
-                                    'stepbible-tahot-mal-reader/5de0a47f35f0/1',
-                                    'stepbible-tahot-psa-reader/5de0a47f35f0/1'])
-        self.assertEqual(len(recipes) - len(mappings), 66)
+        base = {name for name, recipe in recipes.items() if recipe.read_reader_references is None}
+        self.assertEqual(len(base), 66)
+        self.assertEqual(set(mappings), {name.replace('/5de0a47f35f0/1', '-reader/5de0a47f35f0/1')
+                                         for name in base})
         manifest = json.loads((ROOT / 'collection/manifests/stepbible-data-5de0a47f35f0.json').read_text())
         pinned = {item['component']: item for item in manifest['components']}
         for path in sorted((ROOT / 'collection/recipes').glob('stepbible-*.json')):
@@ -215,7 +215,7 @@ class RecipeTest(unittest.TestCase):
                 self.assertTrue(all(verse.startswith(book.book + '.') for verse in verses))
                 self.assertEqual(units[-1]['depends_on'], [unit['unit_id'] for unit in prepare])
                 self.assertEqual(units[-1]['required_capabilities'], value['capabilities'])
-                if path.stem in ('stepbible-tagnt-jhn-reader', 'stepbible-tahot-psa-reader'):
+                if path.stem.endswith('-reader'):
                     original = json.loads((path.parent / (path.stem.removesuffix('-reader') + '.json')).read_text())
                     self.assertEqual(value['parameters'], original['parameters'])
                     self.assertEqual(value['native_extent'], original['native_extent'])

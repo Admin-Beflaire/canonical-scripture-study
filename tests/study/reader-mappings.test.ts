@@ -391,6 +391,19 @@ test('native fallback does not repeat a span used by a checked mapping', async (
   assert.ok(result.limitations.some(l => l.scope === 'Gen.1.3'));
 });
 
+test('native fallback does not repeat a checked span from an earlier page', async () => {
+  const { env } = mappedFixture(false, false, true);
+  const limits = { d1Calls: 10, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 12000, rowsPerQuery: 1 };
+  const request = { mode: 'passage', depth: 'focused', language: 'en', references: ['Gen 1:2-3'], sources: [HEB], context: false };
+  const first = await passageBatch(await ReadSession.open(env, limits), request, null, 'test');
+  assert.ok(first.continuation);
+  assert.equal(first.evidence.length, 1);
+  const second = await passageBatch(await ReadSession.open(env, limits), request, first.continuation, 'test');
+  assert.equal(second.evidence.length, 0);
+  assert.ok(second.limitations.some(l => l.scope === 'Gen.1.3'));
+  assert.equal(second.continuation, null);
+});
+
 test('source filtering and release selection never substitute another source or unselected text', async () => {
   const { env, db } = mappedFixture();
   const session = await ReadSession.open(env);

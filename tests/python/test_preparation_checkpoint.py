@@ -10,7 +10,7 @@ from css_preparation.executor.candidate import CandidateStore
 from css_preparation.executor.checkpoints import (
     CheckpointStore, RetryableUnitError, StopWork, run_checkpointed_unit,
 )
-from css_preparation.prepare.records import RecordError, decoded, TABLES
+from css_preparation.prepare.records import ReaderBoundaryError, RecordError, decoded, TABLES
 from preparation_fixture import COORDINATES, database, evidence_a, text_a
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[1] /
@@ -243,7 +243,18 @@ class CheckpointStageThree(unittest.TestCase):
             raise RecordError('contains secret details; never copy to diagnostics')
         failed = self.invoke(builder=permanent)
         self.assertEqual(failed.diagnostics, ('invalid_or_unavailable_output',))
+        self.assertEqual(failed.diagnostic_detail, 'Failure during building_output; detail unavailable')
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
+
+    def test_reader_boundary_reports_only_validated_reference(self):
+        def split(_):
+            raise ReaderBoundaryError('1Ch.12.5')
+        failed = self.invoke(builder=split)
+        self.assertEqual(failed.diagnostics, ('reader_boundary',))
+        self.assertEqual(failed.diagnostic_detail,
+                         'Reader marker 1Ch.12.5 crosses the requested native unit boundary')
+        with self.assertRaises(RecordError):
+            ReaderBoundaryError('1Ch.12.5 secret=bad')
 
 
 if __name__ == '__main__':

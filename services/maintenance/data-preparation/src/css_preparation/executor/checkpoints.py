@@ -12,7 +12,7 @@ import re
 from typing import Any, Callable
 
 from ..contracts import parse_job_input
-from ..prepare.records import RecordError, RecordSet
+from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
 from . import ControlState, UnitNotRunnable, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
 from .basis import check_unit_records, check_output_basis, registered_dependency_outputs
@@ -42,6 +42,7 @@ class UnitProgress:
     saved: SavedCandidate | None
     checkpoint_ref: dict[str, Any] | None
     diagnostics: tuple[str, ...] = ()
+    diagnostic_detail: str | None = None
 
 
 class RetryableUnitError(Exception):
@@ -223,10 +224,14 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
     job = parse_job_input(job_json)
     handlers = {'acquire': acquire, 'prepare': prepare, 'quality': quality}
 
-    def failure(code: str) -> UnitProgress:
-        return UnitProgress('failed', {}, dict(job['native_extent']), None, None, None, (code,))
+    stage = 'checkpoint_recovery'
+
+    def failure(code: str, detail: str | None = None) -> UnitProgress:
+        return UnitProgress('failed', {}, dict(job['native_extent']), None, None, None, (code,), detail)
 
     def process(entry: dict[str, Any]) -> UnitProgress:
+        nonlocal stage
+        stage = 'checkpoint_recovery'
         resumed = _resume(entry, storage, checkpoints)
         if resumed is not None:
             if storage.read_rows is None:
@@ -234,19 +239,24 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             rows = [storage.read_row('prepared_output', i) for i in resumed.saved.output_ids]
             check_output_basis(entry, rows, registered_dependency_outputs(entry, storage))
             return resumed
+        stage = 'building_output'
         records = handlers[entry['kind']](entry)
+        stage = 'validating_output'
         check_unit_records(entry, records, storage)
         # If a long-running builder finished after pause/cancel/supersession,
         # do not begin candidate writes. Control owns late-result acceptance.
         execute_unit(job_json, run_id=run_id, read_control=read_control,
                      registered=registered, process=lambda _: None)
+        stage = 'saving_output'
         saved = persist_candidate(records, storage)
+        stage = 'verifying_output'
         if storage.read_rows is not None and saved.output_ids:
             checked = _saved_candidate(
                 {'output_ids': list(saved.output_ids),
                  'artifact_refs': list(saved.artifact_refs)}, storage)
             if checked != saved:
                 raise RecordError('Saved candidate is incomplete; cannot checkpoint')
+        stage = 'saving_checkpoint'
         return _save(entry, saved, checkpoints)
 
     for retry in range(max_retries + 1):
@@ -262,6 +272,8 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
         except (RetryableUnitError, TimeoutError, ConnectionError):
             if retry == max_retries:
                 return failure('transient_exhausted')
+        except ReaderBoundaryError as error:
+            return failure('reader_boundary', f'Reader marker {error.marker} crosses the requested native unit boundary')
         except (RecordError, OSError):
-            return failure('invalid_or_unavailable_output')
+            return failure('invalid_or_unavailable_output', f'Failure during {stage}; detail unavailable')
     raise AssertionError('Unreachable retry loop')

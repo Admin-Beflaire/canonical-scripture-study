@@ -61,7 +61,10 @@ def _from_progress(job: dict[str, Any], run_id: str, progress: UnitProgress) -> 
         return _result(job, run_id, 'succeeded', completed_extent=progress.completed_extent, remaining_extent={},
                        output_refs=list(progress.saved.artifact_refs), checkpoint_ref=progress.checkpoint_ref)
     code = progress.diagnostics[0] if progress.diagnostics else 'unit_failed'
-    return _result(job, run_id, 'failed', diagnostics=_diagnostic(code))
+    diagnostics = _diagnostic(code)
+    if progress.diagnostic_detail:
+        diagnostics[0]['message'] = progress.diagnostic_detail
+    return _result(job, run_id, 'failed', diagnostics=diagnostics)
 
 
 def _inventory(job: dict[str, Any], storage: CloudflareStorage) -> CandidateInventory:

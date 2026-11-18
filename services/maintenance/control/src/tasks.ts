@@ -206,14 +206,36 @@ export async function listTasks(db: D1Database, requester: string, cursor?: stri
 export async function taskReport(db: D1Database, requester: string, taskId: string) {
   const task = await getTaskRow(db, requester, taskId);
   if (!task) return null;
-  const jobs = await db.prepare(`SELECT unit_id, attempt, kind, state, run_id, checkpoint_ref, result_ref FROM maintenance_jobs
-    WHERE task_id = ? ORDER BY unit_id, attempt LIMIT 51`).bind(task.id).all<Record<string, unknown>>();
+  const jobs = await db.prepare(`SELECT unit_id, attempt, kind, state, run_id, checkpoint_ref, result_ref, result_json FROM maintenance_jobs
+    WHERE task_id = ? ORDER BY unit_id, attempt LIMIT 51`).bind(task.id).all<{
+      unit_id: string; attempt: number; kind: string; state: string; run_id: string | null;
+      checkpoint_ref: string | null; result_ref: string | null; result_json: string | null;
+    }>();
+  // Older results can contain arbitrary exception text. Expose only messages with
+  // a narrowly defined, safe format; retain codes for all other diagnostics.
+  const safeDiagnostics = (raw: unknown) => {
+    if (typeof raw !== 'string') return [];
+    try {
+      const value = JSON.parse(raw) as { diagnostics?: unknown };
+      if (!Array.isArray(value.diagnostics)) return [];
+      return value.diagnostics.slice(0, 32).flatMap((d: unknown) => {
+        if (!d || typeof d !== 'object') return [];
+        const { code, message } = d as { code?: unknown; message?: unknown };
+        if (typeof code !== 'string' || !/^[A-Za-z0-9._:/-]{1,200}$/.test(code)) return [];
+        const safe = typeof message === 'string' && (
+          (code === 'reader_boundary' && /^Reader marker [1-3]?[A-Za-z]{2,8}\.[0-9]{1,3}\.[0-9]{1,3} crosses the requested native unit boundary$/.test(message)) ||
+          (code === 'invalid_or_unavailable_output' && /^Failure during (checkpoint_recovery|building_output|validating_output|saving_output|verifying_output|saving_checkpoint); detail unavailable$/.test(message)));
+        return [{ code, message: safe ? message : code }];
+      });
+    } catch { return []; }
+  };
   const outcome = JSON.parse(task.outcome_json) as Outcome;
   const scope = JSON.parse(task.scope_json) as Scope;
   return {
     id: task.id, revision: task.revision, state: task.state, instruction: task.instruction,
     requested: scope, completed_extent: outcome.completed_extent, remaining_extent: outcome.remaining_extent,
-    jobs: jobs.results.slice(0, 50), more_jobs: jobs.results.length > 50,
+    jobs: jobs.results.slice(0, 50).map(({ result_json, ...job }) => ({ ...job, diagnostics: safeDiagnostics(result_json) })),
+    more_jobs: jobs.results.length > 50,
     checks: {
       quality: outcome.checks?.quality ?? (task.quality_ref ? 'passed' : 'not run'), quality_receipt: task.quality_ref,
       scope: outcome.checks?.scope ?? 'not run', scope_receipt: task.scope_ref,

@@ -6,7 +6,7 @@ import unittest
 from css_preparation.adapters.stepbible.reader_references import prepare_reader_reference_unit
 from css_preparation.prepare.evidence import span_wording
 from css_preparation.prepare.literary import LiteraryUnit
-from css_preparation.prepare.records import RecordError, migrations, scoped_query
+from css_preparation.prepare.records import ReaderBoundaryError, RecordError, migrations, scoped_query
 from stepbible_fixture import component, row
 
 
@@ -118,7 +118,7 @@ class PrepareReaderReferencesTest(unittest.TestCase):
             row('Psa.11.0(11.1)#01=L', 'עַ'),
             row('Psa.11.1(11.2)#01=L', 'טָ'),
         ])
-        with self.assertRaisesRegex(RecordError, 'crosses the requested native unit boundary'):
+        with self.assertRaisesRegex(ReaderBoundaryError, 'crosses the requested native unit boundary'):
             prepare_reader_reference_unit(data, source, 'Psa', ['Psa.11.1'])
         records = prepare_reader_reference_unit(data, source, 'Psa', ['Psa.11.1', 'Psa.11.2'])
         self.assertEqual([link['role'] for link in records.rows('reader_reference_link')],

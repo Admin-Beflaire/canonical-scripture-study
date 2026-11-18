@@ -12,6 +12,7 @@ from unittest import mock
 
 from css_preparation.contracts import ContractError, contract_errors
 from css_preparation.prepare.records import RecordError, RecordSet
+from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.control import ControlClient, ControlConfig
@@ -104,6 +105,16 @@ class RunnerTest(unittest.TestCase):
         # Preparation never selects data: selection unchanged, no release rows.
         self.assertEqual(self.selection(), self.initial_selection)
         self.assertEqual(self.api.db.execute('SELECT COUNT(*) FROM releases').fetchone()[0], 0)
+
+    def test_failed_preparation_returns_safe_actionable_diagnostic(self):
+        def fail(job, storage):
+            raise ReaderBoundaryError('1Ch.12.5')
+        self.recipe = Recipe(prepare=fail)
+        result = self.run_job(self.job())
+        self.assertEqual(contract_errors('job_result', result), [])
+        self.assertEqual(result['diagnostics'], [{'code': 'reader_boundary', 'message':
+                         'Reader marker 1Ch.12.5 crosses the requested native unit boundary'}])
+        self.assertEqual(result['remaining_extent'], self.extent)
 
     def test_unknown_recipe_and_missing_module_fail_without_writes(self):
         with mock.patch.dict(RECIPES, {}, clear=True):

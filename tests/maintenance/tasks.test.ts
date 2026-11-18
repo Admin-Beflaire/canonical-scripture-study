@@ -147,3 +147,24 @@ test('open and recent tasks are listed newest first in bounded pages', async () 
   assert.equal((await listTasks(db, 'other@example.invalid')).tasks.length, 0);
   await assert.rejects(listTasks(db, owner, '-1'));
 });
+
+test('task report shows safe diagnostics and never exposes arbitrary saved exception text', async () => {
+  const db = localD1(); admitted(db);
+  const created = await requestTask(db, owner, prepare());
+  assert.ok(created.status === 'created');
+  const result = JSON.stringify({ diagnostics: [
+    { code: 'reader_boundary', message: 'Reader marker 1Ch.12.5 crosses the requested native unit boundary' },
+    { code: 'runner_error', message: 'private secret material' },
+    { code: 'reader_boundary', message: 'private secret material' },
+  ] });
+  db.sqlite.prepare(`INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, result_json)
+    VALUES (?,1,'u1',1,'prepare',?,'run-1','failed',?)`).run(created.task.id, 'a'.repeat(64), result);
+  const report = await taskReport(db, owner, created.task.id);
+  assert.deepEqual(report?.jobs[0].diagnostics, [
+    { code: 'reader_boundary', message: 'Reader marker 1Ch.12.5 crosses the requested native unit boundary' },
+    { code: 'runner_error', message: 'runner_error' },
+    { code: 'reader_boundary', message: 'reader_boundary' },
+  ]);
+  assert.equal(JSON.stringify(report).includes('private secret material'), false);
+  assert.equal(await taskReport(db, 'other@example.invalid', created.task.id), null);
+});

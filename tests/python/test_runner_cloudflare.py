@@ -94,9 +94,9 @@ class CloudflareStorageTest(unittest.TestCase):
     def test_only_candidate_inserts_are_written(self):
         for sql in ('DELETE FROM artifacts', 'UPDATE release_selection SET release_id = ?',
                     'INSERT INTO release_selection (slot) VALUES (?)'):
-            with self.assertRaises(ProviderError):
+            with self.assertRaises(RecordError):
                 self.storage.write_rows([(sql, ['x'])])
-        with self.assertRaises(ProviderError):
+        with self.assertRaises(RecordError):
             self.storage.write_rows([])
 
     def test_immutable_content_addressed_objects_and_missing_reads(self):

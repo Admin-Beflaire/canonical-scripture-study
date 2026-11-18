@@ -7,6 +7,7 @@ Control and are refused here.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -41,6 +42,16 @@ SHARED = ('source_node', 'admission', 'text_payload')
 
 class RecordError(ValueError):
     """A record does not match its contract or conflicts with one already prepared."""
+
+
+class ReaderBoundaryError(RecordError):
+    """A validated reference, safe to report without including source wording."""
+
+    def __init__(self, marker: str):
+        if not re.fullmatch(r'[1-3]?[A-Za-z]{2,8}\.[0-9]{1,3}\.[0-9]{1,3}', marker):
+            raise RecordError('Invalid reader reference')
+        self.marker = marker
+        super().__init__(f'Reader marker {marker} crosses the requested native unit boundary')
 
 
 def _sql_value(name: str, value: Any) -> Any:

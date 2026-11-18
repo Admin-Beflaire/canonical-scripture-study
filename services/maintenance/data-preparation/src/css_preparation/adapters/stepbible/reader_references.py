@@ -8,7 +8,7 @@ from typing import Sequence
 
 from ...prepare.evidence import OutputBasis, SpanSpec, build_evidence, canonical_digest, span_id
 from ...prepare.literary import LiteraryUnit, literary_spans
-from ...prepare.records import RecordError, RecordSet
+from ...prepare.records import ReaderBoundaryError, RecordError, RecordSet
 from ...validation import SCHEMAS
 from .prepare import MAX_STATEMENTS, book_text, book_verses, read_component
 from .source import Component
@@ -102,7 +102,7 @@ def prepare_reader_reference_unit(
             if number == 0 and chapter_ends['book_id'] == 'Ps':
                 number = 1
             if (chapter_ends['book_id'], int(chapter), number) in groups:
-                raise RecordError(f'Reader marker {marker} crosses the requested native unit boundary')
+                raise ReaderBoundaryError(marker)
 
     native_by_anchor = {anchor: f'{book}.{anchor[1]}.{anchor[2]}' for anchor in groups}
     baselines: list[Anchor] = []

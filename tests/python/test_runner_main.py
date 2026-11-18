@@ -12,11 +12,12 @@ from unittest import mock
 
 from css_preparation.contracts import ContractError, contract_errors
 from css_preparation.prepare.records import RecordError, RecordSet
+from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
 from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
-from css_preparation.runner.web import Origin
+from css_preparation.runner.web import Origin, ProviderError
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi
 from stepbible_fixture import recipe as stepbible_recipe
@@ -104,6 +105,25 @@ class RunnerTest(unittest.TestCase):
         # Preparation never selects data: selection unchanged, no release rows.
         self.assertEqual(self.selection(), self.initial_selection)
         self.assertEqual(self.api.db.execute('SELECT COUNT(*) FROM releases').fetchone()[0], 0)
+
+    def test_failed_preparation_returns_safe_actionable_diagnostic(self):
+        def fail(job, storage):
+            raise ReaderBoundaryError('1Ch.12.5')
+        self.recipe = Recipe(prepare=fail)
+        result = self.run_job(self.job())
+        self.assertEqual(contract_errors('job_result', result), [])
+        self.assertEqual(result['diagnostics'], [{'code': 'reader_boundary', 'message':
+                         'Reader marker 1Ch.12.5 crosses the requested native unit boundary'}])
+        self.assertEqual(result['remaining_extent'], self.extent)
+
+    def test_provider_failure_reports_status_without_response_or_credentials(self):
+        def fail(job, storage):
+            raise ProviderError('private response and secret', status=429, transient=True)
+        self.recipe = Recipe(prepare=fail)
+        result = self.run_job(self.job())
+        self.assertEqual(result['diagnostics'], [{'code': 'provider_failure',
+                         'message': 'Provider request failed during building_output with HTTP 429'}])
+        self.assertNotIn('secret', str(result))
 
     def test_unknown_recipe_and_missing_module_fail_without_writes(self):
         with mock.patch.dict(RECIPES, {}, clear=True):
@@ -258,7 +278,9 @@ class RunnerTest(unittest.TestCase):
             self.assertNotIn(MARKER, public)
             self.assertNotIn('synthetic-secret', public)
             self.assertNotIn('synthetic-token', public)
-        self.assertIn(MARKER, json.dumps(self.results[0]['result']))  # private Control record only
+        self.assertIn(MARKER, self.results[0]['result']['unit_id'])
+        self.assertEqual(self.results[0]['result']['diagnostics'], [{'code': 'invalid_or_unavailable_output',
+                         'message': 'Failure during building_output; detail unavailable'}])
 
     def test_unexpected_crash_is_reported_privately(self):
         def crash(job, storage):

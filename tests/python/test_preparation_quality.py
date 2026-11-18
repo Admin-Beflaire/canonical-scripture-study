@@ -10,7 +10,8 @@ from css_preparation.contracts import contract_errors
 from css_preparation.executor import ControlState
 from css_preparation.executor.checkpoints import CheckpointStore
 from css_preparation.executor.quality import check_candidate_quality
-from css_preparation.prepare.records import RecordError
+from css_preparation.prepare.records import ReaderBoundaryError, RecordError
+from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, text_a
 from test_saved_candidate_inventory import SavedInventoryStageFour
 
@@ -99,6 +100,47 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed['completed_extent'], {})
         self.assertEqual(failed['remaining_extent'], self.job['native_extent'])
         self.assertEqual(self.received, {})
+
+    def test_quality_stage_is_reported_without_exception_text(self):
+        def fail_rows(*_):
+            raise RecordError('secret or source wording')
+        failed = self.invoke(rows=fail_rows)
+        self.assertEqual(failed['diagnostics'], [{'code': 'quality_failed',
+                         'message': 'Quality failure during validating_candidate; detail unavailable'}])
+        def fail_save(_):
+            raise RecordError('secret or source wording')
+        failed = self.invoke(receipts=CheckpointStore(fail_save, self.load))
+        self.assertEqual(failed['diagnostics'], [{'code': 'quality_failed',
+                         'message': 'Quality failure during saving_receipt; detail unavailable'}])
+        self.assertIsNone(failed['quality_receipt_ref'])
+
+    def test_quality_provider_failure_retains_receipt_stage(self):
+        def fail(_):
+            raise ProviderError('private', status=503)
+        failed = self.invoke(receipts=CheckpointStore(self.save, fail))
+        self.assertEqual(failed['diagnostics'], [{'code': 'provider_failure',
+                         'message': 'Provider request failed during verifying_receipt with HTTP 503'}])
+
+    def test_initial_and_pre_receipt_control_failures_identify_control_stage(self):
+        for fail_at in (1, 2):
+            with self.subTest(fail_at=fail_at):
+                calls = []
+                def control(*_):
+                    calls.append(1)
+                    if len(calls) == fail_at:
+                        raise ProviderError('private', status=503)
+                    return self.state
+                failed = self.invoke(control=control)
+                self.assertEqual(failed['diagnostics'], [{'code': 'provider_failure',
+                                 'message': 'Provider request failed during control_check with HTTP 503'}])
+                self.assertIsNone(failed['quality_receipt_ref'])
+
+    def test_quality_preserves_reader_boundary(self):
+        from unittest.mock import patch
+        with patch('css_preparation.executor.quality.check_saved_semantics', side_effect=ReaderBoundaryError('1Ch.12.5')):
+            failed = self.invoke()
+        self.assertEqual(failed['diagnostics'], [{'code': 'reader_boundary', 'message':
+                         'Reader marker 1Ch.12.5 crosses the requested native unit boundary'}])
 
     def test_forged_saved_text_with_valid_digest_fails_source_fidelity(self):
         original = next(r for r in self.saved.rows('native_span') if r['content_id'] is not None)

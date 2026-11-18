@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 from ..executor.candidate import CandidateStore
 from ..executor.checkpoints import CheckpointStore
-from ..prepare.records import KEYS, TABLES, decoded, scoped_query
+from ..prepare.records import KEYS, TABLES, RecordError, decoded, scoped_query
 from .r2 import R2Objects
 from .web import Origin, ProviderError
 
@@ -72,10 +72,10 @@ class CloudflareStorage:
     def write_rows(self, statements: list[tuple[str, list[Any]]]) -> None:
         """Send one unit's inserts as one D1 batch, so a partial unit is not acknowledged."""
         if not statements or len(statements) > _BATCH_STATEMENTS:
-            raise ProviderError('Candidate unit has no rows or too many rows for one batch')
+            raise RecordError('Candidate unit has no rows or too many rows for one batch')
         for sql, _ in statements:
             if not sql.startswith('INSERT INTO ') or 'release' in sql.split('(', 1)[0]:
-                raise ProviderError('Only candidate inserts may be written')
+                raise RecordError('Only candidate inserts may be written')
         self._query({'batch': [{'sql': sql, 'params': params} for sql, params in statements]})
 
     def read_row(self, kind: str, identity: str) -> dict[str, Any] | None:

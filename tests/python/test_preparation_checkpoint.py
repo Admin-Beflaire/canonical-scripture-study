@@ -10,7 +10,8 @@ from css_preparation.executor.candidate import CandidateStore
 from css_preparation.executor.checkpoints import (
     CheckpointStore, RetryableUnitError, StopWork, run_checkpointed_unit,
 )
-from css_preparation.prepare.records import RecordError, decoded, TABLES
+from css_preparation.prepare.records import ReaderBoundaryError, RecordError, decoded, TABLES
+from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, database, evidence_a, text_a
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[1] /
@@ -237,13 +238,73 @@ class CheckpointStageThree(unittest.TestCase):
             raise RetryableUnitError('unavailable')
         failed = self.invoke(builder=never, max_retries=2)
         self.assertEqual(failed.diagnostics, ('transient_exhausted',))
+        self.assertEqual(failed.diagnostic_detail, 'Transient failure during building_output; retries exhausted')
         self.assertEqual(len(calls), 3)
         self.assertEqual(failed.completed_extent, {})
         def permanent(_):
             raise RecordError('contains secret details; never copy to diagnostics')
         failed = self.invoke(builder=permanent)
         self.assertEqual(failed.diagnostics, ('invalid_or_unavailable_output',))
+        self.assertEqual(failed.diagnostic_detail, 'Failure during building_output; detail unavailable')
         self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 0)
+
+    def test_reader_boundary_reports_only_validated_reference(self):
+        def split(_):
+            raise ReaderBoundaryError('1Ch.12.5')
+        failed = self.invoke(builder=split)
+        self.assertEqual(failed.diagnostics, ('reader_boundary',))
+        self.assertEqual(failed.diagnostic_detail,
+                         'Reader marker 1Ch.12.5 crosses the requested native unit boundary')
+        with self.assertRaises(RecordError) as caught:
+            ReaderBoundaryError('1Ch.12.5 secret=bad')
+        self.assertIs(type(caught.exception), RecordError)
+
+    def test_control_failure_on_retry_reports_control_stage(self):
+        checks = []
+        def control():
+            checks.append(1)
+            if len(checks) == 3:
+                raise OSError('private detail')
+            return self.state
+        def save(_):
+            raise RetryableUnitError('retry')
+        result = self.invoke(control=control, checkpoint_store=replace(self.checkpoints, save=save))
+        self.assertEqual(result.diagnostic_detail, 'Failure during control_check; detail unavailable')
+
+    def test_checkpoint_provider_error_retains_stage_and_hides_detail(self):
+        def fail(_):
+            raise ProviderError('secret', status=503)
+        result = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
+        self.assertEqual(result.diagnostics, ('provider_failure',))
+        self.assertEqual(result.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')
+
+    def test_transient_checkpoint_provider_failures_retry_within_bound(self):
+        calls = []
+        def eventually(data):
+            calls.append(1)
+            if len(calls) == 1:
+                raise ProviderError('private', status=503, transient=True)
+            return self.save_checkpoint(data)
+        result = self.invoke(checkpoint_store=replace(self.checkpoints, save=eventually))
+        self.assertEqual(result.state, 'checkpointed')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(result.diagnostics, ())
+
+        for transient, expected in ((True, 2), (False, 1)):
+            with self.subTest(transient=transient):
+                calls.clear()
+                def fail(_):
+                    calls.append(1)
+                    raise ProviderError('private', status=503, transient=transient)
+                failed = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
+                self.assertEqual(len(calls), expected)
+                self.assertEqual(failed.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')
+
+    def test_acquisition_failure_reports_stage_without_private_detail(self):
+        def fail(_):
+            raise RecordError('secret source detail')
+        result = self.invoke(job={**self.job, 'kind': 'acquire'}, builder=fail)
+        self.assertEqual(result.diagnostic_detail, 'Failure during acquiring_input; detail unavailable')
 
 
 if __name__ == '__main__':

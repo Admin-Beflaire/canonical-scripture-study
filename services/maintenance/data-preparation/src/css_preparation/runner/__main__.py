@@ -27,6 +27,7 @@ from ..executor.checkpoints import StopWork, UnitProgress, run_checkpointed_unit
 from ..executor.quality import check_candidate_quality
 from ..prepare.evidence import OutputBasis
 from ..prepare.records import RecordError
+from ..provider import provider_diagnostic
 from ..validate.saved import CandidateInventory
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
@@ -61,7 +62,10 @@ def _from_progress(job: dict[str, Any], run_id: str, progress: UnitProgress) -> 
         return _result(job, run_id, 'succeeded', completed_extent=progress.completed_extent, remaining_extent={},
                        output_refs=list(progress.saved.artifact_refs), checkpoint_ref=progress.checkpoint_ref)
     code = progress.diagnostics[0] if progress.diagnostics else 'unit_failed'
-    return _result(job, run_id, 'failed', diagnostics=_diagnostic(code))
+    diagnostics = _diagnostic(code)
+    if progress.diagnostic_detail:
+        diagnostics[0]['message'] = progress.diagnostic_detail
+    return _result(job, run_id, 'failed', diagnostics=diagnostics)
 
 
 def _inventory(job: dict[str, Any], storage: CloudflareStorage) -> CandidateInventory:
@@ -135,7 +139,9 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
         return _from_progress(job, run_id, progress)
     except UnitNotRunnable as error:
         return _result(job, run_id, 'cancelled', diagnostics=_diagnostic('not_runnable', error))
-    except (RecordError, ProviderError, KeyError, ValueError, TypeError) as error:
+    except ProviderError as error:
+        return _result(job, run_id, 'failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error)}])
+    except (RecordError, KeyError, ValueError, TypeError) as error:
         return _result(job, run_id, 'failed', diagnostics=_diagnostic('runner_failed', error))
 
 

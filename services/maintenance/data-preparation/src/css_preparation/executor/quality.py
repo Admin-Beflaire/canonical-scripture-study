@@ -8,7 +8,8 @@ from typing import Any, Callable, Mapping, Sequence
 from ..indexes.files import PAGE_CAP
 from ..contracts import job_result, parse_job_input
 from ..prepare.evidence import NativeText
-from ..prepare.records import RecordError, RecordSet
+from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
+from ..provider import ProviderError, provider_diagnostic, quality_diagnostic
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
 from . import ControlState, UnitNotRunnable, execute_unit
@@ -45,6 +46,7 @@ def check_candidate_quality(
             state=state, diagnostics=fields.get('diagnostics', []))
 
     def process(entry: dict[str, Any]) -> dict[str, Any]:
+        stage = 'validating_candidate'
         try:
             if not entry['required_capabilities']:
                 raise RecordError('Quality job must require at least one capability')
@@ -87,9 +89,12 @@ def check_candidate_quality(
             data = _canonical(receipt)
             # State can change during quality; do not issue a receipt for a
             # cancelled/superseded task. Control also rejects late results.
+            stage = 'control_check'
             execute_unit(job_json, run_id=run_id, read_control=read_control,
                          registered=registered, process=lambda _: None)
+            stage = 'saving_receipt'
             reference = receipts.save(data)
+            stage = 'verifying_receipt'
             _check_ref(reference, receipts.load(reference))
             if receipts.load(reference) != data:
                 raise RecordError('Saved quality receipt bytes differ')
@@ -98,9 +103,20 @@ def check_candidate_quality(
                 coverage_refs=coverage_refs, quality_receipt_ref=reference)
         except UnitNotRunnable:
             raise  # A late cancellation is not a failed quality check.
-        except (RecordError, KeyError, ValueError, UnicodeError):
+        except ReaderBoundaryError as error:
+            return result('failed', diagnostics=[{'code': 'reader_boundary', 'message': str(error)}])
+        except ProviderError as error:
+            return result('failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error, stage)}])
+        except (RecordError, KeyError, ValueError, UnicodeError, OSError):
             return result('failed', diagnostics=[{
-                'code': 'quality_failed', 'message': 'Saved candidate failed quality checks'}])
+                'code': 'quality_failed', 'message': quality_diagnostic(stage)}])
 
-    return execute_unit(job_json, run_id=run_id, read_control=read_control,
-                        registered=registered, process=process)
+    try:
+        return execute_unit(job_json, run_id=run_id, read_control=read_control,
+                            registered=registered, process=process)
+    except ProviderError as error:
+        return result('failed', diagnostics=[{'code': 'provider_failure',
+                      'message': provider_diagnostic(error, 'control_check')}])
+    except OSError:
+        return result('failed', diagnostics=[{'code': 'quality_failed',
+                      'message': quality_diagnostic('control_check')}])

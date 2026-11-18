@@ -344,6 +344,44 @@ test('passage retrieves a mapped native exception and reports an explicit gap', 
   assert.equal(batch.continuation, null);
 });
 
+test('uncovered references return clearly marked native candidates without overriding checked mappings or gaps', async () => {
+  const { env } = mappedFixture();
+  const batch = await study(env, { mode: 'passage', depth: 'focused', references: ['Gen 1:2-5'], sources: [HEB] }) as {
+    evidence: { reader_reference?: string; mapping_status?: string; role?: string; span: { segments: { unit_id: string }[] } }[];
+    limitations: { state: string; scope: string; detail: string }[];
+  };
+  assert.ok(batch.evidence.some(e => e.reader_reference === 'Gen.1.2' && e.span.segments[0].unit_id === 'Gen.1.3'));
+  assert.ok(!batch.evidence.some(e => e.span.segments[0].unit_id === 'Gen.1.4'), 'explicit gap must not be replaced');
+  const candidate = batch.evidence.find(e => e.span.segments[0].unit_id === 'Gen.1.5');
+  assert.equal(candidate?.mapping_status, 'native_candidate');
+  assert.equal(candidate?.reader_reference, undefined);
+  assert.equal(candidate?.role, 'context');
+  assert.ok(batch.limitations.some(l => l.scope === 'Gen.1.5' && /correspondence.*not checked/.test(l.detail)));
+});
+
+test('mapped and uncovered native candidates continue without omission or duplication', async () => {
+  const { env } = mappedFixture();
+  const request = { mode: 'passage' as const, depth: 'focused', references: ['Gen 1'], sources: [HEB] };
+  const candidates: string[] = [];
+  let token: string | undefined;
+  for (let i = 0; i < 20; i++) {
+    const result = await study(env, { ...request, ...(token ? { continuation: token } : {}) }) as {
+      evidence: { mapping_status?: string; reader_reference?: string; span: { segments: { unit_id: string }[] } }[];
+      continuation: string | null;
+    };
+    for (const e of result.evidence) if (e.mapping_status === 'native_candidate') {
+      assert.equal(e.reader_reference, undefined);
+      candidates.push(e.span.segments[0].unit_id);
+    }
+    token = result.continuation ?? undefined;
+    if (!token) break;
+  }
+  assert.equal(token, undefined);
+  assert.equal(candidates.length, 27);
+  assert.equal(new Set(candidates).size, 27);
+  for (let verse = 5; verse <= 31; verse++) assert.ok(candidates.includes(`Gen.1.${verse}`));
+});
+
 test('source filtering and release selection never substitute another source or unselected text', async () => {
   const { env, db } = mappedFixture();
   const session = await ReadSession.open(env);

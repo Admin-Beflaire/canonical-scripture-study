@@ -283,6 +283,15 @@ const READER_MAPPINGS = `WITH requested AS (
     'uncovered', '{}', 'No checked mapping with selected native evidence is available', NULL, 1
   FROM requested q CROSS JOIN scope_sources s
   WHERE NOT EXISTS (SELECT 1 FROM mappings m WHERE m.position = q.position AND m.source_revision_id = s.source_revision_id AND m.role = 'numbered_text')
+  UNION ALL
+  SELECT q.position, q.reader_ref, s.source_revision_id, 'numbered_text', 0, 'native-candidate',
+    'native_candidate', '{}', NULL, n.id, 1
+  FROM requested q CROSS JOIN scope_sources s
+  JOIN json_each(q.native_units) nu
+  CROSS JOIN native_spans n INDEXED BY native_spans_verse_unit
+    ON json_extract(n.segments_json, '$[0].unit_id') = nu.value AND n.kind = 'verse' AND n.source_revision_id = s.source_revision_id
+  CROSS JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
+  WHERE NOT EXISTS (SELECT 1 FROM mappings m WHERE m.position = q.position AND m.source_revision_id = s.source_revision_id AND m.role = 'numbered_text')
 )
 SELECT * FROM all_mappings WHERE (position, source_revision_id, role_order, ordinal, mapping_id, COALESCE(span_id, '')) > (?5, ?6, ?7, ?8, ?9, ?10)
 ORDER BY position, source_revision_id, role_order, ordinal, mapping_id, COALESCE(span_id, '') LIMIT ?11`;
@@ -299,8 +308,8 @@ CROSS JOIN span_segments overlap INDEXED BY span_segments_source_kind_order
   AND overlap.start_order <= anchor.end_order AND overlap.end_order >= anchor.start_order
 CROSS JOIN native_spans unit ON unit.id = overlap.span_id AND unit.source_revision_id = overlap.source_revision_id
 CROSS JOIN release_outputs ro ON ro.output_id = unit.output_id AND ro.release_id = ?1
-WHERE (unit.source_revision_id, unit.id) > (?11, ?12)
-   OR (?13 = 1 AND unit.source_revision_id = ?11 AND unit.id = ?12)
+WHERE mapped.status != 'native_candidate' AND ((unit.source_revision_id, unit.id) > (?11, ?12)
+   OR (?13 = 1 AND unit.source_revision_id = ?11 AND unit.id = ?12))
 ORDER BY unit.source_revision_id, unit.id LIMIT ?14`;
 
 function readerParams(i: ReaderMappingInput): unknown[] {

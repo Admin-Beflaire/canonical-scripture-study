@@ -289,7 +289,7 @@ test('a translating study carries the key translation rules in its first batch o
   assert.match(rules, /consult only STEP Bible, Logeion or Open Scriptures Hebrew Lexicon/);
   assert.match(full, /consult only these agreed external websites/);
   assert.doesNotMatch(full, /no brackets or footnote for that difference/);
-  for (const needed of [/normal-size verse numbers/, /verse numbers outside/, /small caps/, /raised numbered footnote marker/]) {
+  for (const needed of [/normal-size verse numbers/, /verse numbers outside/, /small caps/, /raised numbered footnote marker/, /When Scripture directly quotes other Scripture/, /not allusions or echoes/]) {
     assert.match(rules, needed);
     assert.match(full, needed);
   }

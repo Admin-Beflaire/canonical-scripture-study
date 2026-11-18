@@ -241,7 +241,7 @@ const READER_MAPPINGS = `WITH requested AS (
   SELECT CAST(j.key AS INTEGER) AS position, json_extract(j.value, '$.ref') AS reader_ref,
     json_extract(j.value, '$.book') AS book, json_extract(j.value, '$.chapter') AS chapter,
     json_extract(j.value, '$.verse') AS verse, json_extract(j.value, '$.native_units') AS native_units
-  FROM json_each(?2) j WHERE CAST(j.key AS INTEGER) >= ?5
+  FROM json_each(?2) j
 ), scope_sources AS (
   SELECT s.id AS source_revision_id FROM source_nodes s
   WHERE s.kind = 'source_revision' AND (?4 IS NULL OR s.id IN (SELECT value FROM json_each(?4)))

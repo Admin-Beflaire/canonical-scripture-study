@@ -27,6 +27,7 @@ from ..executor.checkpoints import StopWork, UnitProgress, run_checkpointed_unit
 from ..executor.quality import check_candidate_quality
 from ..prepare.evidence import OutputBasis
 from ..prepare.records import RecordError
+from ..provider import provider_diagnostic
 from ..validate.saved import CandidateInventory
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
@@ -139,9 +140,7 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
     except UnitNotRunnable as error:
         return _result(job, run_id, 'cancelled', diagnostics=_diagnostic('not_runnable', error))
     except ProviderError as error:
-        status = error.status if type(error.status) is int and 100 <= error.status <= 599 else None
-        message = f'Provider request failed with HTTP {status}' if status else 'Provider request failed; HTTP status unavailable'
-        return _result(job, run_id, 'failed', diagnostics=[{'code': 'provider_failure', 'message': message}])
+        return _result(job, run_id, 'failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error)}])
     except (RecordError, KeyError, ValueError, TypeError) as error:
         return _result(job, run_id, 'failed', diagnostics=_diagnostic('runner_failed', error))
 

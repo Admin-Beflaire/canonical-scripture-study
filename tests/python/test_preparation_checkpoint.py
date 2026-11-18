@@ -11,6 +11,7 @@ from css_preparation.executor.checkpoints import (
     CheckpointStore, RetryableUnitError, StopWork, run_checkpointed_unit,
 )
 from css_preparation.prepare.records import ReaderBoundaryError, RecordError, decoded, TABLES
+from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, database, evidence_a, text_a
 
 FIXTURE = json.loads((Path(__file__).resolve().parents[1] /
@@ -254,8 +255,28 @@ class CheckpointStageThree(unittest.TestCase):
         self.assertEqual(failed.diagnostics, ('reader_boundary',))
         self.assertEqual(failed.diagnostic_detail,
                          'Reader marker 1Ch.12.5 crosses the requested native unit boundary')
-        with self.assertRaises(RecordError):
+        with self.assertRaises(RecordError) as caught:
             ReaderBoundaryError('1Ch.12.5 secret=bad')
+        self.assertIs(type(caught.exception), RecordError)
+
+    def test_control_failure_on_retry_reports_control_stage(self):
+        checks = []
+        def control():
+            checks.append(1)
+            if len(checks) == 3:
+                raise OSError('private detail')
+            return self.state
+        def save(_):
+            raise RetryableUnitError('retry')
+        result = self.invoke(control=control, checkpoint_store=replace(self.checkpoints, save=save))
+        self.assertEqual(result.diagnostic_detail, 'Failure during control_check; detail unavailable')
+
+    def test_checkpoint_provider_error_retains_stage_and_hides_detail(self):
+        def fail(_):
+            raise ProviderError('secret', status=503)
+        result = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
+        self.assertEqual(result.diagnostics, ('provider_failure',))
+        self.assertEqual(result.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')
 
     def test_acquisition_failure_reports_stage_without_private_detail(self):
         def fail(_):

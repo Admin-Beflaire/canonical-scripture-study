@@ -122,7 +122,7 @@ class RunnerTest(unittest.TestCase):
         self.recipe = Recipe(prepare=fail)
         result = self.run_job(self.job())
         self.assertEqual(result['diagnostics'], [{'code': 'provider_failure',
-                         'message': 'Provider request failed with HTTP 429'}])
+                         'message': 'Provider request failed during building_output with HTTP 429'}])
         self.assertNotIn('secret', str(result))
 
     def test_unknown_recipe_and_missing_module_fail_without_writes(self):
@@ -278,7 +278,9 @@ class RunnerTest(unittest.TestCase):
             self.assertNotIn(MARKER, public)
             self.assertNotIn('synthetic-secret', public)
             self.assertNotIn('synthetic-token', public)
-        self.assertIn(MARKER, json.dumps(self.results[0]['result']))  # private Control record only
+        self.assertIn(MARKER, self.results[0]['result']['unit_id'])
+        self.assertEqual(self.results[0]['result']['diagnostics'], [{'code': 'invalid_or_unavailable_output',
+                         'message': 'Failure during building_output; detail unavailable'}])
 
     def test_unexpected_crash_is_reported_privately(self):
         def crash(job, storage):

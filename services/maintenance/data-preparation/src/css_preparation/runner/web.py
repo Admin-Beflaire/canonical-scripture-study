@@ -12,15 +12,7 @@ from typing import Any
 import urllib.error
 import urllib.parse
 import urllib.request
-
-
-class ProviderError(Exception):
-    """A provider or Control call failed; the message contains no secret or body text."""
-
-    def __init__(self, message: str, *, status: int | None = None, transient: bool = False):
-        super().__init__(message)
-        self.status = status
-        self.transient = transient
+from ..provider import ProviderError
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

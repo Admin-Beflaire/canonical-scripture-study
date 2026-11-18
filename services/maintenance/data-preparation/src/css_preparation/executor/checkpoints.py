@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from ..contracts import parse_job_input
 from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
+from ..provider import ProviderError, provider_diagnostic, stage_diagnostic
 from . import ControlState, UnitNotRunnable, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
 from .basis import check_unit_records, check_output_basis, registered_dependency_outputs
@@ -245,6 +246,7 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
         check_unit_records(entry, records, storage)
         # If a long-running builder finished after pause/cancel/supersession,
         # do not begin candidate writes. Control owns late-result acceptance.
+        stage = 'control_check'
         execute_unit(job_json, run_id=run_id, read_control=read_control,
                      registered=registered, process=lambda _: None)
         stage = 'saving_output'
@@ -261,6 +263,7 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
 
     for retry in range(max_retries + 1):
         try:
+            stage = 'control_check'
             return execute_unit(job_json, run_id=run_id, read_control=read_control,
                                 registered=registered, process=process)
         except UnitNotRunnable:
@@ -271,9 +274,11 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             return failure(error.reason)
         except (RetryableUnitError, TimeoutError, ConnectionError):
             if retry == max_retries:
-                return failure('transient_exhausted', f'Transient failure during {stage}; retries exhausted')
+                return failure('transient_exhausted', stage_diagnostic(stage, transient=True))
         except ReaderBoundaryError as error:
             return failure('reader_boundary', f'Reader marker {error.marker} crosses the requested native unit boundary')
+        except ProviderError as error:
+            return failure('provider_failure', provider_diagnostic(error, stage))
         except (RecordError, OSError):
-            return failure('invalid_or_unavailable_output', f'Failure during {stage}; detail unavailable')
+            return failure('invalid_or_unavailable_output', stage_diagnostic(stage))
     raise AssertionError('Unreachable retry loop')

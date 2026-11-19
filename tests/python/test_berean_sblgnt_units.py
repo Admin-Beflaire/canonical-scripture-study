@@ -2,7 +2,8 @@
 import unittest
 
 from css_preparation.adapters.berean_units import PROVIDER as BEREAN, berean_starts, berean_units
-from css_preparation.adapters.sblgnt_units import PROVIDER as SBLGNT, sblgnt_starts, sblgnt_units
+from css_preparation.adapters.sblgnt_units import PROVIDER as SBLGNT, _NAMES, sblgnt_starts, sblgnt_units
+from css_preparation.adapters.stepbible.source import BOOKS
 from css_preparation.adapters.stepbible.prepare import book_text, book_verses, read_component
 from css_preparation.prepare.literary import literary_spans
 from css_preparation.prepare.records import RecordError
@@ -61,6 +62,10 @@ class StartsOnNativeVersesTest(unittest.TestCase):
         self.assertEqual(dict(proposal.notes), {'granularity': 'verse'})
         self.assertEqual([(s, 0, len(v.text)) for s, v in zip(verses_of(proposal), self.verses[6:])],
                          list(proposal.segments))
+
+    def test_order_is_checked_within_a_scale_only(self):
+        proposals = self.place(Start('Mat.1.4', 'section'), Start('Mat.1.2', 'paragraph'))
+        self.assertEqual([p.scale for p in proposals], ['section', 'paragraph'])
 
     def test_unknown_verse_unknown_scale_and_backward_starts_are_refused(self):
         with self.assertRaises(RecordError):
@@ -173,6 +178,31 @@ class SblgntTest(unittest.TestCase):
                 sblgnt_starts('Mat', text)
         with self.assertRaises(RecordError):
             sblgnt_starts('Gen', xml(f'<p>{verse(1)}</p>'))
+
+    def test_a_document_type_is_refused_in_any_encoding(self):
+        text = '<!DOCTYPE book><book id="Matt"><p><verse-number>1:1</verse-number>x</p></book>'
+        for raw in (text.encode('utf-16'), text.encode('utf-16-le'), text.encode('utf-8'), text):
+            with self.assertRaises(RecordError):
+                sblgnt_starts('Mat', raw)
+        self.assertEqual(len(sblgnt_starts('Mat', text.replace('<!DOCTYPE book>', '').encode('utf-16'))), 1)
+
+    def test_xml_of_another_book_is_refused(self):
+        with self.assertRaises(RecordError):
+            sblgnt_starts('Mat', '<book id="Mark"><p><verse-number id="Mark 1:1">1:1</verse-number>x</p></book>')
+        with self.assertRaises(RecordError):
+            sblgnt_starts('Mat', xml('<p><verse-number id="Mark 1:1">1:1</verse-number>x</p>'))
+        for name in ('Matthew 1:4', 'matt 1:4', '1:4'):
+            self.assertEqual(self.starts(f'<p><verse-number id="{name}">1:4</verse-number>x</p>'), ['Mat.1.4'])
+        self.assertEqual([s.reference for s in sblgnt_starts('1Co', '<book id="1Cor"><p><verse-number id="1 Corinthians 2:3">2:3'
+                                                                  '</verse-number>x</p></book>')], ['1Co.2.3'])
+
+    def test_the_whole_verse_coordinate_must_match(self):
+        for number in ('9:1:4', '1:4:', 'x1:4', '1:', ':4', '1-4'):
+            with self.assertRaises(RecordError, msg=number):
+                sblgnt_starts('Mat', xml(f'<p><verse-number>{number}</verse-number>x</p>'))
+
+    def test_every_new_testament_book_has_names(self):
+        self.assertEqual(set(_NAMES), set(BOOKS['tagnt']))
 
     def test_units_carry_the_sblgnt_attribution(self):
         proposals = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}{verse(2)}</p>', f'<p>{verse(3)}</p>'))

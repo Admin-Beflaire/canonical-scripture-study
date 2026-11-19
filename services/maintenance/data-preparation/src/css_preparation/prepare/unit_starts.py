@@ -11,7 +11,8 @@ verse that holds it and turns the starts of one scale into proposals for the uni
   segments and the builder merges them. A break inside a verse is placed at that verse; the
   proposal notes record that boundaries are verse-level.
 
-A start whose verse is not in the native book is refused, as are starts out of text order.
+A start whose verse is not in the native book is refused, as are starts of one scale that are out of text order
+(the order of starts of different scales is not compared; each scale is built on its own).
 """
 from __future__ import annotations
 
@@ -57,7 +58,7 @@ def proposals_from_starts(verses: Sequence[NativeVerse], book: str, starts: Sequ
         marks: list[tuple[int, str]] = []
         for _, index, label in (item for item in found if item[0] == scale):
             if marks and index < marks[-1][0]:
-                raise RecordError(f'{source}: {scale} starts are out of text order at {verses[index].unit_id}')
+                raise RecordError(f'{source}: {scale} starts are out of text order within the scale at {verses[index].unit_id}')
             if not marks or index > marks[-1][0]:
                 marks.append((index, label))     # a second start in the same verse is the same boundary
         for number, (index, label) in enumerate(marks, start=1):

@@ -2,8 +2,8 @@
 
 Units only help Study find related verses; they carry no authority. Each source gives
 proposals: a scale, a label and ordered segments inside one book. The builder keeps every
-proposal as a unit. Proposals with the same scale and the same verses are merged into one
-unit that lists its sources. A unit without a parent gets the smallest unit of a larger
+proposal as a unit. Proposals with the same scale and exactly the same segments (verses and
+offsets) are merged into one unit that lists its sources; a different boundary is its own unit. A unit without a parent gets the smallest unit of a larger
 scale whose text contains it, offsets included. Parents come only from this containment.
 """
 from __future__ import annotations
@@ -48,15 +48,15 @@ def build_units(book: str, order: Sequence[str], proposals: Sequence[Proposal]) 
     extents = [(p, _extent(p, rank)) for p in proposals]  # refuses every bad proposal before building
     built: list[tuple[str, frozenset[str], LiteraryUnit]] = []
     for scale in SCALES:
-        same: dict[frozenset[str], list[Proposal]] = {}
-        for proposal, extent in extents:
+        same: dict[tuple, list[Proposal]] = {}
+        for proposal, _ in extents:
             if proposal.scale == scale:
-                same.setdefault(extent, []).append(proposal)
+                same.setdefault(_shape(proposal, rank), []).append(proposal)
         # Keys must not depend on input order: sort by first verse, size, then exact segments.
-        ordered = sorted(same.items(), key=lambda item: (min(rank[v] for v in item[0]), -len(item[0]),
-                                                         _shape(item[1][0], rank)))
-        for number, (extent, group) in enumerate(ordered, start=1):
-            lead = min(group, key=lambda p: (_shape(p, rank), sources.index(p.source)))
+        ordered = sorted(same.items(), key=lambda item: (item[0][0][0], -len(item[0]), item[0]))
+        for number, (_, group) in enumerate(ordered, start=1):
+            extent = frozenset(unit_id for unit_id, _, _ in group[0].segments)
+            lead = min(group, key=lambda p: (sources.index(p.source), p.label))
             listed = sorted({p.source for p in group}, key=sources.index)
             key = f'{book}:{scale}:{number:03d}'
             unit = LiteraryUnit(key, lead.label, lead.segments, lead.source, lead.method,
@@ -76,7 +76,19 @@ def _shape(proposal: Proposal, rank: Mapping[str, int]) -> tuple[tuple[int, int,
     return tuple((rank[unit_id], start, end) for unit_id, start, end in proposal.segments)
 
 
+def _joined(segments: Sequence[Segment]) -> list[Segment]:
+    """Touching segments of one verse become one, so a unit split at a marker still holds what spans it."""
+    joined: list[Segment] = []
+    for unit_id, start, end in segments:
+        if joined and joined[-1][0] == unit_id and joined[-1][2] >= start:
+            joined[-1] = (unit_id, joined[-1][1], max(joined[-1][2], end))
+        else:
+            joined.append((unit_id, start, end))
+    return joined
+
+
 def _inside(inner: Sequence[Segment], outer: Sequence[Segment]) -> bool:
     """Every inner segment lies within one outer segment of the same verse."""
+    outer = _joined(outer)
     return all(any(unit_id == o_id and o_start <= start and end <= o_end for o_id, o_start, o_end in outer)
                for unit_id, start, end in inner)

@@ -56,6 +56,11 @@ class MasoreticUnitsTest(unittest.TestCase):
         self.assertIsNone(self.units['Exo:masoretic:s001'].parent_key)
         self.assertNotIn('Exo:masoretic:s002:p01', self.units)
 
+    def test_setumah_then_petuchah_closes_the_section_with_the_petuchah(self):
+        verses, component = book(('Exo.1.1', ['אָבֹג\\׃', SAMEKH, PE]), ('Exo.1.2', ['וָז\\׃']))
+        units = {u.key: u for u in masoretic_units(verses, component, 'Exo')}
+        self.assertEqual(units['Exo:masoretic:s001'].notes['marker_closing'], 'petuchah')
+
     def test_no_marker_text_is_in_any_unit(self):
         for unit in self.units.values():
             # A marker is a stand-alone token; a word may end in the same letter.

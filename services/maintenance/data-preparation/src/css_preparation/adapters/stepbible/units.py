@@ -66,6 +66,9 @@ def masoretic_units(verses: Sequence[Verse], component: Component, book: str) ->
     for index, start, after, marker in _cuts(verses):
         if _segments(verses, position, (index, start)):
             sections[-1].append((position, (index, start), marker))
+        elif marker == PETUCHAH and sections[-1]:
+            # Two markers in a row ("ס פ"): the petuchah is what ends the section.
+            sections[-1][-1] = (*sections[-1][-1][:2], marker)
         position = (index, after)
         if marker == PETUCHAH and sections[-1]:
             sections.append([])

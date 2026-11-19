@@ -57,6 +57,19 @@ class BuilderTest(unittest.TestCase):
         two = {u.label: u.key for u in build_units('Mat', ORDER, [b, a])}
         self.assertEqual(one, two)
 
+    def test_different_offsets_in_one_verse_stay_separate_with_their_sources(self):
+        a = Proposal('A', 'm', 'section', 'a', (('Mat.1.1', 0, 5),))
+        b = Proposal('B', 'm', 'section', 'b', (('Mat.1.1', 5, 10),))
+        units = {u.label: u for u in build_units('Mat', ORDER, [a, b])}
+        self.assertEqual((units['a'].segments, units['a'].notes['sources']), ((('Mat.1.1', 0, 5),), ['A']))
+        self.assertEqual((units['b'].segments, units['b'].notes['sources']), ((('Mat.1.1', 5, 10),), ['B']))
+
+    def test_touching_outer_segments_can_hold_an_inner_unit(self):
+        outer = Proposal('A', 'm', 'section', 'outer', (('Mat.1.1', 0, 5), ('Mat.1.1', 5, 10)))
+        inner = Proposal('A', 'm', 'paragraph', 'inner', (('Mat.1.1', 3, 7),))
+        units = {u.label: u for u in build_units('Mat', ORDER, [outer, inner])}
+        self.assertEqual(units['inner'].parent_key, units['outer'].key)
+
     def test_a_proposal_cannot_name_its_own_parent(self):
         with self.assertRaises(TypeError):
             Proposal('A', 'm', 'paragraph', 'x', span(1, 1), parent_key='mine')

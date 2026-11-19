@@ -1,4 +1,4 @@
-"""Unit builder: agreement, disputes, single sources, scales and nesting (synthetic verses)."""
+"""Unit builder: merging, scales and nesting (synthetic verses)."""
 import unittest
 
 from css_preparation.prepare.records import RecordError
@@ -19,25 +19,15 @@ class BuilderTest(unittest.TestCase):
     def units(self, *proposals):
         return {u.key: u for u in build_units('Mat', ORDER, proposals)}
 
-    def test_two_sources_with_same_verses_agree(self):
-        u = self.units(proposal('A', 'paragraph', 1, 3), proposal('B', 'paragraph', 1, 3))['Mat:paragraph:001']
-        self.assertEqual((u.boundary_status, u.notes['sources'], u.notes['agreement']), ('agreed', ['A', 'B'], True))
+    def test_same_verses_from_two_sources_merge_and_list_both(self):
+        units = self.units(proposal('A', 'paragraph', 1, 3), proposal('B', 'paragraph', 1, 3))
+        self.assertEqual(list(units), ['Mat:paragraph:001'])
+        self.assertEqual(units['Mat:paragraph:001'].notes['sources'], ['A', 'B'])
 
-    def test_one_source_is_not_agreement(self):
-        u = self.units(proposal('A', 'paragraph', 1, 3))['Mat:paragraph:001']
-        self.assertEqual((u.boundary_status, u.notes['sources'], u.notes['agreement']), ('agreed', ['A'], False))
-
-    def test_different_extents_are_a_dispute_with_attributed_alternative(self):
-        u = self.units(proposal('A', 'paragraph', 1, 3), proposal('B', 'paragraph', 1, 4))['Mat:paragraph:001']
-        self.assertEqual(u.boundary_status, 'disputed')
-        self.assertEqual([a['attribution'] for a in u.alternatives], ['B'])
-        self.assertEqual(u.provider, 'A')
-
-    def test_majority_extent_leads_a_dispute(self):
-        u = self.units(proposal('A', 'paragraph', 1, 3), proposal('B', 'paragraph', 1, 4), proposal('C', 'paragraph', 1, 4))['Mat:paragraph:001']
-        self.assertEqual(u.provider, 'B')
-        self.assertEqual(u.notes['sources'], ['B', 'C'])
-        self.assertEqual([a['attribution'] for a in u.alternatives], ['A'])
+    def test_different_extents_stay_separate_units(self):
+        units = self.units(proposal('A', 'paragraph', 1, 3), proposal('B', 'paragraph', 1, 4))
+        self.assertEqual(len(units), 2)
+        self.assertTrue(all(u.boundary_status == 'agreed' and not u.alternatives for u in units.values()))
 
     def test_separate_stretches_are_separate_units(self):
         units = self.units(proposal('A', 'paragraph', 1, 2), proposal('A', 'paragraph', 3, 4))

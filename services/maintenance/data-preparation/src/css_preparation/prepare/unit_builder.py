@@ -1,14 +1,10 @@
 """Build literary units from the boundary proposals of several sources.
 
-Each source gives proposals: a scale, a label and ordered segments inside one book. The builder
-compares them at verse level and returns `LiteraryUnit` records that `literary_spans` checks.
-
-- Same scale, same verses from two or more sources: one unit, `agreed`, listing every source.
-- Same scale, overlapping but different verses: one `disputed` unit. The extent given by most
-  sources (the first source wins a tie) is the unit; the others are attributed alternatives.
-- One source alone is one `agreed` unit that lists that single source; it is not agreement.
-- Units at different scales never compete. A unit without a parent gets the smallest unit of a
-  larger scale whose verses contain it.
+Units only help Study find related verses; they carry no authority. Each source gives
+proposals: a scale, a label and ordered segments inside one book. The builder keeps every
+proposal as a unit. Proposals with the same scale and the same verses are merged into one
+unit that lists its sources. A unit without a parent gets the smallest unit of a larger
+scale whose verses contain it.
 """
 from __future__ import annotations
 
@@ -46,44 +42,30 @@ def _extent(proposal: Proposal, rank: Mapping[str, int]) -> frozenset[str]:
     return frozenset(unit_id for unit_id, _, _ in proposal.segments)
 
 
-def _clusters(items: list[tuple[Proposal, frozenset[str]]]) -> list[list[tuple[Proposal, frozenset[str]]]]:
-    """Group proposals of one scale whose verses overlap, directly or through others."""
-    groups: list[list[tuple[Proposal, frozenset[str]]]] = []
-    for item in items:
-        touching = [g for g in groups if any(item[1] & other[1] for other in g)]
-        merged = [item] + [member for g in touching for member in g]
-        groups = [g for g in groups if g not in touching] + [merged]
-    return groups
-
-
 def build_units(book: str, order: Sequence[str], proposals: Sequence[Proposal]) -> tuple[LiteraryUnit, ...]:
     """Units of one book from every source's proposals. `order` lists the book's verse unit ids."""
     rank = {unit_id: n for n, unit_id in enumerate(order)}
     sources = list(dict.fromkeys(p.source for p in proposals))
     extents = [(p, _extent(p, rank)) for p in proposals]  # refuses every bad proposal before building
-    built: list[tuple[str, int, str, frozenset[str], LiteraryUnit, str | None]] = []
+    built: list[tuple[str, frozenset[str], LiteraryUnit, str | None]] = []
     for scale in SCALES:
-        items = [(p, e) for p, e in extents if p.scale == scale]
-        ordered = sorted(_clusters(items), key=lambda g: min(rank[v] for _, e in g for v in e))
-        for number, cluster in enumerate(ordered, start=1):
-            by_extent: dict[frozenset[str], list[Proposal]] = {}
-            for proposal, extent in sorted(cluster, key=lambda x: sources.index(x[0].source)):
-                by_extent.setdefault(extent, []).append(proposal)
-            chosen = max(by_extent, key=lambda e: (len({p.source for p in by_extent[e]}), -min(sources.index(p.source) for p in by_extent[e])))
-            lead = by_extent[chosen][0]
-            listed = sorted({p.source for p in by_extent[chosen]}, key=sources.index)
-            others = tuple({'attribution': p.source, 'segments': p.segments}
-                           for e, group in by_extent.items() if e != chosen for p in group)
+        same: dict[frozenset[str], list[Proposal]] = {}
+        for proposal, extent in extents:
+            if proposal.scale == scale:
+                same.setdefault(extent, []).append(proposal)
+        ordered = sorted(same.items(), key=lambda item: (min(rank[v] for v in item[0]), -len(item[0])))
+        for number, (extent, group) in enumerate(ordered, start=1):
+            lead = group[0]
+            listed = sorted({p.source for p in group}, key=sources.index)
             key = f'{book}:{scale}:{number:03d}'
-            notes = {**dict(lead.notes), 'scale': scale, 'sources': listed, 'agreement': len(listed) > 1}
-            unit = LiteraryUnit(key, lead.label, lead.segments, lead.source, lead.method,
-                                'disputed' if others else 'agreed', others, parent_key=lead.parent_key, notes=notes)
-            built.append((scale, number, key, chosen, unit, lead.parent_key))
+            unit = LiteraryUnit(key, lead.label, lead.segments, lead.source, lead.method, parent_key=lead.parent_key,
+                                notes={**dict(lead.notes), 'scale': scale, 'sources': listed})
+            built.append((scale, extent, unit, lead.parent_key))
     larger = {scale: n for n, scale in enumerate(SCALES)}
     result = []
-    for scale, _, key, extent, unit, parent in built:
+    for scale, extent, unit, parent in built:
         if parent is None:
-            candidates = [(len(e), k) for s, _, k, e, _, _ in built if larger[s] > larger[scale] and extent <= e]
+            candidates = [(len(e), u.key) for s, e, u, _ in built if larger[s] > larger[scale] and extent <= e]
             parent = min(candidates)[1] if candidates else None
         result.append(LiteraryUnit(unit.key, unit.label, unit.segments, unit.provider, unit.method, unit.boundary_status,
                                    unit.alternatives, unit.reading_kind, parent, unit.notes))

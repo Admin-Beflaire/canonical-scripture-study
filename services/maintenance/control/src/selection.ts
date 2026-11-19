@@ -363,13 +363,16 @@ async function selectSaved(db: D1Database, taskId: string, revision: number, sco
   const token = crypto.randomUUID();
   const done: Outcome = { ...checked, completion: token, selection: { current_release_id: releaseId, became_current: true } };
   const selected = `(SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`;
+  // A release also requires its build to still be the same checked build: cancelled or superseded after the check, it is not selected.
+  const buildGuard = build ? `AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)` : '';
   try {
     await db.batch([
       db.prepare(`UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
         WHERE singleton_id = 1 AND current_release_id IS ? AND ? IS NOT current_release_id
           AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)
+          ${buildGuard}
           AND ${EXCLUSION_STATE} = ?`)
-        .bind(releaseId, base, releaseId, taskId, revision, releaseId, exclusions),
+        .bind(releaseId, base, releaseId, taskId, revision, releaseId, ...(build ? [build.id, build.revision, releaseId] : []), exclusions),
       db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
         WHERE id = ? AND revision = ? AND state = 'checked' AND ${selected} AND ${EXCLUSION_STATE} = ?`)
         .bind(canonicalJson(done), taskId, revision, releaseId, exclusions),

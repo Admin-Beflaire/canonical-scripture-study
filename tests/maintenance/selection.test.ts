@@ -828,6 +828,24 @@ test('a build stays checked until released; a cancelled or superseded build is n
   assert.equal(selected(w).current_release_id, null);
 });
 
+for (const state of ['cancelled', 'superseded']) {
+  test(`R58-4: a build ${state} between validation and selection is not selected`, async () => {
+    const w = world();
+    const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { release: false });
+    const batch = w.db.batch.bind(w.db);
+    w.db.batch = async statements => {
+      // The release is validated and recorded; just before its selection batch runs, the build changes.
+      if (statements.length >= 3 && w.db.sqlite.prepare(`SELECT 1 FROM maintenance_tasks WHERE request_key = 'release-g1' AND state = 'checked'`).get())
+        w.db.sqlite.prepare(`UPDATE maintenance_tasks SET state = ?, revision = revision + 1 WHERE id = ?`).run(state, taskId);
+      return batch(statements);
+    };
+    const released = await releaseBuild(w, taskId, 'release-g1');
+    assert.notEqual(released.report.state, 'completed');
+    assert.equal(selected(w).current_release_id, null, 'nothing was selected');
+    assert.equal((await taskReport(w.db, owner, taskId))!.state, state, 'the build is left as it was changed');
+  });
+}
+
 test('a released build is finished with the release and cannot be released again', async () => {
   const w = world();
   const { taskId, releaseId, task } = await runBook(w, prepareTask('gen', 'g1'));

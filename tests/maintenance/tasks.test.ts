@@ -21,12 +21,17 @@ test('every task kind normalizes, and missing information is named instead of gu
   for (const kind of TASK_KINDS) {
     const { missing } = normalizeScope({ request_key: 'k', instruction: 'x', kind,
       inputs: [kind === 'remove' ? { kind: 'source_revision', id: 'src-rev-1' } : { kind: 'artifact', id: 'a1' }],
-      extent: { units: ['u1'] }, capabilities: ['source_text'],
+      extent: { units: ['u1'] }, capabilities: kind === 'acquire' ? [] : ['source_text'],
+      constraints: kind === 'acquire' ? { recipe: 'r1' } : kind === 'release' ? { candidate: 'task-1' } : {},
       decision_refs: [{ kind: 'statement', ref: 'owner-decision:9', name: 'Character of God', version: '1.0' }] });
     assert.deepEqual(missing, [], kind);
   }
   const { missing } = normalizeScope({ request_key: 'k', instruction: 'Prepare something', kind: 'prepare' });
   assert.equal(missing.length, 3);
+  // An acquire task names a recipe and no capabilities; a release names the build it releases.
+  assert.equal(normalizeScope({ request_key: 'k', instruction: 'x', kind: 'acquire', inputs: [{ kind: 'acquisition', id: 'r' }],
+    extent: { component: 'c' }, capabilities: ['source_text'] }).missing.length, 2);
+  assert.ok(normalizeScope({ request_key: 'k', instruction: 'x', kind: 'release' }).missing[0].includes('candidate'));
   assert.ok(normalizeScope({ request_key: 'k', instruction: 'x', kind: 'incorporate_statement' }).missing[0].includes('statement'));
   const a = normalizeScope(prepare({ capabilities: ['b', 'a', 'a'] })).scope, b = normalizeScope(prepare({ capabilities: ['a', 'b'] })).scope;
   assert.deepEqual(a, b);

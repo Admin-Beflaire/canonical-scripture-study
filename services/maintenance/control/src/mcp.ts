@@ -35,7 +35,7 @@ const requestSchema = fromJsonSchema<TaskRequest>({
   properties: {
     request_key: { ...id, description: 'Short stable key for this instruction; reuse it only to repeat the same request.' },
     instruction: { type: 'string', minLength: 1, maxLength: 4000, description: "The owner's instruction in his own words." },
-    kind: { enum: [...TASK_KINDS] },
+    kind: { enum: [...TASK_KINDS], description: 'acquire fetches and keeps an original and nothing else (constraints.recipe names its recipe). prepare, correct and replace build checked outputs and never make them current. release makes a finished build current (constraints.candidate is that build\'s task ID). The other kinds are as before.' },
     inputs: { type: 'array', maxItems: 64, items: inputRef, description: 'Admitted source revisions, registered artifacts or acquisition routes.' },
     operations: { type: 'array', maxItems: 32, items: id },
     extent: { type: 'object', maxProperties: 64, description: 'Finite native extent, for example {"books":["GEN"]}.' },

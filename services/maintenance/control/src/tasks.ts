@@ -2,7 +2,7 @@ import { canonicalJson, sha256, type D1Database } from './d1.ts';
 import type { InputRef } from './contracts.ts';
 
 /** Task scope, state and owner-instruction resolution (Maintenance Control To-Be §1–2). */
-export const TASK_KINDS = ['prepare', 'correct', 'replace', 'remove', 'package', 'incorporate_statement', 'rollback', 'validate_restore'] as const;
+export const TASK_KINDS = ['acquire', 'prepare', 'correct', 'replace', 'release', 'remove', 'package', 'incorporate_statement', 'rollback', 'validate_restore'] as const;
 export const TASK_STATES = ['queued', 'running', 'paused', 'blocked', 'checked', 'completed', 'cancelled', 'superseded'] as const;
 export const OPEN_STATES = ['queued', 'running', 'paused', 'blocked', 'checked'] as const;
 export type TaskKind = typeof TASK_KINDS[number];
@@ -26,6 +26,8 @@ export interface Outcome {
   /** Separate results: Preparation's quality check and Control's scope check. */
   checks?: { quality?: 'passed'; scope?: 'passed' | 'failed' };
   scope_report?: { problems?: string[] } & Record<string, unknown>;
+  /** A build's checked candidate, kept for a later release task. */
+  candidate?: { release_id: string; base_release_id: string | null; exclusions: string };
   removal_report?: Record<string, unknown>;
   restore_report?: Record<string, unknown>;
   /** Token of the invocation that completed the task; exclusion changes are tied to it. */
@@ -61,13 +63,20 @@ export function normalizeScope(request: TaskRequest): { scope: Scope; missing: s
   if (!request.instruction?.trim()) missing.push("instruction: the owner's instruction in his own words");
   for (const value of [...scope.operations, ...scope.capabilities, ...inputs.map(ref => ref.id)])
     if (!ID.test(value)) missing.push(`identifier "${value.slice(0, 40)}": letters, digits and . _ : / - only`);
-  const needsInputs = ['prepare', 'correct', 'replace', 'remove', 'package'].includes(request.kind);
+  const needsInputs = ['acquire', 'prepare', 'correct', 'replace', 'remove', 'package'].includes(request.kind);
   if (needsInputs && inputs.length === 0) missing.push('inputs: which admitted source revisions, artifacts or acquisition routes this concerns');
+  if (['acquire', 'prepare', 'correct', 'replace'].includes(request.kind) && Object.keys(scope.extent).length === 0)
+    missing.push('extent: the finite native extent (for example which books or units)');
   if (['prepare', 'correct', 'replace'].includes(request.kind)) {
-    if (Object.keys(scope.extent).length === 0) missing.push('extent: the finite native extent (for example which books or units)');
-    if (scope.capabilities.length === 0 && !(request.kind === 'prepare' && scope.operations.length === 1 && scope.operations[0] === 'acquire'))
-      missing.push('capabilities: which outputs are needed (for example source_text, word_index)');
+    if (false) missing.push('extent: the finite native extent (for example which books or units)');
+    if (scope.capabilities.length === 0) missing.push('capabilities: which outputs are needed (for example source_text, word_index)');
   }
+  if (request.kind === 'acquire') {
+    if (typeof scope.constraints.recipe !== 'string') missing.push('constraints.recipe: the reviewed acquisition recipe');
+    if (scope.capabilities.length) missing.push('capabilities: an acquire task makes no outputs, so it names none');
+  }
+  if (request.kind === 'release' && (typeof scope.constraints.candidate !== 'string' || !ID.test(scope.constraints.candidate)))
+    missing.push('constraints.candidate: the task ID of the checked build to make current');
   if (request.kind === 'remove' && inputs.some(ref => ref.kind !== 'source_revision'))
     missing.push('inputs: name the source revisions to remove (kind "source_revision")');
   if (request.kind === 'validate_restore' && scope.constraints.select_release !== undefined

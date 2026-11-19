@@ -2,7 +2,7 @@ import { canonicalJson, type D1Database } from './d1.ts';
 import { recipeErrors, type ArtifactRef, type JobResult, type Recipe, type RecipeUnit } from './contracts.ts';
 import { dispatchUnit, type DispatchResult, type UnitPlan } from './dispatch.ts';
 import { FileEncodingError, GitHubError, runTitle, type GitHubActions } from './github.ts';
-import { checkAndSelect, selectDirect, type ObjectStore } from './selection.ts';
+import { checkAndSelect, releaseCandidate, selectDirect, type ObjectStore } from './selection.ts';
 import type { Outcome, Scope, TaskRow } from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
@@ -69,6 +69,12 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   if (!row) return { dispatched: [], state: 'unknown' };
   if (!['queued', 'running', 'checked'].includes(row.state)) return { dispatched: [], state: row.state };
   const scope = JSON.parse(row.scope_json) as Scope;
+  if (scope.kind === 'release') {
+    // A release makes a finished build's checked candidate current; it dispatches no work.
+    // A release left checked by an interruption selects again here, after the same guards.
+    const released = await releaseCandidate(db, objects, row);
+    return { dispatched: [], state: released.state, ...(released.limitation ? { limitation: released.limitation } : {}) };
+  }
   if (scope.constraints.recipe === undefined) {
     // Removal, rollback and restore validation prepare nothing: they go straight to the checks and gate.
     // A removal whose selection guard failed stays checked and is rebuilt here from the new current.
@@ -115,8 +121,16 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     if (done) succeeded.set(unit, JSON.parse(done.result_json!) as JobResult);
   }
 
+  const acquired = await acquiredResults(db, scope, row.requester, recipe!);
+  if ('problem' in acquired) {
+    row = (await task(db, taskId))!;
+    await setOutcome(db, row, outcome => addLimitation(outcome, acquired.problem), 'blocked');
+    return { dispatched: [], state: 'blocked', limitation: acquired.problem };
+  }
+  for (const [unit, result] of acquired) succeeded.set(unit, result);
+  const mine = unitsFor(scope, recipe!);
   const dispatched: string[] = [];
-  for (const unit of recipe!.units!) {
+  for (const unit of mine) {
     const attempts = byUnit.get(unit.unit_id) ?? [];
     const latest = attempts[attempts.length - 1];
     if (succeeded.has(unit.unit_id) || (latest && ACTIVE.has(latest.state))) continue;
@@ -145,17 +159,25 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   }
 
   row = (await task(db, taskId))!;
-  if (recipe!.units!.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
+  if (mine.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
     if (!pinnedNow(row)) return { dispatched, state: row.state };
-    // An acquisition-only recipe retains an original; it does not produce a Study release.
-    if (recipe!.adapter?.name === 'acquire-only' && recipe!.adapter.method_version === 'acquire-only/1') {
+    // A finished build waits, checked, for a release task; it is not checked again.
+    if (row.state === 'checked' && BUILD_KINDS.has(scope.kind) && (JSON.parse(row.outcome_json) as Outcome).candidate)
+      return { dispatched, state: row.state };
+    // An acquire task retains an original; it builds nothing and changes no release.
+    if (scope.kind === 'acquire' && recipe!.adapter?.name !== 'acquire-only') {
+      await db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
+        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
+        .bind(canonicalJson({ ...(JSON.parse(row.outcome_json) as Outcome), completed_extent: scope.extent, remaining_extent: {} }), taskId, row.revision).run();
+      return { dispatched, state: (await task(db, taskId))?.state ?? 'unknown' };
+    }
+    if (scope.kind === 'acquire') {
       const unit = recipe!.units!;
       const revision = recipe!.native_extent?.component;
       const acquisition = recipe!.manifest_revision;
       const permitted = unit.length === 1 && unit[0].kind === 'acquire' && unit[0].unit_id === 'acquire'
         && unit[0].depends_on.length === 0 && canonicalJson(unit[0].native_extent) === canonicalJson(recipe!.native_extent)
         && typeof revision === 'string' && scope.capabilities.length === 0
-        && scope.operations.length === 1 && scope.operations[0] === 'acquire'
         && scope.inputs.some(ref => ref.kind === 'source_revision' && ref.id === revision)
         && scope.inputs.some(ref => ref.kind === 'acquisition' && ref.id === acquisition);
       const saved = permitted ? await db.prepare(`SELECT s.details_json FROM source_nodes s JOIN admissions a
@@ -185,29 +207,58 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     row = (await task(db, taskId))!;
     if (!pinnedNow(row) || !['queued', 'running', 'checked'].includes(row.state)) return { dispatched, state: row.state };
     // Quality passed for every unit: Control's own scope check, then the conditional selection.
-    const selected = await checkAndSelect(db, objects, row, recipe!, succeeded);
+    // A build ends with a checked candidate; only these two kinds still select themselves (staged exception).
+    const selected = await checkAndSelect(db, objects, row, recipe!, succeeded, SELF_SELECTING.has(scope.kind));
     return { dispatched, state: selected.state, ...(selected.limitation ? { limitation: selected.limitation } : {}) };
   }
   return { dispatched, state: row.state };
 }
 
 const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
+const BUILD_KINDS = new Set(['prepare', 'correct', 'replace']);
+const SELF_SELECTING = new Set(['package', 'incorporate_statement']);
 
 /** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
+/** The units this task runs: an acquire task the recipe's acquire units, every other task the remaining units. */
+const unitsFor = (scope: Scope, recipe: Recipe) => (recipe.units ?? []).filter(unit => (scope.kind === 'acquire') === (unit.kind === 'acquire'));
+
+/** A build's acquire units were run by an earlier acquire task of the same recipe revision: `constraints.acquired` names it.
+ *  Its saved results stand in for them, so a build never fetches. */
+async function acquiredResults(db: D1Database, scope: Scope, requester: string, recipe: Recipe): Promise<Map<string, JobResult> | { problem: string }> {
+  const fetches = (recipe.units ?? []).filter(unit => unit.kind === 'acquire');
+  if (scope.kind === 'acquire' || !fetches.length) return new Map();
+  const id = scope.constraints.acquired;
+  if (typeof id !== 'string') return { problem: 'the recipe starts with an acquire step; name the finished acquire task in constraints.acquired' };
+  const found = await db.prepare('SELECT * FROM maintenance_tasks WHERE id = ? AND requester = ?').bind(id, requester).first<TaskRow>();
+  const earlier = found && JSON.parse(found.scope_json) as Scope;
+  const pin = found && (JSON.parse(found.outcome_json) as { recipe_revision?: string }).recipe_revision;
+  if (!found || !earlier || earlier.kind !== 'acquire' || found.state !== 'completed' || earlier.constraints.recipe !== scope.constraints.recipe || pin !== recipe.revision)
+    return { problem: `acquire task ${id} must be finished, for this recipe and its current revision` };
+  const results = new Map<string, JobResult>();
+  const jobs = (await db.prepare(`SELECT unit_id, result_json FROM maintenance_jobs WHERE task_id = ? AND state = 'succeeded' AND result_json IS NOT NULL`)
+    .bind(id).all<{ unit_id: string; result_json: string }>()).results;
+  for (const job of jobs) results.set(job.unit_id, JSON.parse(job.result_json) as JobResult);
+  const missing = fetches.find(unit => !results.has(unit.unit_id));
+  return missing ? { problem: `acquire task ${id} has no result for unit ${missing.unit_id}` } : results;
+}
+
 function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
   const acquireOnly = recipe.adapter?.name === 'acquire-only' && recipe.adapter.method_version === 'acquire-only/1';
-  if (!acquireOnly && ['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
-    return 'capabilities: a preparation recipe must request output capabilities';
+  if (scope.kind !== 'acquire' && acquireOnly) return 'an acquire-only recipe can only be used by an acquire task';
+  // One recipe serves every operation. An acquire task runs only its acquire units; every other task runs the rest.
+  if (scope.kind === 'acquire' && !(recipe.units ?? []).some(unit => unit.kind === 'acquire')) return 'the recipe has nothing to acquire';
+  if (scope.kind === 'acquire' && scope.capabilities.length !== 0) return 'an acquire task makes no outputs and names no capabilities';
+  if (['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
+    return 'capabilities: a build must request output capabilities';
   if (acquireOnly) {
-    if (scope.kind !== 'prepare' || scope.operations.length !== 1 || scope.operations[0] !== 'acquire' || scope.capabilities.length !== 0)
-      return 'acquire-only requires a prepare task with only the acquire operation and no capabilities';
+    if (scope.capabilities.length !== 0) return 'an acquire task makes no outputs and names no capabilities';
     const revision = recipe.native_extent?.component;
     if (typeof revision !== 'string' || !scope.inputs.some(ref => ref.kind === 'source_revision' && ref.id === revision))
-      return `acquire-only requires source_revision ${String(revision)}`;
+      return `acquire requires source_revision ${String(revision)}`;
     if (!scope.inputs.some(ref => ref.kind === 'acquisition' && ref.id === recipe.manifest_revision))
-      return `acquire-only requires acquisition ${String(recipe.manifest_revision)}`;
+      return `acquire requires acquisition ${String(recipe.manifest_revision)}`;
     if (scope.inputs.some(ref => (ref.kind === 'source_revision' || ref.kind === 'acquisition') && (ref.sha256 !== undefined || ref.byte_count !== undefined)))
-      return 'acquire-only inputs must omit sha256 and byte_count; the manifest pins the expected digest';
+      return 'acquire inputs must omit sha256 and byte_count; the manifest pins the expected digest';
   }
   if (recipe.native_extent && canonicalJson(scope.extent) !== canonicalJson(recipe.native_extent))
     return `the task extent must be the recipe's extent ${canonicalJson(recipe.native_extent)}`;

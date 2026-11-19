@@ -65,7 +65,8 @@ export function normalizeScope(request: TaskRequest): { scope: Scope; missing: s
   if (needsInputs && inputs.length === 0) missing.push('inputs: which admitted source revisions, artifacts or acquisition routes this concerns');
   if (['prepare', 'correct', 'replace'].includes(request.kind)) {
     if (Object.keys(scope.extent).length === 0) missing.push('extent: the finite native extent (for example which books or units)');
-    if (scope.capabilities.length === 0) missing.push('capabilities: which outputs are needed (for example source_text, word_index)');
+    if (scope.capabilities.length === 0 && !(request.kind === 'prepare' && scope.operations.length === 1 && scope.operations[0] === 'acquire'))
+      missing.push('capabilities: which outputs are needed (for example source_text, word_index)');
   }
   if (request.kind === 'remove' && inputs.some(ref => ref.kind !== 'source_revision'))
     missing.push('inputs: name the source revisions to remove (kind "source_revision")');

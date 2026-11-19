@@ -18,5 +18,13 @@ only), `prepare-NN` (at most 300 verses each, so one unit's rows fit one D1 batc
 both inputs: the acquisition `stepbible-data:<commit12>:<component>` and the source
 revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decision.
 
-The recipes are written by `python -m css_preparation.adapters.stepbible.recipes` from local
+The base recipes are written by `python -m css_preparation.adapters.stepbible.recipes` from local
 copies of the pinned files (see that module). They hold verse references, never wording.
+
+The committed `-reader.json` recipes are maintained separately. Use the same pinned
+input and ordered book extent as the base recipe, but keep every reader reference
+within a single prepare unit. Preserve reviewed reader boundaries when regenerating
+base recipes. In 1 Chronicles, the reader recipe starts prepare-03 at native
+`1Ch.12.1` because reader `1Chr.12.4` spans native `1Ch.12.4` and `1Ch.12.5`.
+Bump the reader recipe revision when its prepare partition changes so an existing
+task stays tied to the partition it started with.

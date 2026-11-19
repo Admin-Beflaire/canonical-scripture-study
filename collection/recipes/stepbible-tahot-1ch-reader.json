@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tahot-1ch-reader",
-  "revision": "stepbible-tahot-1ch-reader/5de0a47f35f0/1",
+  "revision": "stepbible-tahot-1ch-reader/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"

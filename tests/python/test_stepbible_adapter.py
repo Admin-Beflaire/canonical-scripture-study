@@ -188,11 +188,13 @@ class PrepareTest(unittest.TestCase):
 class RecipeTest(unittest.TestCase):
     def test_committed_recipes_resolve_and_fit_control_limits(self):
         recipes = load_recipes()
-        mappings = [name for name, recipe in recipes.items() if recipe.read_reader_references is not None]
-        base = {name for name, recipe in recipes.items() if recipe.read_reader_references is None}
+        mappings = [revision.rsplit('/', 1)[0] for revision, recipe in recipes.items()
+                    if recipe.read_reader_references is not None]
+        base = {revision.rsplit('/', 1)[0] for revision, recipe in recipes.items()
+                if recipe.read_reader_references is None}
         self.assertEqual(len(base), 66)
-        self.assertEqual(set(mappings), {name.replace('/5de0a47f35f0/1', '-reader/5de0a47f35f0/1')
-                                         for name in base})
+        self.assertCountEqual(mappings, [f'{recipe_id}-reader/{source_revision}'
+                                         for recipe_id, source_revision in (key.split('/') for key in base)])
         manifest = json.loads((ROOT / 'collection/manifests/stepbible-data-5de0a47f35f0.json').read_text())
         pinned = {item['component']: item for item in manifest['components']}
         for path in sorted((ROOT / 'collection/recipes').glob('stepbible-*.json')):

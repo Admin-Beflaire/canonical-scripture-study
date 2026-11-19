@@ -191,7 +191,7 @@ class RecipeTest(unittest.TestCase):
         mappings = [revision.rsplit('/', 1)[0] for revision, recipe in recipes.items()
                     if recipe.read_reader_references is not None]
         base = {revision.rsplit('/', 1)[0] for revision, recipe in recipes.items()
-                if recipe.read_reader_references is None}
+                if revision.startswith('stepbible-') and recipe.read_reader_references is None}
         self.assertEqual(len(base), 66)
         self.assertCountEqual(mappings, [f'{recipe_id}-reader/{source_revision}'
                                          for recipe_id, source_revision in (key.split('/') for key in base)])

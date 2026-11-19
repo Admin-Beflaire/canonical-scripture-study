@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..adapters.stepbible import DECLARATION as STEPBIBLE, BookRecipe
+from ..adapters.acquire_only import DECLARATION as ACQUIRE_ONLY, AcquireRecipe
 from ..prepare.evidence import NativeText
 from ..prepare.records import RecordSet
 from ..validation import SCHEMAS
@@ -42,14 +43,19 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         if not isinstance(value, dict) or path.stem != value.get('id'):
             raise ValueError(f'Recipe file {path.name} does not hold recipe {path.stem}')
         adapter = value.get('adapter', {})
-        if (adapter.get('name'), adapter.get('method_version')) != (STEPBIBLE.name, STEPBIBLE.method_version):
-            raise ValueError(f'Recipe {path.stem} names no registered adapter')
-        book = BookRecipe.from_recipe(value)
+        identity = (adapter.get('name'), adapter.get('method_version'))
         if value['revision'] in recipes:
             raise ValueError(f"Recipe revision {value['revision']} is declared twice")
-        recipes[value['revision']] = Recipe(
-            book.acquire, book.prepare, book.read_source, book.declares,
-            book.read_reader_references if book.maps_reader_references else None)
+        if identity == (STEPBIBLE.name, STEPBIBLE.method_version):
+            book = BookRecipe.from_recipe(value)
+            recipes[value['revision']] = Recipe(
+                book.acquire, book.prepare, book.read_source, book.declares,
+                book.read_reader_references if book.maps_reader_references else None)
+        elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
+            source = AcquireRecipe.from_recipe(value)
+            recipes[value['revision']] = Recipe(acquire=source.acquire, declares=source.declares)
+        else:
+            raise ValueError(f'Recipe {path.stem} names no registered adapter')
     return recipes
 
 

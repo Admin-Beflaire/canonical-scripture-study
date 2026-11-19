@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "berean-bsb-v5-24",
+  "revision": "berean-bsb-v5-24/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "berean-bsb-v5-24.json"
+  },
+  "native_extent": {
+    "component": "berean-bsb-v5-24/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "berean-bsb-v5-24/1"
+  ],
+  "manifest_revision": "berean-bsb-v5-24/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "berean-bsb-v5-24/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

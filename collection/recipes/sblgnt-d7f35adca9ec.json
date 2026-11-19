@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "sblgnt-d7f35adca9ec",
+  "revision": "sblgnt-d7f35adca9ec/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "sblgnt-d7f35adca9ec.json"
+  },
+  "native_extent": {
+    "component": "sblgnt-d7f35adca9ec/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "sblgnt-d7f35adca9ec/1"
+  ],
+  "manifest_revision": "sblgnt-d7f35adca9ec/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "sblgnt-d7f35adca9ec/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

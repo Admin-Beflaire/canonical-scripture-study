@@ -146,10 +146,42 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
 
   row = (await task(db, taskId))!;
   if (recipe!.units!.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
-    await setOutcome(db, row, outcome => {
+    if (!pinnedNow(row)) return { dispatched, state: row.state };
+    // An acquisition-only recipe retains an original; it does not produce a Study release.
+    if (recipe!.adapter?.name === 'acquire-only' && recipe!.adapter.method_version === 'acquire-only/1') {
+      const unit = recipe!.units!;
+      const revision = recipe!.native_extent?.component;
+      const acquisition = recipe!.manifest_revision;
+      const permitted = unit.length === 1 && unit[0].kind === 'acquire' && unit[0].unit_id === 'acquire'
+        && unit[0].depends_on.length === 0 && canonicalJson(unit[0].native_extent) === canonicalJson(recipe!.native_extent)
+        && typeof revision === 'string' && scope.capabilities.length === 0
+        && scope.operations.length === 1 && scope.operations[0] === 'acquire'
+        && scope.inputs.some(ref => ref.kind === 'source_revision' && ref.id === revision)
+        && scope.inputs.some(ref => ref.kind === 'acquisition' && ref.id === acquisition);
+      const saved = permitted ? await db.prepare(`SELECT s.details_json FROM source_nodes s JOIN admissions a
+        ON a.source_revision_id = s.id WHERE s.id = ? AND s.kind = 'source_revision' AND a.both_hosts_eligible = 1`)
+        .bind(revision).first<{ details_json: string }>() : null;
+      let verified = false;
+      try {
+        const details = saved && JSON.parse(saved.details_json) as Record<string, unknown>;
+        verified = !!details && typeof details.sha256 === 'string' && /^[0-9a-f]{64}$/.test(details.sha256)
+          && typeof details.byte_count === 'number' && details.byte_count > 0
+          && details.locator === `originals/${revision}/${details.sha256}/original`;
+      } catch { verified = false; }
+      if (!verified) {
+        await setOutcome(db, row, outcome => addLimitation(outcome, 'The acquired original and its admission were not recorded.'), 'blocked');
+        return { dispatched, state: 'blocked', limitation: 'acquisition_not_recorded' };
+      }
+      const outcome = JSON.parse(row.outcome_json) as Outcome;
       outcome.completed_extent = scope.extent;
       outcome.remaining_extent = {};
-    });
+      await db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
+        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
+        .bind(canonicalJson(outcome), taskId, row.revision).run();
+      const finished = await task(db, taskId);
+      return { dispatched, state: finished?.state ?? 'unknown' };
+    }
+    await setOutcome(db, row, outcome => { outcome.completed_extent = scope.extent; outcome.remaining_extent = {}; });
     row = (await task(db, taskId))!;
     if (!pinnedNow(row) || !['queued', 'running', 'checked'].includes(row.state)) return { dispatched, state: row.state };
     // Quality passed for every unit: Control's own scope check, then the conditional selection.
@@ -163,6 +195,20 @@ const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
 
 /** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
 function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
+  const acquireOnly = recipe.adapter?.name === 'acquire-only' && recipe.adapter.method_version === 'acquire-only/1';
+  if (!acquireOnly && ['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
+    return 'capabilities: a preparation recipe must request output capabilities';
+  if (acquireOnly) {
+    if (scope.kind !== 'prepare' || scope.operations.length !== 1 || scope.operations[0] !== 'acquire' || scope.capabilities.length !== 0)
+      return 'acquire-only requires a prepare task with only the acquire operation and no capabilities';
+    const revision = recipe.native_extent?.component;
+    if (typeof revision !== 'string' || !scope.inputs.some(ref => ref.kind === 'source_revision' && ref.id === revision))
+      return `acquire-only requires source_revision ${String(revision)}`;
+    if (!scope.inputs.some(ref => ref.kind === 'acquisition' && ref.id === recipe.manifest_revision))
+      return `acquire-only requires acquisition ${String(recipe.manifest_revision)}`;
+    if (scope.inputs.some(ref => (ref.kind === 'source_revision' || ref.kind === 'acquisition') && (ref.sha256 !== undefined || ref.byte_count !== undefined)))
+      return 'acquire-only inputs must omit sha256 and byte_count; the manifest pins the expected digest';
+  }
   if (recipe.native_extent && canonicalJson(scope.extent) !== canonicalJson(recipe.native_extent))
     return `the task extent must be the recipe's extent ${canonicalJson(recipe.native_extent)}`;
   // The scope check compares outputs with these unit lists; other extent shapes are refused up front.

@@ -5,7 +5,8 @@ USFM marks structure with backslash markers. This reader uses only these:
 - `\\id` names the book, `\\c` the chapter, `\\v` the verse (`\\v 3-4` starts at verse 3).
 - `\\s` and `\\s1` are section headings: a section starts at the next verse.
 - `\\p`, `\\pi`, `\\pi1`-`\\pi3` start a paragraph; the first `\\q` line after anything else starts a
-  paragraph too, and later poetry lines continue it until a paragraph, a heading or `\\b`.
+  paragraph too, and later poetry lines continue it until a paragraph or a heading. A blank line
+  (`\\b`) between stanzas does not end the block.
 - A break that comes after some verse text, before the next `\\v`, is placed at the verse it is in.
 
 Headings other than `\\s1`, footnotes, cross references and the other markers are not read.
@@ -35,7 +36,7 @@ _POETRY = {'q', 'q1', 'q2', 'q3', 'q4', 'qr', 'qc', 'qm', 'qm1', 'qm2', 'qm3'}
 _NOTES = {'f', 'fe', 'x'}
 # Markers whose text is not verse wording.
 _OTHER = {'ide', 'usfm', 'h', 'toc1', 'toc2', 'toc3', 'mt', 'mt1', 'mt2', 'ms', 'ms1', 'mr', 'r', 'sr', 'd', 'sp', 'rem',
-          'cl', 's2', 's3', 's4'}
+          'cl', 's2', 's3', 's4', 'qa'}
 
 
 def _tokens(usfm: str):
@@ -95,8 +96,6 @@ def berean_starts(book: str, usfm: str) -> tuple[Start, ...]:
                 pending.setdefault('paragraph', '')
             poetry, verse_wording = name in _POETRY, True
             wording(text)
-        elif name == 'b':
-            poetry, verse_wording = False, True
         elif name in _NOTES or name in _OTHER:
             verse_wording = False
         else:

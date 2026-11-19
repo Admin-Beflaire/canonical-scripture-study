@@ -95,11 +95,24 @@ class BereanTest(unittest.TestCase):
                                  ('Mat.1.3', 'paragraph', ''), ('Mat.1.4', 'section', 'The Visit'),
                                  ('Mat.1.4', 'paragraph', '')])
 
-    def test_a_poetry_block_is_one_paragraph_and_b_ends_it(self):
-        found = self.starts('\\p', '\\v 1 Prose.', '\\q1', '\\v 2 Line one', '\\q2 line two', '\\q1', '\\v 3 Line three',
-                            '\\b', '\\q1', '\\v 4 New stanza')
+    def test_a_poetry_block_is_one_paragraph_and_blank_lines_do_not_end_it(self):
+        found = self.starts('\\p', '\\v 1 Prose.', '\\q1', '\\v 2 Line one', '\\q2 line two', '\\b ', '\\q1', '\\v 3 Line three',
+                            '\\b ', '\\q1', '\\v 4 Same block', '\\p', '\\v 5 Prose again')
         self.assertEqual([(r, s) for r, s, _ in found],
-                         [('Mat.1.1', 'paragraph'), ('Mat.1.2', 'paragraph'), ('Mat.1.4', 'paragraph')])
+                         [('Mat.1.1', 'paragraph'), ('Mat.1.2', 'paragraph'), ('Mat.1.5', 'paragraph')])
+
+    def test_the_layout_of_the_real_file_is_read(self):
+        # The marker patterns of the published BSB USFM, with invented wording.
+        found = self.starts('\\s1 The Genealogy', '\\r (\\ref Ruth 4:18-22|RUT 4:18-22\\ref*; \\ref Luke 3:23-38|LUK 3:23-38\\ref*)',
+                            '\\p \\v 1 \\add This is the\\add* record of \\wj words\\wj*', '\\b ',
+                            '\\q1 \\v 2 Line one,', '\\q1 line two.\\f + \\fr 1:2 \\ft Greek \\fqa Aram\\ft , a note\\f*', '\\b ',
+                            '\\q1 \\v 3 Line three', '\\p Next:', '\\b ', '\\q1 Line four', '\\q1 \\v 4 Line five')
+        self.assertEqual(found, [('Mat.1.1', 'section', 'The Genealogy'), ('Mat.1.1', 'paragraph', ''),
+                                 ('Mat.1.2', 'paragraph', ''), ('Mat.1.3', 'paragraph', ''), ('Mat.1.3', 'paragraph', '')])
+
+    def test_acrostic_letters_and_psalm_titles_are_not_verse_wording(self):
+        found = self.starts('\\s1 Psalm', '\\d For the choirmaster.', '\\q1', '\\v 1 Line', '\\b ', '\\qa B', '\\q1', '\\v 2 Line')
+        self.assertEqual([(r, s) for r, s, _ in found], [('Mat.1.1', 'section'), ('Mat.1.1', 'paragraph')])
 
     def test_a_heading_ends_a_poetry_block(self):
         found = self.starts('\\q1', '\\v 1 Line', '\\s1 Next', '\\q1', '\\v 2 Line')
@@ -201,8 +214,47 @@ class SblgntTest(unittest.TestCase):
             with self.assertRaises(RecordError, msg=number):
                 sblgnt_starts('Mat', xml(f'<p><verse-number>{number}</verse-number>x</p>'))
 
-    def test_every_new_testament_book_has_names(self):
+    def test_every_new_testament_book_has_names_and_no_name_is_shared(self):
         self.assertEqual(set(_NAMES), set(BOOKS['tagnt']))
+        names = [name for book, found in _NAMES.items() for name in (*found, book.lower())]
+        self.assertEqual(len(names), len(set(names)))
+
+    def test_the_root_ids_and_names_of_all_27_pinned_files_are_accepted(self):
+        # Root ids and verse-number names as the pinned source's 27 book files give them.
+        real = {'Mat': ('Mt', 'Matthew'), 'Mrk': ('Mk', 'Mark'), 'Luk': ('Lu', 'Luke'), 'Jhn': ('Jn', 'John'),
+                'Act': ('Ac', 'Acts'), 'Rom': ('Ro', 'Romans'), '1Co': ('1Co', '1 Corinthians'), '2Co': ('2Co', '2 Corinthians'),
+                'Gal': ('Gal', 'Galatians'), 'Eph': ('Eph', 'Ephesians'), 'Php': ('Php', 'Philippians'),
+                'Col': ('Col', 'Colossians'), '1Th': ('1Th', '1 Thessalonians'), '2Th': ('2Th', '2 Thessalonians'),
+                '1Ti': ('1Tim', '1 Timothy'), '2Ti': ('2Tim', '2 Timothy'), 'Tit': ('Tit', 'Titus'),
+                'Phm': ('Phm', 'Philemon'), 'Heb': ('Heb', 'Hebrews'), 'Jas': ('Jam', 'James'), '1Pe': ('1Pe', '1 Peter'),
+                '2Pe': ('2Pe', '2 Peter'), '1Jn': ('1Jn', '1 John'), '2Jn': ('2Jn', '2 John'), '3Jn': ('3Jn', '3 John'),
+                'Jud': ('Jud', 'Jude'), 'Rev': ('Re', 'Revelation')}
+        self.assertEqual(set(real), set(BOOKS['tagnt']))
+        for book, (root, name) in real.items():
+            found = sblgnt_starts(book, f'<book id="{root}"><title>x</title><p><verse-number id="{name} 2:3">3'
+                                        '</verse-number><w>x</w></p></book>')
+            self.assertEqual([s.reference for s in found], [f'{book}.2.3'], book)
+        with self.assertRaises(RecordError):
+            sblgnt_starts('Mat', '<book id="Mk"><p><verse-number>1:1</verse-number>x</p></book>')
+
+    def test_the_layout_of_the_real_file_is_read(self):
+        # Words, suffixes and prefixes between verse numbers, a byte-order mark and plain-text titles, with invented words.
+        def paragraph(*parts):
+            return '\n  <p>\n    ' + '\n    '.join(parts) + '\n  </p>'
+        def number(n):
+            return f'<verse-number id="Matthew 1:{n}">{n}</verse-number>'
+        words = '<w>αβγ</w>\n    <suffix>, </suffix>\n    <w>δεζ</w>\n    <suffix>. </suffix>'
+        text = ('<book id="Mt">\n  <title>ΚΑΤΑ ΜΑΘΘΑΙΟΝ</title>' + paragraph('<verse-number id="Matthew 1:1">1:1</verse-number>', words)
+                + paragraph(number(2), words, number(3), words)
+                + paragraph('<prefix>“</prefix>', '<w>ηθι</w>', '<suffix>. </suffix>', number(4), words) + '\n</book>\n')
+        found = [s.reference for s in sblgnt_starts('Mat', b'\xef\xbb\xbf' + text.encode('utf-8'))]
+        self.assertEqual(found, ['Mat.1.1', 'Mat.1.2', 'Mat.1.3'])    # the third paragraph begins inside verse 3
+
+    def test_title_text_is_skipped_but_other_wording_before_a_verse_number_is_refused(self):
+        self.assertEqual(sblgnt_starts('Mat', '<book id="Mt"><title><p>Title words</p></title>'
+                                              '<p><verse-number>1:1</verse-number>x</p></book>')[0].reference, 'Mat.1.1')
+        with self.assertRaises(RecordError):
+            sblgnt_starts('Mat', xml('<p>unmapped wording<verse-number>1:4</verse-number>x</p>'))
 
     def test_units_carry_the_sblgnt_attribution(self):
         proposals = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}{verse(2)}</p>', f'<p>{verse(3)}</p>'))

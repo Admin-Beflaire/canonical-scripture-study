@@ -3,7 +3,8 @@
 The editors' paragraphing is the `p` elements of the book file. A paragraph starts at the verse
 of its first `verse-number` element (`id="Matthew 1:18"`, or the text `1:18`). A `p` that begins
 with wording of the verse already in effect starts inside that verse and is placed at it.
-Text inside apparatus elements is not verse wording and is skipped.
+Text inside apparatus and title elements is not verse wording and is skipped. Paragraph wording before
+any verse number is refused: it has no verse to belong to.
 
 The format is read as documented by the source's repository. A file that does not match is
 refused rather than guessed at: a document type declaration (in any encoding), bad XML, a book
@@ -22,18 +23,20 @@ from ..prepare.unit_starts import NativeVerse, Start, proposals_from_starts
 PROVIDER = 'Society of Biblical Literature and Logos Bible Software (SBL Greek New Testament)'
 METHOD = 'sblgnt-xml-paragraphs/1'
 _COORDINATE = re.compile(r'(?:(?P<name>.+?)\s+)?(?P<chapter>\d+):(?P<verse>\d+)')
-_APPARATUS = {'note', 'app', 'apparatus', 'footnote'}
-# Names a book goes by in the file: full name, the repository's file name, the STEPBible code.
+# Names a book goes by in the file, besides its STEPBible code: the root ids and the full names in the verse
+# numbers of the pinned source (every one of the 27 files was checked). A file that uses another name is
+# refused with the name it uses. No name belongs to two books.
 _NAMES = {
-    'Mat': ('matthew', 'matt'), 'Mrk': ('mark', 'mrk'), 'Luk': ('luke', 'luk'), 'Jhn': ('john', 'jhn'),
-    'Act': ('acts', 'act'), 'Rom': ('romans', 'rom'), '1Co': ('1corinthians', '1cor'), '2Co': ('2corinthians', '2cor'),
-    'Gal': ('galatians', 'gal'), 'Eph': ('ephesians', 'eph'), 'Php': ('philippians', 'phil', 'php'),
-    'Col': ('colossians', 'col'), '1Th': ('1thessalonians', '1thess'), '2Th': ('2thessalonians', '2thess'),
-    '1Ti': ('1timothy', '1tim'), '2Ti': ('2timothy', '2tim'), 'Tit': ('titus', 'tit'),
-    'Phm': ('philemon', 'phlm', 'phm'), 'Heb': ('hebrews', 'heb'), 'Jas': ('james', 'jas'),
-    '1Pe': ('1peter', '1pet'), '2Pe': ('2peter', '2pet'), '1Jn': ('1john', '1jn'), '2Jn': ('2john', '2jn'),
-    '3Jn': ('3john', '3jn'), 'Jud': ('jude', 'jud'), 'Rev': ('revelation', 'rev'),
+    'Mat': ('matthew', 'matt', 'mt'), 'Mrk': ('mark', 'mk'), 'Luk': ('luke', 'lu', 'lk'), 'Jhn': ('john', 'jn'),
+    'Act': ('acts', 'ac'), 'Rom': ('romans', 'ro'), '1Co': ('1corinthians', '1cor'), '2Co': ('2corinthians', '2cor'),
+    'Gal': ('galatians', 'ga'), 'Eph': ('ephesians',), 'Php': ('philippians', 'phil'),
+    'Col': ('colossians',), '1Th': ('1thessalonians', '1thess'), '2Th': ('2thessalonians', '2thess'),
+    '1Ti': ('1timothy', '1tim'), '2Ti': ('2timothy', '2tim'), 'Tit': ('titus',),
+    'Phm': ('philemon', 'phlm'), 'Heb': ('hebrews',), 'Jas': ('james', 'jam'),
+    '1Pe': ('1peter', '1pet'), '2Pe': ('2peter', '2pet'), '1Jn': ('1john',), '2Jn': ('2john',),
+    '3Jn': ('3john',), 'Jud': ('jude',), 'Rev': ('revelation', 're'),
 }
+_SKIPPED = {'note', 'app', 'apparatus', 'footnote', 'title'}
 
 
 def _name(value: str) -> str:
@@ -47,7 +50,7 @@ class _Reader:
         self.starts: list[Start] = []
         self.verse: tuple[int, int] | None = None
         self.waiting = False
-        self.skipping = 0          # depth inside an apparatus element
+        self.skipping = 0          # depth inside an apparatus or title element
         self.number: dict[str, str] | None = None
 
     def named(self, value: str) -> None:
@@ -61,7 +64,7 @@ class _Reader:
     def start(self, name: str, attributes: dict[str, str]) -> None:
         if self.skipping:
             self.skipping += 1
-        elif name in _APPARATUS:
+        elif name in _SKIPPED:
             self.skipping = 1
         elif name == 'book' and attributes.get('id'):
             self.named(attributes['id'])
@@ -75,7 +78,9 @@ class _Reader:
             return
         if self.number is not None:
             self.number['text'] += text
-        elif self.waiting and self.verse is not None and text.strip():
+        elif self.waiting and text.strip():
+            if self.verse is None:
+                raise RecordError('SBLGNT paragraph wording comes before any verse number')
             self.place()      # wording of the verse in effect, before any new verse number
 
     def end(self, name: str) -> None:

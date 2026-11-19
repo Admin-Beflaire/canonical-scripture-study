@@ -83,4 +83,6 @@ def masoretic_units(verses: Sequence[Verse], component: Component, book: str) ->
                 units.append(LiteraryUnit(f'{key}:p{sub:02d}', f'{book} Masoretic section {number} part {sub}',
                                           _segments(verses, begin, finish), PROVIDER, METHOD, parent_key=key,
                                           notes={'marker_closing': _NAMES.get(marker, 'book end')}))
+    if not units:
+        raise RecordError(f'Book {book} has markers but no text to divide')
     return tuple(units)

@@ -43,6 +43,24 @@ class BuilderTest(unittest.TestCase):
         p = Proposal('A', 'A/1', 'section', 'songs', span(1, 1) + span(5, 5))
         self.assertEqual(len(build_units('Mat', ORDER, [p])[0].segments), 2)
 
+    def test_nesting_respects_offsets_inside_a_verse(self):
+        first = Proposal('A', 'm', 'section', 'first half', (('Mat.1.1', 0, 5),))
+        second = Proposal('A', 'm', 'section', 'second half', (('Mat.1.1', 5, 10), ('Mat.1.2', 0, 10)))
+        inner = Proposal('A', 'm', 'paragraph', 'inner', (('Mat.1.1', 6, 8),))
+        units = {u.label: u for u in build_units('Mat', ORDER, [first, second, inner])}
+        self.assertEqual(units['inner'].parent_key, units['second half'].key)
+
+    def test_keys_do_not_depend_on_input_order(self):
+        a = Proposal('A', 'm', 'section', 'a', (('Mat.1.1', 0, 5),))
+        b = Proposal('A', 'm', 'section', 'b', (('Mat.1.1', 5, 10),))
+        one = {u.label: u.key for u in build_units('Mat', ORDER, [a, b])}
+        two = {u.label: u.key for u in build_units('Mat', ORDER, [b, a])}
+        self.assertEqual(one, two)
+
+    def test_a_proposal_cannot_name_its_own_parent(self):
+        with self.assertRaises(TypeError):
+            Proposal('A', 'm', 'paragraph', 'x', span(1, 1), parent_key='mine')
+
     def test_bad_input_is_refused(self):
         for bad in (proposal('A', 'chapterish', 1, 2), Proposal('A', 'm', 'paragraph', 'x', (('Mat.9.9', 0, 1),)),
                     Proposal('A', 'm', 'paragraph', 'x', ())):

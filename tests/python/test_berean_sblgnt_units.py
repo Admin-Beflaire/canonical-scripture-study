@@ -88,58 +88,38 @@ class BereanTest(unittest.TestCase):
     def starts(self, *lines, **kw):
         return [(s.reference, s.scale, s.label) for s in berean_starts('Mat', usfm(*lines, **kw))]
 
-    def test_headings_start_sections_and_p_starts_paragraphs(self):
-        found = self.starts('\\s1 The Birth', '\\r (Luke 2:1)', '\\p', '\\v 1 Text one.', '\\v 2 Text two.', '\\p',
-                            '\\v 3 Text three.', '\\s1 The Visit', '\\p', '\\v 4 Text four.')
-        self.assertEqual(found, [('Mat.1.1', 'section', 'The Birth'), ('Mat.1.1', 'paragraph', ''),
-                                 ('Mat.1.3', 'paragraph', ''), ('Mat.1.4', 'section', 'The Visit'),
-                                 ('Mat.1.4', 'paragraph', '')])
+    def test_headings_start_sections_and_keep_their_label(self):
+        found = self.starts('\\s1 The Birth', '\\p', '\\v 1 Text one.', '\\v 2 Text two.', '\\s1 The  Visit', '\\p', '\\v 3 Text three.')
+        self.assertEqual(found, [('Mat.1.1', 'section', 'The Birth'), ('Mat.1.3', 'section', 'The Visit')])
 
-    def test_a_poetry_block_is_one_paragraph_and_blank_lines_do_not_end_it(self):
-        found = self.starts('\\p', '\\v 1 Prose.', '\\q1', '\\v 2 Line one', '\\q2 line two', '\\b ', '\\q1', '\\v 3 Line three',
-                            '\\b ', '\\q1', '\\v 4 Same block', '\\p', '\\v 5 Prose again')
-        self.assertEqual([(r, s) for r, s, _ in found],
-                         [('Mat.1.1', 'paragraph'), ('Mat.1.2', 'paragraph'), ('Mat.1.5', 'paragraph')])
+    def test_paragraphs_poetry_and_lower_headings_are_not_units(self):
+        found = self.starts('\\s1 One', '\\p', '\\v 1 a', '\\p', '\\v 2 b', '\\q1', '\\v 3 c', '\\b ', '\\q2 d', '\\s2 Sub',
+                            '\\p', '\\v 4 e', '\\d A title')
+        self.assertEqual(found, [('Mat.1.1', 'section', 'One')])
 
     def test_the_layout_of_the_real_file_is_read(self):
         # The marker patterns of the published BSB USFM, with invented wording.
         found = self.starts('\\s1 The Genealogy', '\\r (\\ref Ruth 4:18-22|RUT 4:18-22\\ref*; \\ref Luke 3:23-38|LUK 3:23-38\\ref*)',
                             '\\p \\v 1 \\add This is the\\add* record of \\wj words\\wj*', '\\b ',
-                            '\\q1 \\v 2 Line one,', '\\q1 line two.\\f + \\fr 1:2 \\ft Greek \\fqa Aram\\ft , a note\\f*', '\\b ',
-                            '\\q1 \\v 3 Line three', '\\p Next:', '\\b ', '\\q1 Line four', '\\q1 \\v 4 Line five')
-        self.assertEqual(found, [('Mat.1.1', 'section', 'The Genealogy'), ('Mat.1.1', 'paragraph', ''),
-                                 ('Mat.1.2', 'paragraph', ''), ('Mat.1.3', 'paragraph', ''), ('Mat.1.3', 'paragraph', '')])
+                            '\\q1 \\v 2 Line one,', '\\q1 line two.\\f + \\fr 1:2 \\ft Greek \\fqa Aram\\ft , a note\\f*',
+                            '\\s1 The Birth', '\\p \\v 18 Now the birth', '\\c 2', '\\s1 The Visit', '\\p \\v 1 After')
+        self.assertEqual(found, [('Mat.1.1', 'section', 'The Genealogy'), ('Mat.1.18', 'section', 'The Birth'),
+                                 ('Mat.2.1', 'section', 'The Visit')])
 
-    def test_acrostic_letters_and_psalm_titles_are_not_verse_wording(self):
-        found = self.starts('\\s1 Psalm', '\\d For the choirmaster.', '\\q1', '\\v 1 Line', '\\b ', '\\qa B', '\\q1', '\\v 2 Line')
-        self.assertEqual([(r, s) for r, s, _ in found], [('Mat.1.1', 'section'), ('Mat.1.1', 'paragraph')])
+    def test_a_heading_before_a_chapter_waits_for_its_first_verse_and_a_bridge_starts_at_its_first_verse(self):
+        found = self.starts('\\s1 Heading', '\\p', '\\v 3-4 Bridged verses.')
+        self.assertEqual(found, [('Mat.1.3', 'section', 'Heading')])
 
-    def test_a_heading_ends_a_poetry_block(self):
-        found = self.starts('\\q1', '\\v 1 Line', '\\s1 Next', '\\q1', '\\v 2 Line')
-        self.assertEqual([(r, s) for r, s, _ in found], [('Mat.1.1', 'paragraph'), ('Mat.1.2', 'section'),
-                                                         ('Mat.1.2', 'paragraph')])
+    def test_a_book_without_headings_has_no_sections(self):
+        self.assertEqual(self.starts('\\p', '\\v 1 x'), [])
 
-    def test_a_break_inside_a_verse_is_placed_at_that_verse(self):
-        found = self.starts('\\p', '\\v 1 Start of verse', '\\p', 'rest of the same verse.', '\\v 2 Next.')
-        self.assertEqual([(r, s) for r, s, _ in found], [('Mat.1.1', 'paragraph'), ('Mat.1.1', 'paragraph')])
-        found = self.starts('\\p', '\\v 1 Whole verse.', '\\p', '\\v 2 Next.')
-        self.assertEqual([r for r, _, _ in found], ['Mat.1.1', 'Mat.1.2'])
-
-    def test_footnote_text_is_not_verse_wording(self):
-        found = self.starts('\\p', '\\v 1 Text.', '\\p', '\\f + \\fr 1:1 \\ft a note\\f*', '\\v 2 Next.')
-        self.assertEqual([r for r, _, _ in found], ['Mat.1.1', 'Mat.1.2'])
-
-    def test_verse_bridge_starts_at_its_first_verse_and_markers_in_text_are_skipped(self):
-        found = self.starts('\\p', '\\v 3-4 A \\w word|strong="G1"\\w* \\add added\\add* end.')
-        self.assertEqual(found, [('Mat.1.3', 'paragraph', '')])
-
-    def test_wrong_book_missing_id_or_structure_is_refused(self):
+    def test_wrong_book_missing_id_or_verses_is_refused(self):
         with self.assertRaises(RecordError):
             berean_starts('Mat', usfm('\\p', '\\v 1 x', book='MRK'))
         with self.assertRaises(RecordError):
             berean_starts('Mat', '\\c 1\n\\p\n\\v 1 x')
         with self.assertRaises(RecordError):
-            berean_starts('Mat', '\\id MAT x\n\\p\n\\v 1 x')
+            berean_starts('Mat', '\\id MAT x\n\\s1 H\n\\p\n\\v 1 x')
         with self.assertRaises(RecordError):
             berean_starts('Mat', usfm('\\p', '\\v one x'))
         with self.assertRaises(RecordError):
@@ -148,10 +128,10 @@ class BereanTest(unittest.TestCase):
             berean_starts('Zzz', usfm('\\p', '\\v 1 x'))
 
     def test_units_carry_the_berean_attribution(self):
-        proposals = berean_units(self.verses, 'Mat', usfm('\\s1 Heading', '\\p', '\\v 1 a', '\\v 2 b', '\\p', '\\v 3 c'))
-        self.assertTrue(all(p.source == BEREAN for p in proposals))
-        self.assertEqual([p.scale for p in proposals], ['section', 'paragraph', 'paragraph'])
-        self.assertEqual(paragraphs(proposals)[0], ['Mat.1.1', 'Mat.1.2'])
+        proposals = berean_units(self.verses, 'Mat', usfm('\\s1 One', '\\p', '\\v 1 a', '\\v 2 b', '\\s1 Two', '\\p', '\\v 3 c'))
+        self.assertTrue(all(p.source == BEREAN and p.scale == 'section' for p in proposals))
+        self.assertEqual([verses_of(p)[0] for p in proposals], ['Mat.1.1', 'Mat.1.3'])
+        self.assertEqual(verses_of(proposals[1])[-1], 'Mat.1.8')
 
 
 def xml(*body):
@@ -270,21 +250,24 @@ class SourcesTogetherTest(unittest.TestCase):
     def build(self, *proposals):
         return {u.key: u for u in build_units('Mat', self.order, [p for group in proposals for p in group])}
 
-    def test_same_paragraph_in_both_sources_is_one_unit_listing_both(self):
-        berean = berean_units(self.verses, 'Mat', usfm('\\p', '\\v 1 a', '\\v 2 b', '\\p', '\\v 3 c'))
-        sblgnt = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}{verse(2)}</p>', f'<p>{verse(3)}</p>'))
+    def test_berean_sections_hold_the_sblgnt_paragraphs(self):
+        berean = berean_units(self.verses, 'Mat', usfm('\\s1 One', '\\p', '\\v 1 a', '\\v 2 b', '\\s1 Two', '\\p', '\\v 5 c'))
+        sblgnt = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}</p>', f'<p>{verse(2)}{verse(3)}</p>', f'<p>{verse(5)}</p>'))
         units = self.build(berean, sblgnt)
-        self.assertEqual(len(units), 2)
-        self.assertTrue(all(u.notes['sources'] == [BEREAN, SBLGNT] for u in units.values()))
-
-    def test_a_different_break_stays_its_own_unit_and_sections_nest_the_paragraphs(self):
-        berean = berean_units(self.verses, 'Mat', usfm('\\s1 One', '\\p', '\\v 1 a', '\\v 2 b', '\\p', '\\v 3 c'))
-        sblgnt = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}</p>', f'<p>{verse(2)}{verse(3)}</p>'))
-        units = self.build(berean, sblgnt)
-        found = [u for key, u in units.items() if ':paragraph:' in key]
-        self.assertEqual(len(found), 4)
-        self.assertTrue(all(u.parent_key == 'Mat:section:001' for u in found))
+        sections = {k: u for k, u in units.items() if ':section:' in k}
+        paragraphs = [u for k, u in units.items() if ':paragraph:' in k]
+        self.assertEqual(len(sections), 2)
+        self.assertEqual(len(paragraphs), 3)
+        self.assertTrue(all(u.parent_key in sections for u in paragraphs))
         literary_spans(book_text(self.verses, self.component, 'Mat'), units.values())
+
+    def test_two_sources_with_the_same_paragraph_merge_and_list_both(self):
+        one = proposals_from_starts(self.verses, 'Mat', [Start('Mat.1.1', 'paragraph'), Start('Mat.1.4', 'paragraph')],
+                                    source='A', method='A/1')
+        two = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(1)}{verse(2)}{verse(3)}</p>', f'<p>{verse(4)}</p>'))
+        units = self.build(one, two)
+        self.assertEqual(len(units), 2)
+        self.assertTrue(all(u.notes['sources'] == ['A', SBLGNT] for u in units.values()))
 
 
 if __name__ == '__main__':

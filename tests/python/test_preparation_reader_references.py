@@ -123,3 +123,18 @@ class PrepareReaderReferencesTest(unittest.TestCase):
         records = prepare_reader_reference_unit(data, source, 'Psa', ['Psa.11.1', 'Psa.11.2'])
         self.assertEqual([link['role'] for link in records.rows('reader_reference_link')],
                          ['superscription', 'numbered_text'])
+
+    def test_chronicles_reader_reference_spanning_native_verses(self):
+        # Synthetic wording; the shared reader marker exercises the observed boundary shape.
+        source, data = component(lines=[
+            row('1Ch.12.4#01=L', 'א'),
+            row('1Ch.12.4(12.5)#01=L', 'ב'),
+        ])
+        for native in ('1Ch.12.4', '1Ch.12.5'):
+            with self.subTest(native=native), self.assertRaises(ReaderBoundaryError):
+                prepare_reader_reference_unit(data, source, '1Ch', [native])
+        records = prepare_reader_reference_unit(data, source, '1Ch', ['1Ch.12.4', '1Ch.12.5'])
+        [link] = records.rows('reader_reference_link')
+        [span] = records.rows('native_span')
+        self.assertEqual(link['reader_ref'], '1Chr.12.4')
+        self.assertEqual([s['unit_id'] for s in span['segments_json']], ['1Ch.12.4', '1Ch.12.5'])

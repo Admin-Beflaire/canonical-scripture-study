@@ -219,8 +219,14 @@ class RecipeTest(unittest.TestCase):
                     original = json.loads((path.parent / (path.stem.removesuffix('-reader') + '.json')).read_text())
                     self.assertEqual(value['parameters'], original['parameters'])
                     self.assertEqual(value['native_extent'], original['native_extent'])
-                    self.assertEqual([u['native_extent'] for u in prepare],
-                                     [u['native_extent'] for u in original['units'] if u['kind'] == 'prepare'])
+                    original_prepare = [u for u in original['units'] if u['kind'] == 'prepare']
+                    self.assertEqual(verses, [v for u in original_prepare for v in u['native_extent']['unit_ids']])
+                    if path.stem == 'stepbible-tahot-1ch-reader':
+                        groups = [u['native_extent']['unit_ids'] for u in prepare]
+                        self.assertTrue(any('1Ch.12.4' in group and '1Ch.12.5' in group for group in groups))
+                    else:
+                        self.assertEqual([u['native_extent'] for u in prepare],
+                                         [u['native_extent'] for u in original_prepare])
 
     def test_recipe_must_match_its_component(self):
         value, _, _ = fixture.recipe('tahot')

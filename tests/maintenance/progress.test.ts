@@ -454,7 +454,7 @@ test('Control progression failures distinguish D1 write quota from other errors 
   });
 });
 
-test('acquire-only records complete without selecting a Study release', async () => {
+test('an acquire task completes with the original recorded and never touches a release', async () => {
   const acquireRecipe = {
     recipe_version: 'preparation-recipe/1', id: 'acquire-synthetic', revision: 'acquire-synthetic/1',
     manifest_revision: 'route/1', adapter: { name: 'acquire-only', method_version: 'acquire-only/1' },
@@ -463,9 +463,9 @@ test('acquire-only records complete without selecting a Study release', async ()
       native_extent: { component: 'revision/1' }, depends_on: [] }],
   };
   const ctx = await setup({ 'collection/recipes/acquire-synthetic.json': acquireRecipe });
-  const created = await requestTask(ctx.db, owner, { request_key: 'acquire', instruction: 'Acquire the synthetic source', kind: 'prepare',
+  const created = await requestTask(ctx.db, owner, { request_key: 'acquire', instruction: 'Acquire the synthetic source', kind: 'acquire',
     inputs: [{ kind: 'acquisition', id: 'route/1' }, { kind: 'source_revision', id: 'revision/1' }],
-    extent: { component: 'revision/1' }, operations: ['acquire'], capabilities: [], constraints: { recipe: 'acquire-synthetic' },
+    extent: { component: 'revision/1' }, capabilities: [], constraints: { recipe: 'acquire-synthetic' },
     decision_refs: [{ kind: 'admission', ref: 'owner-decision:1', subject: 'route/1' },
       { kind: 'admission', ref: 'owner-decision:1', subject: 'revision/1' }] });
   assert.equal(created.status, 'created');
@@ -494,19 +494,19 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     adapter: { name: 'acquire-only', method_version: 'acquire-only/1' }, input_format: 'archive/opaque', parameters: {},
     native_extent: { component: 'rev/1' }, capabilities: [], dependencies: [], units: [
       { unit_id: 'acquire', kind: 'acquire', native_extent: { component: 'rev/1' }, depends_on: [] }] };
-  for (const variant of ['ordinary', 'missing-revision', 'receipt-fields']) {
+  for (const variant of ['ordinary', 'build-kind', 'missing-revision', 'receipt-fields']) {
     const ctx = await setup({ 'collection/recipes/only.json': variant === 'ordinary' ? { ...only, adapter: recipe.adapter } : only });
     const inputs = variant === 'missing-revision' ? [{ kind: 'acquisition' as const, id: 'route/1' }]
       : [{ kind: 'acquisition' as const, id: 'route/1', ...(variant === 'receipt-fields' ? { sha256: sha('x') } : {}) },
          { kind: 'source_revision' as const, id: 'rev/1' }];
-    const created = await requestTask(ctx.db, owner, { request_key: variant, instruction: 'Acquire', kind: 'prepare',
-      inputs, operations: ['acquire'], extent: { component: 'rev/1' }, capabilities: [], constraints: { recipe: 'only' },
+    const created = await requestTask(ctx.db, owner, { request_key: variant, instruction: 'Acquire', kind: variant === 'build-kind' ? 'prepare' : 'acquire',
+      inputs, extent: { component: 'rev/1' }, capabilities: variant === 'build-kind' ? ['source_text'] : [], constraints: { recipe: 'only' },
       decision_refs: inputs.map(ref => ({ kind: 'admission' as const, ref: 'owner:1', subject: ref.id })) });
     assert.equal(created.status, 'created');
     if (created.status !== 'created') throw new Error('task not created');
     const result = await advance(ctx.db, ctx.github, created.task.id);
     assert.equal(result.state, 'blocked');
-    assert.match(result.limitation!, variant === 'ordinary' ? /capabilities/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
+    assert.match(result.limitation!, variant === 'ordinary' ? /needs an acquire-only recipe/ : variant === 'build-kind' ? /only be used by an acquire task/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
     assert.equal(ctx.gh.runs.size, 0);
   }
 });

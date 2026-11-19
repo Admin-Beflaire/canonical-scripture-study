@@ -18,10 +18,10 @@ only), `prepare-NN` (at most 300 verses each, so one unit's rows fit one D1 batc
 both inputs: the acquisition `stepbible-data:<commit12>:<component>` and the source
 revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decision.
 
-Fetching is a separate task kind. A build task (prepare, correct, replace) refuses a recipe that
-holds an `acquire` unit, so the recipes above can no longer be built until each is split into an
-acquire recipe and a build recipe whose inputs are the kept original; that split is a following
-change. An `acquire` task uses an acquire-only recipe and nothing else.
+A recipe stays one file. Control runs it as separate tasks: an `acquire` task runs only the
+recipe's `acquire` unit and keeps the original; a build task (prepare, correct, replace) runs the
+`prepare` and `quality` units and never fetches, using the kept original of a finished acquire task
+named in `constraints.acquired`; a `release` task then makes the checked build current.
 
 The base recipes are written by `python -m css_preparation.adapters.stepbible.recipes` from local
 copies of the pinned files (see that module). They hold verse references, never wording.

@@ -491,8 +491,8 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     adapter: { name: 'acquire-only', method_version: 'acquire-only/1' }, input_format: 'archive/opaque', parameters: {},
     native_extent: { component: 'rev/1' }, capabilities: [], dependencies: [], units: [
       { unit_id: 'acquire', kind: 'acquire', native_extent: { component: 'rev/1' }, depends_on: [] }] };
-  for (const variant of ['ordinary', 'build-kind', 'missing-revision', 'receipt-fields']) {
-    const ctx = await setup({ 'collection/recipes/only.json': variant === 'ordinary' ? { ...only, adapter: recipe.adapter } : only });
+  for (const variant of ['build-kind', 'missing-revision', 'receipt-fields']) {
+    const ctx = await setup({ 'collection/recipes/only.json': only });
     const inputs = variant === 'missing-revision' ? [{ kind: 'acquisition' as const, id: 'route/1' }]
       : [{ kind: 'acquisition' as const, id: 'route/1', ...(variant === 'receipt-fields' ? { sha256: sha('x') } : {}) },
          { kind: 'source_revision' as const, id: 'rev/1' }];
@@ -503,17 +503,39 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     if (created.status !== 'created') throw new Error('task not created');
     const result = await advance(ctx.db, ctx.github, created.task.id);
     assert.equal(result.state, 'blocked');
-    assert.match(result.limitation!, variant === 'ordinary' ? /needs an acquire-only recipe/ : variant === 'build-kind' ? /only be used by an acquire task/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
+    assert.match(result.limitation!, variant === 'build-kind' ? /only be used by an acquire task/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
     assert.equal(ctx.gh.runs.size, 0);
   }
 });
 
-test('a build recipe that holds an acquire unit is refused before anything is dispatched', async () => {
-  const withFetch = { ...recipe, units: [{ unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
+test('one recipe serves both tasks: acquire runs only its acquire unit, the build never fetches and uses the kept original', async () => {
+  const shared = { ...recipe, units: [{ unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
     ...recipe.units.map(unit => unit.unit_id === 'prepare-u1' ? { ...unit, depends_on: ['acquire'] } : unit)] };
-  const context = await setup({ 'collection/recipes/synthetic.json': withFetch });
-  const progress = await advance(context.db, context.github, context.task.id);
-  assert.equal(progress.state, 'blocked');
-  assert.ok(progress.limitation?.includes('cannot fetch a source'), progress.limitation);
-  assert.equal(context.gh.runs.size, 0);
+  const context = await setup({ 'collection/recipes/synthetic.json': shared });
+  const { db, gh, task } = context;
+  const admission = [{ kind: 'admission' as const, ref: 'owner-decision:1', subject: 'route-1' }];
+  // A build that names no finished acquire task is blocked and dispatches nothing.
+  const blocked = await advance(db, context.github, task.id);
+  assert.equal(blocked.state, 'blocked');
+  assert.ok(blocked.limitation?.includes('constraints.acquired'), blocked.limitation);
+  assert.equal(gh.runs.size, 0);
+  // The acquire task runs only the acquire unit and completes with it.
+  const fetched = await requestTask(db, owner, { request_key: 'a1', instruction: 'Acquire the synthetic source', kind: 'acquire',
+    inputs: [{ kind: 'acquisition', id: 'route-1' }], extent: { units: ['u1', 'u2'] }, capabilities: [], constraints: { recipe: 'synthetic' }, decision_refs: admission });
+  assert.ok(fetched.status === 'created');
+  const acquireId = fetched.task.id;
+  assert.deepEqual((await advance(db, context.github, acquireId)).dispatched, ['acquire']);
+  await finish(context, 'acquire');
+  assert.equal((await taskReport(db, owner, acquireId))?.state, 'completed');
+  // A build that names it dispatches no acquire unit and gets the kept original as its dependency.
+  const built = await requestTask(db, owner, { request_key: 'b1', instruction: 'Prepare the synthetic source', kind: 'prepare',
+    inputs: [{ kind: 'acquisition', id: 'route-1' }], extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'],
+    constraints: { recipe: 'synthetic', acquired: acquireId }, decision_refs: admission });
+  assert.ok(built.status === 'created');
+  const progress = await advance(db, context.github, built.task.id);
+  assert.deepEqual(progress.dispatched, ['prepare-u1']);
+  const { job } = dispatched(gh, 'prepare-u1');
+  assert.equal(job.task_id, built.task.id);
+  assert.deepEqual(job.dependency_refs, [{ artifact_id: 'artifact-acquire', sha256: sha('acquire'), byte_count: 10 }]);
+  assert.equal([...gh.runs.values()].length, 2, 'one acquire run and one build run');
 });

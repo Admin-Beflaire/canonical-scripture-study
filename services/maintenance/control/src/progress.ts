@@ -121,8 +121,16 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
     if (done) succeeded.set(unit, JSON.parse(done.result_json!) as JobResult);
   }
 
+  const acquired = await acquiredResults(db, scope, row.requester, recipe!);
+  if ('problem' in acquired) {
+    row = (await task(db, taskId))!;
+    await setOutcome(db, row, outcome => addLimitation(outcome, acquired.problem), 'blocked');
+    return { dispatched: [], state: 'blocked', limitation: acquired.problem };
+  }
+  for (const [unit, result] of acquired) succeeded.set(unit, result);
+  const mine = unitsFor(scope, recipe!);
   const dispatched: string[] = [];
-  for (const unit of recipe!.units!) {
+  for (const unit of mine) {
     const attempts = byUnit.get(unit.unit_id) ?? [];
     const latest = attempts[attempts.length - 1];
     if (succeeded.has(unit.unit_id) || (latest && ACTIVE.has(latest.state))) continue;
@@ -151,12 +159,18 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   }
 
   row = (await task(db, taskId))!;
-  if (recipe!.units!.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
+  if (mine.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
     if (!pinnedNow(row)) return { dispatched, state: row.state };
     // A finished build waits, checked, for a release task; it is not checked again.
     if (row.state === 'checked' && BUILD_KINDS.has(scope.kind) && (JSON.parse(row.outcome_json) as Outcome).candidate)
       return { dispatched, state: row.state };
     // An acquire task retains an original; it builds nothing and changes no release.
+    if (scope.kind === 'acquire' && recipe!.adapter?.name !== 'acquire-only') {
+      await db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
+        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
+        .bind(canonicalJson({ ...(JSON.parse(row.outcome_json) as Outcome), completed_extent: scope.extent, remaining_extent: {} }), taskId, row.revision).run();
+      return { dispatched, state: (await task(db, taskId))?.state ?? 'unknown' };
+    }
     if (scope.kind === 'acquire') {
       const unit = recipe!.units!;
       const revision = recipe!.native_extent?.component;
@@ -205,15 +219,35 @@ const BUILD_KINDS = new Set(['prepare', 'correct', 'replace']);
 const SELF_SELECTING = new Set(['package', 'incorporate_statement']);
 
 /** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
+/** The units this task runs: an acquire task the recipe's acquire units, every other task the remaining units. */
+const unitsFor = (scope: Scope, recipe: Recipe) => (recipe.units ?? []).filter(unit => (scope.kind === 'acquire') === (unit.kind === 'acquire'));
+
+/** A build's acquire units were run by an earlier acquire task of the same recipe revision: `constraints.acquired` names it.
+ *  Its saved results stand in for them, so a build never fetches. */
+async function acquiredResults(db: D1Database, scope: Scope, requester: string, recipe: Recipe): Promise<Map<string, JobResult> | { problem: string }> {
+  const fetches = (recipe.units ?? []).filter(unit => unit.kind === 'acquire');
+  if (scope.kind === 'acquire' || !fetches.length) return new Map();
+  const id = scope.constraints.acquired;
+  if (typeof id !== 'string') return { problem: 'the recipe starts with an acquire step; name the finished acquire task in constraints.acquired' };
+  const found = await db.prepare('SELECT * FROM maintenance_tasks WHERE id = ? AND requester = ?').bind(id, requester).first<TaskRow>();
+  const earlier = found && JSON.parse(found.scope_json) as Scope;
+  const pin = found && (JSON.parse(found.outcome_json) as { recipe_revision?: string }).recipe_revision;
+  if (!found || !earlier || earlier.kind !== 'acquire' || found.state !== 'completed' || earlier.constraints.recipe !== scope.constraints.recipe || pin !== recipe.revision)
+    return { problem: `acquire task ${id} must be finished, for this recipe and its current revision` };
+  const results = new Map<string, JobResult>();
+  const jobs = (await db.prepare(`SELECT unit_id, result_json FROM maintenance_jobs WHERE task_id = ? AND state = 'succeeded' AND result_json IS NOT NULL`)
+    .bind(id).all<{ unit_id: string; result_json: string }>()).results;
+  for (const job of jobs) results.set(job.unit_id, JSON.parse(job.result_json) as JobResult);
+  const missing = fetches.find(unit => !results.has(unit.unit_id));
+  return missing ? { problem: `acquire task ${id} has no result for unit ${missing.unit_id}` } : results;
+}
+
 function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
   const acquireOnly = recipe.adapter?.name === 'acquire-only' && recipe.adapter.method_version === 'acquire-only/1';
-  if (scope.kind === 'acquire' && !acquireOnly) return 'an acquire task needs an acquire-only recipe';
   if (scope.kind !== 'acquire' && acquireOnly) return 'an acquire-only recipe can only be used by an acquire task';
-  // Fetching happens only in an acquire task: a build recipe may not hold an acquire unit, and an acquire recipe holds nothing else.
-  const fetches = (recipe.units ?? []).some(unit => unit.kind === 'acquire');
-  if (scope.kind !== 'acquire' && fetches) return 'a build recipe cannot fetch a source; keep the original with an acquire task first';
-  if (scope.kind === 'acquire' && (recipe.units ?? []).some(unit => unit.kind !== 'acquire'))
-    return 'an acquire recipe holds only acquire units';
+  // One recipe serves every operation. An acquire task runs only its acquire units; every other task runs the rest.
+  if (scope.kind === 'acquire' && !(recipe.units ?? []).some(unit => unit.kind === 'acquire')) return 'the recipe has nothing to acquire';
+  if (scope.kind === 'acquire' && scope.capabilities.length !== 0) return 'an acquire task makes no outputs and names no capabilities';
   if (['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
     return 'capabilities: a build must request output capabilities';
   if (acquireOnly) {

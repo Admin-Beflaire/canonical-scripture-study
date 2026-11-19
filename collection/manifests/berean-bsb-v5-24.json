@@ -1,0 +1,19 @@
+{
+  "manifest_revision": "berean-bsb-v5-24/1",
+  "source_revision": "berean-bsb-v5-24/1",
+  "provider": "Berean Standard Bible, BSB Publishing",
+  "origin": "https://github.com/BSB-publishing/bsb2usfm",
+  "version": "v5.24",
+  "licence": "Public Domain",
+  "licence_basis": "Publisher release v5.24 states the Berean Standard Bible is public domain: https://github.com/BSB-publishing/bsb2usfm/releases/tag/v5.24",
+  "attribution": "Berean Standard Bible, BSB Publishing; https://berean.bible/",
+  "url": "https://github.com/BSB-publishing/bsb2usfm/releases/download/v5.24/BSB_usfm.zip",
+  "allowed_hosts": [
+    "github.com",
+    "release-assets.githubusercontent.com"
+  ],
+  "max_bytes": 5000000,
+  "expected_sha256": "be31ef23eb38492de9e6e17983b7d46a1a4abe010bd1ff2ad3e338795d21233d",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

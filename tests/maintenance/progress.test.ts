@@ -488,3 +488,25 @@ test('acquire-only records complete without selecting a Study release', async ()
   assert.equal(report.data_current, false);
   assert.equal(db.prepare('SELECT current_release_id FROM release_selection').get()?.current_release_id, null);
 });
+
+test('acquire-only validation stops unsuitable recipes and incomplete references before dispatch', async () => {
+  const only = { recipe_version: 'preparation-recipe/1', id: 'only', revision: 'only/1', manifest_revision: 'route/1',
+    adapter: { name: 'acquire-only', method_version: 'acquire-only/1' }, input_format: 'archive/opaque', parameters: {},
+    native_extent: { component: 'rev/1' }, capabilities: [], dependencies: [], units: [
+      { unit_id: 'acquire', kind: 'acquire', native_extent: { component: 'rev/1' }, depends_on: [] }] };
+  for (const variant of ['ordinary', 'missing-revision', 'receipt-fields']) {
+    const ctx = await setup({ 'collection/recipes/only.json': variant === 'ordinary' ? { ...only, adapter: recipe.adapter } : only });
+    const inputs = variant === 'missing-revision' ? [{ kind: 'acquisition' as const, id: 'route/1' }]
+      : [{ kind: 'acquisition' as const, id: 'route/1', ...(variant === 'receipt-fields' ? { sha256: sha('x') } : {}) },
+         { kind: 'source_revision' as const, id: 'rev/1' }];
+    const created = await requestTask(ctx.db, owner, { request_key: variant, instruction: 'Acquire', kind: 'prepare',
+      inputs, operations: ['acquire'], extent: { component: 'rev/1' }, capabilities: [], constraints: { recipe: 'only' },
+      decision_refs: inputs.map(ref => ({ kind: 'admission' as const, ref: 'owner:1', subject: ref.id })) });
+    assert.equal(created.status, 'created');
+    if (created.status !== 'created') throw new Error('task not created');
+    const result = await advance(ctx.db, ctx.github, created.task.id);
+    assert.equal(result.state, 'blocked');
+    assert.match(result.limitation!, variant === 'ordinary' ? /capabilities/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
+    assert.equal(ctx.gh.runs.size, 0);
+  }
+});

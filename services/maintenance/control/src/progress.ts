@@ -195,6 +195,20 @@ const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
 
 /** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
 function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
+  const acquireOnly = recipe.adapter?.name === 'acquire-only' && recipe.adapter.method_version === 'acquire-only/1';
+  if (!acquireOnly && ['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
+    return 'capabilities: a preparation recipe must request output capabilities';
+  if (acquireOnly) {
+    if (scope.kind !== 'prepare' || scope.operations.length !== 1 || scope.operations[0] !== 'acquire' || scope.capabilities.length !== 0)
+      return 'acquire-only requires a prepare task with only the acquire operation and no capabilities';
+    const revision = recipe.native_extent?.component;
+    if (typeof revision !== 'string' || !scope.inputs.some(ref => ref.kind === 'source_revision' && ref.id === revision))
+      return `acquire-only requires source_revision ${String(revision)}`;
+    if (!scope.inputs.some(ref => ref.kind === 'acquisition' && ref.id === recipe.manifest_revision))
+      return `acquire-only requires acquisition ${String(recipe.manifest_revision)}`;
+    if (scope.inputs.some(ref => (ref.kind === 'source_revision' || ref.kind === 'acquisition') && (ref.sha256 !== undefined || ref.byte_count !== undefined)))
+      return 'acquire-only inputs must omit sha256 and byte_count; the manifest pins the expected digest';
+  }
   if (recipe.native_extent && canonicalJson(scope.extent) !== canonicalJson(recipe.native_extent))
     return `the task extent must be the recipe's extent ${canonicalJson(recipe.native_extent)}`;
   // The scope check compares outputs with these unit lists; other extent shapes are refused up front.

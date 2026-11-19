@@ -81,7 +81,8 @@ def masoretic_units(verses: Sequence[Verse], component: Component, book: str) ->
         units.append(LiteraryUnit(key, f'{book} Masoretic section {number}',
                                   tuple(piece for begin, finish, _ in parts for piece in _segments(verses, begin, finish)),
                                   PROVIDER, METHOD, notes={'marker_closing': closing}))
-        if len(parts) > 1:
+        # A section that contains a setumah is divided into paragraphs, even when that setumah ends the book.
+        if len(parts) > 1 or any(marker == SETUMAH for _, _, marker in parts):
             for sub, (begin, finish, marker) in enumerate(parts, start=1):
                 units.append(LiteraryUnit(f'{key}:p{sub:02d}', f'{book} Masoretic section {number} part {sub}',
                                           _segments(verses, begin, finish), PROVIDER, METHOD, parent_key=key,

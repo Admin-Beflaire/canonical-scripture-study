@@ -61,6 +61,15 @@ class MasoreticUnitsTest(unittest.TestCase):
         units = {u.key: u for u in masoretic_units(verses, component, 'Exo')}
         self.assertEqual(units['Exo:masoretic:s001'].notes['marker_closing'], 'petuchah')
 
+    def test_a_section_with_only_a_closing_setumah_has_one_paragraph(self):
+        verses, component = book(('Exo.1.1', ['אָבֹג\\׃']), ('Exo.1.2', ['וָז\\׃', SAMEKH]))
+        units = {u.key: u for u in masoretic_units(verses, component, 'Exo')}
+        self.assertEqual(sorted(units), ['Exo:masoretic:s001', 'Exo:masoretic:s001:p01'])
+        self.assertEqual(units['Exo:masoretic:s001:p01'].parent_key, 'Exo:masoretic:s001')
+        self.assertEqual(units['Exo:masoretic:s001:p01'].notes['marker_closing'], 'setumah')
+        self.assertEqual(units['Exo:masoretic:s001'].segments, units['Exo:masoretic:s001:p01'].segments)
+        literary_spans(book_text(verses, component, 'Exo'), tuple(units.values()))
+
     def test_no_marker_text_is_in_any_unit(self):
         for unit in self.units.values():
             # A marker is a stand-alone token; a word may end in the same letter.

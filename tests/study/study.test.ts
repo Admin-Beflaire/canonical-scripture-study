@@ -275,27 +275,35 @@ test('a translating study carries the key translation rules in its first batch o
   const [inspect] = await all(env, { mode: 'inspect_source', references: ['Gen 1:1'] }) as (AnyBatch & { translation_rules?: string[] })[];
   assert.equal(inspect.translation_rules, undefined);
   const rules = TRANSLATION_RULES.join('\n');
-  for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /poetically/, /ESV, NASB/, /Platonic/, /square brackets/, /Decide key terms before writing/, /Traditions are evidence, not the answer/, /supports best, not merely/, /⚑/, /concerns dualism only/, /A real New Testament quotation that matches one witness decides/, /quotations conflict or match no witness, the points decide/, /earns no points only where it is flagged \(an operative kaige range or a cited judgment\) and a usable non-kaige Greek witness reads differently, or clearly omits it, at those words/, /give a provisional translation, say so and footnote the alternatives/]) assert.match(rules, needed);
+  for (const needed of [/Yahweh/, /never LORD or HEERE/, /Werkvertaling/, /ESV, NASB/, /Decide key terms and the winning reading/, /traditions are evidence, not the answer/, /⚑/, /square brackets/, /Follow the asked scope/, /Concise: no footnotes and no explanation, except the Concise exceptions/, /Limits:/, /Footnotes \(standard and full\)/, /Voetnoten/, /Unicode small-cap letters/, /Unicode superscript digits/, /never decides which reading is translated/, /read the quoted passages and the quoting passages/, /could not be finished because a witness is missing/, /unless the reader asks how a reading was chosen/, /give its argument in one or two sentences before the translation at standard and full, and do not write it at concise/, /topic "translation"/]) assert.match(rules, needed);
   const full = guidance('translation').text;
-  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/, /\+2 the reading that best explains/, /-2 a reading that steers the theology/, /earns no points/, /New Testament quotations decide/, /do not show scores, points or checks/, /weighed, not counted/, /not an allusion or echo/, /tiqqune sopherim/, /Keep Hebrew idioms in the text as written/, /mark it as a reconstruction/, /exaggerates or glorifies/, /On a tie in the Old Testament, translate the Masoretic Text/, /ask which edition to translate/, /Longer text that does not win goes in \[square brackets\] with a footnote, whatever its kind/, /Only when the difference is too large to bracket/, /a single added line \(the ending of the Lord's Prayer in Matthew 6:13\)/, /follow established scholarly assessments where known/, /if it is one of the tied readings/, /a tie without the Masoretic Text, a New Testament tie/, /provisional translation; say plainly that the evidence does not settle it/, /a debated boundary range is shown as possible kaige and not discounted/, /whose own reading differs, or whose clear omission is attested, at those words/, /Without such a witness the flagged reading is the only usable Greek reading: keep it/, /an edition that only names manuscripts/, /mark it with its actual label/, /A range mark alone does not discount a reading the non-kaige witnesses share/, /only after checking their wording and source at that passage/]) assert.match(full, needed);
+  for (const needed of [/YHWH is always "Yahweh"/, /wild and waste/, /kyrios/, /aion\/aionios/, /Gehenna/, /lexical range/, /Key terms/, /Traditions are evidence, not the answer/, /Check before delivering/, /concerns dualism only/, /\+2 the reading that best explains/, /-2 a reading that steers the theology/, /earns no points/, /New Testament quotations decide/, /do not show scores, points or checks unless the reader asks how a reading was chosen/, /weighed, not counted/, /not an allusion or echo/, /tiqqune sopherim/, /Keep Hebrew idioms in the text as written/, /mark it as a reconstruction/, /exaggerates or glorifies/, /On a tie in the Old Testament, translate the Masoretic Text/, /ask which edition to translate/, /Longer text that does not win goes in \[square brackets\] with a footnote, whatever its kind/, /Only when the difference is too large to bracket/, /a single added line \(the ending of the Lord's Prayer in Matthew 6:13\)/, /follow established scholarly assessments where known/, /if it is one of the tied readings/, /a tie without the Masoretic Text, a New Testament tie/, /provisional translation; say plainly that the evidence does not settle it/, /a debated boundary range is shown as possible kaige and not discounted/, /whose own reading differs, or whose clear omission is attested, at those words/, /Without such a witness the flagged reading is the only usable Greek reading: keep it/, /an edition that only names manuscripts/, /mark it with its actual label/, /A range mark alone does not discount a reading the non-kaige witnesses share/, /only after checking their wording and source at that passage/]) assert.match(full, needed);
   assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
-  for (const needed of [/numbered footnotes/i, /serious alternatives/i, /Sources footer/, /STEP Bible/, /Logeion/, /Open Scriptures Hebrew Lexicon/, /chosen rendering follows from the evidence/]) {
-    assert.match(rules, needed);
-    assert.match(full, needed);
-  }
-  assert.match(full, /If a longer reading wins, do not bracket it; footnote a consequential difference/);
-  assert.match(rules, /always footnote the other reading/);
-  assert.match(rules, /do not show scores, points or checks/);
-  assert.match(rules, /consult only STEP Bible, Logeion or Open Scriptures Hebrew Lexicon/);
-  assert.match(full, /consult only these agreed external websites/);
+  for (const needed of [/numbered footnotes/i, /serious alternatives/i, /Sources footer/, /STEP Bible/, /Logeion/, /Open Scriptures Hebrew Lexicon/, /chosen rendering follows from the evidence/, /consult only these agreed external websites/, /If a longer reading wins, do not bracket it; footnote a consequential difference/, /normal-size verse numbers/, /verse numbers outside/, /small caps/, /raised numbered footnote marker/, /When Scripture directly quotes other Scripture/, /not allusions or echoes/, /q becomes ǫ/, /shorter quotations stay inline/]) assert.match(full, needed);
   assert.doesNotMatch(full, /no brackets or footnote for that difference/);
-  for (const needed of [/normal-size verse numbers/, /verse numbers outside/, /small caps/, /raised numbered footnote marker/, /When Scripture directly quotes other Scripture/, /not allusions or echoes/, /Unicode small-cap letters/, /q becomes ǫ/, /shorter quotations stay inline/, /Unicode superscript digits/, /one-line Sources footer/, /without a footnote/]) {
-    assert.match(rules, needed);
-    assert.match(full, needed);
+  for (const needed of [/No footnotes and no explanation, except the exceptions listed under Concise exceptions/, /Standard \(the default\)/, /Full adds depth to each footnote, not more footnotes/, /explicit request for another amount or format of explanation replaces the defaults/, /Required attribution and material limitations always stay/, /give the same translation at every level/, /say what changed and why/, /ordinary language and context/, /translation only/, /thorough/, /not exhaustive/, /use standard without asking/, /unclear or conflicting/, /A level never changes the study tool's depth setting/, /At every level make the same Study tool calls, follow every continuation, read the same evidence/, /Make outside lookups only for a question that needs one/, /the context summary before the translation \(standard and full only\)/, /Concise exceptions/, /Part 1\. Read and decide/, /Part 2\. The answer/]) assert.match(full, needed);
+  assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/11');
+});
+
+test('the first-batch translation rules and the full topic share their tested wording', async () => {
+  const { TRANSLATION_RULES, guidance } = await import('../../services/study/src/guidance.ts');
+  const rules = TRANSLATION_RULES.join('\n');
+  const full = guidance('translation').text;
+  for (const phrase of ['asked scope', 'Unicode small-cap letters', 'Unicode superscript digits', 'one-line Sources footer', 'Limits:', 'square brackets', 'same Study tool calls', 'research needed to decide', 'without a footnote', 'never decides which reading is translated', 'more than one sentence', 'missing evidence', 'each limitation in a few words', 'why you chose', 'the same footnoted choices', 'not your process', 'Voetnoten', 'unless the reader asks how a reading was chosen', 'read the quoted passages', 'Concise exceptions', '⚑', 'Keep it out of every translation decision', 'give its argument in one or two sentences before the translation', 'could not be finished because a witness is missing']) {
+    assert.ok(rules.includes(phrase), `first-batch rules lack "${phrase}"`);
+    assert.ok(full.includes(phrase), `full topic lacks "${phrase}"`);
   }
-  for (const needed of [/without footnotes or explanation/, /standard.*default/i, /every choice that is not straightforward/, /explicit request/i, /material limitation/i, /same actual translation at every level/, /say what changed and why/, /ordinary language and context/, /translation only/, /thorough/, /not exhaustive/, /use standard without asking/, /unclear or conflicting/, /explanation level never changes the evidence depth parameter/, /different (amount or )?(detail or )?format/i, /vary only note-writing and outside reference lookups/, /same Study tool calls, follow every continuation, and read the same evidence/, /Do not skip evidence needed to translate or force a time limit/]) {
-    assert.match(rules, needed);
-    assert.match(full, needed);
-  }
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/10');
+});
+
+test('method and tools guidance state the context summary and the native candidate rules', async () => {
+  const { guidance } = await import('../../services/study/src/guidance.ts');
+  const method = guidance('method').text;
+  assert.match(method, /read that unit fully \(across batches\) at every detail level/);
+  assert.match(method, /In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise/);
+  assert.match(method, /In other study requests, summarise its argument before explaining the asked verses/);
+  assert.doesNotMatch(method, /summarise its argument before translating/);
+  const tools = guidance('tools').text;
+  assert.match(tools, /any native candidate the study returns is unverified, not a checked match/);
+  assert.match(tools, /Only when exact native text is still needed, inspect native numbering with mode "inspect_source"/);
 });

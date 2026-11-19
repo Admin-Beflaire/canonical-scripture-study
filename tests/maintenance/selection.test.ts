@@ -24,9 +24,8 @@ function recipeFor(id: string, units: string[][]) {
     adapter: { name: 'synthetic-text', method_version: '1' }, input_format: 'synthetic/plain', parameters: {},
     native_extent: { book: id }, capabilities: ['source_context', 'word_exact'], dependencies: [],
     units: [
-      { unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
       ...units.map((group, index) => ({ unit_id: `prepare-${index + 1}`, kind: 'prepare',
-        native_extent: { coordinate_version: C, unit_ids: group }, depends_on: ['acquire'] })),
+        native_extent: { coordinate_version: C, unit_ids: group }, depends_on: [] })),
       { unit_id: 'quality', kind: 'quality', native_extent: { coordinate_version: C, unit_ids: all },
         depends_on: units.map((_, index) => `prepare-${index + 1}`), required_capabilities: ['source_context', 'word_exact'] },
     ],
@@ -134,7 +133,6 @@ async function runBook(w: World, request: TaskRequest, revision = 'rev-1', optio
   assert.equal(created.status, 'created', JSON.stringify(created));
   const taskId = (created as { task: { id: string } }).task.id;
   await advance(w.db, w.github, taskId, w.objects);
-  await report(w, taskId, 'acquire');
   const recipe = JSON.parse(await (await w.github.readFile(`collection/recipes/${(request.constraints as { recipe: string }).recipe}.json`))!) as ReturnType<typeof recipeFor>;
   const refs = [];
   for (const unit of recipe.units.filter(item => item.kind === 'prepare')) {
@@ -146,7 +144,7 @@ async function runBook(w: World, request: TaskRequest, revision = 'rev-1', optio
   options.beforeQuality?.();
   await report(w, taskId, 'quality', { output_refs: refs, quality_receipt_ref: receipt(w, taskId) });
   const built = (await taskReport(w.db, owner, taskId))!;
-  if (options.release === false || built.state !== 'completed' || !['prepare', 'correct', 'replace'].includes(request.kind)) return { taskId, task: built };
+  if (options.release === false || built.state !== 'checked' || !['prepare', 'correct', 'replace'].includes(request.kind)) return { taskId, task: built };
   // A build ends with a checked candidate; a separate release task makes it current.
   const released = await releaseBuild(w, taskId, `release-${request.request_key}`);
   return { taskId, releaseId: released.id, task: released.report };
@@ -206,7 +204,6 @@ test('a release records the catalogue version for reader mappings it adds or kee
   assert.equal(created.status, 'created');
   const id = (created as { task: { id: string } }).task.id;
   await advance(w.db, w.github, id, w.objects);
-  await report(w, id, 'acquire');
 
   const units = ['Exo.1.1'];
   const { refs } = savePrepared(w, 'rev-2', 'prepare-1', units);
@@ -381,7 +378,7 @@ test('a release refuses a candidate whose base is no longer current; building ag
   await runBook(w, prepareTask('exo', 'e1'));
   const exodus = selected(w).current_release_id;
   const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { release: false });
-  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'completed');
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
   assert.equal(selected(w).current_release_id, exodus, 'a build alone never selects');
   // Another selection lands after the build.
   w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
@@ -416,7 +413,6 @@ test('pause and cancel stop promotion; resume runs the check again', async () =>
   const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
   const id = (created as { task: { id: string } }).task.id;
   await advance(w.db, w.github, id, w.objects);
-  await report(w, id, 'acquire');
   const refs = [];
   for (const unit of ['prepare-1', 'prepare-2']) {
     const saved = savePrepared(w, 'rev-1', unit, unit === 'prepare-1' ? ['Gen.1.1', 'Gen.1.2'] : ['Gen.1.3']);
@@ -431,7 +427,8 @@ test('pause and cancel stop promotion; resume runs the check again', async () =>
   const now = (await taskReport(w.db, owner, id))!;
   assert.equal((await controlTask(w.db, owner, id, now.revision, 'resume')).status, 'ok');
   await advance(w.db, w.github, id, w.objects);
-  assert.equal((await taskReport(w.db, owner, id))!.state, 'completed');
+  assert.equal((await taskReport(w.db, owner, id))!.state, 'checked', 'resumed work finishes as a checked build');
+  assert.equal(selected(w).current_release_id, null);
 });
 
 test('rollback validates the previous release and selects it through the same gate', async () => {
@@ -548,7 +545,6 @@ test('R25-1: every result reference must be a saved artifact with its digest and
     const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
     const id = (created as { task: { id: string } }).task.id;
     await advance(w.db, w.github, id, w.objects);
-    await report(w, id, 'acquire');
     const refs = [];
     for (const [unit, verses] of [['prepare-1', ['Gen.1.1', 'Gen.1.2']], ['prepare-2', ['Gen.1.3']]] as const) {
       const saved = savePrepared(w, 'rev-1', unit, [...verses]);
@@ -800,10 +796,102 @@ test('a release refuses an unknown task, an unfinished build and a candidate tha
   const open = (created as { task: { id: string } }).task.id;
   const unfinished = await releaseBuild(w, open, 'release-open');
   assert.equal(unfinished.report.state, 'blocked');
-  assert.ok(unfinished.report.limitations.some(text => text.includes('finished build')));
+  assert.ok(unfinished.report.limitations.some(text => text.includes('checked build')));
   const done = await runBook(w, prepareTask('exo', 'e1'));
   assert.equal(selected(w).current_release_id, done.task.selection.candidate_release_id);
   const again = await releaseBuild(w, done.taskId, 'release-again');
   assert.equal(again.report.state, 'blocked');
   assert.ok(again.report.limitations.some(text => text.includes('already current')), JSON.stringify(again.report.limitations));
+});
+
+test('a build stays checked until released; a cancelled or superseded build is never released', async () => {
+  const w = world();
+  const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { release: false });
+  const built = (await taskReport(w.db, owner, taskId))!;
+  assert.equal(built.state, 'checked');
+  assert.equal(built.data_current, false);
+  // Advancing a checked build does nothing more: no second check, no selection.
+  await advance(w.db, w.github, taskId, w.objects);
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
+  assert.equal(selected(w).current_release_id, null);
+  // The owner can still cancel it, and then it cannot be released.
+  assert.equal((await controlTask(w.db, owner, taskId, built.revision, 'cancel')).status, 'ok');
+  const refused = await releaseBuild(w, taskId, 'release-cancelled');
+  assert.equal(refused.report.state, 'blocked');
+  assert.ok(refused.report.limitations.some(text => text.includes('cancelled or superseded')));
+  assert.equal(selected(w).current_release_id, null);
+  // A superseded build is refused the same way.
+  const other = await runBook(w, prepareTask('exo', 'e1'), 'rev-1', { release: false });
+  w.db.sqlite.prepare(`UPDATE maintenance_tasks SET state = 'superseded', revision = revision + 1 WHERE id = ?`).run(other.taskId);
+  const second = await releaseBuild(w, other.taskId, 'release-superseded');
+  assert.equal(second.report.state, 'blocked');
+  assert.equal(selected(w).current_release_id, null);
+});
+
+test('a released build is finished with the release and cannot be released again', async () => {
+  const w = world();
+  const { taskId, releaseId, task } = await runBook(w, prepareTask('gen', 'g1'));
+  assert.equal(task.state, 'completed');
+  const build = (await taskReport(w.db, owner, taskId))!;
+  assert.equal(build.state, 'completed');
+  assert.equal(build.selection.candidate_release_id, task.selection.candidate_release_id);
+  assert.equal(build.data_current, true);
+  const again = await releaseBuild(w, taskId, 'release-twice');
+  assert.equal(again.report.state, 'blocked');
+  assert.ok(again.report.limitations.some(text => text.includes('already current')));
+  assert.ok(releaseId);
+});
+
+test('an interrupted release is selected again from the checked state, after the same guards', async () => {
+  const w = world();
+  const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { release: false });
+  const row = w.db.sqlite.prepare('SELECT outcome_json FROM maintenance_tasks WHERE id = ?').get(taskId) as { outcome_json: string };
+  const candidate = (JSON.parse(row.outcome_json) as { candidate: { release_id: string } }).candidate.release_id;
+  // The selection batch never reaches the database: the release is left checked.
+  const batch = w.db.batch.bind(w.db);
+  let interrupt = true;
+  w.db.batch = async statements => {
+    if (interrupt && statements.length >= 3 && w.db.sqlite.prepare(`SELECT 1 FROM maintenance_tasks WHERE request_key = 'release-g1' AND state = 'checked'`).get())
+      throw new Error('worker stopped before selection');
+    return batch(statements);
+  };
+  const stuck = await releaseBuild(w, taskId, 'release-g1');
+  assert.equal(stuck.report.state, 'checked');
+  assert.equal(selected(w).current_release_id, null);
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked', 'the build is untouched');
+  // The next check retries and selects.
+  interrupt = false;
+  await advance(w.db, w.github, stuck.id, w.objects);
+  const done = (await taskReport(w.db, owner, stuck.id))!;
+  assert.equal(done.state, 'completed');
+  assert.equal(selected(w).current_release_id, candidate);
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'completed');
+  // A repeated advance changes nothing.
+  await advance(w.db, w.github, stuck.id, w.objects);
+  assert.equal(selected(w).previous_release_id, null);
+});
+
+test('an interrupted release whose base changed meanwhile is blocked, not selected', async () => {
+  const w = world();
+  await runBook(w, prepareTask('exo', 'e1'));
+  const exodus = selected(w).current_release_id;
+  const { taskId } = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', { release: false });
+  const batch = w.db.batch.bind(w.db);
+  let interrupt = true;
+  w.db.batch = async statements => {
+    if (interrupt && statements.length >= 3 && w.db.sqlite.prepare(`SELECT 1 FROM maintenance_tasks WHERE request_key = 'release-g1' AND state = 'checked'`).get())
+      throw new Error('worker stopped before selection');
+    return batch(statements);
+  };
+  const stuck = await releaseBuild(w, taskId, 'release-g1');
+  assert.equal(stuck.report.state, 'checked');
+  interrupt = false;
+  w.db.sqlite.exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
+    INSERT INTO release_outputs SELECT 'release-other', output_id FROM release_outputs WHERE release_id = '${exodus}';
+    UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = 'release-other'`);
+  await advance(w.db, w.github, stuck.id, w.objects);
+  const report = (await taskReport(w.db, owner, stuck.id))!;
+  assert.equal(report.state, 'blocked');
+  assert.ok(report.limitations.some(text => text.includes('run the build again')));
+  assert.equal(selected(w).current_release_id, 'release-other');
 });

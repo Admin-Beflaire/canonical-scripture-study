@@ -71,7 +71,7 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   const scope = JSON.parse(row.scope_json) as Scope;
   if (scope.kind === 'release') {
     // A release makes a finished build's checked candidate current; it dispatches no work.
-    if (!['queued', 'running'].includes(row.state)) return { dispatched: [], state: row.state };
+    // A release left checked by an interruption selects again here, after the same guards.
     const released = await releaseCandidate(db, objects, row);
     return { dispatched: [], state: released.state, ...(released.limitation ? { limitation: released.limitation } : {}) };
   }
@@ -153,6 +153,9 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
   row = (await task(db, taskId))!;
   if (recipe!.units!.every(unit => succeeded.has(unit.unit_id)) && ['queued', 'running', 'checked'].includes(row.state)) {
     if (!pinnedNow(row)) return { dispatched, state: row.state };
+    // A finished build waits, checked, for a release task; it is not checked again.
+    if (row.state === 'checked' && BUILD_KINDS.has(scope.kind) && (JSON.parse(row.outcome_json) as Outcome).candidate)
+      return { dispatched, state: row.state };
     // An acquire task retains an original; it builds nothing and changes no release.
     if (scope.kind === 'acquire') {
       const unit = recipe!.units!;
@@ -198,6 +201,7 @@ export async function advance(db: D1Database, github: GitHubActions | null, task
 }
 
 const DIRECT = new Set(['remove', 'rollback', 'validate_restore']);
+const BUILD_KINDS = new Set(['prepare', 'correct', 'replace']);
 const SELF_SELECTING = new Set(['package', 'incorporate_statement']);
 
 /** The task must ask for what the recipe makes: its extent exactly, and only its capabilities. */
@@ -205,6 +209,11 @@ function recipeFit(scope: Scope, recipe: Recipe): string | undefined {
   const acquireOnly = recipe.adapter?.name === 'acquire-only' && recipe.adapter.method_version === 'acquire-only/1';
   if (scope.kind === 'acquire' && !acquireOnly) return 'an acquire task needs an acquire-only recipe';
   if (scope.kind !== 'acquire' && acquireOnly) return 'an acquire-only recipe can only be used by an acquire task';
+  // Fetching happens only in an acquire task: a build recipe may not hold an acquire unit, and an acquire recipe holds nothing else.
+  const fetches = (recipe.units ?? []).some(unit => unit.kind === 'acquire');
+  if (scope.kind !== 'acquire' && fetches) return 'a build recipe cannot fetch a source; keep the original with an acquire task first';
+  if (scope.kind === 'acquire' && (recipe.units ?? []).some(unit => unit.kind !== 'acquire'))
+    return 'an acquire recipe holds only acquire units';
   if (['prepare', 'correct', 'replace'].includes(scope.kind) && scope.capabilities.length === 0)
     return 'capabilities: a build must request output capabilities';
   if (acquireOnly) {

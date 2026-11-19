@@ -18,9 +18,8 @@ const recipe = {
   adapter: { name: 'synthetic-text', method_version: '1' }, input_format: 'synthetic/plain', parameters: {},
   native_extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'], dependencies: [],
   units: [
-    { unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
-    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { unit_ids: ['u1'] }, depends_on: ['acquire'] },
-    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { unit_ids: ['u2'] }, depends_on: ['acquire'] },
+    { unit_id: 'prepare-u1', kind: 'prepare', native_extent: { unit_ids: ['u1'] }, depends_on: [] },
+    { unit_id: 'prepare-u2', kind: 'prepare', native_extent: { unit_ids: ['u2'] }, depends_on: ['prepare-u1'] },
     { unit_id: 'quality', kind: 'quality', native_extent: { unit_ids: ['u1', 'u2'] }, depends_on: ['prepare-u1', 'prepare-u2'],
       required_capabilities: ['source_text'] },
   ],
@@ -79,26 +78,24 @@ test('units progress through results alone, in dependency order, with exact depe
   const context = await setup();
   const { db, gh, task } = context;
   const first = await advance(db, context.github, task.id);
-  assert.deepEqual(first.dispatched, ['acquire']);
+  assert.deepEqual(first.dispatched, ['prepare-u1']);
   assert.equal((await taskReport(db, owner, task.id))?.state, 'running');
   assert.equal(gh.runs.size, 1);
   // The dispatched text is exactly what Control hashed and the runner will hash.
-  const sent = dispatched(gh, 'acquire');
-  assert.equal(db.sqlite.prepare('SELECT input_basis FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.input_basis, sha(sent.text));
+  const sent = dispatched(gh, 'prepare-u1');
+  assert.equal(db.sqlite.prepare('SELECT input_basis FROM maintenance_jobs WHERE unit_id = ?').get('prepare-u1')?.input_basis, sha(sent.text));
 
-  const acquired = await finish(context, 'acquire');
-  assert.equal(acquired.reply.status, 'accepted');
-  // No chat: the accepted result dispatched both prepare units, each with the acquire output.
-  for (const unit of ['prepare-u1', 'prepare-u2']) {
-    const { job } = dispatched(gh, unit);
-    assert.deepEqual(job.dependency_refs, [{ artifact_id: 'artifact-acquire', sha256: sha('acquire'), byte_count: 10 }]);
-    assert.equal(job.recipe_revision, 'synthetic-r1');
-    assert.equal(job.manifest_revision, 'manifest-1');
-  }
+  assert.deepEqual(dispatched(gh, 'prepare-u1').job.dependency_refs, []);
+  const first_done = await finish(context, 'prepare-u1');
+  assert.equal(first_done.reply.status, 'accepted');
+  // No chat: the accepted result dispatched the next unit, with the first unit's output.
+  const { job } = dispatched(gh, 'prepare-u2');
+  assert.deepEqual(job.dependency_refs, [{ artifact_id: 'artifact-prepare-u1', sha256: sha('prepare-u1'), byte_count: 10 }]);
+  assert.equal(job.recipe_revision, 'synthetic-r1');
+  assert.equal(job.manifest_revision, 'manifest-1');
   savePrepared(db, 'prepare-u1', 'output-u1');
   savePrepared(db, 'prepare-u2', 'output-u2');
-  await finish(context, 'prepare-u1');
-  assert.equal(gh.runs.size, 3, 'quality waits for both prepare units');
+  assert.equal(gh.runs.size, 2, 'quality waits for both prepare units');
   await finish(context, 'prepare-u2');
   const quality = dispatched(gh, 'quality').job;
   assert.deepEqual(quality.constraints.candidate, { added: ['output-u1', 'output-u2'], reused: [], omitted: [] });
@@ -124,9 +121,9 @@ test('state route: exact bytes and own run only; lost dispatch response is confi
   assert.deepEqual(first.dispatched, []);
   const job = db.sqlite.prepare('SELECT * FROM maintenance_jobs').get() as Record<string, unknown>;
   assert.deepEqual([job.state, job.run_id], ['intended', null]);
-  const { run, text } = dispatched(gh, 'acquire');
+  const { run, text } = dispatched(gh, 'prepare-u1');
   const ask = (changes: Record<string, unknown> = {}) => post('/internal/jobs/state',
-    { task_id: task.id, unit_id: 'acquire', attempt: 1, run_id: String(run.id), job_input_basis: sha(text), ...changes });
+    { task_id: task.id, unit_id: 'prepare-u1', attempt: 1, run_id: String(run.id), job_input_basis: sha(text), ...changes });
   assert.equal((await ask({ job_input_basis: 'b'.repeat(64) })).status, 404, 'different job bytes');
   assert.equal((await ask({ run_id: '424242' })).status, 404, 'not a GitHub run of prepare.yml');
   assert.equal((await ask({ extra: 1 })).status, 400);
@@ -146,7 +143,7 @@ test('result route verifies the run commit through GitHub and is idempotent', as
   const context = await setup();
   const { db, gh, task, post } = context;
   await advance(db, context.github, task.id);
-  const { run, job } = dispatched(gh, 'acquire');
+  const { run, job } = dispatched(gh, 'prepare-u1');
   const wrong = await post('/internal/jobs/result', { result: resultFor(job, String(run.id)), commit: 'b'.repeat(40) });
   assert.equal(wrong.body.status, 'rejected');
   const forged = await post('/internal/jobs/result', { result: resultFor(job, '999999'), commit: gh.commit });
@@ -166,7 +163,7 @@ test('failed units retry up to the limit, then the task is blocked with the reas
   const { db, gh, task } = context;
   await advance(db, context.github, task.id);
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const { job } = await finish(context, 'acquire', { state: 'failed', output_refs: [], completed_extent: {},
+    const { job } = await finish(context, 'prepare-u1', { state: 'failed', output_refs: [], completed_extent: {},
       remaining_extent: {}, diagnostics: [{ code: 'no_registered_recipe', message: 'x' }] });
     assert.equal(job.attempt, attempt);
   }
@@ -181,19 +178,19 @@ test('reconcile: lost dispatch with no claimable run is retried; a run that ende
   const { db, gh, task } = context;
   gh.state.loseNextDispatchResponse = true;
   await advance(db, context.github, task.id);
-  const lost = dispatched(gh, 'acquire').run;
+  const lost = dispatched(gh, 'prepare-u1').run;
   // The run is still queued and unclaimed: it may still confirm itself, so nothing changes.
   assert.deepEqual(await reconcile(db, context.github, task.id), []);
   lost.status = 'completed'; lost.conclusion = 'failure';
   assert.equal((await reconcile(db, context.github, task.id)).length, 1);
-  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['acquire']);
-  const second = dispatched(gh, 'acquire');
+  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['prepare-u1']);
+  const second = dispatched(gh, 'prepare-u1');
   assert.equal(second.job.attempt, 2);
   // The second run ends without delivering a result.
   second.run.status = 'completed';
-  assert.deepEqual(await reconcile(db, context.github, task.id), ['unit acquire attempt 2: run ended without a result']);
-  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['acquire']);
-  assert.equal(dispatched(gh, 'acquire').job.attempt, 3);
+  assert.deepEqual(await reconcile(db, context.github, task.id), ['unit prepare-u1 attempt 2: run ended without a result']);
+  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['prepare-u1']);
+  assert.equal(dispatched(gh, 'prepare-u1').job.attempt, 3);
 });
 
 test('pause stops new units, late results cannot advance a cancelled task, resume continues', async () => {
@@ -203,20 +200,20 @@ test('pause stops new units, late results cannot advance a cancelled task, resum
   let report = (await taskReport(db, owner, task.id))!;
   assert.equal((await controlTask(db, owner, task.id, report.revision, 'pause')).status, 'ok');
   // The running unit reports while paused: recorded, but nothing new is dispatched.
-  const { run, job } = dispatched(gh, 'acquire');
+  const { run, job } = dispatched(gh, 'prepare-u1');
   const reply = await post('/internal/jobs/result', { result: resultFor(job, String(run.id)), commit: gh.commit });
   assert.equal(reply.body.status, 'accepted');
   assert.equal(gh.runs.size, 1);
   report = (await taskReport(db, owner, task.id))!;
   assert.equal((await controlTask(db, owner, task.id, report.revision, 'resume')).status, 'ok');
-  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['prepare-u1', 'prepare-u2']);
+  assert.deepEqual((await advance(db, context.github, task.id)).dispatched, ['prepare-u2']);
   report = (await taskReport(db, owner, task.id))!;
   assert.equal((await controlTask(db, owner, task.id, report.revision, 'cancel')).status, 'ok');
   const late = dispatched(gh, 'prepare-u1');
   const lateReply = await post('/internal/jobs/result', { result: resultFor(late.job, String(late.run.id)), commit: gh.commit });
   assert.equal(lateReply.body.eligible, false);
   assert.equal((await advance(db, context.github, task.id)).dispatched.length, 0);
-  assert.equal(gh.runs.size, 3);
+  assert.equal(gh.runs.size, 2);
 });
 
 test('recipe problems block the task with a plain reason; no recipe means no dispatch', async () => {
@@ -260,7 +257,7 @@ test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to s
   const created = await call('tools/call', { name: 'request_task', arguments: { request_key: 'p1', instruction: 'Prepare it',
     kind: 'prepare', inputs: [{ kind: 'acquisition', id: 'route-1' }], extent: { units: ['u1', 'u2'] }, capabilities: ['source_text'],
     constraints: { recipe: 'synthetic' }, decision_refs: [{ kind: 'admission', ref: 'owner-decision:1', subject: 'route-1' }] } });
-  assert.match(created.result.content[0].text, /dispatched acquire/);
+  assert.match(created.result.content[0].text, /dispatched prepare-u1/);
   const taskId = JSON.parse(created.result.content[0].text.split('\n\n')[1]).task_id;
   const report = await call('tools/call', { name: 'get_task', arguments: { task_id: taskId } });
   const revision = JSON.parse(report.result.content[0].text.split('\n\n')[1]).revision;
@@ -361,12 +358,12 @@ test('R22-4: a run that confirms itself before GitHub replies is the same dispat
   const { db, gh, task, post } = context;
   context.gh.state.onDispatch = async run => {
     // The runner starts and reads its state while Control still awaits the dispatch reply.
-    const confirmed = await post('/internal/jobs/state', { task_id: task.id, unit_id: 'acquire', attempt: 1,
+    const confirmed = await post('/internal/jobs/state', { task_id: task.id, unit_id: 'prepare-u1', attempt: 1,
       run_id: String(run.id), job_input_basis: sha(run.job) });
     assert.equal(confirmed.status, 200);
   };
   const progress = await advance(db, context.github, task.id);
-  assert.deepEqual(progress.dispatched, ['acquire']);
+  assert.deepEqual(progress.dispatched, ['prepare-u1']);
   const run = [...gh.runs.values()][0];
   assert.equal(run.conclusion, null, 'the legitimately claimed run is not cancelled');
   assert.ok(!gh.requests.some(request => request.url.endsWith('/cancel')));
@@ -408,11 +405,11 @@ test('R22-6: only the run GitHub titled with this job can claim a lost dispatch'
   const { db, gh, task, post } = context;
   gh.state.loseNextDispatchResponse = true;
   await advance(db, context.github, task.id);
-  const intended = dispatched(gh, 'acquire');
+  const intended = dispatched(gh, 'prepare-u1');
   // Another unbound, unfinished prepare.yml run on main (a different job) tries to claim the intent
   // with the right job digest: GitHub's title for that run names a different job, so it is refused.
   const other = await context.github.dispatch({ ...intended.job, unit_id: 'someone-else' });
-  const claim = (runId: string) => post('/internal/jobs/state', { task_id: task.id, unit_id: 'acquire', attempt: 1,
+  const claim = (runId: string) => post('/internal/jobs/state', { task_id: task.id, unit_id: 'prepare-u1', attempt: 1,
     run_id: runId, job_input_basis: sha(intended.text) });
   assert.equal((await claim(other.run_id)).status, 404);
   assert.equal(db.sqlite.prepare('SELECT run_id FROM maintenance_jobs').get()?.run_id, null);
@@ -429,19 +426,19 @@ test('R22-7: a lost dispatch is never retried on a partial run listing', async (
   await advance(db, context.github, task.id);
   // 150 newer finished runs push the intended (still queued) run off the newest page.
   for (let i = 0; i < 150; i++) {
-    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'acquire').job, unit_id: `noise-${i}` });
+    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'prepare-u1').job, unit_id: `noise-${i}` });
     Object.assign(gh.runs.get(Number(run_id))!, { status: 'completed', conclusion: 'success' });
   }
   assert.deepEqual(await reconcile(db, context.github, task.id), []);
-  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.state, 'intended');
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('prepare-u1')?.state, 'intended');
   // A listing too long to be complete leaves the intent unresolved, with a note.
   for (let i = 0; i < 1001; i++) {
-    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'acquire').job, unit_id: `wait-${i}` });
+    const { run_id } = await context.github.dispatch({ ...dispatched(gh, 'prepare-u1').job, unit_id: `wait-${i}` });
     Object.assign(gh.runs.get(Number(run_id))!, { status: 'waiting' });
   }
   assert.deepEqual(await reconcile(db, context.github, task.id),
     ['The list of unfinished runs was incomplete; unconfirmed dispatches are checked again later']);
-  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('acquire')?.state, 'intended');
+  assert.equal(db.sqlite.prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?').get('prepare-u1')?.state, 'intended');
 });
 
 test('Control progression failures distinguish D1 write quota from other errors without leaking details', () => {
@@ -509,4 +506,14 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     assert.match(result.limitation!, variant === 'ordinary' ? /needs an acquire-only recipe/ : variant === 'build-kind' ? /only be used by an acquire task/ : variant === 'missing-revision' ? /source_revision/ : /omit sha256/);
     assert.equal(ctx.gh.runs.size, 0);
   }
+});
+
+test('a build recipe that holds an acquire unit is refused before anything is dispatched', async () => {
+  const withFetch = { ...recipe, units: [{ unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: [] },
+    ...recipe.units.map(unit => unit.unit_id === 'prepare-u1' ? { ...unit, depends_on: ['acquire'] } : unit)] };
+  const context = await setup({ 'collection/recipes/synthetic.json': withFetch });
+  const progress = await advance(context.db, context.github, context.task.id);
+  assert.equal(progress.state, 'blocked');
+  assert.ok(progress.limitation?.includes('cannot fetch a source'), progress.limitation);
+  assert.equal(context.gh.runs.size, 0);
 });

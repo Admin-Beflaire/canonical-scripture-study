@@ -46,7 +46,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/need-named-agent' and self.headers.get('User-Agent') != USER_AGENT:
             self.send_error(406)
             return
-        if self.path not in ('/file', '/big', '/other', '/need-named-agent'):
+        if self.path == '/need-default-headers' and (
+            self.headers.get('User-Agent') != USER_AGENT or self.headers.get('Accept') != '*/*' or
+            self.headers.get('Accept-Encoding') != 'identity'
+        ):
+            self.send_error(406)
+            return
+        if self.path not in ('/file', '/big', '/other', '/need-named-agent', '/need-default-headers'):
             self.send_error(404)
             return
         body = BODY * 20 if self.path == '/big' else BODY.upper().replace(b'0', b'X') if self.path == '/other' else BODY
@@ -108,6 +114,12 @@ class TransferTest(unittest.TestCase):
         result = transfer(self.route('/need-named-agent'), self.target)
         self.assertTrue(result.complete)
         self.assertEqual(self.target.read_bytes(), BODY)
+
+    def test_all_acquisition_routes_send_plain_accept_and_named_agent(self):
+        result = transfer(self.route('/need-default-headers'), self.target)
+        self.assertTrue(result.complete)
+        self.assertEqual(self.target.read_bytes(), BODY)
+        self.assertFalse(USER_AGENT.startswith('Mozilla/'))  # identify the project, never impersonate a browser
 
     def test_interrupted_transfer_of_unknown_length_is_not_complete(self):
         result = transfer(self.route('/chunked-drop'), self.target)

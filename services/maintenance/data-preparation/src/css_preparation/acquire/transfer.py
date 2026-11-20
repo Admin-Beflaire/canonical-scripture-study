@@ -81,7 +81,7 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
             saved = None  # unusable state: start again from zero
     offset = partial.stat().st_size if saved else 0
 
-    request = urllib.request.Request(route.url, headers={'Accept-Encoding': 'identity', 'User-Agent': USER_AGENT})
+    request = urllib.request.Request(route.url, headers={'Accept-Encoding': 'identity', 'User-Agent': USER_AGENT, 'Accept': '*/*'})
     if credential:
         # Unredirected: urllib never copies it to a redirect target.
         request.add_unredirected_header(*credential)

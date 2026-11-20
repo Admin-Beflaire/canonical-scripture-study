@@ -21,6 +21,10 @@ export const STARTING_LIMITS: Readonly<BudgetLimits> = Object.freeze({
   d1Calls: 6, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 50,
 });
 
+/** Language-aid entries can exceed a search page. Six bounded reads cover the
+ *  observed source entries; configured platform limits still apply. */
+export const AID_LIMITS: Readonly<BudgetLimits> = Object.freeze({ ...STARTING_LIMITS, r2Reads: 6, r2Bytes: 98304 });
+
 function configured(value: string | number | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
   const n = Number(value);

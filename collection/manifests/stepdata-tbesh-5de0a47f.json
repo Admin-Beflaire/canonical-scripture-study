@@ -1,0 +1,22 @@
+{
+  "manifest_revision": "stepdata-tbesh-5de0a47f/1",
+  "source_revision": "stepdata-tbesh-5de0a47f/1",
+  "provider": "STEPBible.org, based on work at Tyndale House Cambridge",
+  "origin": "https://github.com/STEPBible/STEPBible-Data",
+  "version": "STEPBible-Data commit 5de0a47f35f0fc13dfe1430d104e5db8a4285f9c; TBESH",
+  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "licence_basis": "https://github.com/STEPBible/STEPBible-Data/blob/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/README.md (CC BY 4.0; source file also names CC BY)",
+  "attribution": "STEP Bible (STEPBible.org), based on work at Tyndale House Cambridge; CC BY 4.0; https://stepbible.github.io/STEPBible-Data/; note any changes",
+  "url": "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Lexicons/TBESH%20-%20Translators%20Brief%20lexicon%20of%20Extended%20Strongs%20for%20Hebrew%20-%20STEPBible.org%20CC%20BY.txt",
+  "allowed_hosts": [
+    "raw.githubusercontent.com"
+  ],
+  "max_bytes": 5000000,
+  "expected_sha256": null,
+  "upstream_path": "Lexicons/TBESH - Translators Brief lexicon of Extended Strongs for Hebrew - STEPBible.org CC BY.txt",
+  "upstream_blob_sha": "df4dabb25973ed2df6fbdae0345b8cb446711e2f",
+  "upstream_byte_count": 3288115,
+  "format": "UTF-8 tab-separated text; acquire opaque original only",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

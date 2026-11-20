@@ -5,3 +5,7 @@ Source manifests belong here. A manifest must retain the applicable admission an
 `stepbible-data-5de0a47f35f0.json` records the pinned STEPBible-Data files used by the
 STEPBible recipes, their licence basis and storage rule. The owner's admission decision is
 given in the Maintenance Control task, not here.
+
+B1 STEP language aids are listed in the pinned STEP inventory. Each also has a
+single-file `stepdata-*.json` manifest with the URL and rights fields the existing
+acquire-only runner needs. Source bytes are never committed to public Git.

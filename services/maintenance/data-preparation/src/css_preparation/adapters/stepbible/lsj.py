@@ -11,13 +11,13 @@ import re
 from typing import Literal
 
 from ...prepare.records import RecordError
+from .commit import COMMIT_PATTERN
 
 LSJPart = Literal['0-5624', 'extra']
 _PARTS = ('0-5624', 'extra')
 _HEADER = 'eStrong\tdStrong\tuStrong\tGreek\tTransliteration\tMorph\tGloss\tLSJ Meaning'
 _ESTRONG = re.compile(r'G\d{4,5}[a-z]?')
 _DSTRONG = re.compile(r'(G\d{4,5}[A-Za-z]?)(?:\s+(.*))?')
-_COMMIT = re.compile(r'[0-9a-f]{40}')
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ def read_lsj(original: bytes | str, *, part: LSJPart, commit: str) -> tuple[LSJE
     """
     if part not in _PARTS:
         raise RecordError('Unknown TFLSJ source part')
-    if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
+    if not isinstance(commit, str) or not COMMIT_PATTERN.fullmatch(commit):
         raise RecordError('Recipe does not declare a pinned STEP commit')
     try:
         text = original.decode('utf-8-sig') if isinstance(original, bytes) else original.lstrip('\ufeff')

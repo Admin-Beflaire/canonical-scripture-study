@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import re
 
 from ...prepare.records import RecordError
+from .commit import COMMIT_PATTERN
 from .format import Language
 
 _WORKS = {
@@ -46,7 +47,7 @@ def read_lexicon(original: bytes | str, language: Language, *, commit: str) -> t
     """
     if language not in _WORKS:
         raise RecordError('Unknown STEP lexicon language')
-    if not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit):
+    if not isinstance(commit, str) or not COMMIT_PATTERN.fullmatch(commit):
         raise RecordError('Recipe does not declare a pinned STEP commit')
     edition = f'STEPBible-Data:{commit}'
     work, prefix, first_header, form_header = _WORKS[language]

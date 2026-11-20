@@ -6,8 +6,9 @@ run-name: Preparation ${{ inputs.dispatch_ref }}
 # The job stays in the event file: it is never placed in a step environment or a shell command,
 # because public run logs show step environments. Plain settings (Control origin, account, database,
 # bucket, service-token client ID) are environment variables; only the two credentials are secrets.
-# Detailed diagnostics go only to Control's
-# private result record. This workflow never merges, deploys, approves scope or selects data.
+# Raw runner output is deleted after each run. A separate diagnostic artifact retains
+# only explicitly safe fields for one day; no raw exception text or secrets.
+# No merge, deployment, scope approval or data selection occurs here.
 on:
   workflow_dispatch:
     inputs:
@@ -82,10 +83,19 @@ jobs:
           status="$RUNNER_TEMP/preparation-status.txt"
           # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
           code=0
-          python3 -m css_preparation.runner --kind acquire --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
+          python3 -m css_preparation.runner --kind acquire --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
+      - name: Retain structured diagnostics for one day
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
+          if-no-files-found: ignore
+          retention-days: 1
 
   prepare:
     needs: validate
@@ -119,10 +129,19 @@ jobs:
           status="$RUNNER_TEMP/preparation-status.txt"
           # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
           code=0
-          python3 -m css_preparation.runner --kind prepare --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
+          python3 -m css_preparation.runner --kind prepare --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
+      - name: Retain structured diagnostics for one day
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
+          if-no-files-found: ignore
+          retention-days: 1
 
   quality:
     needs: validate
@@ -156,7 +175,16 @@ jobs:
           status="$RUNNER_TEMP/preparation-status.txt"
           # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
           code=0
-          python3 -m css_preparation.runner --kind quality --status "$status" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
+          python3 -m css_preparation.runner --kind quality --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
           rm -f -- "$RUNNER_TEMP/preparation-private.log"
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
+      - name: Retain structured diagnostics for one day
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
+          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
+          if-no-files-found: ignore
+          retention-days: 1

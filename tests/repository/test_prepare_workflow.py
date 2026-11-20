@@ -40,7 +40,7 @@ class PrepareWorkflowTests(unittest.TestCase):
 
     def test_least_privilege_and_separate_environment(self):
         self.assertRegex(WORKFLOW, r"(?m)^permissions:\n  contents: read\n")
-        for denied in ("contents: write", "id-token:", "actions: write", "upload-artifact", "download-artifact",
+        for denied in ("contents: write", "id-token:", "actions: write", "download-artifact",
                        "actions/cache", "wrangler", "terraform", "DEPLOYMENT_", "PLATFORM_STATE"):
             self.assertNotIn(denied, WORKFLOW)
         validate = job_block("validate")
@@ -68,8 +68,23 @@ class PrepareWorkflowTests(unittest.TestCase):
             self.assertIn('rm -f -- "$RUNNER_TEMP/preparation-private.log"', block)
             self.assertIn('cat "$status" >> "$GITHUB_STEP_SUMMARY"', block)
             self.assertIn("umask 077", block)
+            self.assertIn('--diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl"', block)
+            self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", block)
+            self.assertIn("retention-days: 1", block)
+            self.assertIn("if: always()", block)
+            self.assertIn("continue-on-error: true", block)
+            self.assertIn('name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}', block)
+            self.assertIn('path: ${{ runner.temp }}/preparation-diagnostics.jsonl', block)
+
         self.assertIn("--validate --status", job_block("validate"))
         self.assertIn("> /dev/null 2>&1", job_block("validate"))
+
+    def test_upload_artifacts_use_only_the_approved_pinned_action(self):
+        pinned = 'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02'
+        uploads = re.findall(r'(?m)^\s*uses: (actions/upload-artifact@[^\s]+)', WORKFLOW)
+        self.assertEqual(uploads, [pinned] * len(RUN_JOBS))
+        self.assertEqual(WORKFLOW.count('upload-artifact@'), len(RUN_JOBS))
+        self.assertNotIn('upload-artifact@', job_block('validate'))
 
     def test_actions_pinned_and_credentials_not_persisted(self):
         uses = [line for line in WORKFLOW.splitlines() if "uses:" in line]

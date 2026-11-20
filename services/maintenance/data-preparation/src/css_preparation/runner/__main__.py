@@ -19,7 +19,7 @@ import json
 import os
 import re
 import sys
-from typing import Any, Mapping
+from typing import Any, Mapping, Callable
 
 from ..contracts import ContractError, job_result, parse_job_input
 from ..executor import UnitNotRunnable, execute_unit
@@ -29,6 +29,7 @@ from ..prepare.evidence import OutputBasis
 from ..prepare.records import RecordError
 from ..provider import provider_diagnostic
 from ..validate.saved import CandidateInventory
+from .diagnostics import DiagnosticRecorder
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
 from .recipes import RECIPES, Recipe
@@ -93,7 +94,8 @@ def _inventory(job: dict[str, Any], storage: CloudflareStorage) -> CandidateInve
 
 
 def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, storage: CloudflareStorage,
-            recipes: Mapping[str, Recipe] = RECIPES) -> dict[str, Any]:
+            recipes: Mapping[str, Recipe] = RECIPES,
+            on_error: Callable[[str, BaseException], None] | None = None) -> dict[str, Any]:
     """Execute one job and return its result envelope (not yet submitted)."""
     job_json = job_text
     job = parse_job_input(job_json)
@@ -123,7 +125,8 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
                 job_json, **gate, inventory=_inventory(job, storage), read_rows=storage.read_rows,
                 read_blob=storage.read_blob, read_source=lambda revision: recipe.read_source(revision, storage),
                 receipts=storage.record_store('receipts'),
-                read_reader_references=(lambda job: read_mappings(job, storage)) if read_mappings else None)
+                read_reader_references=(lambda job: read_mappings(job, storage)) if read_mappings else None,
+                on_error=on_error)
         module = getattr(recipe, kind)
         if module is None:
             return _result(job, run_id, 'failed', diagnostics=_diagnostic('no_registered_recipe'))
@@ -135,13 +138,17 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
             raise StopWork('refused')  # Only the dispatched kind may run in this workflow job.
         handlers = {k: (handler if k == kind else refuse) for k in KINDS}
         progress = run_checkpointed_unit(job_json, **gate, **handlers, storage=storage.candidate_store(),
-                                         checkpoints=storage.record_store('checkpoints'))
+                                         checkpoints=storage.record_store('checkpoints'), on_error=on_error)
         return _from_progress(job, run_id, progress)
     except UnitNotRunnable as error:
         return _result(job, run_id, 'cancelled', diagnostics=_diagnostic('not_runnable', error))
     except ProviderError as error:
+        if on_error is not None:
+            on_error('runner', error)
         return _result(job, run_id, 'failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error)}])
     except (RecordError, KeyError, ValueError, TypeError) as error:
+        if on_error is not None:
+            on_error('runner', error)
         return _result(job, run_id, 'failed', diagnostics=_diagnostic('runner_failed', error))
 
 
@@ -175,7 +182,10 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
     mode.add_argument('--kind', choices=KINDS)
     mode.add_argument('--validate', action='store_true')
     parser.add_argument('--status', required=True)
+    parser.add_argument('--diagnostics', help='Write selected safe diagnostics as JSON lines')
     args = parser.parse_args(argv)
+    diagnostics = DiagnosticRecorder(args.diagnostics, run_id=environ.get('GITHUB_RUN_ID', ''),
+                                     kind=args.kind or 'validate')
     lines: list[str] = []
     code = 1
     try:
@@ -217,13 +227,17 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
             lines.append(PUBLIC['invalid'])
             return code
         try:
-            result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control, storage=storage)
+            result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control,
+                             storage=storage, on_error=diagnostics.exception)
         except Exception as error:  # noqa: BLE001 - unexpected: record privately, print nothing
+            diagnostics.exception('runner', error)
             result = _result(job, environ['GITHUB_RUN_ID'], 'failed', diagnostics=_diagnostic('runner_error', error))
+        diagnostics.outcome(result['state'])
         lines.append(f"Preparation {args.kind} unit finished: {result['state']}.")
         try:
             reply = control.submit_result(result, environ['GITHUB_SHA'])
-        except (ProviderError, ValueError):
+        except (ProviderError, ValueError) as error:
+            diagnostics.exception('submitting_result', error)
             lines.append(PUBLIC['undelivered'])
             return code
         lines.append(f"Control {reply['status']} the result.")

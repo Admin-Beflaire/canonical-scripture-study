@@ -214,7 +214,8 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
                           prepare: Callable[[dict[str, Any]], RecordSet],
                           quality: Callable[[dict[str, Any]], RecordSet],
                           storage: CandidateStore, checkpoints: CheckpointStore,
-                          max_retries: int = 1) -> UnitProgress:
+                          max_retries: int = 1,
+                          on_error: Callable[[str, BaseException], None] | None = None) -> UnitProgress:
     """Check Control before each attempt; preserve saved units on pause/cancel.
 
     A job envelope describes one bounded unit. The scheduler dispatches further
@@ -272,15 +273,23 @@ def run_checkpointed_unit(job_json: str, *, run_id: str,
             return failure('stopped')
         except StopWork as error:
             return failure(error.reason)
-        except (RetryableUnitError, TimeoutError, ConnectionError):
+        except (RetryableUnitError, TimeoutError, ConnectionError) as error:
+            if on_error is not None:
+                on_error(stage, error)
             if retry == max_retries:
                 return failure('transient_exhausted', stage_diagnostic(stage, transient=True))
         except ReaderBoundaryError as error:
+            if on_error is not None:
+                on_error(stage, error)
             return failure('reader_boundary', f'Reader marker {error.marker} crosses the requested native unit boundary')
         except ProviderError as error:
+            if on_error is not None:
+                on_error(stage, error)
             if error.transient and stage == 'saving_checkpoint' and retry < max_retries:
                 continue
             return failure('provider_failure', provider_diagnostic(error, stage))
-        except (RecordError, OSError):
+        except (RecordError, OSError) as error:
+            if on_error is not None:
+                on_error(stage, error)
             return failure('invalid_or_unavailable_output', stage_diagnostic(stage))
     raise AssertionError('Unreachable retry loop')

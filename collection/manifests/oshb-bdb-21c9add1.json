@@ -1,0 +1,23 @@
+{
+  "manifest_revision": "oshb-bdb-21c9add1/1",
+  "source_revision": "oshb-bdb-21c9add1/1",
+  "provider": "Open Scriptures Hebrew Bible Project",
+  "origin": "https://github.com/openscriptures/HebrewLexicon",
+  "version": "HebrewLexicon commit 21c9add13bc727d3a951361778e97e3ff7afd1ce; BrownDriverBriggs.xml",
+  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0); Brown-Driver-Briggs text is public domain",
+  "licence_basis": "https://github.com/openscriptures/HebrewLexicon/blob/21c9add13bc727d3a951361778e97e3ff7afd1ce/readme.md",
+  "attribution": "Open Scriptures Hebrew Bible Project, Hebrew Lexicon, CC BY 4.0; https://github.com/openscriptures/HebrewLexicon; note changes",
+  "url": "https://raw.githubusercontent.com/openscriptures/HebrewLexicon/21c9add13bc727d3a951361778e97e3ff7afd1ce/BrownDriverBriggs.xml",
+  "allowed_hosts": [
+    "raw.githubusercontent.com"
+  ],
+  "max_bytes": 4000000,
+  "expected_sha256": null,
+  "upstream_path": "BrownDriverBriggs.xml",
+  "upstream_blob_sha": "21bb98cab34334cd500553addc38aca6792f7bce",
+  "upstream_byte_count": 2911253,
+  "format": "UTF-8 XML; acquire opaque original only",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task",
+  "limitations": "BDB transcription is work in progress; entries, references and Hebrew words may be incomplete."
+}

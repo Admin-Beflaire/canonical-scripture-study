@@ -71,6 +71,26 @@ class AcquireOnlyTest(unittest.TestCase):
                 self.assertEqual([unit['kind'] for unit in raw['units']], ['acquire'])
                 self.assertEqual(raw['capabilities'], [])
 
+    def test_oshb_bdb_acquisitions_are_pinned_and_private(self):
+        commit = '21c9add13bc727d3a951361778e97e3ff7afd1ce'
+        files = {
+            'oshb-bdb-21c9add1': ('BrownDriverBriggs.xml', '21bb98cab34334cd500553addc38aca6792f7bce', 2911253),
+            'oshb-index-21c9add1': ('LexicalIndex.xml', 'd11eb2078532f3119c70822bd27a91b484d4727b', 1782592),
+        }
+        recipes = load_recipes()
+        for name, (path, blob, size) in files.items():
+            with self.subTest(name=name):
+                raw = json.loads((ROOT / 'collection/recipes' / (name + '.json')).read_text())
+                manifest = AcquireRecipe.from_recipe(raw).manifest
+                self.assertIsNotNone(recipes[name + '/1'].acquire)
+                self.assertIsNone(recipes[name + '/1'].prepare)
+                self.assertEqual(manifest['url'], f'https://raw.githubusercontent.com/openscriptures/HebrewLexicon/{commit}/{path}')
+                self.assertEqual(manifest['upstream_blob_sha'], blob)
+                self.assertEqual(manifest['upstream_byte_count'], size)
+                self.assertLess(size, manifest['max_bytes'])
+                self.assertEqual(manifest['storage'], 'Protected private storage only; never public Git')
+                self.assertEqual([unit['kind'] for unit in raw['units']], ['acquire'])
+
     def test_private_original_and_receipt(self):
         value = json.loads((ROOT / 'collection/recipes/sblgnt-d7f35adca9ec.json').read_text())
         recipe = AcquireRecipe.from_recipe(value)

@@ -13,7 +13,7 @@ export const STUDY_SCHEMA = {
     question: { ...text(2000), description: "The user's question, for context. The tool does not interpret it." },
     references: { type: 'array', minItems: 1, maxItems: 4, items: text(80), description: 'Passages use NRSVA reader numbering by default, e.g. "Mal 4:1-6". For native numbering use inspect_source with exactly one source revision in sources (up to 3 chapters each).' },
     search_leads: { type: 'array', minItems: 1, maxItems: 1, description: 'One search per call.', items: { type: 'object', additionalProperties: false, required: ['lookup', 'key'], properties: {
-      lookup: { enum: ['word', 'form', 'lemma', 'grammar', 'phrase', 'proximity', 'fuzzy'] }, key: text(256) } } },
+      lookup: { enum: ['word', 'form', 'lemma', 'grammar', 'lexicon', 'lexicon_entry', 'grammar_info', 'phrase', 'proximity', 'fuzzy'] }, key: text(256) } } },
     sources: { type: 'array', minItems: 1, maxItems: 20, items: text(200), description: 'Limit to these source revision IDs (as returned in evidence). Default: every selected source.' },
     depth: { enum: [...DEPTHS], description: 'Breadth of evidence, not answer length. focused leaves out the surrounding chapter. Default standard.' },
     language: { ...text(35), description: 'Answer language for the user (default en). Evidence stays in the original.' },
@@ -36,7 +36,7 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
   const server = platformServer('study', enhancements, STUDY_INSTRUCTIONS);
   server.registerTool('study', {
     title: 'Study Scripture evidence',
-    description: 'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word, form, lemma or grammar occurrences. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
+    description: 'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word occurrences or attributed lexicon and grammar entries. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
     inputSchema: fromJsonSchema<StudyRequest>(STUDY_SCHEMA as unknown as Record<string, unknown>),
     annotations: readOnly,
   }, async (request: StudyRequest) => reply(await study(env, request, usage => {

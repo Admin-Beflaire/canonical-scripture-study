@@ -5,6 +5,7 @@ import { ReadError, limitation, type Limitation } from './read/states.ts';
 import type { Batch } from './results/batch.ts';
 import { GUIDANCE_VERSION, TRANSLATION_RULES } from './guidance.ts';
 import { languageBatch } from './operators/language.ts';
+import { aidBatch, AID_LOOKUPS } from './operators/aids.ts';
 import { passageBatch } from './operators/passage.ts';
 
 export const MODES = ['translation', 'passage', 'exegesis', 'comparison', 'word_analysis', 'word_study', 'theme', 'inspect_source', 'conclusion_check'] as const;
@@ -70,7 +71,10 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest,
       if (leads.length > 1) throw new ReadError('invalid_request', 'Give one search lead per call');
       const lead = leads[0];
       if (!lead || typeof lead !== 'object') throw new ReadError('invalid_request', 'A search lead is {lookup, key}');
-      batch = await languageBatch(session, { ...base, lookup: lead.lookup, key: lead.key, sources: request.sources ?? null }, continuation, GUIDANCE_VERSION, notes);
+      const workload = { ...base, lookup: lead.lookup, key: lead.key, sources: request.sources ?? null };
+      batch = AID_LOOKUPS.includes(lead.lookup as typeof AID_LOOKUPS[number])
+        ? await aidBatch(session, workload, continuation, GUIDANCE_VERSION, notes)
+        : await languageBatch(session, workload, continuation, GUIDANCE_VERSION, notes);
     }
     return batch;
   } catch (error) {

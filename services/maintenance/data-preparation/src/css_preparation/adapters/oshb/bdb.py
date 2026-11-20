@@ -2,6 +2,8 @@
 
 Keep native article IDs and the source's XML structure. Index cross-references
 are source values, not inferred one-to-one mappings or merged lexicon entries.
+Serialized entry XML uses generated namespace prefixes and may include trailing
+whitespace; consumers should parse it as XML, not compare its literal bytes.
 """
 from __future__ import annotations
 
@@ -31,6 +33,9 @@ class BDBEntry:
 
 @dataclass(frozen=True)
 class LexicalIndexEntry:
+    work: str
+    edition: str
+    entry_id: str
     native_id: str
     language: str
     xml: str
@@ -56,10 +61,14 @@ def _id(element: ET.Element, seen: set[str]) -> str:
     return native_id
 
 
-def read_bdb(original: bytes | str, *, commit: str) -> tuple[BDBEntry, ...]:
-    """Return article XML and native IDs without normalizing the source text."""
+def _check_commit(commit: str) -> None:
     if not isinstance(commit, str) or not _COMMIT.fullmatch(commit):
         raise RecordError('Recipe does not declare a pinned Open Scriptures commit')
+
+
+def read_bdb(original: bytes | str, *, commit: str) -> tuple[BDBEntry, ...]:
+    """Return article XML and native IDs without normalizing the source text."""
+    _check_commit(commit)
     root = _root(original, 'lexicon')
     entries: list[BDBEntry] = []
     seen: set[str] = set()
@@ -76,8 +85,9 @@ def read_bdb(original: bytes | str, *, commit: str) -> tuple[BDBEntry, ...]:
     return tuple(entries)
 
 
-def read_lexical_index(original: bytes | str) -> tuple[LexicalIndexEntry, ...]:
+def read_lexical_index(original: bytes | str, *, commit: str) -> tuple[LexicalIndexEntry, ...]:
     """Return source index entries and each unmodified cross-reference value."""
+    _check_commit(commit)
     root = _root(original, 'index')
     entries: list[LexicalIndexEntry] = []
     seen: set[str] = set()
@@ -87,7 +97,9 @@ def read_lexical_index(original: bytes | str) -> tuple[LexicalIndexEntry, ...]:
             refs = tuple((x.get('bdb'), x.get('strong'), x.get('aug'), x.get('twot'))
                          for x in entry.findall(_Q + 'xref'))
             entries.append(LexicalIndexEntry(
-                native_id, part.get(_LANG, ''), ET.tostring(entry, encoding='unicode'), refs))
+                'oshb-lexical-index', f'HebrewLexicon:{commit}',
+                f'oshb-lexical-index:{commit}:{native_id}', native_id,
+                part.get(_LANG, ''), ET.tostring(entry, encoding='unicode'), refs))
     if not entries:
         raise RecordError('Open Scriptures lexical index has no entries')
     return tuple(entries)

@@ -24,10 +24,15 @@ class BDBTest(unittest.TestCase):
         self.assertNotEqual(first.entry_id, read_bdb(BDB, commit='b' * 40)[0].entry_id)
 
     def test_index_retains_all_source_links_and_missing_targets(self):
-        first, second = read_lexical_index(INDEX)
+        first, second = read_lexical_index(INDEX, commit=COMMIT)
         self.assertEqual(first.references, (('a', '1', 'a', '1'), ('b', '1', None, None)))
         self.assertEqual(second.references, ((None, '1', None, None),))
         self.assertEqual(second.native_id, 'lex2')
+        self.assertEqual(first.work, 'oshb-lexical-index')
+        self.assertEqual(first.edition, f'HebrewLexicon:{COMMIT}')
+        self.assertEqual(first.entry_id, f'oshb-lexical-index:{COMMIT}:lex1')
+        self.assertNotEqual(first.entry_id, second.entry_id)
+        self.assertNotEqual(first.entry_id, read_lexical_index(INDEX, commit='b' * 40)[0].entry_id)
 
     def test_rejects_wrong_roots_bad_xml_and_invalid_commit(self):
         for payload in ('<index/>', '<lexicon>', '<lexicon/>'):
@@ -36,15 +41,17 @@ class BDBTest(unittest.TestCase):
         for commit in ('a' * 39, 'z' * 40, None):
             with self.subTest(commit=commit), self.assertRaises(RecordError):
                 read_bdb(BDB, commit=commit)
+            with self.subTest(index_commit=commit), self.assertRaises(RecordError):
+                read_lexical_index(INDEX, commit=commit)
         with self.assertRaises(RecordError):
-            read_lexical_index(BDB)
+            read_lexical_index(BDB, commit=COMMIT)
 
     def test_duplicate_and_missing_ids_are_rejected(self):
         for bdb in (BDB.replace('id="b"', 'id="a"'), BDB.replace('id="b"', '')):
             with self.assertRaises(RecordError):
                 read_bdb(bdb, commit=COMMIT)
         with self.assertRaises(RecordError):
-            read_lexical_index(INDEX.replace('id="lex2"', 'id="lex1"'))
+            read_lexical_index(INDEX.replace('id="lex2"', 'id="lex1"'), commit=COMMIT)
 
 
 if __name__ == '__main__':

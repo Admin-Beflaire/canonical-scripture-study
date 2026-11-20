@@ -1,11 +1,23 @@
 import { canonicalJson, isIdentifier, isSafeCount, utf8Length } from '../read/bytes.ts';
-import { readSpans } from '../read/evidence.ts';
+import { readSpans, type SpanEvidence } from '../read/evidence.ts';
 import type { ReadSession } from '../read/session.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation } from '../results/continuation.ts';
 
 export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info'] as const;
+const MAX_PENDING_ENTRIES = 4;
+const MAX_PENDING_BODY_BYTES = 96 * 1024;
+/** Worker-local, bounded verified wording for entries awaiting continuation.
+ *  It never outlives a completed entry or crosses a selected-release change. */
+const PENDING_TEXT = new WeakMap<object, { releaseId: string; entries: Map<string, SpanEvidence> }>();
+function pendingText(session: ReadSession): Map<string, SpanEvidence> {
+  const previous = PENDING_TEXT.get(session.objects);
+  if (previous?.releaseId === session.release.id) return previous.entries;
+  const entries = new Map<string, SpanEvidence>();
+  PENDING_TEXT.set(session.objects, { releaseId: session.release.id, entries });
+  return entries;
+}
 type Position = [string, string, string];
 export interface AidWorkload { mode: string; depth: string; language: string; lookup: string; key: string; sources: string[] | null }
 
@@ -36,6 +48,7 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
     if (state.pos) { const pos = state.pos as {offset: number; entry: string}; offset = pos.offset; anchor = pos.entry; }
   }
   const start = after;
+  const pending = pendingText(session);
   const query = input.lookup === 'lexicon' ? 'lexicon_strong' : input.lookup === 'lexicon_entry' ? 'lexicon_entry' : 'grammar_expansion';
   const page = await session.query(query, { key, after });
   if (anchor !== null && !page.rows.length) throw new ReadError('invalid_request', 'Continuation entry is no longer selected');
@@ -57,10 +70,13 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
       details.linked_entry_keys = [...new Set(details.references.flatMap(ref => Array.isArray(ref) && isIdentifier(ref[0], 200)
         ? [`oshb-bdb:${indexId[1]}:${ref[0]}`] : []))];
     }
-    const read = await readSpans(session, [String(row.span_id)], true);
-    if (read.remaining.length) { remaining = true; break; }
-    limitations.push(...read.limitations);
-    const span = read.spans[0];
+    const entryKey = JSON.stringify([row.output_id, row.span_id, row.id, row.source_revision_id]);
+    const cached = anchor !== null && offset > 0 ? pending.get(entryKey) : undefined;
+    if (cached) { pending.delete(entryKey); pending.set(entryKey, cached); }
+    const read = cached ? null : await readSpans(session, [String(row.span_id)], true);
+    if (read?.remaining.length) { remaining = true; break; }
+    if (read) limitations.push(...read.limitations);
+    const span = cached ?? read?.spans[0];
     if (!span && anchor !== null) { anchor = null; offset = 0; }
     if (span) {
       if (span.text === null) limitations.push(limitation('missing_evidence', span.span_id, 'The source has no entry body here'));
@@ -94,7 +110,16 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
         bytes = utf8Length(canonicalJson(item));
         session.budget.spendResult(bytes);
         evidence.push(item);
-        if (low < chars.length) { offset = low; anchor = String(row.id); remaining = true; break; }
+        if (low < chars.length) {
+          // Keep only verified, unfinished source wording, not assembled responses.
+          if (utf8Length(span.text[0]) <= MAX_PENDING_BODY_BYTES) {
+            pending.delete(entryKey);
+            pending.set(entryKey, span);
+            if (pending.size > MAX_PENDING_ENTRIES) pending.delete(pending.keys().next().value!);
+          }
+          offset = low; anchor = String(row.id); remaining = true; break;
+        }
+        pending.delete(entryKey);
         offset = 0; anchor = null;
       } else {
         session.budget.spendResult(bytes);

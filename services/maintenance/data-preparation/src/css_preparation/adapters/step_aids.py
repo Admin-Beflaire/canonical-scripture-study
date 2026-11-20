@@ -136,6 +136,9 @@ class AidRecipe:
             details = {'entry_id': entry.entry_id, 'entry_key': entry.entry_id,
                        'work_id': entry.work, 'edition_id': entry.edition,
                        'source_revision_id': self.revision, **entry.lookup}
+            if self.component in ('bdb', 'bdb-index'):
+                details['source_limitation'] = ('Open Scriptures BDB is a work in progress; '
+                    'some entries, references and Hebrew words may be incomplete.')
             notes.append(AnnotationSpec(key, key, self.capability, identity.attribution,
                                         {'original': self.revision, 'entry_key': entry.entry_id}, details))
             offset = end + 1

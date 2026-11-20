@@ -73,6 +73,8 @@ class PreparationTest(unittest.TestCase):
                 self.assertEqual(records.rows('prepared_output')[0]['input_revisions_json'], [rev])
                 self.assertTrue(all(row['details_json']['work_id'] == work
                                     for row in records.rows('annotation')))
+                self.assertTrue(all('work in progress' in row['details_json']['source_limitation']
+                                    for row in records.rows('annotation')))
 
     def test_saved_candidate_quality_checks_bdb_output(self):
         from css_preparation.prepare.evidence import OutputBasis

@@ -82,6 +82,7 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   let next: string | null = null;
   const chunks: string[] = [];
   let expectedStart = 0;
+  let firstReadCount = 0;
   for (let i = 0; i < 10; i++) {
     const result = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, next, 'test');
     assert.ok(Buffer.byteLength(JSON.stringify(result)) <= STARTING_LIMITS.resultBytes);
@@ -92,6 +93,13 @@ test('long verified lexical bodies continue without loss and preserve exact sour
       assert.equal(item.span.segments[0].end, expectedStart);
       chunks.push(text);
     }
+    const longReads = f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length;
+    if (i === 0) {
+      firstReadCount = longReads;
+      assert.ok(firstReadCount > 1, 'the first part reads and verifies the source range');
+    } else {
+      assert.equal(longReads, firstReadCount, 'continuation reuses verified wording without R2 reads');
+    }
     next = result.continuation;
     if (!next) break;
   }
@@ -101,6 +109,18 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   const routed = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G1234' }] });
   assert.equal((routed.evidence as unknown[]).length, 1);
   assert.ok(routed.continuation, 'Study selects the larger bounded allowance for language-aid retrieval');
+  const pending = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
+  assert.ok(pending.continuation);
+  f.select('rel-1', 'rel-2');
+  await assert.rejects(
+    aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, pending.continuation, 'test'),
+    /Continuation entry is no longer selected/,
+  );
+  f.select('rel-2', 'rel-1');
+  const beforeReselection = f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length;
+  await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
+  assert.ok(f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length > beforeReselection,
+    'reselected source is verified again after a release change');
   f.bucket.corrupt.add('synthetic/long-body');
   const corrupt = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
   assert.equal(corrupt.evidence.length, 0);

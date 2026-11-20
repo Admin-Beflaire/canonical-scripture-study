@@ -73,6 +73,27 @@ test('two releases: reads are scoped to current release membership only', async 
   assert.deepEqual(spans.rows.map(r => [r.id, r.exact_text]), [['a-old', 'OLD wording']]);
 });
 
+test('language-aid lookups return only selected entries and preserve same-key alternatives', async () => {
+  const fixture = buildFixture();
+  fixture.select(null, null);
+  const insert = fixture.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  const add = (name: string, output: string, span: string, kind: string, details: object) =>
+    insert.run(name, output, A, span, kind, 'synthetic provider', '{}', JSON.stringify(details));
+  add('lex-1', 'syn-ev', 'a-u1', 'lexicon_entry', { strong_base: 'H1234', entry_key: 'lex:one' });
+  add('lex-2', 'syn-ev', 'a-u2', 'lexicon_entry', { strong_base: 'H1234', entry_key: 'lex:two' });
+  add('lex-old', 'syn-ev-old', 'a-old', 'lexicon_entry', { strong_base: 'H1234', entry_key: 'lex:old' });
+  add('grammar-1', 'syn-ev', 'a-u1', 'grammar_expansion', { code: 'Ncmsa' });
+  fixture.select('rel-2', 'rel-1');
+  const session = await ReadSession.open(fixture.env, roomy);
+  const lex = await session.query('lexicon_strong', { key: 'H1234' });
+  assert.deepEqual(lex.rows.map(row => row.id), ['lex-1', 'lex-2']);
+  assert.deepEqual((await session.query('lexicon_entry', { key: 'lex:two' })).rows.map(row => row.id), ['lex-2']);
+  assert.deepEqual((await session.query('grammar_expansion', { key: 'Ncmsa' })).rows.map(row => row.id), ['grammar-1']);
+  fixture.select('rel-1');
+  const old = await ReadSession.open(fixture.env, roomy);
+  assert.deepEqual((await old.query('lexicon_strong', { key: 'H1234' })).rows.map(row => row.id), ['lex-old']);
+});
+
 test('a repeated passage avoids D1 evidence reads after checking the current release', async () => {
   const { env } = buildPassageFixture();
   const input = { units: ['Gen.1.1', 'Gen.1.2'], sources: [HEB] };

@@ -40,6 +40,7 @@ export interface CountsInput { span_id: string }
 export interface CoverageInput { source_revision_ids: string[]; after?: [string, string, string] | null }
 export interface PackagesInput { subject: string; after?: [string] | null }
 export interface StatementInput { [key: string]: never }
+export interface LanguageAidInput { key: string; after?: [string, string, string] | null }
 export interface ReleaseSourcesInput { capability?: string | null; after?: [string, string] | null }
 export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
 export interface UnitSpansInput { units: string[]; sources?: string[] | null; after?: [string, number] | null }
@@ -84,6 +85,14 @@ JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
 WHERE a.span_id IN (SELECT value FROM json_each(?2)) AND (a.span_id, a.id) > (?3, ?4)
 ORDER BY a.span_id, a.id
 LIMIT ?5`;
+
+/** Exact source entries only: the host never supplies a SQL field or an object path. */
+const languageAidQuery = (kind: 'lexicon_entry' | 'grammar_expansion', field: 'strong_base' | 'entry_key' | 'code') => `
+SELECT a.id, a.output_id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
+FROM annotations a JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
+WHERE a.kind = '${kind}' AND json_extract(a.details_json, '$.${field}') = ?2
+  AND (a.output_id, a.span_id, a.id) > (?3, ?4, ?5)
+ORDER BY a.output_id, a.span_id, a.id LIMIT ?6`;
 
 /** A mapping may point to an extracted slice while source-authored notes are attached to the
  * original native verse. Return notes on either selected span, scoped to that source. */
@@ -334,6 +343,12 @@ function readerParams(i: ReaderMappingInput): unknown[] {
 }
 
 export const QUERIES = {
+  lexicon_strong: { sql: languageAidQuery('lexicon_entry', 'strong_base'), params: (i: LanguageAidInput) =>
+    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
+  lexicon_entry: { sql: languageAidQuery('lexicon_entry', 'entry_key'), params: (i: LanguageAidInput) =>
+    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
+  grammar_expansion: { sql: languageAidQuery('grammar_expansion', 'code'), params: (i: LanguageAidInput) =>
+    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
   spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
   literary_overlap: { sql: OVERLAP, params: (i: OverlapInput) => {
     const start = order(i.start), end = order(i.end);

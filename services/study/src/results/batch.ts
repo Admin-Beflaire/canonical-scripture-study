@@ -9,7 +9,8 @@ export type EvidenceItem =
   | { kind: 'source_text'; span: SpanEvidence; role?: 'requested' | 'context'; annotations?: PassageAnnotation[];
       reader_reference?: string; display_role?: 'numbered_text' | 'superscription'; mapping_status?: string; mapping_basis?: unknown;
       literary_part?: number }
-  | { kind: 'search_hit'; hit: SearchHit };
+  | { kind: 'search_hit'; hit: SearchHit }
+  | { kind: 'language_aid'; span: SpanEvidence; provider: string; details: Record<string, unknown> };
 
 /** A recorded note on a verse (for example textual variants), attributed to its provider. */
 export interface PassageAnnotation { kind: string; provider: string; details: Record<string, unknown>; native_span_id?: string }
@@ -45,7 +46,7 @@ function within(outer: NativeSegment[], inner: NativeSegment[]) {
  *  span and coordinates, and any quote appears in that span's selected wording. */
 function supported(citation: Citation, evidence: EvidenceItem[]): boolean {
   return evidence.some(item => {
-    if (item.kind === 'source_text') {
+    if (item.kind === 'source_text' || item.kind === 'language_aid') {
       const s = item.span;
       return s.source_revision_id === citation.source_revision_id && s.span_id === citation.span_id
         && s.coordinate_version === citation.coordinate_version && within(s.segments, citation.segments)

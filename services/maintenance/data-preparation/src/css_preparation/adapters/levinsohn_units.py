@@ -7,7 +7,8 @@ description says that in Matthew this usually marks the major divisions of the b
 
 - reads only `Specific_Circumstance.xml` and only the book of Matthew; other books give no starts;
 - leaves out 9:10, the verse the description itself names beside the Luke-Acts use of the same word;
-- gives each remaining verse as the start of a `section`, to the next such verse. The marked verse
+- gives each remaining verse as the start of a `division`, to the next such verse. A division is larger than a
+  `section`, so editorial sections (for example Berean headings) nest inside it. The marked verse
   closes a discourse ("when Jesus had finished these sayings"), so a start there is verse-level
   placement of a boundary that falls inside that verse.
 
@@ -74,7 +75,7 @@ def levinsohn_starts(book: str, xml: str | bytes) -> tuple[Start, ...]:
         raise RecordError('The LGNTDF file marks no division of Matthew')
     if found != sorted(set(found)):
         raise RecordError('LGNTDF references of Matthew are out of text order')
-    return tuple(Start(f'Mat.{chapter}.{verse}', 'section', LABEL) for chapter, verse in found)
+    return tuple(Start(f'Mat.{chapter}.{verse}', 'division', LABEL) for chapter, verse in found)
 
 
 def levinsohn_units(verses: Sequence[NativeVerse], book: str, xml: str | bytes):

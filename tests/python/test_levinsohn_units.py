@@ -2,13 +2,14 @@
 import unittest
 
 from css_preparation.adapters.levinsohn_units import LABEL, METHOD, PROVIDER, levinsohn_starts, levinsohn_units
+from css_preparation.adapters.berean_units import berean_units
 from css_preparation.adapters.sblgnt_units import sblgnt_units
 from css_preparation.prepare.literary import literary_spans
 from css_preparation.prepare.records import RecordError
 from css_preparation.prepare.unit_builder import build_units
 from css_preparation.adapters.stepbible.prepare import book_text
 
-from test_berean_sblgnt_units import native, verse, xml
+from test_berean_sblgnt_units import native, usfm, verse, xml
 
 
 def feature(*osis, kind='Specific Circumstance', bom=False):
@@ -20,10 +21,10 @@ def feature(*osis, kind='Specific Circumstance', bom=False):
 
 
 class LevinsohnStartsTest(unittest.TestCase):
-    def test_matthew_divisions_are_section_starts_in_text_order(self):
+    def test_matthew_divisions_are_division_starts_in_text_order(self):
         starts = levinsohn_starts('Mat', feature('Matt.7.28!2', 'Matt.11.1!2', 'Matt.26.1!2'))
         self.assertEqual([(s.reference, s.scale, s.label) for s in starts],
-                         [('Mat.7.28', 'section', LABEL), ('Mat.11.1', 'section', LABEL), ('Mat.26.1', 'section', LABEL)])
+                         [('Mat.7.28', 'division', LABEL), ('Mat.11.1', 'division', LABEL), ('Mat.26.1', 'division', LABEL)])
 
     def test_the_verse_the_description_names_for_luke_acts_use_is_left_out(self):
         starts = levinsohn_starts('Mat', feature('Matt.7.28!2', 'Matt.9.10!2', 'Matt.11.1!2'))
@@ -70,7 +71,7 @@ class LevinsohnOnNativeVersesTest(unittest.TestCase):
         self.verses, self.component = native()
         self.order = [v.unit_id for v in self.verses]
 
-    def test_sections_run_to_the_next_division_and_say_they_are_verse_level(self):
+    def test_divisions_run_to_the_next_division_and_say_they_are_verse_level(self):
         proposals = levinsohn_units(self.verses, 'Mat', feature('Matt.1.3!2', 'Matt.1.6!2'))
         self.assertEqual([[u for u, _, _ in p.segments] for p in proposals],
                          [['Mat.1.3', 'Mat.1.4', 'Mat.1.5'], ['Mat.1.6', 'Mat.1.7', 'Mat.1.8']])
@@ -81,10 +82,22 @@ class LevinsohnOnNativeVersesTest(unittest.TestCase):
         lev = levinsohn_units(self.verses, 'Mat', feature('Matt.1.3!2', 'Matt.1.6!2'))
         sbl = sblgnt_units(self.verses, 'Mat', xml(f'<p>{verse(3)}{verse(4)}{verse(5)}</p>', f'<p>{verse(6)}{verse(7)}</p>'))
         units = {u.key: u for u in build_units('Mat', self.order, [*lev, *sbl])}
-        sections = {k: u for k, u in units.items() if ':section:' in k}
+        divisions = {k: u for k, u in units.items() if ':division:' in k}
         paragraphs = [u for k, u in units.items() if ':paragraph:' in k]
-        self.assertEqual(len(sections), 2)
-        self.assertTrue(all(u.parent_key in sections for u in paragraphs))
+        self.assertEqual(len(divisions), 2)
+        self.assertTrue(all(u.parent_key in divisions for u in paragraphs))
+        literary_spans(book_text(self.verses, self.component, 'Mat'), units.values())
+
+    def test_berean_sections_nest_inside_a_levinsohn_division(self):
+        lev = levinsohn_units(self.verses, 'Mat', feature('Matt.1.3!2', 'Matt.1.6!2'))
+        ber = berean_units(self.verses, 'Mat', usfm('\\s1 First', '\\p', '\\v 3 a', '\\v 4 b', '\\s1 Second', '\\p', '\\v 5 c',
+                                                    '\\s1 Third', '\\p', '\\v 6 d'))
+        units = {u.key: u for u in build_units('Mat', self.order, [*lev, *ber])}
+        divisions = {k for k in units if ':division:' in k}
+        sections = [u for k, u in units.items() if ':section:' in k]
+        self.assertEqual(len(divisions), 2)
+        self.assertEqual(len(sections), 3)
+        self.assertTrue(all(u.parent_key in divisions for u in sections))
         literary_spans(book_text(self.verses, self.component, 'Mat'), units.values())
 
 

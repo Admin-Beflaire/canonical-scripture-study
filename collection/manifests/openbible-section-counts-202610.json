@@ -4,9 +4,9 @@
   "provider": "OpenBible.info",
   "origin": "https://www.openbible.info/labs/bible-section-sankeys/",
   "version": "Downloaded 2026-11-20",
-  "licence": "Creative Commons Attribution (CC BY; source does not specify version)",
+  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
   "licence_basis": "https://www.openbible.info/blog/2024/10/explore-bible-sections-pericopes-with-sankey-diagrams/ and https://www.openbible.info/labs/bible-section-sankeys/",
-  "attribution": "OpenBible.info, Bible Section (Pericopes) Sankey Diagrams, https://www.openbible.info/labs/bible-section-sankeys/, Creative Commons Attribution; indicate changes.",
+  "attribution": "OpenBible.info, Bible Section (Pericopes) Sankey Diagrams, https://www.openbible.info/labs/bible-section-sankeys/, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; indicate changes.",
   "url": "https://a.openbible.info/data/bible-section-counts.txt",
   "allowed_hosts": [
     "a.openbible.info"

@@ -107,6 +107,26 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(spans[-1]['reading_kind'], 'gap')
         self.assertEqual(notes[-1]['details_json']['gloss'], 'Sin')
 
+    def test_reviewed_bdb_partition_fits_the_runner_batch(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        ns = 'http://openscriptures.github.com/morphhb/namespace'
+        for name, count in (('bdb', 11845), ('bdb-index', 10221)):
+            with self.subTest(component=name):
+                raw = json.loads((root / 'collection/recipes' / f'language-aids-{name}.json').read_text())
+                reader = AidRecipe.from_recipe(raw)
+                entries = ''.join(f'<entry id="e{i}"><w>word</w></entry>' for i in range(count))
+                if name == 'bdb':
+                    text = f'<lexicon xmlns="{ns}"><part id="a"><section id="s">{entries}</section></part></lexicon>'
+                else:
+                    text = f'<index xmlns="{ns}"><part>{entries}</part></index>'
+                store = Store({reader.revision: text.encode()})
+                unit = raw['units'][0]
+                records = reader.prepare({'kind': 'prepare', 'unit_id': unit['unit_id'],
+                                          'native_extent': unit['native_extent'],
+                                          'input_refs': [{'kind': 'source_revision', 'id': reader.revision}]}, store)
+                self.assertLessEqual(len(records.statements()), 1000)
+
     def test_original_digest_is_checked(self):
         rev = 'fixture-tbesh/1'
         store = Store({rev: HEBREW.encode()})

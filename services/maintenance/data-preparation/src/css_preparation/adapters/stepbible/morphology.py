@@ -25,7 +25,7 @@ class MorphologyExplanation:
 
 def _unquote(text: str) -> str:
     text = text.strip()
-    return text[1:-1] if len(text) >= 2 and text[0] == text[-1] == '"' else text
+    return text[1:-1] if len(text) >= 2 and text[0] == text[-1] == '"' and '"' not in text[1:-1] else text
 
 
 def read_morphology(original: bytes | str, language: Language) -> dict[str, tuple[MorphologyExplanation, ...]]:

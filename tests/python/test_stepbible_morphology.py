@@ -69,6 +69,13 @@ class MorphologyReaderTests(unittest.TestCase):
         self.assertEqual(result['HC'][0].grammar, 'Conjunction')
         self.assertNotIn('made-up', result)
 
+    def test_example_with_two_quoted_phrases_is_preserved(self):
+        original = read_morphology(HEBREW, 'hebrew')
+        self.assertEqual(original['HC'][0].example, '_and_')
+        quoted = HEBREW.replace('"_and_"', '"giving to‚ rich _and_ poor": "and"')
+        parsed = read_morphology(quoted, 'hebrew')
+        self.assertEqual(parsed['HC'][0].example, '"giving to‚ rich _and_ poor": "and"')
+
     def test_greek_brief_full_duplicate_and_legacy_spreadsheet_row(self):
         result = read_morphology(GREEK, 'greek')
         self.assertEqual(result['N-NSF'][0].grammar, 'Noun Nominative Singular Feminine')

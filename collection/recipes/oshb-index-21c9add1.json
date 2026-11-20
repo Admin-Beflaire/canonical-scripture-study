@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "oshb-index-21c9add1",
+  "revision": "oshb-index-21c9add1/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "oshb-index-21c9add1.json"
+  },
+  "native_extent": {
+    "component": "oshb-index-21c9add1/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "oshb-index-21c9add1/1"
+  ],
+  "manifest_revision": "oshb-index-21c9add1/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "oshb-index-21c9add1/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

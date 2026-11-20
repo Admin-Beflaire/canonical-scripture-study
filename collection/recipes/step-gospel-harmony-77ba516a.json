@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "step-gospel-harmony-77ba516a",
+  "revision": "step-gospel-harmony-77ba516a/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "step-gospel-harmony-77ba516a.json"
+  },
+  "native_extent": {
+    "component": "step-gospel-harmony-77ba516a/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "step-gospel-harmony-77ba516a/1"
+  ],
+  "manifest_revision": "step-gospel-harmony-77ba516a/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "step-gospel-harmony-77ba516a/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

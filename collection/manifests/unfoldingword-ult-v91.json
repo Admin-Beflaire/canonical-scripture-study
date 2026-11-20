@@ -1,0 +1,19 @@
+{
+  "manifest_revision": "unfoldingword-ult-v91/1",
+  "source_revision": "unfoldingword-ult-v91/1",
+  "provider": "unfoldingWord / Door43 World Missions Community",
+  "origin": "https://git.door43.org/unfoldingWord/en_ult/releases/tag/v91",
+  "version": "en_ult release v91 (2026-09-26): 27 NT + 32 checked OT books",
+  "licence": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0); attribution and ShareAlike",
+  "licence_basis": "https://unfoldingword.org/for-translators/content/",
+  "attribution": "unfoldingWord Literal Text (ULT) v91, © unfoldingWord; CC BY-SA 4.0; note changes",
+  "url": "https://git.door43.org/api/v1/repos/unfoldingWord/en_ult/archive/v91.zip",
+  "allowed_hosts": [
+    "git.door43.org"
+  ],
+  "max_bytes": 64000000,
+  "expected_sha256": null,
+  "format": "Gitea source ZIP at tag v91; USFM; not a complete 66-book Bible",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

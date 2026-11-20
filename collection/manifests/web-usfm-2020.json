@@ -1,0 +1,20 @@
+{
+  "manifest_revision": "web-usfm-2020/1",
+  "source_revision": "web-usfm-2020/1",
+  "provider": "World English Bible / eBible.org",
+  "origin": "https://ebible.org/find/details.php?id=engwebp",
+  "version": "2020 stable WEB Protestant Edition (official distribution updated 2026-10-30; mutable ZIP)",
+  "licence": "Public Domain; World English Bible is a trademark and altered text should not use that name",
+  "licence_basis": "https://ebible.org/find/details.php?id=engwebp",
+  "attribution": "World English Bible (WEB), public domain; eBible.org; preserve publisher trademark notice",
+  "url": "https://ebible.org/Scriptures/engwebp_usfm.zip",
+  "allowed_hosts": [
+    "ebible.org",
+    "www.ebible.org"
+  ],
+  "max_bytes": 16000000,
+  "expected_sha256": null,
+  "format": "66 books in publisher USFM ZIP; live archive version fixed by acquired SHA-256 receipt",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

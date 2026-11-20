@@ -28,6 +28,24 @@ class AcquireOnlyTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_recipes(Path(d))
 
+    def test_literary_unit_acquisitions_are_private_and_acquire_only(self):
+        names = (
+            'web-usfm-2020', 'unfoldingword-ult-v91', 'unfoldingword-ust-v91',
+            'opentext-context-d9f159c7', 'step-nt-letters-77ba516a',
+            'step-gospel-harmony-77ba516a',
+        )
+        all_recipes = load_recipes()
+        for name in names:
+            with self.subTest(name=name):
+                self.assertIsNotNone(all_recipes[name + '/1'].acquire)
+                self.assertIsNone(all_recipes[name + '/1'].prepare)
+                recipe = json.loads((ROOT / 'collection/recipes' / (name + '.json')).read_text())
+                manifest = AcquireRecipe.from_recipe(recipe).manifest
+                self.assertEqual(manifest['storage'], 'Protected private storage only; never public Git')
+                self.assertEqual(manifest['admission'], 'Owner decision in the Maintenance Control task')
+                self.assertEqual(recipe['dependencies'], [manifest['manifest_revision']])
+                self.assertEqual([u['kind'] for u in recipe['units']], ['acquire'])
+
     def test_private_original_and_receipt(self):
         value = json.loads((ROOT / 'collection/recipes/sblgnt-d7f35adca9ec.json').read_text())
         recipe = AcquireRecipe.from_recipe(value)

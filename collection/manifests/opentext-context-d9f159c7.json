@@ -1,0 +1,20 @@
+{
+  "manifest_revision": "opentext-context-d9f159c7/1",
+  "source_revision": "opentext-context-d9f159c7/1",
+  "provider": "OpenText.org / OpenText-org",
+  "origin": "https://github.com/OpenText-org/context-annotation",
+  "version": "d9f159c7baafaa168e499a8ea7603150cbfe5bcb (2024-05-28)",
+  "licence": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
+  "licence_basis": "https://github.com/OpenText-org/context-annotation/blob/d9f159c7baafaa168e499a8ea7603150cbfe5bcb/LICENSE",
+  "attribution": "OpenText.org context-annotation; CC BY-SA 4.0; indicate changes",
+  "url": "https://github.com/OpenText-org/context-annotation/archive/d9f159c7baafaa168e499a8ea7603150cbfe5bcb.zip",
+  "allowed_hosts": [
+    "github.com",
+    "codeload.github.com"
+  ],
+  "max_bytes": 64000000,
+  "expected_sha256": null,
+  "format": "XML context trees for 27 NT books, n1904 and sblgnt, in a commit-pinned GitHub ZIP",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

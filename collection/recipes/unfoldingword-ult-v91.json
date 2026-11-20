@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "unfoldingword-ult-v91",
+  "revision": "unfoldingword-ult-v91/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "unfoldingword-ult-v91.json"
+  },
+  "native_extent": {
+    "component": "unfoldingword-ult-v91/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "unfoldingword-ult-v91/1"
+  ],
+  "manifest_revision": "unfoldingword-ult-v91/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "unfoldingword-ult-v91/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

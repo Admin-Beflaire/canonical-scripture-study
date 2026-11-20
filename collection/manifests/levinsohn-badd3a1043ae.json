@@ -1,0 +1,20 @@
+{
+  "manifest_revision": "levinsohn-badd3a1043ae/1",
+  "source_revision": "levinsohn-badd3a1043ae/1",
+  "provider": "SIL International; Stephen H. Levinsohn",
+  "origin": "https://github.com/biblicalhumanities/levinsohn",
+  "version": "badd3a1043aebfa9907d0515069a4be1dd6eeb7a",
+  "licence": "SIL LGNTDF End-User License Agreement: free distribution, not sold on its own; commercial use and larger works subject to conditions",
+  "licence_basis": "https://github.com/biblicalhumanities/levinsohn/blob/badd3a1043aebfa9907d0515069a4be1dd6eeb7a/LICENSE.md",
+  "attribution": "Levinsohn Greek New Testament Discourse Features, copyright 2016 SIL International®. Fewer than 50 references: © SIL International after each quotation; 50 or more: use the full licence statement and links. Greek text referenced is NA27/UBS4.",
+  "url": "https://github.com/biblicalhumanities/levinsohn/archive/badd3a1043aebfa9907d0515069a4be1dd6eeb7a.zip",
+  "allowed_hosts": [
+    "github.com",
+    "codeload.github.com"
+  ],
+  "max_bytes": 3000000,
+  "expected_sha256": "28bc47e59fb35e0052c7bea12cd6a07ecaedcd7136eea11fe48575f886f5fe9e",
+  "byte_count": 929584,
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

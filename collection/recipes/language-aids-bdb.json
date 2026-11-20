@@ -1,0 +1,459 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "language-aids-bdb",
+  "revision": "language-aids-bdb/1",
+  "adapter": {
+    "name": "language-aids",
+    "method_version": "language-aids/1"
+  },
+  "input_format": "language-aids/original",
+  "parameters": {
+    "component": "bdb",
+    "commit": "21c9add13bc727d3a951361778e97e3ff7afd1ce",
+    "source_revision": "oshb-bdb-21c9add1/1",
+    "partitions": 32
+  },
+  "native_extent": {
+    "component": "oshb-bdb-21c9add1/1",
+    "coordinate_version": "language-aids/bdb/1"
+  },
+  "capabilities": [
+    "lexicon_entry"
+  ],
+  "dependencies": [
+    "oshb-bdb-21c9add1/1"
+  ],
+  "manifest_revision": "oshb-bdb-21c9add1/1",
+  "units": [
+    {
+      "unit_id": "prepare-000",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p000"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-001",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p001"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-002",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p002"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-003",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p003"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-004",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p004"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-005",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p005"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-006",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p006"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-007",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p007"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-008",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p008"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-009",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p009"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-010",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p010"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-011",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p011"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-012",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p012"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-013",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p013"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-014",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p014"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-015",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p015"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-016",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p016"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-017",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p017"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-018",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p018"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-019",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p019"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-020",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p020"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-021",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p021"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-022",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p022"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-023",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p023"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-024",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p024"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-025",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p025"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-026",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p026"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-027",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p027"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-028",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p028"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-029",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p029"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-030",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p030"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-031",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p031"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "unit_ids": [
+          "p000",
+          "p001",
+          "p002",
+          "p003",
+          "p004",
+          "p005",
+          "p006",
+          "p007",
+          "p008",
+          "p009",
+          "p010",
+          "p011",
+          "p012",
+          "p013",
+          "p014",
+          "p015",
+          "p016",
+          "p017",
+          "p018",
+          "p019",
+          "p020",
+          "p021",
+          "p022",
+          "p023",
+          "p024",
+          "p025",
+          "p026",
+          "p027",
+          "p028",
+          "p029",
+          "p030",
+          "p031"
+        ],
+        "coordinate_version": "language-aids/bdb/1"
+      },
+      "depends_on": [
+        "prepare-000",
+        "prepare-001",
+        "prepare-002",
+        "prepare-003",
+        "prepare-004",
+        "prepare-005",
+        "prepare-006",
+        "prepare-007",
+        "prepare-008",
+        "prepare-009",
+        "prepare-010",
+        "prepare-011",
+        "prepare-012",
+        "prepare-013",
+        "prepare-014",
+        "prepare-015",
+        "prepare-016",
+        "prepare-017",
+        "prepare-018",
+        "prepare-019",
+        "prepare-020",
+        "prepare-021",
+        "prepare-022",
+        "prepare-023",
+        "prepare-024",
+        "prepare-025",
+        "prepare-026",
+        "prepare-027",
+        "prepare-028",
+        "prepare-029",
+        "prepare-030",
+        "prepare-031"
+      ],
+      "required_capabilities": [
+        "lexicon_entry"
+      ]
+    }
+  ]
+}

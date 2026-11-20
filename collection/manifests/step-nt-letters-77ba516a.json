@@ -1,0 +1,19 @@
+{
+  "manifest_revision": "step-nt-letters-77ba516a/1",
+  "source_revision": "step-nt-letters-77ba516a/1",
+  "provider": "STEPBible.org",
+  "origin": "https://github.com/STEPBible/step/tree/77ba516a9c1995f3820a6b64a16b5d74c01298b0",
+  "version": "step commit 77ba516a9c1995f3820a6b64a16b5d74c01298b0; no separate dataset version",
+  "licence": "BSD 3-Clause (stated in step repository); no separate licence stated in this JSON",
+  "licence_basis": "https://github.com/STEPBible/step/blob/77ba516a9c1995f3820a6b64a16b5d74c01298b0/LICENSE.md",
+  "attribution": "STEPBible.org New Testament Letter Structure; based on Ware, Synopsis of Pauline Letters (Hendrickson, 2010); retain BSD notice",
+  "url": "https://raw.githubusercontent.com/STEPBible/step/77ba516a9c1995f3820a6b64a16b5d74c01298b0/step-web/src/main/webapp/html/json/nt_letters.json",
+  "allowed_hosts": [
+    "raw.githubusercontent.com"
+  ],
+  "max_bytes": 100000,
+  "expected_sha256": null,
+  "format": "JSON table of NT letter/rhetorical sections (22 rows); not full NT",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

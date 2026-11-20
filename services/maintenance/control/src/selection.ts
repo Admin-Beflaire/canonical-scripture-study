@@ -498,9 +498,12 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
   if (check.problems.length) return refuse(`The candidate release no longer validates: ${check.problems[0]}`);
   let releaseId = built.candidate.release_id;
   if (current.current_release_id !== built.candidate.base_release_id) {
-    const source = await db.prepare('SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?')
-      .bind(built.candidate.release_id).first<{ manifest_revision: string; recipe_revision: string; coverage_basis: string }>();
+    const source = await db.prepare('SELECT manifest_revision, recipe_revision FROM releases WHERE id = ?')
+      .bind(built.candidate.release_id).first<{ manifest_revision: string; recipe_revision: string }>();
     if (!source || !build.quality_ref || !build.scope_ref) return refuse('The checked candidate metadata is missing.');
+    const coverageRows = await inChunks<{ output_id: string; capability: string; state: string }>(db, marks =>
+      `SELECT output_id, capability, state FROM coverage WHERE output_id IN (${marks})`, combined.ids);
+    const coverage = `sha256:${await sha256(canonicalJson(coverageRows.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
     const report = { build: build.id, candidate: built.candidate.release_id, base: current.current_release_id, members: combined.ids };
     const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
     releaseId = `release-${(await sha256(canonicalJson({ members: combined.ids, quality: build.quality_ref, scope: scopeRef }))).slice(0, 32)}`;
@@ -508,7 +511,7 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
     await db.batch([
       db.prepare(`INSERT OR IGNORE INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
         VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .bind(releaseId, source.manifest_revision, source.recipe_revision, canonicalJson(releaseVersions(items)), source.coverage_basis, build.quality_ref, scopeRef),
+        .bind(releaseId, source.manifest_revision, source.recipe_revision, canonicalJson(releaseVersions(items)), coverage, build.quality_ref, scopeRef),
       db.prepare('INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?)')
         .bind(releaseId, JSON.stringify(combined.ids)),
     ]);

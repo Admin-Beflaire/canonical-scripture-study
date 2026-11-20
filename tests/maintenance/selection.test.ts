@@ -412,9 +412,19 @@ test('two independently checked builds can both be released, retaining both outp
   assert.equal(genRelease.report.state, 'completed');
   const exoRelease = await releaseBuild(w, exo.taskId, 'parallel-release-exo');
   assert.equal(exoRelease.report.state, 'completed', JSON.stringify(exoRelease.report.limitations));
-  const all = membersOf(w, selected(w).current_release_id);
+  const releaseId = selected(w).current_release_id;
+  const all = membersOf(w, releaseId);
   assert.equal(all.length, 6);
   assert.ok(genIds.every(id => all.includes(id)));
+  const rows = w.db.sqlite.prepare(`SELECT c.output_id, c.capability, c.state FROM coverage c
+    JOIN release_outputs ro ON ro.output_id = c.output_id WHERE ro.release_id = ?`).all(releaseId) as
+    Array<{ output_id: string; capability: string; state: string }>;
+  const expected = `sha256:${sha(JSON.stringify(rows.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
+  const actual = w.db.sqlite.prepare('SELECT coverage_basis FROM releases WHERE id = ?').get(releaseId) as { coverage_basis: string };
+  assert.equal(actual.coverage_basis, expected, 'coverage includes both the retained and newly added outputs');
+  const candidate = (await taskReport(w.db, owner, exo.taskId))!.selection.candidate_release_id;
+  const prior = w.db.sqlite.prepare('SELECT coverage_basis FROM releases WHERE id = ?').get(candidate) as { coverage_basis: string };
+  assert.notEqual(actual.coverage_basis, prior.coverage_basis, 'the build-only coverage is not reused');
 });
 
 test('a lost selection response is settled by reading the selection back', async () => {

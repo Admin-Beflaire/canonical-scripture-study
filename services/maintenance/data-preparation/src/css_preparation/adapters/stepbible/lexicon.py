@@ -13,8 +13,6 @@ import re
 from ...prepare.records import RecordError
 from .format import Language
 
-SOURCE_COMMIT = '5de0a47f35f0fc13dfe1430d104e5db8a4285f9c'
-EDITION = f'STEPBible-Data:{SOURCE_COMMIT}'
 _WORKS = {
     'hebrew': ('TBESH', 'H', 'eStrong#', 'Hebrew'),
     'greek': ('TBESG', 'G', 'eStrong', 'Greek'),
@@ -39,14 +37,18 @@ class LexiconEntry:
     definition: str | None           # TBESH Meaning excluded pending permission
 
 
-def read_lexicon(original: bytes | str, language: Language) -> tuple[LexiconEntry, ...]:
+def read_lexicon(original: bytes | str, language: Language, *, commit: str) -> tuple[LexiconEntry, ...]:
     """Read each native entry in source order, preserving homonyms as separate rows.
 
     Caller provides the acquired B1 original. The reader does not fetch, write,
     prepare, index or publish any data. Greek definitions keep source markup.
+    Pass the pinned commit from the recipe parameters, as with Component.commit.
     """
     if language not in _WORKS:
         raise RecordError('Unknown STEP lexicon language')
+    if not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit):
+        raise RecordError('Recipe does not declare a pinned STEP commit')
+    edition = f'STEPBible-Data:{commit}'
     work, prefix, first_header, form_header = _WORKS[language]
     try:
         text = original.decode('utf-8-sig') if isinstance(original, bytes) else original.lstrip('\ufeff')
@@ -80,7 +82,7 @@ def read_lexicon(original: bytes | str, language: Language) -> tuple[LexiconEntr
             raise RecordError(f'Line {line_number}: duplicate native {work} entry {native_id}')
         seen.add(native_id)
         entries.append(LexiconEntry(
-            work, EDITION, f'{work.lower()}:{SOURCE_COMMIT}:{native_id}',
+            work, edition, f'{work.lower()}:{commit}:{native_id}',
             e_strongs, native_id, d_match[2] or '', unified,
             lemma, transliteration, morphology, gloss,
             definition if language == 'greek' else None))

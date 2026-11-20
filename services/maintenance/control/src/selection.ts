@@ -359,7 +359,7 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
 /** Select a saved, checked release in one guarded batch: base, task revision, candidate and exclusion state
  *  must be unchanged. `scope` supplies the exclusion changes that commit with the selection. */
 async function selectSaved(db: D1Database, taskId: string, revision: number, scope: Scope, releaseId: string, base: string | null,
-  exclusions: string, checked: Outcome, build?: { id: string; revision: number; outcome: Outcome }): Promise<SelectResult> {
+  exclusions: string, checked: Outcome, build?: { id: string; revision: number; outcome: Outcome; candidate: string }): Promise<SelectResult> {
   const token = crypto.randomUUID();
   const done: Outcome = { ...checked, completion: token, selection: { current_release_id: releaseId, became_current: true } };
   const selected = `(SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`;
@@ -372,7 +372,7 @@ async function selectSaved(db: D1Database, taskId: string, revision: number, sco
           AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)
           ${buildGuard}
           AND ${EXCLUSION_STATE} = ?`)
-        .bind(releaseId, base, releaseId, taskId, revision, releaseId, ...(build ? [build.id, build.revision, releaseId] : []), exclusions),
+        .bind(releaseId, base, releaseId, taskId, revision, releaseId, ...(build ? [build.id, build.revision, build.candidate] : []), exclusions),
       db.prepare(`UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
         WHERE id = ? AND revision = ? AND state = 'checked' AND ${selected} AND ${EXCLUSION_STATE} = ?`)
         .bind(canonicalJson(done), taskId, revision, releaseId, exclusions),
@@ -455,8 +455,8 @@ export async function checkAndSelect(db: D1Database, objects: ObjectStore | null
   { ...outcome, checks: { ...outcome.checks, quality: 'passed' }, scope_report: report }, select);
 }
 
-/** A release task: make the checked candidate of a finished build current. The build is never rebuilt here;
- *  if the current release or the exclusions changed since the build, the build must be run again. */
+/** A release can apply a checked build's changes to a newer selection when they do not
+ *  conflict. The saved output is reused; the combined release is checked again. */
 export async function releaseCandidate(db: D1Database, objects: ObjectStore | null, task: TaskRow): Promise<SelectResult> {
   const outcome = JSON.parse(task.outcome_json) as Outcome;
   const scope = JSON.parse(task.scope_json) as Scope;
@@ -472,37 +472,65 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
     return refuse('The candidate must be a checked build that is not cancelled or superseded, with quality and scope checks passed.');
   const current = await selection(db);
   if (current.current_release_id === built.candidate.release_id) return refuse('This candidate is already current.');
-  // A release left checked by an interruption keeps its recorded candidate and selects again below.
-  if (task.state === 'checked' && task.candidate_release_id !== built.candidate.release_id)
-    return refuse('The recorded candidate no longer matches the build; request the release again.');
   const exclusions = await exclusionState(db);
-  if (current.current_release_id !== built.candidate.base_release_id)
-    return refuse('The current release changed after this build; run the build again.');
   if (exclusions !== built.candidate.exclusions) return refuse('The source exclusions changed after this build; run the build again.');
-  // Re-judge the saved candidate whole, as the build did: what it adds, and what it keeps from the current release.
-  const items = await members(db, built.candidate.release_id);
-  const kept = new Set((await members(db, current.current_release_id)).map(item => item.id));
+  const original = await members(db, built.candidate.base_release_id);
+  const candidate = await members(db, built.candidate.release_id);
+  const currentItems = await members(db, current.current_release_id);
+  const originalIds = new Set(original.map(item => item.id));
+  const candidateIds = new Set(candidate.map(item => item.id));
+  const currentIds = new Set(currentItems.map(item => item.id));
+  const added = candidate.filter(item => !originalIds.has(item.id));
+  const removed = original.filter(item => !candidateIds.has(item.id));
+  const concurrent = currentItems.filter(item => !originalIds.has(item.id) && !candidateIds.has(item.id));
+  const replaces = new Set(Array.isArray(buildScope.constraints.replaces) ? buildScope.constraints.replaces as string[] : []);
+  if (concurrent.some(item => replaces.has(item.revisions[0]) || [...added, ...removed].some(change => overlaps(item, change))))
+    return refuse('A newer release changed the same source extent; prepare this change again.');
+  const removedIds = new Set(removed.map(item => item.id));
+  const combined = membership(currentItems.filter(item => !removedIds.has(item.id)), added, new Set(), new Set());
+  if (combined.problems.length) return refuse(`The combined release cannot be selected: ${combined.problems[0]}`);
+  const items = combined.all;
   const listed = (await db.prepare('SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?').bind(built.candidate.release_id)
     .first<{ total: number }>())!.total;
   const check = await validateMembers(db, await storedSizes(objects), items,
-    { added: new Set(items.filter(item => !kept.has(item.id)).map(item => item.id)), approved: null, lifted: new Set(liftedBy(buildScope)) });
-  if (listed !== items.length) check.problems.unshift(`${listed - items.length} listed output(s) are not saved`);
+    { added: new Set(added.filter(item => !currentIds.has(item.id)).map(item => item.id)), approved: null, lifted: new Set(liftedBy(buildScope)) });
+  if (listed !== candidate.length) check.problems.unshift(`${listed - candidate.length} listed output(s) are not saved`);
   if (check.problems.length) return refuse(`The candidate release no longer validates: ${check.problems[0]}`);
+  let releaseId = built.candidate.release_id;
+  if (current.current_release_id !== built.candidate.base_release_id) {
+    const source = await db.prepare('SELECT manifest_revision, recipe_revision FROM releases WHERE id = ?')
+      .bind(built.candidate.release_id).first<{ manifest_revision: string; recipe_revision: string }>();
+    if (!source || !build.quality_ref || !build.scope_ref) return refuse('The checked candidate metadata is missing.');
+    const coverageRows = await inChunks<{ output_id: string; capability: string; state: string }>(db, marks =>
+      `SELECT output_id, capability, state FROM coverage WHERE output_id IN (${marks})`, combined.ids);
+    const coverage = `sha256:${await sha256(canonicalJson(coverageRows.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
+    const report = { build: build.id, candidate: built.candidate.release_id, base: current.current_release_id, members: combined.ids };
+    const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
+    releaseId = `release-${(await sha256(canonicalJson({ members: combined.ids, quality: build.quality_ref, scope: scopeRef }))).slice(0, 32)}`;
+    // The selection transaction below still guards both the current release and original build.
+    await db.batch([
+      db.prepare(`INSERT OR IGNORE INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .bind(releaseId, source.manifest_revision, source.recipe_revision, canonicalJson(releaseVersions(items)), coverage, build.quality_ref, scopeRef),
+      db.prepare('INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?)')
+        .bind(releaseId, JSON.stringify(combined.ids)),
+    ]);
+  }
   // Record the candidate on this task (once), then select it with the build's own exclusion changes.
   let revision = task.revision;
-  if (task.state !== 'checked') {
+  if (task.state !== 'checked' || task.candidate_release_id !== releaseId || task.base_release_id !== current.current_release_id) {
     const recorded = await db.prepare(`UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
-        quality_ref = ?, scope_ref = ? WHERE id = ? AND revision = ? AND state IN ('queued','running')`)
-      .bind(built.candidate.base_release_id, built.candidate.release_id, build.quality_ref, build.scope_ref, task.id, task.revision).run();
+        quality_ref = ?, scope_ref = ? WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
+      .bind(current.current_release_id, releaseId, build.quality_ref, build.scope_ref, task.id, task.revision).run();
     if (!recorded.meta.changes) {
       const now = await db.prepare('SELECT state FROM maintenance_tasks WHERE id = ?').bind(task.id).first<{ state: string }>();
       return { state: now?.state ?? 'unknown' };
     }
     revision += 1;
   }
-  return selectSaved(db, task.id, revision, buildScope, built.candidate.release_id, built.candidate.base_release_id, exclusions,
+  return selectSaved(db, task.id, revision, buildScope, releaseId, current.current_release_id, exclusions,
     { ...outcome, checks: built.checks, limitations: [...outcome.limitations, ...check.notes] },
-    { id: build.id, revision: build.revision, outcome: built });
+    { id: build.id, revision: build.revision, outcome: built, candidate: built.candidate.release_id });
 }
 
 /** Validate a saved release whole before selecting it again (rollback, restore). The deployed

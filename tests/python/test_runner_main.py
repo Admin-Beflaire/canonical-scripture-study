@@ -18,6 +18,7 @@ from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorag
 from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
 from css_preparation.runner.web import Origin, ProviderError
+from css_preparation.runner.diagnostics import DiagnosticRecorder
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi
 from stepbible_fixture import recipe as stepbible_recipe
@@ -327,6 +328,22 @@ class RunnerTest(unittest.TestCase):
         code, status, _ = self.main(self.environ(self.job(unit_id='unit-again')))
         self.assertEqual(code, 1)
         self.assertTrue(status.endswith('Control rejected the result.\n'))
+
+    def test_executor_failure_reaches_diagnostic_artifact(self):
+        def fail(job, storage):
+            raise RecordError('Acquisition failed: bing-nt-outlines-2024/1: server answered 403')
+        self.recipe = Recipe(prepare=fail)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'diagnostics.jsonl'
+            recorder = DiagnosticRecorder(str(path), run_id=RUN_ID, kind='prepare')
+            result = runner.run_job(self.job(), 'prepare', run_id=RUN_ID, control=self.client,
+                                    storage=self.storage, recipes={'recipe-1': self.recipe},
+                                    on_error=recorder.exception)
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual(result['diagnostics'][0]['code'], 'invalid_or_unavailable_output')
+        self.assertEqual(rows[0]['detail'],
+                         'Acquisition failed: bing-nt-outlines-2024/1: server answered 403')
+        self.assertEqual(rows[0]['stage'], 'building_output')
 
 
 if __name__ == '__main__':

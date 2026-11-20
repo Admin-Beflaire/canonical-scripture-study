@@ -89,9 +89,10 @@ jobs:
           exit "$code"
       - name: Retain structured diagnostics for one day
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.job }}
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
           path: ${{ runner.temp }}/preparation-diagnostics.jsonl
           if-no-files-found: ignore
           retention-days: 1
@@ -134,9 +135,10 @@ jobs:
           exit "$code"
       - name: Retain structured diagnostics for one day
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.job }}
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
           path: ${{ runner.temp }}/preparation-diagnostics.jsonl
           if-no-files-found: ignore
           retention-days: 1
@@ -179,9 +181,10 @@ jobs:
           exit "$code"
       - name: Retain structured diagnostics for one day
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.job }}
+          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
           path: ${{ runner.temp }}/preparation-diagnostics.jsonl
           if-no-files-found: ignore
           retention-days: 1

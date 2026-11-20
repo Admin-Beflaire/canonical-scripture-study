@@ -4,12 +4,14 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 from css_preparation.contracts import contract_errors
 from css_preparation.executor import ControlState
 from css_preparation.executor.checkpoints import CheckpointStore
 from css_preparation.executor.quality import check_candidate_quality
+from css_preparation.runner.diagnostics import DiagnosticRecorder
 from css_preparation.prepare.records import ReaderBoundaryError, RecordError
 from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, text_a
@@ -45,7 +47,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         return self.received[ref['artifact_id']]
 
     def invoke(self, *, job=None, rows=None, native=None, receipts=None, inventory=None,
-               control=None, read_blob=None):
+               control=None, read_blob=None, on_error=None):
         job = dict(job or self.job)
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         state = ControlState(
@@ -61,7 +63,8 @@ class CandidateQualityStageFive(unittest.TestCase):
             read_rows=rows or (lambda kind, *_: self.saved.rows(kind)),
             read_blob=read_blob or self.saved.blobs.__getitem__,
             read_source=native or (lambda _: text_a()),
-            receipts=receipts or self.receipts)
+            receipts=receipts or self.receipts,
+            on_error=on_error)
 
     def test_valid_saved_candidate_receipt_repeats_exact_identity_and_actual_coverage(self):
         result = self.invoke()
@@ -114,6 +117,34 @@ class CandidateQualityStageFive(unittest.TestCase):
                          'message': 'Quality failure during saving_receipt; detail unavailable'}])
         self.assertIsNone(failed['quality_receipt_ref'])
 
+    def test_quality_failure_diagnostic_keeps_cause_without_private_text(self):
+        def fail_rows(*_):
+            raise RecordError('private source words and secret token')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'diagnostics.jsonl'
+            recorder = DiagnosticRecorder(str(path), run_id='123', kind='quality')
+            result = self.invoke(rows=fail_rows, on_error=recorder.exception)
+            recorded = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual(result['diagnostics'], [{'code': 'quality_failed',
+                         'message': 'Quality failure during validating_candidate; detail unavailable'}])
+        self.assertEqual(len(recorded), 1)
+        self.assertEqual(recorded[0]['stage'], 'validating_candidate')
+        self.assertEqual(recorded[0]['exception'], 'RecordError')
+        self.assertNotIn('private source words', json.dumps(recorded))
+        self.assertNotIn('secret token', json.dumps(recorded))
+
+    def test_quality_control_provider_diagnostic_keeps_status(self):
+        def fail_control(*_):
+            raise ProviderError('credential and response text', status=503)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'diagnostics.jsonl'
+            recorder = DiagnosticRecorder(str(path), run_id='123', kind='quality')
+            result = self.invoke(control=fail_control, on_error=recorder.exception)
+            recorded = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(recorded[0]['stage'], 'control_check')
+        self.assertEqual(recorded[0]['http_status'], 503)
+        self.assertNotIn('credential and response text', json.dumps(recorded))
     def test_quality_provider_failure_retains_receipt_stage(self):
         def fail(_):
             raise ProviderError('private', status=503)

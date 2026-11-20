@@ -125,7 +125,8 @@ def run_job(job_text: str, kind: str, *, run_id: str, control: ControlClient, st
                 job_json, **gate, inventory=_inventory(job, storage), read_rows=storage.read_rows,
                 read_blob=storage.read_blob, read_source=lambda revision: recipe.read_source(revision, storage),
                 receipts=storage.record_store('receipts'),
-                read_reader_references=(lambda job: read_mappings(job, storage)) if read_mappings else None)
+                read_reader_references=(lambda job: read_mappings(job, storage)) if read_mappings else None,
+                on_error=on_error)
         module = getattr(recipe, kind)
         if module is None:
             return _result(job, run_id, 'failed', diagnostics=_diagnostic('no_registered_recipe'))

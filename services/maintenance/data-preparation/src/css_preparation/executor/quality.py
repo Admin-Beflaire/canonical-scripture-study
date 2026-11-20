@@ -29,6 +29,7 @@ def check_candidate_quality(
     receipts: CheckpointStore,
     max_page_bytes: int = PAGE_CAP,
     read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
+    on_error: Callable[[str, BaseException], None] | None = None,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)
@@ -44,6 +45,10 @@ def check_candidate_quality(
             checkpoint_ref=job['checkpoint_ref'],
             quality_receipt_ref=fields.get('quality_receipt_ref'),
             state=state, diagnostics=fields.get('diagnostics', []))
+
+    def report(stage: str, error: BaseException) -> None:
+        if on_error is not None:
+            on_error(stage, error)
 
     def process(entry: dict[str, Any]) -> dict[str, Any]:
         stage = 'validating_candidate'
@@ -104,10 +109,13 @@ def check_candidate_quality(
         except UnitNotRunnable:
             raise  # A late cancellation is not a failed quality check.
         except ReaderBoundaryError as error:
+            report(stage, error)
             return result('failed', diagnostics=[{'code': 'reader_boundary', 'message': str(error)}])
         except ProviderError as error:
+            report(stage, error)
             return result('failed', diagnostics=[{'code': 'provider_failure', 'message': provider_diagnostic(error, stage)}])
-        except (RecordError, KeyError, ValueError, UnicodeError, OSError):
+        except (RecordError, KeyError, ValueError, UnicodeError, OSError) as error:
+            report(stage, error)
             return result('failed', diagnostics=[{
                 'code': 'quality_failed', 'message': quality_diagnostic(stage)}])
 
@@ -115,8 +123,10 @@ def check_candidate_quality(
         return execute_unit(job_json, run_id=run_id, read_control=read_control,
                             registered=registered, process=process)
     except ProviderError as error:
+        report('control_check', error)
         return result('failed', diagnostics=[{'code': 'provider_failure',
                       'message': provider_diagnostic(error, 'control_check')}])
-    except OSError:
+    except OSError as error:
+        report('control_check', error)
         return result('failed', diagnostics=[{'code': 'quality_failed',
                       'message': quality_diagnostic('control_check')}])

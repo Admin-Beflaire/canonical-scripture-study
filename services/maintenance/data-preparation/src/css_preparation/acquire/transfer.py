@@ -17,6 +17,8 @@ import urllib.parse
 import urllib.request
 
 CHUNK = 1 << 16
+# A named agent is already used by the preparation HTTP client; some public sources reject Python-urllib.
+USER_AGENT = 'canonical-scripture-study-preparation'
 
 
 class TransferError(RuntimeError):
@@ -79,7 +81,7 @@ def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | N
             saved = None  # unusable state: start again from zero
     offset = partial.stat().st_size if saved else 0
 
-    request = urllib.request.Request(route.url, headers={'Accept-Encoding': 'identity'})
+    request = urllib.request.Request(route.url, headers={'Accept-Encoding': 'identity', 'User-Agent': USER_AGENT})
     if credential:
         # Unredirected: urllib never copies it to a redirect target.
         request.add_unredirected_header(*credential)

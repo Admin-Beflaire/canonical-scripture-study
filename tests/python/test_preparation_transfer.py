@@ -6,7 +6,7 @@ import tempfile
 import threading
 import unittest
 
-from css_preparation.acquire.transfer import Route, TransferError, transfer
+from css_preparation.acquire.transfer import Route, TransferError, USER_AGENT, transfer
 
 BODY = b'0123456789' * 100
 SEEN = []
@@ -43,7 +43,10 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(BODY[:400])
             self.close_connection = True
             return
-        if self.path not in ('/file', '/big', '/other'):
+        if self.path == '/need-named-agent' and self.headers.get('User-Agent') != USER_AGENT:
+            self.send_error(406)
+            return
+        if self.path not in ('/file', '/big', '/other', '/need-named-agent'):
             self.send_error(404)
             return
         body = BODY * 20 if self.path == '/big' else BODY.upper().replace(b'0', b'X') if self.path == '/other' else BODY
@@ -100,6 +103,11 @@ class TransferTest(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), BODY)
         with self.assertRaises(TransferError):
             transfer(self.route(expected_sha256='0' * 64), Path(self.directory.name) / 'other.bin')
+
+    def test_public_server_rejecting_python_default_agent_accepts_named_agent(self):
+        result = transfer(self.route('/need-named-agent'), self.target)
+        self.assertTrue(result.complete)
+        self.assertEqual(self.target.read_bytes(), BODY)
 
     def test_interrupted_transfer_of_unknown_length_is_not_complete(self):
         result = transfer(self.route('/chunked-drop'), self.target)

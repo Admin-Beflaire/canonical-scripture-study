@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "openbible-cross-references",
+  "revision": "openbible-cross-references/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "openbible-cross-references.json"
+  },
+  "native_extent": {
+    "component": "openbible-cross-references/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "openbible-cross-references/1"
+  ],
+  "manifest_revision": "openbible-cross-references/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "openbible-cross-references/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

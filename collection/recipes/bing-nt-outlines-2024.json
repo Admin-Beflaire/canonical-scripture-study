@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "bing-nt-outlines-2024",
+  "revision": "bing-nt-outlines-2024/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "bing-nt-outlines-2024.json"
+  },
+  "native_extent": {
+    "component": "bing-nt-outlines-2024/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "bing-nt-outlines-2024/1"
+  ],
+  "manifest_revision": "bing-nt-outlines-2024/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "bing-nt-outlines-2024/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

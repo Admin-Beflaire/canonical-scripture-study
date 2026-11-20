@@ -1,0 +1,20 @@
+{
+  "manifest_revision": "openbible-section-counts-202610/1",
+  "source_revision": "openbible-section-counts-202610/1",
+  "provider": "OpenBible.info",
+  "origin": "https://www.openbible.info/labs/bible-section-sankeys/",
+  "version": "Downloaded 2026-11-20",
+  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "licence_basis": "https://www.openbible.info/blog/2024/10/explore-bible-sections-pericopes-with-sankey-diagrams/ and https://www.openbible.info/labs/bible-section-sankeys/",
+  "attribution": "OpenBible.info, Bible Section (Pericopes) Sankey Diagrams, https://www.openbible.info/labs/bible-section-sankeys/, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; indicate changes.",
+  "url": "https://a.openbible.info/data/bible-section-counts.txt",
+  "allowed_hosts": [
+    "a.openbible.info"
+  ],
+  "max_bytes": 1000000,
+  "expected_sha256": "5e9e838d0226c6106ff8c578aa5c1cb8fa8b206f0fb83f784aa1613cc50e26e8",
+  "byte_count": 398925,
+  "format": "UTF-8 tab-separated text; columns: start verse, end verse, verse after end (same as end at book end), count of translations out of 20. Aggregated counts, not individual translation identities.",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

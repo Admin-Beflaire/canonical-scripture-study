@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "openbible-section-counts-202610",
+  "revision": "openbible-section-counts-202610/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "openbible-section-counts-202610.json"
+  },
+  "native_extent": {
+    "component": "openbible-section-counts-202610/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "openbible-section-counts-202610/1"
+  ],
+  "manifest_revision": "openbible-section-counts-202610/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "openbible-section-counts-202610/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

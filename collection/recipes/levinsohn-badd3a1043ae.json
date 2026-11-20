@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "levinsohn-badd3a1043ae",
+  "revision": "levinsohn-badd3a1043ae/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "levinsohn-badd3a1043ae.json"
+  },
+  "native_extent": {
+    "component": "levinsohn-badd3a1043ae/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "levinsohn-badd3a1043ae/1"
+  ],
+  "manifest_revision": "levinsohn-badd3a1043ae/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "levinsohn-badd3a1043ae/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

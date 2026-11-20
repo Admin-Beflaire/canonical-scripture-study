@@ -1,0 +1,147 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "language-aids-tegmc",
+  "revision": "language-aids-tegmc/1",
+  "adapter": {
+    "name": "language-aids",
+    "method_version": "language-aids/1"
+  },
+  "input_format": "language-aids/original",
+  "parameters": {
+    "component": "tegmc",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "source_revision": "stepdata-tegmc-5de0a47f/1",
+    "partitions": 8
+  },
+  "native_extent": {
+    "component": "stepdata-tegmc-5de0a47f/1",
+    "coordinate_version": "language-aids/tegmc/1"
+  },
+  "capabilities": [
+    "grammar_expansion"
+  ],
+  "dependencies": [
+    "stepdata-tegmc-5de0a47f/1"
+  ],
+  "manifest_revision": "stepdata-tegmc-5de0a47f/1",
+  "units": [
+    {
+      "unit_id": "prepare-000",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p000"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-001",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p001"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-002",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p002"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-003",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p003"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-004",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p004"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-005",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p005"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-006",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p006"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-007",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p007"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "unit_ids": [
+          "p000",
+          "p001",
+          "p002",
+          "p003",
+          "p004",
+          "p005",
+          "p006",
+          "p007"
+        ],
+        "coordinate_version": "language-aids/tegmc/1"
+      },
+      "depends_on": [
+        "prepare-000",
+        "prepare-001",
+        "prepare-002",
+        "prepare-003",
+        "prepare-004",
+        "prepare-005",
+        "prepare-006",
+        "prepare-007"
+      ],
+      "required_capabilities": [
+        "grammar_expansion"
+      ]
+    }
+  ]
+}

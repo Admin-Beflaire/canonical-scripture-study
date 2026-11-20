@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping
 
 from ..adapters.stepbible import DECLARATION as STEPBIBLE, BookRecipe
 from ..adapters.acquire_only import DECLARATION as ACQUIRE_ONLY, AcquireRecipe
+from ..adapters.step_aids import DECLARATION as LANGUAGE_AIDS, AidRecipe
 from ..prepare.evidence import NativeText
 from ..prepare.records import RecordSet
 from ..validation import SCHEMAS
@@ -54,6 +55,9 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
             source = AcquireRecipe.from_recipe(value)
             recipes[value['revision']] = Recipe(acquire=source.acquire, declares=source.declares)
+        elif identity == (LANGUAGE_AIDS.name, LANGUAGE_AIDS.method_version):
+            source = AidRecipe.from_recipe(value)
+            recipes[value['revision']] = Recipe(prepare=source.prepare, read_source=source.read_source)
         else:
             raise ValueError(f'Recipe {path.stem} names no registered adapter')
     return recipes

@@ -11,7 +11,7 @@
     "component": "tehmc",
     "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
     "source_revision": "stepdata-tehmc-5de0a47f/1",
-    "partitions": 1
+    "partitions": 4
   },
   "native_extent": {
     "component": "stepdata-tehmc-5de0a47f/1",
@@ -37,16 +37,55 @@
       "depends_on": []
     },
     {
+      "unit_id": "prepare-001",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p001"
+        ],
+        "coordinate_version": "language-aids/tehmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-002",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p002"
+        ],
+        "coordinate_version": "language-aids/tehmc/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "prepare-003",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "p003"
+        ],
+        "coordinate_version": "language-aids/tehmc/1"
+      },
+      "depends_on": []
+    },
+    {
       "unit_id": "quality",
       "kind": "quality",
       "native_extent": {
         "unit_ids": [
-          "p000"
+          "p000",
+          "p001",
+          "p002",
+          "p003"
         ],
         "coordinate_version": "language-aids/tehmc/1"
       },
       "depends_on": [
-        "prepare-000"
+        "prepare-000",
+        "prepare-001",
+        "prepare-002",
+        "prepare-003"
       ],
       "required_capabilities": [
         "grammar_expansion"

@@ -109,25 +109,36 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual(spans[-1]['reading_kind'], 'gap')
         self.assertEqual(notes[-1]['details_json']['gloss'], 'Sin')
 
-    def test_reviewed_bdb_partition_fits_the_runner_batch(self):
+    def test_all_recipe_partitions_fit_the_runner_batch_at_observed_sizes(self):
         from pathlib import Path
+        from unittest.mock import patch
+        from css_preparation.adapters.language_aid_entries import AidEntry
+        from css_preparation.runner.cloudflare import _BATCH_STATEMENTS
+
         root = Path(__file__).resolve().parents[2]
-        ns = 'http://openscriptures.github.com/morphhb/namespace'
-        for name, count in (('bdb', 11845), ('bdb-index', 10221)):
+        counts = {'tbesh': 11682, 'tbesg': 11035, 'tflsj-0-5624': 5709,
+                  'tflsj-extra': 5325, 'tehmc': 1013, 'tegmc': 1732,
+                  'bdb': 11845, 'bdb-index': 10221}
+        for name, count in counts.items():
             with self.subTest(component=name):
                 raw = json.loads((root / 'collection/recipes' / f'language-aids-{name}.json').read_text())
                 reader = AidRecipe.from_recipe(raw)
-                entries = ''.join(f'<entry id="e{i}"><w>word</w></entry>' for i in range(count))
-                if name == 'bdb':
-                    text = f'<lexicon xmlns="{ns}"><part id="a"><section id="s">{entries}</section></part></lexicon>'
-                else:
-                    text = f'<index xmlns="{ns}"><part>{entries}</part></index>'
-                store = Store({reader.revision: text.encode()})
-                unit = raw['units'][0]
-                records = reader.prepare({'kind': 'prepare', 'unit_id': unit['unit_id'],
-                                          'native_extent': unit['native_extent'],
-                                          'input_refs': [{'kind': 'source_revision', 'id': reader.revision}]}, store)
-                self.assertLessEqual(len(records.statements()), 1000)
+                # Non-empty bodies give the maximum row count; actual gaps can only reduce it.
+                entries = [AidEntry(f'e{i}', 'synthetic-work', 'synthetic-edition', 'text', {})
+                           for i in range(count)]
+                store = Store({reader.revision: b'synthetic original'})
+                method = ('bdb_entries' if name == 'bdb' else
+                          'bdb_index_entries' if name == 'bdb-index' else 'step_entries')
+                with patch('css_preparation.adapters.step_aids.' + method, return_value=entries):
+                    units = [unit for unit in raw['units'] if unit['kind'] == 'prepare']
+                    self.assertEqual(len(units), reader.partitions)
+                    for unit in units:
+                        records = reader.prepare({'kind': 'prepare', 'unit_id': unit['unit_id'],
+                                                  'native_extent': unit['native_extent'],
+                                                  'input_refs': [{'kind': 'source_revision',
+                                                                  'id': reader.revision}]}, store)
+                        self.assertLess(len(records.statements()), _BATCH_STATEMENTS,
+                                             f"{name} {unit['unit_id']}")
 
     def test_original_digest_is_checked(self):
         rev = 'fixture-tbesh/1'

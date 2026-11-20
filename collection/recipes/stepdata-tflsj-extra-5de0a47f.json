@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepdata-tflsj-extra-5de0a47f",
+  "revision": "stepdata-tflsj-extra-5de0a47f/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "stepdata-tflsj-extra-5de0a47f.json"
+  },
+  "native_extent": {
+    "component": "stepdata-tflsj-extra-5de0a47f/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "stepdata-tflsj-extra-5de0a47f/1"
+  ],
+  "manifest_revision": "stepdata-tflsj-extra-5de0a47f/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "stepdata-tflsj-extra-5de0a47f/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

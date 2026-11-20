@@ -1,0 +1,22 @@
+{
+  "manifest_revision": "stepdata-tflsj-extra-5de0a47f/1",
+  "source_revision": "stepdata-tflsj-extra-5de0a47f/1",
+  "provider": "STEPBible.org, based on work at Tyndale House Cambridge",
+  "origin": "https://github.com/STEPBible/STEPBible-Data",
+  "version": "STEPBible-Data commit 5de0a47f35f0fc13dfe1430d104e5db8a4285f9c; TFLSJ extra",
+  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "licence_basis": "https://github.com/STEPBible/STEPBible-Data/blob/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/README.md (CC BY 4.0; source file also names CC BY)",
+  "attribution": "STEP Bible (STEPBible.org), based on work at Tyndale House Cambridge; CC BY 4.0; https://stepbible.github.io/STEPBible-Data/; note any changes",
+  "url": "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Lexicons/TFLSJ%20extra%20-%20Translators%20Formatted%20full%20LSJ%20Bible%20lexicon%20-%20STEPBible.org%20CC%20BY.txt",
+  "allowed_hosts": [
+    "raw.githubusercontent.com"
+  ],
+  "max_bytes": 11000000,
+  "expected_sha256": null,
+  "upstream_path": "Lexicons/TFLSJ extra - Translators Formatted full LSJ Bible lexicon - STEPBible.org CC BY.txt",
+  "upstream_blob_sha": "ba22a2a8f5089b5bac5efacf1131db55727480d1",
+  "upstream_byte_count": 8377140,
+  "format": "UTF-8 tab-separated text; acquire opaque original only",
+  "storage": "Protected private storage only; never public Git",
+  "admission": "Owner decision in the Maintenance Control task"
+}

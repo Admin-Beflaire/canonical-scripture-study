@@ -46,6 +46,31 @@ class AcquireOnlyTest(unittest.TestCase):
                 self.assertEqual(recipe['dependencies'], [manifest['manifest_revision']])
                 self.assertEqual([u['kind'] for u in recipe['units']], ['acquire'])
 
+    def test_step_b1_language_aids_have_private_acquire_only_routes(self):
+        names = ["stepdata-tvtms-5de0a47f","stepdata-tehmc-5de0a47f","stepdata-tegmc-5de0a47f","stepdata-tbesh-5de0a47f","stepdata-tbesg-5de0a47f","stepdata-tflsj-0-5624-5de0a47f","stepdata-tflsj-extra-5de0a47f","stepdata-tipnr-5de0a47f"]
+        central = json.loads((ROOT / 'collection/manifests/stepbible-data-5de0a47f35f0.json').read_text())
+        components = {row['component']: row for row in central['components']}
+        self.assertEqual(central['commit'], '5de0a47f35f0fc13dfe1430d104e5db8a4285f9c')
+        self.assertEqual(len(central['components']), len(components))
+        recipes = load_recipes()
+        for name in names:
+            with self.subTest(name=name):
+                self.assertIsNotNone(recipes[name + '/1'].acquire)
+                self.assertIsNone(recipes[name + '/1'].prepare)
+                raw = json.loads((ROOT / 'collection/recipes' / (name + '.json')).read_text())
+                manifest = AcquireRecipe.from_recipe(raw).manifest
+                component = components[name.removeprefix('stepdata-').removesuffix('-5de0a47f')]
+                self.assertEqual(manifest['upstream_path'], component['upstream_path'])
+                self.assertEqual(manifest['upstream_blob_sha'], component['upstream_blob_sha'])
+                self.assertEqual(manifest['upstream_byte_count'], component['byte_count'])
+                self.assertIn(central['commit'], manifest['url'])
+                self.assertEqual(manifest['allowed_hosts'], ['raw.githubusercontent.com'])
+                self.assertLess(manifest['upstream_byte_count'], manifest['max_bytes'])
+                self.assertEqual(manifest['storage'], 'Protected private storage only; never public Git')
+                self.assertEqual(manifest['admission'], 'Owner decision in the Maintenance Control task')
+                self.assertEqual([unit['kind'] for unit in raw['units']], ['acquire'])
+                self.assertEqual(raw['capabilities'], [])
+
     def test_private_original_and_receipt(self):
         value = json.loads((ROOT / 'collection/recipes/sblgnt-d7f35adca9ec.json').read_text())
         recipe = AcquireRecipe.from_recipe(value)

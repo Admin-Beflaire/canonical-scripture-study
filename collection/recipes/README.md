@@ -33,3 +33,11 @@ base recipes. In 1 Chronicles, the reader recipe starts prepare-03 at native
 `1Ch.12.1` because reader `1Chr.12.4` spans native `1Ch.12.4` and `1Ch.12.5`.
 Bump the reader recipe revision when its prepare partition changes so an existing
 task stays tied to the partition it started with.
+
+## STEP language aids (B1)
+
+Eight `stepdata-*.json` acquire-only recipes at the pinned STEPBible-Data commit:
+TVTMS, TEHMC, TEGMC, TBESH, TBESG, TFLSJ 0–5624, TFLSJ extra and TIPNR.
+TFLSJ has two upstream files and therefore two acquisition tasks. Each task
+keeps one opaque original in protected R2; no parsing, building or release.
+The acquisition receipt captures SHA-256 of the downloaded bytes.

@@ -1,6 +1,6 @@
 import type { StudyReadEnvironment } from './read/bindings.ts';
 import { ReadSession } from './read/session.ts';
-import type { BudgetUsage } from './read/budget.ts';
+import { AID_LIMITS, limitsFor, type BudgetUsage } from './read/budget.ts';
 import { ReadError, limitation, type Limitation } from './read/states.ts';
 import type { Batch } from './results/batch.ts';
 import { GUIDANCE_VERSION, TRANSLATION_RULES } from './guidance.ts';
@@ -56,7 +56,8 @@ export async function study(env: StudyReadEnvironment, request: StudyRequest,
     const leads = request.search_leads ?? [];
     if (mode !== 'conclusion_check' && !refs.length && !leads.length)
       throw new ReadError('invalid_request', 'Give references (for passages) or search_leads (for words); for example references ["Gen 1:1-2:3"] or search_leads [{"lookup":"lemma","key":"H7225"}]');
-    session = await ReadSession.open(env);
+    const aidRequest = !refs.length && leads.length === 1 && AID_LOOKUPS.includes(leads[0]?.lookup as typeof AID_LOOKUPS[number]);
+    session = await ReadSession.open(env, aidRequest ? limitsFor(env, AID_LIMITS) : limitsFor(env));
     if (mode === 'conclusion_check') return await conclusionCheck(session, base);
     // Notes go in before the batch is sized, so the whole envelope stays within the result cap.
     // Only on the first batch, so a continued study does not repeat them.

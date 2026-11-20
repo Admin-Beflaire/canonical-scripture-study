@@ -1,5 +1,5 @@
 import { isIdentifier, sha256Hex } from './bytes.ts';
-import { artifactFrom, readArtifact, type RegisteredArtifact } from './objects.ts';
+import { artifactFrom, readArtifact, readVerifiedRange, type RegisteredArtifact } from './objects.ts';
 import { RELATIONSHIPS_PER_QUERY } from './queries.ts';
 import type { ReadSession } from './session.ts';
 import { ReadError, limitation, type Limitation } from './states.ts';
@@ -30,7 +30,7 @@ interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset:
 
 /** Resolves span IDs to exact wording in the current release. Missing, corrupt and
  *  not-yet-read spans are reported separately; valid spans are returned regardless. */
-export async function readSpans(session: ReadSession, ids: string[]): Promise<SpanRead> {
+export async function readSpans(session: ReadSession, ids: string[], largeRanges = false): Promise<SpanRead> {
   const out: SpanRead = { spans: [], limitations: [], remaining: [] };
   const result = await session.queryIfAvailable('spans', { ids });
   if (result === null) return { ...out, remaining: [...ids] };
@@ -52,7 +52,7 @@ export async function readSpans(session: ReadSession, ids: string[]): Promise<Sp
           throw new ReadError('corrupt', 'Text payload does not match its digest');
         evidence.text = [row.exact_text];
       } else if (row.reading_kind !== 'gap') {
-        const text = await bodyText(session, row, segments.length);
+        const text = await bodyText(session, row, segments.length, largeRanges);
         if (text === null) { out.remaining.push(id); continue; }
         evidence.text = text;
       }
@@ -68,7 +68,7 @@ export async function readSpans(session: ReadSession, ids: string[]): Promise<Sp
 
 /** Ordered R2 body ranges for an extracted span. Returns null if the allowance cannot
  *  cover every range, so a span is never returned with part of its wording. */
-async function bodyText(session: ReadSession, row: Record<string, unknown>, segmentCount: number): Promise<string[] | null> {
+async function bodyText(session: ReadSession, row: Record<string, unknown>, segmentCount: number, largeRanges: boolean): Promise<string[] | null> {
   const ranges = json<BodyRange[]>(row.body_ranges_json, v => Array.isArray(v) && v.length === segmentCount);
   const artifacts = new Map<string, RegisteredArtifact>();
   for (const item of json<Record<string, unknown>[]>(row.body_artifacts_json ?? '[]', Array.isArray)) {
@@ -81,14 +81,16 @@ async function bodyText(session: ReadSession, row: Record<string, unknown>, segm
   const total = ranges.reduce((n, r) => n + r.byte_length, 0);
   const { r2Reads, r2Bytes, pageBytes } = session.budget.limits;
   // A span that no fresh request could read is withheld, not left remaining for ever.
-  if (ranges.length > r2Reads || total > r2Bytes || ranges.some(r => r.byte_length > pageBytes))
+  const reads = ranges.reduce((n, r) => n + (largeRanges ? Math.ceil(r.byte_length / pageBytes) : 1), 0);
+  if (reads > r2Reads || total > r2Bytes || (!largeRanges && ranges.some(r => r.byte_length > pageBytes)))
     throw new ReadError('exceeds_limits', 'This span needs more than one request may read');
-  if (session.budget.usage().r2Reads + ranges.length > r2Reads || session.budget.usage().r2Bytes + total > r2Bytes) return null;
+  if (session.budget.usage().r2Reads + reads > r2Reads || session.budget.usage().r2Bytes + total > r2Bytes) return null;
   const text: string[] = [];
   for (const range of ranges) {
     const artifact = artifacts.get(range.artifact_id);
     if (!artifact) throw new ReadError('missing_evidence', 'Body artifact is not selected in the current release');
-    text.push(await readArtifact(session, artifact, { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 }));
+    const selected = { offset: range.byte_offset, length: range.byte_length, sha256: range.sha256 };
+    text.push(largeRanges ? await readVerifiedRange(session, artifact, selected) : await readArtifact(session, artifact, selected));
   }
   return text;
 }

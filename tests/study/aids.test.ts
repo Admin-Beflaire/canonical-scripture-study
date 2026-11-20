@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
 import { A, buildFixture } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
-import { STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
+import { AID_LIMITS, STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
 import { aidBatch } from '../../services/study/src/operators/aids.ts';
 import { study } from '../../services/study/src/coordinator.ts';
 
@@ -57,4 +58,51 @@ test('Study routes exact grammar explanations and reports missing entries', asyn
   assert.equal((result.evidence as Array<{kind: string}>)[0].kind, 'language_aid');
   const missing = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G1' }] });
   assert.equal((missing.limitations as Array<{state: string}>)[0].state, 'missing_evidence');
+});
+
+
+test('long verified lexical bodies continue without loss and preserve exact source coordinates', async () => {
+  const f = aids();
+  f.select(null, null);
+  const body = 'α😀 abc '.repeat(7800);
+  const bytes = Buffer.from(body);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  f.db.sqlite.prepare('INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run('long-body', A, 'syn-ev', digest, bytes.length, 'text/utf-8', 'synthetic/long-body');
+  f.bucket.objects.set('synthetic/long-body', bytes);
+  f.db.sqlite.prepare(`INSERT INTO native_spans(id, output_id, source_revision_id, kind, label, native_order,
+      coordinate_version, segments_json, basis_json, body_ranges_json, reading_kind)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run('long-span', 'syn-ev', A, 'lexicon_entry', 'long', 100, 'syn:unicode-scalars/1',
+      JSON.stringify([{ unit_id: 'long-unit', start: 0, end: Array.from(body).length }]), '{}',
+      JSON.stringify([{ segment_ordinal: 0, artifact_id: 'long-body', byte_offset: 0, byte_length: bytes.length, sha256: digest }]), 'extracted');
+  f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('long-annotation', 'syn-ev', A, 'long-span', 'lexicon_entry', 'synthetic', '{}', JSON.stringify({ strong_base: 'G1234' }));
+  f.select('rel-2', 'rel-1');
+  let next: string | null = null;
+  const chunks: string[] = [];
+  let expectedStart = 0;
+  for (let i = 0; i < 10; i++) {
+    const result = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, next, 'test');
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= STARTING_LIMITS.resultBytes);
+    for (const item of result.evidence) if (item.kind === 'language_aid' && item.span.span_id === 'long-span') {
+      assert.equal(item.span.segments[0].start, expectedStart);
+      const text = item.span.text![0];
+      expectedStart += Array.from(text).length;
+      assert.equal(item.span.segments[0].end, expectedStart);
+      chunks.push(text);
+    }
+    next = result.continuation;
+    if (!next) break;
+  }
+  assert.equal(next, null);
+  assert.ok(chunks.length > 1);
+  assert.equal(chunks.join(''), body);
+  const routed = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G1234' }] });
+  assert.equal((routed.evidence as unknown[]).length, 1);
+  assert.ok(routed.continuation, 'Study selects the larger bounded allowance for language-aid retrieval');
+  f.bucket.corrupt.add('synthetic/long-body');
+  const corrupt = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
+  assert.equal(corrupt.evidence.length, 0);
+  assert.ok(corrupt.limitations.some(item => item.state === 'corrupt'));
 });

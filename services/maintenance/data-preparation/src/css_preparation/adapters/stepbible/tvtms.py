@@ -24,6 +24,7 @@ class ExceptionRow:
     reader: str
     native: tuple[str, ...]
     limitation: str | None = None
+    marked: bool = False
 
 
 def _targets(cell: str, book: str, chapter: int) -> tuple[str, ...] | None:
@@ -49,11 +50,16 @@ def read_exceptions(data: bytes) -> tuple[ExceptionRow, ...]:
         raise RecordError('TVTMS English/Hebrew summary header is missing or ambiguous')
     result = []
     started = False
+    ended = False
     for line in lines[headers[0] + 1:]:
         if not line.strip():
             if started:
-                break
+                ended = True
             continue
+        if ended:
+            if not line.startswith('Phrases and Abbreviations to translate'):
+                raise RecordError('Unexpected content after TVTMS summary')
+            break
         fields = line.split('\t')
         if fields[0].startswith("'="):
             continue
@@ -63,7 +69,10 @@ def read_exceptions(data: bytes) -> tuple[ExceptionRow, ...]:
         book, chapter = match['book'], int(match['chapter'])
         reader = f'{book}.{chapter}.{int(match["verse"])}'
         native = _targets(fields[1].strip(), book, chapter) if fields[1].strip() else None
-        result.append(ExceptionRow(reader, native or (), None if native else 'missing or non-whole-verse target'))
+        result.append(ExceptionRow(reader, native or (), None if native else 'missing or non-whole-verse target',
+                                   fields[0].strip().startswith('*')))
+    else:
+        raise RecordError('TVTMS summary end marker is missing')
     if not result:
         raise RecordError('TVTMS English/Hebrew summary is empty')
     if len({row.reader for row in result}) != len(result):
@@ -73,6 +82,7 @@ def read_exceptions(data: bytes) -> tuple[ExceptionRow, ...]:
 
 def compare_exceptions(rows: Iterable[ExceptionRow], words: Iterable[TaggedWord], book: str) -> list[dict]:
     """Report explicit pairs only; an absent word marker is unresolved, not a mismatch."""
+    rows = tuple(rows)
     observed: dict[str, set[str]] = {}
     for word in words:
         if word.book == book:
@@ -93,5 +103,12 @@ def compare_exceptions(rows: Iterable[ExceptionRow], words: Iterable[TaggedWord]
         else:
             status = 'difference'
         report.append({'reader': row.reader, 'expected_native': list(row.native),
-                       'observed_native': actual, 'status': status, 'limitation': row.limitation})
+                       'observed_native': actual, 'status': status, 'limitation': row.limitation,
+                       'source_marked': row.marked})
+    listed = {row.reader for row in rows}
+    for reader, native in sorted(observed.items()):
+        if reader not in listed and native != {reader}:
+            report.append({'reader': reader, 'expected_native': [], 'observed_native': sorted(native),
+                           'status': 'unlisted_shift', 'limitation': 'not in TVTMS summary',
+                           'source_marked': False})
     return report

@@ -10,6 +10,7 @@ from pathlib import Path
 from css_preparation.adapters.stepbible.prepare import read_component
 from css_preparation.adapters.stepbible.source import Component
 from css_preparation.adapters.stepbible.tvtms import compare_exceptions, read_exceptions
+from css_preparation.prepare.records import RecordError
 
 
 def main() -> None:
@@ -28,8 +29,11 @@ def main() -> None:
     component = Component.from_parameters(recipe['parameters'])
     if component.source.key != 'tahot':
         parser.error('The TVTMS summary compares English with Hebrew, not Greek')
-    words = read_component(args.tagged.read_bytes(), component)
-    report = compare_exceptions(read_exceptions(raw), words, args.book)
+    try:
+        words = read_component(args.tagged.read_bytes(), component)
+        report = compare_exceptions(read_exceptions(raw), words, args.book)
+    except RecordError as error:
+        parser.error(str(error))
     print(json.dumps({'tvtms_sha256': digest, 'tagged_sha256': component.sha256, 'book': args.book,
                       'summary': dict(Counter(row['status'] for row in report)), 'rows': report,
                       'limitations': ['Explicit TVTMS English/Hebrew summary only.',

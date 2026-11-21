@@ -59,6 +59,16 @@ def main():
              'log--cloudflare--' + RUN + '--diagnostics.txt']
     data = [platform_state.download(found[name]) for name in names]
     print(json.dumps(summarize(*data), sort_keys=True))
+    # The recovery plan is private; report only action counts, never values,
+    # resource identities or the raw diagnostics.
+    recovery = found.get('log--cloudflare--44960133517-1--diagnostics.txt')
+    if recovery:
+        text = platform_state.download(recovery).decode('utf-8', errors='replace')
+        summary = re.findall(r'Plan: (\d+) to add, (\d+) to change, (\d+) to destroy\.', text)
+        actions = re.findall(r'^  # (cloudflare_[a-z0-9_]+)(?:\.[^\s]+) will be (created|updated in-place|destroyed|replaced)', text, re.M)
+        print(json.dumps({'recovery_plan_counts': summary[-1] if summary else None,
+                          'recovery_actions': actions,
+                          'recovery_has_error': bool(re.search(r'\bError:', text))}, sort_keys=True))
 
 
 if __name__ == '__main__':

@@ -67,9 +67,12 @@ def main():
         summary = re.findall(r'Plan: (\d+) to add, (\d+) to change, (\d+) to destroy\.', text)
         actions = re.findall(r'^  # (cloudflare_[a-z0-9_]+)(?:\.[^\s]+) will be (created|updated in-place|destroyed|replaced)', text, re.M)
         changed_fields = sorted(set(re.findall(r'^\s*[~+\-]\s+([a-z][a-z0-9_]*)\s*=', text, re.M)))
+        nested_fields = sorted(set(re.findall(r'^\s*[~+\-]\s+([a-z][a-z0-9_]*)\s*\{', text, re.M)))
+        safe_lines = re.findall(r'^\s*[~+\-]\s+(?:file_size|num_tables|version|read_replication|mode)\s*=.*$', text, re.M)
         print(json.dumps({'recovery_plan_counts': summary[-1] if summary else None,
                           'recovery_actions': actions,
                           'recovery_changed_fields': changed_fields,
+                          'recovery_nested_fields': nested_fields, 'recovery_safe_lines': safe_lines,
                           'recovery_has_error': bool(re.search(r'\bError:', text))}, sort_keys=True))
 
 

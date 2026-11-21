@@ -175,9 +175,10 @@ class PreparationTest(unittest.TestCase):
                                        'input_refs': [{'kind': 'source_revision', 'id': rev}]}, direct)
             self.assertEqual(second.statements(), uncached.statements())
             self.assertEqual(second.blobs, uncached.blobs)
+            self.assertEqual(parsed.call_count, 2, 'uncached comparison intentionally parses once more')
             # Quality reads the pinned original directly, independent of cached partitions.
             self.assertEqual(len(reader.read_source(rev, store).units), 2)
-            self.assertEqual(parsed.call_count, 2)
+            self.assertEqual(parsed.call_count, 3)
             # Changing the registered digest invalidates the cache rather than using stale bytes.
             store.nodes[rev]['details_json']['sha256'] = 'f' * 64
             with self.assertRaises(RecordError):

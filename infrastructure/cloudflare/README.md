@@ -1,7 +1,7 @@
 # Cloudflare construction
 
 Terraform 1.13.5 / Cloudflare provider 5.28.1 own one D1 database, one private R2
-bucket, disabled managed public access, two owner-only Managed OAuth resources
+bucket, one private short-lived verified-word KV cache, disabled managed public access, two owner-only Managed OAuth resources
 and a more-specific Service Auth resource at Control `/internal/jobs/*`.
 An existing internal-jobs and deployment-check Access service-token **ID** are inputs; its credentials are issued
 separately and stay in protected runner secrets. No secret generation or Worker
@@ -22,6 +22,7 @@ Terraform does not apply SQL or duplicate Worker/domain/DNS settings.
 | `ACCOUNT_ID`, `ZONE_ID`, `ZONE_NAME`, `INSTANCE` | Destination account, zone and suffix |
 | `STUDY_HOSTNAME`, `CONTROL_HOSTNAME` | Distinct custom hostnames inside the zone |
 | `DATABASE_ID` | Terraform-created database |
+| `VERIFIED_WORD_CACHE_NAMESPACE_ID` | Terraform-created optional shared verified-word cache namespace, bound only to Study |
 | `ACCESS_ISSUER` | HTTPS Access team issuer |
 | `STUDY_AUDIENCE`, `CONTROL_AUDIENCE`, `JOB_AUDIENCE` | Distinct Terraform-created application audiences |
 | `DEPLOYMENT_CLIENT_ID` | Non-secret Access deployment-check Client ID, shared by both Workers; not the resource ID or secret |

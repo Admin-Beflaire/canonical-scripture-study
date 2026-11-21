@@ -16,5 +16,6 @@
   "MAX_D1_CALLS": 40,
   "MAX_SUBREQUESTS": 45,
   "CPU_BUDGET_MS": 10,
-  "DEPLOYMENT_CLIENT_ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.access"
+  "DEPLOYMENT_CLIENT_ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.access",
+  "VERIFIED_WORD_CACHE_NAMESPACE_ID": "dddddddddddddddddddddddddddddddd"
 }

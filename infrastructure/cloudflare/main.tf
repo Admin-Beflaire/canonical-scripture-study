@@ -9,6 +9,12 @@ resource "cloudflare_r2_bucket" "private" {
   name       = "css-private-${var.instance}"
   lifecycle { prevent_destroy = true }
 }
+# Optional short-lived cache for fully verified, unfinished Study language aids.
+# Terraform owns only the namespace; Wrangler owns the Study binding.
+resource "cloudflare_workers_kv_namespace" "verified_word_cache" {
+  account_id = var.account_id
+  title      = "css-verified-word-cache-${var.instance}"
+}
 resource "cloudflare_r2_managed_domain" "private" {
   account_id  = var.account_id
   bucket_name = cloudflare_r2_bucket.private.name

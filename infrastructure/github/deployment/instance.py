@@ -20,6 +20,7 @@ def instance(bindings,client):
             "ZONE_NAME":bindings["zone_name"],"INSTANCE":bindings["instance"],
             "STUDY_HOSTNAME":hosts["study"],"CONTROL_HOSTNAME":hosts["control"],
             "DATABASE_ID":bindings["database_id"],"ACCESS_ISSUER":bindings["access_issuer"],
+            "VERIFIED_WORD_CACHE_NAMESPACE_ID":bindings["verified_word_cache_namespace_id"],
             "STUDY_AUDIENCE":audiences["study"],"CONTROL_AUDIENCE":audiences["control"],
             "JOB_AUDIENCE":audiences["jobs"],"DEPLOYMENT_CLIENT_ID":client,
             "ENHANCEMENTS":False,"MAX_PAGE_BYTES":65536,"REQUEST_BYTES":262144,

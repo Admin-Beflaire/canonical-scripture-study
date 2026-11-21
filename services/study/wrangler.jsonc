@@ -29,6 +29,12 @@
       "bucket_name": "css-private-{{INSTANCE}}"
     }
   ],
+  "kv_namespaces": [
+    {
+      "binding": "VERIFIED_WORD_CACHE",
+      "id": "{{VERIFIED_WORD_CACHE_NAMESPACE_ID}}"
+    }
+  ],
   "vars": {
     "ACCESS_ISSUER": "{{ACCESS_ISSUER}}",
     "HOSTNAME": "{{STUDY_HOSTNAME}}",

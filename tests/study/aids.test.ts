@@ -182,5 +182,6 @@ test('Matthew 1 onoma (G3686) word-study attaches attributed lexicon and grammar
   assert.ok(session.budget.usage().d1Calls <= AID_LIMITS.d1Calls);
   assert.ok(session.budget.usage().r2Reads <= AID_LIMITS.r2Reads);
   const standalone = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G3686' }] });
-  assert.ok(standalone.evidence.some(item => item.kind === 'language_aid'));
+  assert.ok((standalone.evidence as Array<{ kind: string }>).some(item => item.kind === 'language_aid'));
+
 });

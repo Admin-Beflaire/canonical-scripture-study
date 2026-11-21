@@ -87,7 +87,7 @@ ORDER BY a.span_id, a.id
 LIMIT ?5`;
 
 /** Exact source entries only: the host never supplies a SQL field or an object path. */
-const languageAidQuery = (kind: 'lexicon_entry' | 'grammar_expansion', field: 'strong_base' | 'entry_key' | 'code') => `
+const languageAidQuery = (kind: 'lexicon_entry' | 'grammar_expansion' | 'proper_name', field: 'strong_base' | 'entry_key' | 'code' | 'disambiguated_strong') => `
 SELECT a.id, a.output_id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
 FROM annotations a JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
 WHERE a.kind = '${kind}' AND json_extract(a.details_json, '$.${field}') = ?2
@@ -343,6 +343,8 @@ function readerParams(i: ReaderMappingInput): unknown[] {
 }
 
 export const QUERIES = {
+  proper_name: { sql: languageAidQuery('proper_name', 'disambiguated_strong'), params: (i: LanguageAidInput) =>
+    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
   lexicon_strong: { sql: languageAidQuery('lexicon_entry', 'strong_base'), params: (i: LanguageAidInput) =>
     [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
   lexicon_entry: { sql: languageAidQuery('lexicon_entry', 'entry_key'), params: (i: LanguageAidInput) =>

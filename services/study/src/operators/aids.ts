@@ -5,7 +5,7 @@ import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation } from '../results/continuation.ts';
 
-export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info'] as const;
+export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info', 'proper_name'] as const;
 const MAX_PENDING_ENTRIES = 4;
 const MAX_PENDING_BODY_BYTES = 96 * 1024;
 const SHARED_CACHE_TTL_SECONDS = 600;
@@ -55,6 +55,11 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
     if (!match) throw new ReadError('invalid_request', 'Use a Strong number such as H7307 or G3686');
     key = match[1].toUpperCase() + match[2].padStart(4, '0');
   }
+  if (input.lookup === 'proper_name') {
+    const match = key.match(/^([HG])(\d{1,5})([A-Z]?)$/i);
+    if (!match) throw new ReadError('invalid_request', 'Use a disambiguated Strong tag, such as G2264G');
+    key = match[1].toUpperCase() + match[2].padStart(4, '0') + match[3];
+  }
   const workload = { ...input, key, sources: input.sources ? [...new Set(input.sources)].sort() : null };
   let after: Position = ['', '', ''];
   let offset = 0;
@@ -70,7 +75,7 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
   }
   const start = after;
   const pending = pendingText(session);
-  const query = input.lookup === 'lexicon' ? 'lexicon_strong' : input.lookup === 'lexicon_entry' ? 'lexicon_entry' : 'grammar_expansion';
+  const query = input.lookup === 'lexicon' ? 'lexicon_strong' : input.lookup === 'lexicon_entry' ? 'lexicon_entry' : input.lookup === 'proper_name' ? 'proper_name' : 'grammar_expansion';
   const page = await session.query(query, { key, after });
   if (anchor !== null && !page.rows.length) throw new ReadError('invalid_request', 'Continuation entry is no longer selected');
   const evidence: EvidenceItem[] = [];

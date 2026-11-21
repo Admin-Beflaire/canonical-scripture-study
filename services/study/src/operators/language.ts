@@ -56,10 +56,10 @@ export async function languageBatch(session: ReadSession, workload: LanguageWork
 /** Evidence attached by selected Strong/morphology keys, not by guessed word senses.
  * Each distinct key is fetched at most once per batch; a bounded, release-scoped cache
  * reuses verified small entries across continuations in the same Worker instance. */
-type AidKind = 'lexicon' | 'grammar_info';
+type AidKind = 'lexicon' | 'grammar_info' | 'proper_name';
 type AidItem = Extract<EvidenceItem, { kind: 'language_aid' }>;
 interface Key { lookup: AidKind; key: string }
-interface AnalysisKeys { analysis_id: string; lexicon: string | null; grammar: string[] }
+interface AnalysisKeys { analysis_id: string; lexicon: string | null; grammar: string[]; proper_name: string | null }
 const MAX_AID_KEYS = 4;
 const MAX_AID_ROWS = 12;
 const MAX_AID_ROWS_PER_KEY = 8;
@@ -75,13 +75,15 @@ function wordKeys(hit: SearchHit): AnalysisKeys[] {
     // Source analyses may have a disambiguating trailing letter (e.g. H7225G).
     // Language-aid lexicon rows are indexed by the base Strong number.
     const strong = typeof a.lemma_id === 'string' ? a.lemma_id.match(/^([HG])(\d{1,5})[A-Z]?$/i) : null;
+    const fullTag = typeof a.lemma_id === 'string' ? a.lemma_id.match(/^([HG])(\d{1,5})([A-Z]?)$/i) : null;
+    const proper_name = fullTag ? fullTag[1].toUpperCase() + fullTag[2].padStart(4, '0') + fullTag[3] : null;
     const lemma = strong ? strong[1].toUpperCase() + strong[2].padStart(4, '0') : null;
     const sourceGrammar = isObject(a.grammar) ? a.grammar : null;
     const morphology = typeof sourceGrammar?.morphology === 'string' ? sourceGrammar.morphology : '';
     const prefix = sourceGrammar?.language === 'hebrew' ? 'H' : sourceGrammar?.language === 'aramaic' ? 'A' : '';
     const grammar = morphology.split('/').map(part =>
       prefix && part ? prefix + part : part).filter(x => isIdentifier(x, 200));
-    return { analysis_id: typeof a.analysis_id === 'string' ? a.analysis_id : '', lexicon: lemma, grammar };
+    return { analysis_id: typeof a.analysis_id === 'string' ? a.analysis_id : '', lexicon: lemma, grammar, proper_name };
   });
 }
 
@@ -104,14 +106,18 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
   if (!hits.length) return;
   const wanted = new Map<SearchHit, AnalysisKeys[]>();
   const keys = new Map<string, Key>();
+  const nameKeys = new Map<string, Key>();
   for (const hit of hits) {
     const analyses = wordKeys(hit);
     wanted.set(hit, analyses);
     for (const analysis of analyses) {
+      if (analysis.proper_name) nameKeys.set(cacheKey('proper_name', analysis.proper_name), { lookup: 'proper_name', key: analysis.proper_name });
       if (analysis.lexicon) keys.set(cacheKey('lexicon', analysis.lexicon), { lookup: 'lexicon', key: analysis.lexicon });
       for (const code of analysis.grammar) keys.set(cacheKey('grammar_info', code), { lookup: 'grammar_info', key: code });
     }
   }
+  // Existing lexical and grammar evidence keeps priority across all analyses.
+  for (const [key, value] of nameKeys) keys.set(key, value);
   const cap = session.budget.limits.resultBytes;
   const note = (state: Limitation['state'], scope: string, detail: string) => {
     const item = limitation(state, scope, detail);
@@ -134,7 +140,7 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
       note('budget', identity, 'No D1 allowance for attached evidence; independent lookup remains available');
       continue;
     }
-    const page = await session.queryIfAvailable(key.lookup === 'lexicon' ? 'lexicon_strong' : 'grammar_expansion',
+    const page = await session.queryIfAvailable(key.lookup === 'lexicon' ? 'lexicon_strong' : key.lookup === 'proper_name' ? 'proper_name' : 'grammar_expansion',
       { key: key.key, after: null });
     if (page === null) { note('budget', identity, 'No D1 allowance for the language-aid lookup'); continue; }
     const count = Math.min(page.rows.length, MAX_AID_ROWS_PER_KEY, MAX_AID_ROWS - rowCount);
@@ -206,7 +212,8 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
       analysis_id: a.analysis_id,
       lexicon: a.lexicon ? delivered.get(cacheKey('lexicon', a.lexicon)) ?? [] : [],
       grammar: [...new Set(a.grammar.flatMap(code => delivered.get(cacheKey('grammar_info', code)) ?? []))],
-    })).filter(a => a.lexicon.length || a.grammar.length);
+      proper_name: a.proper_name ? delivered.get(cacheKey('proper_name', a.proper_name)) ?? [] : [],
+    })).filter(a => a.lexicon.length || a.grammar.length || a.proper_name.length);
     if (!matches.length) continue;
     hit.aid_matches = matches;
     if (utf8Length(JSON.stringify(batch)) > cap) {

@@ -24,6 +24,9 @@ def step_entries(component: str, original: bytes, *, commit: str) -> list[AidEnt
     """Keep source text and lookup metadata separate; never merge homonyms."""
     if not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('A pinned STEP commit is required')
+    if component == 'tipnr':
+        from .stepbible.tipnr import read_tipnr
+        return read_tipnr(original, commit=commit)
     if component in ('tbesh', 'tbesg'):
         language = 'hebrew' if component == 'tbesh' else 'greek'
         return [AidEntry(item.entry_id, item.work, item.edition,

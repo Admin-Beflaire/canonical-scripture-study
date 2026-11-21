@@ -18,9 +18,9 @@ from .language_aid_entries import bdb_entries, bdb_index_entries, step_entries
 METHOD_VERSION = 'language-aids/1'
 INPUT_FORMAT = 'language-aids/original'
 DECLARATION = AdapterDeclaration('language-aids', METHOD_VERSION, frozenset({INPUT_FORMAT}),
-                                 frozenset({'lexicon_entry', 'grammar_expansion'}),
+                                 frozenset({'lexicon_entry', 'grammar_expansion', 'proper_name'}),
                                  frozenset({'component', 'commit', 'source_revision', 'partitions'}))
-_COMPONENTS = {'tbesh', 'tbesg', 'tflsj-0-5624', 'tflsj-extra', 'tehmc', 'tegmc', 'bdb', 'bdb-index'}
+_COMPONENTS = {'tbesh', 'tbesg', 'tflsj-0-5624', 'tflsj-extra', 'tehmc', 'tegmc', 'bdb', 'bdb-index', 'tipnr'}
 _LOG = logging.getLogger(__name__)
 _CACHE_VERSION = 1  # Bump when entry decoding, partitioning or serialization semantics change.
 
@@ -48,7 +48,7 @@ class AidRecipe:
                 or not isinstance(rev, str) or not rev
                 or type(count) is not int or not 1 <= count <= 128):
             raise RecordError('Invalid language-aid recipe parameters')
-        cap = 'grammar_expansion' if name in ('tehmc', 'tegmc') else 'lexicon_entry'
+        cap = 'proper_name' if name == 'tipnr' else 'grammar_expansion' if name in ('tehmc', 'tegmc') else 'lexicon_entry'
         coord = f'language-aids/{name}/1'
         extent = {'component': rev, 'coordinate_version': coord}
         ids = [f'p{n:03d}' for n in range(count)]

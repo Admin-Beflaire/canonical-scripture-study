@@ -184,6 +184,30 @@ class PreparationTest(unittest.TestCase):
             with self.assertRaises(RecordError):
                 run(units[1])
 
+    def test_partition_cache_write_failure_logs_once_and_preparation_succeeds(self):
+        from unittest.mock import Mock
+
+        rev = 'fixture-tbesh/1'
+        store = Store({rev: HEBREW.encode()})
+        store.write_partition_cache = Mock(side_effect=OSError('cache unavailable'))
+        coord = 'language-aids/tbesh/1'
+        units = [{'unit_id': f'prepare-{i:03d}', 'kind': 'prepare',
+                  'native_extent': {'unit_ids': [f'p{i:03d}'], 'coordinate_version': coord},
+                  'depends_on': []} for i in range(2)]
+        reader = AidRecipe({'native_extent': {'coordinate_version': coord}, 'units': units},
+                           'tbesh', STEP, rev, 'lexicon_entry', 2)
+        job = {'kind': 'prepare', 'unit_id': units[0]['unit_id'],
+               'native_extent': units[0]['native_extent'],
+               'input_refs': [{'kind': 'source_revision', 'id': rev}]}
+        expected = reader.prepare(job, Store({rev: HEBREW.encode()}))
+        with self.assertLogs('css_preparation.adapters.step_aids', level='WARNING') as logs:
+            actual = reader.prepare(job, store)
+        self.assertEqual(store.write_partition_cache.call_count, 2)
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn('Partition cache write failed', logs.output[0])
+        self.assertEqual(actual.statements(), expected.statements())
+        self.assertEqual(actual.blobs, expected.blobs)
+
     def test_original_digest_is_checked(self):
         rev = 'fixture-tbesh/1'
         store = Store({rev: HEBREW.encode()})

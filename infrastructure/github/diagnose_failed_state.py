@@ -23,13 +23,15 @@ def summarize(receipt_bytes, state_bytes, log_bytes):
     if not isinstance(resources, list):
         raise ValueError('Saved state resources unavailable')
     text = log_bytes.decode('utf-8', errors='replace')
+    plan = text.partition('=== plan ===')[2].partition('=== apply ===')[0]
     apply = text.partition('=== apply ===')[2]
+    diagnostic = apply if apply.strip() else plan
     categories = {
         'authentication_or_authorization': bool(re.search(
-            r'authentication error|unauthori[sz]ed|forbidden|permission denied|not authorized|http[^\n]{0,20}\b(?:401|403)\b', apply, re.I)),
-        'already_exists': bool(re.search(r'already exists|already been taken', apply, re.I)),
-        'network_or_timeout': bool(re.search(r'timed? out|timeout|connection refused|network is unreachable', apply, re.I)),
-        'terraform_error_present': bool(re.search(r'\bError:', apply, re.I)),
+            r'authentication error|unauthori[sz]ed|forbidden|permission denied|not authorized|http[^\n]{0,20}\b(?:401|403)\b', diagnostic, re.I)),
+        'already_exists': bool(re.search(r'already exists|already been taken', diagnostic, re.I)),
+        'network_or_timeout': bool(re.search(r'timed? out|timeout|connection refused|network is unreachable', diagnostic, re.I)),
+        'terraform_error_present': bool(re.search(r'\bError:', diagnostic, re.I)),
     }
     return {
         'receipt_outcome': receipt.get('outcome'),
@@ -38,7 +40,8 @@ def summarize(receipt_bytes, state_bytes, log_bytes):
             isinstance(row, dict) and row.get('type') == 'cloudflare_workers_kv_namespace'
             and row.get('name') == 'verified_word_cache' and row.get('instances')
             for row in resources),
-        'apply_log_present': bool(apply),
+        'apply_log_present': bool(apply.strip()),
+        'plan_log_present': bool(plan.strip()),
         'error_categories': categories,
     }
 

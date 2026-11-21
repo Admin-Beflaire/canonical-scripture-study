@@ -152,8 +152,8 @@ class AidRecipe:
                     text = ''.join(entry.body + '\\n' for entry in group)
                     return NativeText(value['coordinate'], ((unit, text),),
                                       order_bases=(value['base'],)), group
-            except (OSError, ValueError, TypeError, KeyError):
-                pass  # Invalid/missing optional cache: rederive from the pinned original.
+            except Exception:  # noqa: BLE001 - optional cache must not block correct original-based work
+                pass  # Invalid/unavailable cache: rederive from the pinned original.
 
         full, groups = self._native(storage)  # Always verifies the original before caching.
         bases = full.scalar_bases()
@@ -168,7 +168,7 @@ class AidRecipe:
                 # Failed cache writes must not prevent correct preparation from original data.
                 try:
                     write_cache(f'{prefix}/{name}.json', payload)
-                except OSError:
+                except Exception:  # noqa: BLE001 - cache write failure is non-authoritative
                     pass
         group = groups[int(unit[1:])]
         return NativeText(full.coordinate_version, ((unit, full.unit(unit)),),

@@ -48,11 +48,15 @@ class CloudflareConfigTests(unittest.TestCase):
             "instance":"main","hostnames":{"study":"study.example.invalid","control":"control.example.invalid"},
             "access_issuer":"https://team.cloudflareaccess.com",
             "database_id":"22222222-2222-4222-8222-222222222222","database_name":"css-data-main",
-            "bucket_name":"css-private-main","audiences":{"study":"c"*64,"control":"d"*64,"jobs":"e"*64}
+            "bucket_name":"css-private-main","verified_word_cache_namespace_id":"f"*32,
+            "audiences":{"study":"c"*64,"control":"d"*64,"jobs":"e"*64}
         }
         result=instance.instance(binding,"f"*32+".access")
         self.assertEqual(result["DATABASE_ID"],binding["database_id"])
         self.assertEqual(result["DEPLOYMENT_CLIENT_ID"],"f"*32+".access")
+        self.assertEqual(result["VERIFIED_WORD_CACHE_NAMESPACE_ID"],"f"*32)
+        with self.assertRaises(instance.InstanceError):
+            instance.instance({k:v for k,v in binding.items() if k!="verified_word_cache_namespace_id"},"f"*32+".access")
         with self.assertRaises(instance.InstanceError):
             instance.instance(binding,"not-a-client-id")
         with self.assertRaises(instance.InstanceError):

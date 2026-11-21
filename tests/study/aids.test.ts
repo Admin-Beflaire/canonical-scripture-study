@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { A, buildFixture } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
-import { AID_LIMITS, STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
+import { AID_LIMITS, STARTING_LIMITS, WORD_LIMITS, limitsFor } from '../../services/study/src/read/budget.ts';
 import { aidBatch } from '../../services/study/src/operators/aids.ts';
 import { languageBatch } from '../../services/study/src/operators/language.ts';
 import type { SearchAdapter, SearchHit } from '../../services/study/src/read/search.ts';
@@ -475,4 +475,35 @@ test('name presence scans many tags in one selected-release query', async () => 
   const result = await session.query('proper_name_presence', { tags });
   assert.equal(session.budget.usage().d1Calls - before, 1);
   assert.deepEqual(JSON.parse(String(result.rows[0].tags)), ['G3010']);
+  f.db.sqlite.exec('DROP INDEX annotations_proper_name_tag');
+  const withoutIndex = await ReadSession.open({ ...f.env, DATA_DB: f.db }, AID_LIMITS);
+  const unindexed = await withoutIndex.query('proper_name_presence', { tags: ['G3010', 'G3011'] });
+  assert.deepEqual(JSON.parse(String(unindexed.rows[0].tags)), ['G3010']);
+});
+
+test('default three-query word search does not create an empty name batch', async () => {
+  const f = aids();
+  const hits: SearchHit[] = Array.from({ length: 20 }, (_, i) => ({
+    source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: i,
+    occurrence_id: 'nonname-' + i, native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: i, end: i + 1 }] },
+    analyses: [{ analysis_id: 'analysis-' + i, lemma_id: 'G' + String(3000 + i), grammar: {} }],
+  }));
+  const adapter: SearchAdapter = { async search(session) {
+    while (session.budget.usage().d1Calls < 3) session.budget.spendQuery();
+    return { state: 'complete', lookup: 'grammar', key: 'greek:N-NSM', hits, searched: [], limitations: [],
+      remaining: null, ranked: false, resume_after: hits.map((_, i) => ({ source: A, output: 'syn-word', order: i,
+        dir: 0, entry: 0, after: null, anchor: null })) };
+  } };
+  const batch = await languageBatch(await ReadSession.open(f.env, WORD_LIMITS),
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'grammar', key: 'greek:N-NSM', sources: [A] },
+    null, 'test', [], adapter);
+  assert.equal(batch.evidence.filter(e => e.kind === 'search_hit').length, 20);
+  assert.equal(batch.continuation, null, 'non-names must not produce empty follow-up batches');
+});
+
+
+test('word budget stays within configured platform caps', () => {
+  assert.equal(limitsFor({}, WORD_LIMITS).d1Calls, 7);
+  assert.equal(limitsFor({ MAX_D1_CALLS: 6 }, WORD_LIMITS).d1Calls, 6);
 });

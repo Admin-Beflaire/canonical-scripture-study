@@ -346,7 +346,7 @@ function readerParams(i: ReaderMappingInput): unknown[] {
 export const QUERIES = {
   proper_name_presence: { sql: `SELECT COALESCE(json_group_array(tag.value), '[]') AS tags
 FROM json_each(?2) tag WHERE EXISTS (
-  SELECT 1 FROM annotations a INDEXED BY annotations_proper_name_tag
+  SELECT 1 FROM annotations a
   JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
   WHERE a.kind = 'proper_name' AND json_extract(a.details_json, '$.disambiguated_strong') = tag.value
 ) LIMIT ?3`, params: (i: NamePresenceInput) => [JSON.stringify(list(i.tags, 1000))] },

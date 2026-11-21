@@ -25,6 +25,9 @@ export const STARTING_LIMITS: Readonly<BudgetLimits> = Object.freeze({
  *  observed source entries; configured platform limits still apply. */
 export const AID_LIMITS: Readonly<BudgetLimits> = Object.freeze({ ...STARTING_LIMITS, r2Reads: 6, r2Bytes: 98304 });
 
+/** Word searches can check name candidates without displacing lexical evidence. */
+export const WORD_LIMITS: Readonly<BudgetLimits> = Object.freeze({ ...AID_LIMITS, d1Calls: 7 });
+
 function configured(value: string | number | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
   const n = Number(value);

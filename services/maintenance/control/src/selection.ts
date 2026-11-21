@@ -359,7 +359,8 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
 /** Select a saved, checked release in one guarded batch: base, task revision, candidate and exclusion state
  *  must be unchanged. `scope` supplies the exclusion changes that commit with the selection. */
 interface CombinedRelease { manifest: string; recipe: string; formats: Record<string, string>;
-  coverage: string; quality: string; scope: string; members: string[] }
+  coverage: string; quality: string; scope: string; members: string[];
+  previousRevision: number; taskScope: string }
 
 async function selectSaved(db: D1Database, taskId: string, revision: number, scope: Scope, releaseId: string, base: string | null,
   exclusions: string, checked: Outcome, build?: { id: string; revision: number; outcome: Outcome; candidate: string },
@@ -372,8 +373,8 @@ async function selectSaved(db: D1Database, taskId: string, revision: number, sco
   // Constructing a parallel combined release is part of the SAME guarded D1 batch
   // as selecting it. If the release task, build, base or exclusions change, neither
   // the release nor its members is inserted.
-  const combinedGuard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?) AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ? AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) AND ${EXCLUSION_STATE} = ? ${buildGuard}`;
-  const guardedArgs = [taskId, revision, releaseId, base, releaseId, exclusions,
+  const combinedGuard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')) AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ? AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) AND ${EXCLUSION_STATE} = ? ${buildGuard}`;
+  const guardedArgs = [taskId, combined?.previousRevision, base, releaseId, exclusions,
     ...(build ? [build.id, build.revision, build.candidate] : [])];
   try {
     await db.batch([
@@ -383,6 +384,18 @@ async function selectSaved(db: D1Database, taskId: string, revision: number, sco
             combined.coverage, combined.quality, combined.scope, ...guardedArgs, releaseId),
         db.prepare(`INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?) WHERE ${combinedGuard} AND EXISTS (SELECT 1 FROM releases WHERE id = ?)`)
           .bind(releaseId, JSON.stringify(combined.members), ...guardedArgs, releaseId),
+        // The candidate FK needs its release to exist. Record it only here, after the
+        // guarded release inserts and before the guarded selection, in one transaction.
+        db.prepare(`UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1,
+          base_release_id = ?, candidate_release_id = ?, quality_ref = ?, scope_ref = ?
+          WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')
+            AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ?
+            AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1)
+            AND ${EXCLUSION_STATE} = ? AND EXISTS (SELECT 1 FROM releases WHERE id = ?)
+            AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ? ${buildGuard}`)
+          .bind(base, releaseId, combined.quality, combined.taskScope,
+            taskId, combined.previousRevision, base, releaseId, exclusions, releaseId, releaseId,
+            combined.members.length, ...(build ? [build.id, build.revision, build.candidate] : [])),
       ] : []),
       db.prepare(`UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
         WHERE singleton_id = 1 AND current_release_id IS ? AND ? IS NOT current_release_id
@@ -526,11 +539,16 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
     const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
     releaseId = `release-${(await sha256(canonicalJson({ members: combined.ids, quality: build.quality_ref, scope: scopeRef }))).slice(0, 32)}`;
     combinedRelease = { manifest: source.manifest_revision, recipe: source.recipe_revision,
-      formats: releaseVersions(items), coverage, quality: build.quality_ref, scope: scopeRef, members: combined.ids };
+      formats: releaseVersions(items), coverage, quality: build.quality_ref, scope: scopeRef, members: combined.ids,
+      previousRevision: task.revision, taskScope: build.scope_ref };
   }
   // Record the candidate on this task (once), then select it with the build's own exclusion changes.
   let revision = task.revision;
-  if (task.state !== 'checked' || task.candidate_release_id !== releaseId || task.base_release_id !== current.current_release_id) {
+  if (combinedRelease) {
+    // Its candidate FK cannot be recorded before the combined release exists;
+    // selectSaved records it inside the same guarded transaction, advancing the revision.
+    revision += 1;
+  } else if (task.state !== 'checked' || task.candidate_release_id !== releaseId || task.base_release_id !== current.current_release_id) {
     const recorded = await db.prepare(`UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
         quality_ref = ?, scope_ref = ? WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`)
       .bind(current.current_release_id, releaseId, build.quality_ref, build.scope_ref, task.id, task.revision).run();

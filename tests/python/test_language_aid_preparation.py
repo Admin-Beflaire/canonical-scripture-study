@@ -167,6 +167,14 @@ class PreparationTest(unittest.TestCase):
             self.assertEqual(len(store.partitions), 2)
             self.assertNotEqual(first.rows('prepared_output')[0]['id'],
                                 second.rows('prepared_output')[0]['id'])
+            # Cache hits must reconstruct *identical* evidence, including exact
+            # body bytes, coordinate offsets, output statements and digests.
+            direct = Store({rev: HEBREW.encode()})
+            uncached = reader.prepare({'kind': 'prepare', 'unit_id': units[1]['unit_id'],
+                                       'native_extent': units[1]['native_extent'],
+                                       'input_refs': [{'kind': 'source_revision', 'id': rev}]}, direct)
+            self.assertEqual(second.statements(), uncached.statements())
+            self.assertEqual(second.blobs, uncached.blobs)
             # Quality reads the pinned original directly, independent of cached partitions.
             self.assertEqual(len(reader.read_source(rev, store).units), 2)
             self.assertEqual(parsed.call_count, 2)

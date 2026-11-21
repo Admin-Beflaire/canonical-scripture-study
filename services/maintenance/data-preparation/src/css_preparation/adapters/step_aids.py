@@ -149,7 +149,7 @@ class AidRecipe:
                                 and isinstance(entry.get('lookup'), dict) for entry in value['entries'])):
                     from .language_aid_entries import AidEntry
                     group = [AidEntry(**entry) for entry in value['entries']]
-                    text = ''.join(entry.body + '\\n' for entry in group)
+                    text = ''.join(entry.body + '\n' for entry in group)
                     return NativeText(value['coordinate'], ((unit, text),),
                                       order_bases=(value['base'],)), group
             except Exception:  # noqa: BLE001 - optional cache must not block correct original-based work

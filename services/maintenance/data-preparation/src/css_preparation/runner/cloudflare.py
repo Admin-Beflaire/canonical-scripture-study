@@ -24,7 +24,7 @@ _HEX = re.compile(r'[0-9a-f]{64}')
 _PAGE_ROWS = 500           # Keeps each paged result far below D1's 50 MB response limit.
 _BATCH_STATEMENTS = 1000   # One unit's candidate rows; larger units must be split by the recipe.
 _BOUND_IDS = 90            # D1 binds at most 100 parameters per statement (two more for paging).
-_PARTITION_CACHE = re.compile(r'prepared/language-aid-cache/v1/[0-9a-f]{64}/p[0-9]{3}\\.json')
+_PARTITION_CACHE = re.compile(r'prepared/language-aid-cache/v1/[0-9a-f]{64}/p[0-9]{3}\.json')
 
 
 @dataclass(frozen=True)

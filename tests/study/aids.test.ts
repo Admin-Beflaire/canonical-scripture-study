@@ -8,6 +8,7 @@ import { aidBatch } from '../../services/study/src/operators/aids.ts';
 import { languageBatch } from '../../services/study/src/operators/language.ts';
 import type { SearchAdapter, SearchHit } from '../../services/study/src/read/search.ts';
 import { study } from '../../services/study/src/coordinator.ts';
+import type { EvidenceItem } from '../../services/study/src/results/batch.ts';
 
 function aids() {
   const f = buildFixture();
@@ -267,3 +268,31 @@ for (const { language, lemma, base, morphology, code } of [
     assert.equal(batch.continuation, null);
   });
 }
+
+test('TIPNR lookup and word evidence retain distinct disambiguated identity candidates', async () => {
+  const f = aids();
+  f.select(null, null);
+  const insert = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  insert.run('name-one', 'syn-ev', A, 'a-u1', 'proper_name', 'synthetic TIPNR', '{}',
+    JSON.stringify({ disambiguated_strong: 'G1234G', identity: 'Alex@Mat.1.1=G1234G' }));
+  insert.run('name-two', 'syn-ev', A, 'a-u2', 'proper_name', 'synthetic TIPNR', '{}',
+    JSON.stringify({ disambiguated_strong: 'G1234H', identity: 'Alex@Mat.2.1=G1234H' }));
+  f.select('rel-2', 'rel-1');
+  const result = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'proper_name', key: 'g1234G' }] });
+  const evidence = (result.evidence as EvidenceItem[]).filter(item => item.kind === 'language_aid');
+  assert.equal(evidence.length, 1);
+  assert.equal(evidence[0].kind === 'language_aid' && evidence[0].details.identity, 'Alex@Mat.1.1=G1234G');
+  const hit: SearchHit = { source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1',
+    native_order: 0, occurrence_id: 'one', native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: 0, end: 1 }] },
+    analyses: [{ analysis_id: 'one', lemma_id: 'G1234G', grammar: {} }] };
+  const adapter: SearchAdapter = { async search() { return { state: 'complete', lookup: 'word', key: 'a', hits: [hit],
+    searched: [], limitations: [], remaining: null, ranked: false, resume_after: [{ source: A, output: 'syn-word',
+      order: 0, dir: 0, entry: 0, after: null, anchor: null }] }; } };
+  const batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, null, 'test', [], adapter);
+  const word = batch.evidence.find(item => item.kind === 'search_hit');
+  assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].proper_name?.length, 1);
+  assert.ok(batch.evidence.some(item => item.kind === 'language_aid' && item.details.identity === 'Alex@Mat.1.1=G1234G'));
+  assert.ok(!batch.evidence.some(item => item.kind === 'language_aid' && item.details.identity === 'Alex@Mat.2.1=G1234H'));
+});

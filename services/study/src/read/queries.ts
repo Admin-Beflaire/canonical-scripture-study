@@ -40,6 +40,7 @@ export interface CountsInput { span_id: string }
 export interface CoverageInput { source_revision_ids: string[]; after?: [string, string, string] | null }
 export interface PackagesInput { subject: string; after?: [string] | null }
 export interface StatementInput { [key: string]: never }
+export interface NamePresenceInput { tags: string[] }
 export interface LanguageAidInput { key: string; after?: [string, string, string] | null }
 export interface ReleaseSourcesInput { capability?: string | null; after?: [string, string] | null }
 export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
@@ -343,6 +344,12 @@ function readerParams(i: ReaderMappingInput): unknown[] {
 }
 
 export const QUERIES = {
+  proper_name_presence: { sql: `SELECT COALESCE(json_group_array(tag.value), '[]') AS tags
+FROM json_each(?2) tag WHERE EXISTS (
+  SELECT 1 FROM annotations a INDEXED BY annotations_proper_name_tag
+  JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
+  WHERE a.kind = 'proper_name' AND json_extract(a.details_json, '$.disambiguated_strong') = tag.value
+) LIMIT ?3`, params: (i: NamePresenceInput) => [JSON.stringify(list(i.tags, 1000))] },
   proper_name: { sql: languageAidQuery('proper_name', 'disambiguated_strong'), params: (i: LanguageAidInput) =>
     [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
   lexicon_strong: { sql: languageAidQuery('lexicon_entry', 'strong_base'), params: (i: LanguageAidInput) =>

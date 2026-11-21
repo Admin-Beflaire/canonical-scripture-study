@@ -30,7 +30,7 @@ export const SEARCH_CHECKS: Readonly<Record<string, PositionCheck>> = Object.fre
 /** One bounded search batch. Works with any adapter that honours the search contract. */
 export async function searchBatch(session: ReadSession, adapter: SearchAdapter, workload: SearchWorkload,
                                   continuation: string | null, guidanceVersion: string, notes: Limitation[] = [],
-                                  countHits?: (hits: import('../read/search.ts').SearchHit[]) => number): Promise<Batch> {
+                                  countHits?: (hits: import('../read/search.ts').SearchHit[]) => number | Promise<number>): Promise<Batch> {
   const normalized = normalizeSearchWorkload(workload);
   let position: SearchPosition | null = null;
   if (continuation !== null) {
@@ -61,7 +61,7 @@ export async function searchBatch(session: ReadSession, adapter: SearchAdapter, 
   };
   // The envelope (scopes, limitations, continuation) can outgrow its reserve; then deliver fewer
   // hits and continue after the last one delivered, rather than failing the whole batch.
-  let count = countHits ? Math.min(result.hits.length, countHits(result.hits)) : result.hits.length;
+  let count = countHits ? Math.min(result.hits.length, await countHits(result.hits)) : result.hits.length;
   if (result.hits.length && count < 1) throw new ReadError('exceeds_limits', 'One word result has too many name tags to continue');
   let batch = await build(count);
   while (utf8Length(JSON.stringify(batch)) > session.budget.limits.resultBytes) {

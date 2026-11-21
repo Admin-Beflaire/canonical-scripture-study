@@ -50,10 +50,10 @@ export async function languageBatch(session: ReadSession, workload: LanguageWork
   }
   const normalized = normalizeSearchWorkload({ mode: workload.mode, depth: workload.depth, language: workload.language, lookup,
     key: normalizeKey(lookup, workload.key), sources });
-  type NameState = { tags: string[]; aid: string | null; search: string | null };
+  type NameState = { tags: string[]; aid: string | null; search: string | null; scan: boolean };
   const checks = { ...SEARCH_CHECKS, word_names: (pos: unknown, key: unknown) => {
-    if (key !== null || !isObject(pos) || Object.keys(pos).sort().join(',') !== 'aid,search,tags') return false;
-    return Array.isArray(pos.tags) && pos.tags.length > 0 && pos.tags.length <= 16
+    if (key !== null || !isObject(pos) || Object.keys(pos).sort().join(',') !== 'aid,scan,search,tags') return false;
+    return typeof pos.scan === 'boolean' && (pos.scan === false || pos.aid === null) && Array.isArray(pos.tags) && pos.tags.length > 0 && pos.tags.length <= 16
       && pos.tags.every((tag: unknown) => typeof tag === 'string' && /^[HG]\d{4,5}[A-Za-z]?$/.test(tag))
       && (pos.aid === null || typeof pos.aid === 'string' && pos.aid.length <= 2048)
       && (pos.search === null || typeof pos.search === 'string' && pos.search.length <= 2048);
@@ -61,41 +61,73 @@ export async function languageBatch(session: ReadSession, workload: LanguageWork
   const state = continuation ? await resumeContinuation(continuation, normalized, checks) : null;
   if (state?.op === 'word_names') {
     const pending = state.pos as NameState;
+    if (pending.scan) {
+      const found = await presentNameTags(session, pending.tags);
+      const next = { ...pending, scan: false, tags: found };
+      const token = found.length ? await encodeContinuation(normalized, { op: 'word_names', pos: next, key: null }) : pending.search;
+      return { release_id: session.release.id, mode: normalized.mode, depth: normalized.depth,
+        delivered_scope: { lookup, key: normalized.key, sources, name_presence_checked: true }, context_scope: null,
+        evidence: [], citations: [], searched_scope: [], coverage: [], limitations: [],
+        remaining: token ? { word_names: found.length, search: !!pending.search } : null,
+        continuation: token, guidance_version: guidanceVersion };
+    }
     const tag = pending.tags[0];
     const result = await aidBatch(session, { ...normalized, lookup: 'proper_name', key: tag, sources: null }, pending.aid,
       guidanceVersion);
     // No matching identity is ordinary for non-name Strong tags.
     result.limitations = result.limitations.filter(item => !(item.state === 'missing_evidence' && item.scope === tag));
-    result.delivered_scope = { lookup, key: normalized.key, sources, proper_name_for: tag };
+    result.delivered_scope = { lookup, key: normalized.key, word_sources: sources, proper_name_for: tag, sources: null };
     const next = result.continuation ? { ...pending, aid: result.continuation }
       : { ...pending, tags: pending.tags.slice(1), aid: null };
     result.continuation = next.tags.length ? await encodeContinuation(normalized, { op: 'word_names', pos: next, key: null }) : pending.search;
     result.remaining = result.continuation ? { word_names: next.tags.length, search: !!pending.search } : null;
     return result;
   }
-  // Bound distinct tags per search page so their continuation remains small.
-  const batch = await searchBatch(session, adapter, normalized, continuation, guidanceVersion, notes, hits => {
+  // Check candidate tags together, before bounding a page by actual names.
+  let present: Set<string> | null = null;
+  const batch = await searchBatch(session, adapter, normalized, continuation, guidanceVersion, notes, async hits => {
+    const all = [...new Set(hits.flatMap(hit => wordKeys(hit).flatMap(a => a.proper_name ? [a.proper_name] : [])))];
+    if (!all.length) { present = new Set(); return hits.length; }
+    // Preserve the existing room for lexicon, grammar and their span read.
+    // If the search already spent that room, screen in the next batch instead.
+    const checked = session.budget.canQuery(4)
+      ? await session.queryIfAvailable('proper_name_presence', { tags: all }) : null;
+    present = checked ? new Set(parsePresence(checked.rows, all)) : null;
     const tags = new Set<string>();
     for (let i = 0; i < hits.length; i++) {
-      const next = new Set([...tags, ...wordKeys(hits[i]).flatMap(a => a.proper_name ? [a.proper_name] : [])]);
-      if (next.size > 4 && i > 0 || next.size > 16) return i;
+      const next = new Set([...tags, ...wordKeys(hits[i]).flatMap(a => a.proper_name && (!present || present.has(a.proper_name)) ? [a.proper_name] : [])]);
+      if (next.size > 16) return i;
       for (const tag of next) tags.add(tag);
     }
     return hits.length;
   });
   if (SUPPORTED_LOOKUPS.includes(lookup as LookupKind)) {
     const completed = await attachWordAids(session, batch);
+    const available = present as Set<string> | null;
     const tags = [...new Set(batch.evidence.flatMap(item => item.kind === 'search_hit'
-      ? wordKeys(item.hit).flatMap(a => a.proper_name && !completed.has(a.proper_name) ? [a.proper_name] : []) : []))];
+      ? wordKeys(item.hit).flatMap(a => a.proper_name && !completed.has(a.proper_name) && (!available || available.has(a.proper_name)) ? [a.proper_name] : []) : []))];
     if (tags.length) {
       batch.continuation = await encodeContinuation(normalized, { op: 'word_names',
-        pos: { tags, aid: null, search: batch.continuation }, key: null });
+        pos: { tags, aid: null, search: batch.continuation, scan: available === null }, key: null });
       batch.remaining = { word_names: tags.length, search: !!batch.remaining };
     }
   }
   return batch;
 }
 
+
+function parsePresence(rows: Record<string, unknown>[], requested: string[]): string[] {
+  try {
+    const value: unknown = JSON.parse(String(rows[0]?.tags));
+    if (!Array.isArray(value) || !value.every(tag => typeof tag === 'string' && requested.includes(tag))) throw new Error();
+    return [...new Set(value)];
+  } catch { throw new ReadError('corrupt', 'Unreadable proper-name presence result'); }
+}
+
+async function presentNameTags(session: ReadSession, tags: string[]): Promise<string[]> {
+  const result = await session.query('proper_name_presence', { tags });
+  return parsePresence(result.rows, tags);
+}
 
 /** Evidence attached by selected Strong/morphology keys, not by guessed word senses.
  * Each distinct key is fetched at most once per batch; a bounded, release-scoped cache

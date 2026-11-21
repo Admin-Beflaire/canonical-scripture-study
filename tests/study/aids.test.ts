@@ -357,12 +357,21 @@ test('name evidence continues automatically when word-search budget is exhausted
     await assert.rejects(languageBatch(await ReadSession.open(f.env, AID_LIMITS),
       { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'different', sources: [A] },
       batch.continuation, 'test', [], adapter));
-    const followed = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
-      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, batch.continuation,
-      'test', [], adapter);
-    assert.equal((followed.delivered_scope as {proper_name_for: string}).proper_name_for, 'G1234G');
-    assert.ok(followed.evidence.some(e => e.kind === 'language_aid' && e.details.identity === 'Alex'));
-    assert.equal(followed.continuation, null);
+    let token: string | null = batch.continuation;
+    let found = false, calls = 0;
+    while (token) {
+      const followed = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+        { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, token,
+        'test', [], adapter);
+      if (followed.evidence.some(e => e.kind === 'language_aid' && e.details.identity === 'Alex')) {
+        assert.equal((followed.delivered_scope as {proper_name_for: string}).proper_name_for, 'G1234G');
+        assert.equal((followed.delivered_scope as {sources: unknown}).sources, null);
+        found = true;
+      }
+      token = followed.continuation;
+      assert.ok(++calls < 5);
+    }
+    assert.ok(found, 'name evidence arrives automatically');
   }
 });
 
@@ -430,4 +439,40 @@ test('continued name evidence delivers a long entry without losing wording', asy
     assert.ok(++calls < 10);
   }
   assert.equal(text, body);
+});
+
+test('twenty distinct non-name lemmas remain one full word-search batch', async () => {
+  const f = aids();
+  const hits: SearchHit[] = Array.from({ length: 20 }, (_, i) => ({
+    source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: i,
+    occurrence_id: 'nonname-' + i, native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: i, end: i + 1 }] },
+    analyses: [{ analysis_id: 'analysis-' + i, lemma_id: 'G' + String(3000 + i), grammar: {} }],
+  }));
+  const adapter: SearchAdapter = { async search(session) {
+    while (session.budget.usage().d1Calls < 2) session.budget.spendQuery();
+    return { state: 'complete', lookup: 'grammar', key: 'greek:N-NSM', hits, searched: [], limitations: [],
+      remaining: null, ranked: false, resume_after: hits.map((_, i) => ({ source: A, output: 'syn-word', order: i,
+        dir: 0, entry: 0, after: null, anchor: null })) };
+  } };
+  const batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'grammar', key: 'greek:N-NSM', sources: [A] },
+    null, 'test', [], adapter);
+  assert.equal(batch.evidence.filter(e => e.kind === 'search_hit').length, 20);
+  assert.equal(batch.continuation, null, 'non-names must not produce empty follow-up batches');
+});
+
+test('name presence scans many tags in one selected-release query', async () => {
+  const f = aids();
+  f.select(null, null);
+  const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  add.run('present-name', 'syn-ev', A, 'a-u1', 'proper_name', 'TIPNR', '{}', JSON.stringify({ disambiguated_strong: 'G3010' }));
+  add.run('unselected-name', 'syn-ev-old', A, 'a-old', 'proper_name', 'TIPNR', '{}', JSON.stringify({ disambiguated_strong: 'G3011' }));
+  f.select('rel-2', 'rel-1');
+  const tags = Array.from({ length: 20 }, (_, i) => 'G' + (3000 + i));
+  const session = await ReadSession.open(f.env, AID_LIMITS);
+  const before = session.budget.usage().d1Calls;
+  const result = await session.query('proper_name_presence', { tags });
+  assert.equal(session.budget.usage().d1Calls - before, 1);
+  assert.deepEqual(JSON.parse(String(result.rows[0].tags)), ['G3010']);
 });

@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import math
 import re
 from dataclasses import asdict
@@ -20,6 +21,7 @@ DECLARATION = AdapterDeclaration('language-aids', METHOD_VERSION, frozenset({INP
                                  frozenset({'lexicon_entry', 'grammar_expansion'}),
                                  frozenset({'component', 'commit', 'source_revision', 'partitions'}))
 _COMPONENTS = {'tbesh', 'tbesg', 'tflsj-0-5624', 'tflsj-extra', 'tehmc', 'tegmc', 'bdb', 'bdb-index'}
+_LOG = logging.getLogger(__name__)
 _CACHE_VERSION = 1  # Bump when entry decoding, partitioning or serialization semantics change.
 
 
@@ -161,6 +163,7 @@ class AidRecipe:
         # concurrently dispatched units may parse on a miss but must not each
         # attempt to write every partition (up to 64 x 64 R2 PUTs).
         if callable(write_cache) and unit == 'p000':
+            logged_failure = False
             for i, group in enumerate(groups):
                 name = f'p{i:03d}'
                 value = {'version': _CACHE_VERSION, 'prefix': prefix, 'unit': name,
@@ -172,7 +175,9 @@ class AidRecipe:
                 try:
                     write_cache(f'{prefix}/{name}.json', payload)
                 except Exception:  # noqa: BLE001 - cache write failure is non-authoritative
-                    pass
+                    if not logged_failure:
+                        _LOG.warning('Partition cache write failed; continuing from original data', exc_info=True)
+                        logged_failure = True
         group = groups[int(unit[1:])]
         return NativeText(full.coordinate_version, ((unit, full.unit(unit)),),
                           order_bases=(bases[unit],)), group

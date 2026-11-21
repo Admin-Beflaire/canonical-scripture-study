@@ -35,6 +35,29 @@ function mappedFixture(title = false, gapBetween = false, narrow = false) {
   return { env, db };
 }
 
+test('alternate 2 Corinthians 13:14 resolves to NRSVA 13:13 with a numbering note', async () => {
+  const { env, db } = mappedFixture();
+  db.sqlite.prepare(`INSERT INTO prepared_outputs VALUES ('alias-map','reader_reference',?, 'fixture/1','{}','{}','{}')`).run(JSON.stringify([HEB]));
+  for (const verse of [11, 12, 13]) {
+    db.sqlite.prepare(`INSERT INTO reader_reference_links VALUES (?, 'alias-map', ?, 'nrsva/1', ?, ?, 'numbered_text', 0, 'exact', '{}', NULL)`)
+      .run(`alias-${verse}`, HEB, `2Cor.13.${verse}`, `evidence:heb1#Gen.1.${verse - 10}`);
+  }
+  db.sqlite.prepare(`INSERT INTO releases VALUES ('rel-alias','m','r',?,'c','q','s')`)
+    .run(JSON.stringify({ evidence_records: '1', reader_scheme_version: 'nrsva/1' }));
+  db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-alias', output_id FROM release_outputs WHERE release_id='rel-m'`);
+  db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-alias','alias-map')`);
+  db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-alias' WHERE singleton_id=1`);
+  for (const [reference, expected] of [['2 Cor 13:14', ['2Cor.13.13']], ['2 Cor 13:13', ['2Cor.13.13']],
+    ['2 Cor 13:11-14', ['2Cor.13.11', '2Cor.13.12', '2Cor.13.13']]] as const) {
+    const batch = await study(env, { mode: 'passage', depth: 'focused', references: [reference], sources: [HEB] }) as {
+      evidence: { reader_reference?: string }[]; delivered_scope: { numbering_notes: string[] };
+    };
+    assert.deepEqual(batch.evidence.map(item => item.reader_reference), expected);
+    assert.match(batch.delivered_scope.numbering_notes[0], /KJV, ESV and NIV.*13:14/);
+    assert.match(batch.delivered_scope.numbering_notes[0], /13:12.*13:13/);
+  }
+});
+
 function literaryFixture(useR2 = false, corrupt = false, long: boolean | number = false, chunked = false) {
   const { env, db, bucket } = (() => {
     const fixture = mappedFixture();

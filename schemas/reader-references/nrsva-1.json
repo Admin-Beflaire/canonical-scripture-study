@@ -73,7 +73,7 @@
     {"book_id": "Acts", "name": "Acts", "aliases": ["Act"], "chapter_count": 28, "last_verses": [26, 47, 26, 37, 42, 15, 60, 40, 43, 48, 30, 25, 52, 28, 41, 40, 34, 28, 41, 38, 40, 30, 35, 27, 27, 32, 44, 31]},
     {"book_id": "Rom", "name": "Romans", "aliases": ["Ro"], "chapter_count": 16, "last_verses": [32, 29, 31, 25, 21, 23, 25, 39, 33, 21, 36, 21, 14, 23, 33, 27]},
     {"book_id": "1Cor", "name": "1 Corinthians", "aliases": ["1Co"], "chapter_count": 16, "last_verses": [31, 16, 23, 21, 13, 20, 40, 13, 27, 33, 34, 31, 13, 40, 58, 24]},
-    {"book_id": "2Cor", "name": "2 Corinthians", "aliases": ["2Co"], "chapter_count": 13, "last_verses": [24, 17, 18, 18, 21, 18, 16, 24, 15, 18, 33, 21, 14]},
+    {"book_id": "2Cor", "name": "2 Corinthians", "aliases": ["2Co"], "chapter_count": 13, "last_verses": [24, 17, 18, 18, 21, 18, 16, 24, 15, 18, 33, 21, 13]},
     {"book_id": "Gal", "name": "Galatians", "aliases": [], "chapter_count": 6, "last_verses": [24, 21, 29, 31, 26, 18]},
     {"book_id": "Eph", "name": "Ephesians", "aliases": [], "chapter_count": 6, "last_verses": [23, 22, 21, 32, 33, 24]},
     {"book_id": "Phil", "name": "Philippians", "aliases": ["Php"], "chapter_count": 4, "last_verses": [30, 30, 21, 23]},

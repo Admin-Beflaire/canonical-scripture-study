@@ -9,6 +9,16 @@ SCHEMA = json.loads(
     .read_text(encoding="utf-8")
 )
 
+READER_ALIASES = json.loads(
+    (Path(__file__).resolve().parents[4] / "schemas/reader-references/aliases.json")
+    .read_text(encoding="utf-8")
+)["aliases"]
+
+
+def reader_alias(reference):
+    """Return a declared alternate reader number and its explanation, if any."""
+    return next((dict(alias) for alias in READER_ALIASES if alias["from"] == reference), None)
+
 
 def _identifier(value):
     return (

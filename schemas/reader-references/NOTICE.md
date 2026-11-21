@@ -17,5 +17,8 @@ Baruch chapter 6 respectively. This matches the separate entries in the
 [publisher's Apocrypha list](https://bibleshelp.cambridge.org/hc/en-gb/articles/17710172930578-Which-Apocryphal-Books-are-included-in-my-Bible-version-translation).
 The catalogue identifies Greek Esther separately. Its chapter 11 starts at
 verse 2, as checked against the [NRSV Anglicized reference display](https://bible.oremus.org/?ql=504581214).
+The final verse of 2 Corinthians 13 is 13, as checked against the
+[NRSV Anglicised text](https://www.biblegateway.com/passage/?search=2%20Corinthians%2013%3A11-13&version=NRSVA);
+some other English versions number the same closing blessing as verse 14.
 Book names and aliases support existing application inputs. Textual presence, continuity, native correspondence and source
 coverage require evidence from each prepared source.

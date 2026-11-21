@@ -79,12 +79,22 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run('long-annotation', 'syn-ev', A, 'long-span', 'lexicon_entry', 'synthetic', '{}', JSON.stringify({ strong_base: 'G1234' }));
   f.select('rel-2', 'rel-1');
+  // Shared verified text is visible to a new Worker instance with an empty local WeakMap.
+  const shared = new Map<string, string>();
+  const withCache = { ...f.env, VERIFIED_WORD_CACHE: {
+    get: async (key: string) => shared.get(key) ?? null,
+    put: async (key: string, value: string) => { shared.set(key, value); },
+  } };
+  const freshInstance = () => ({ ...withCache, PRIVATE_OBJECTS: {
+    get: (key: string, options?: { range: { offset: number; length: number } }) => f.bucket.get(key, options),
+  } });
   let next: string | null = null;
   const chunks: string[] = [];
   let expectedStart = 0;
   let firstReadCount = 0;
   for (let i = 0; i < 10; i++) {
-    const result = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, next, 'test');
+    const result = await aidBatch(await ReadSession.open(i ? freshInstance() : withCache, AID_LIMITS),
+      { ...workload, key: 'G1234' }, next, 'test');
     assert.ok(Buffer.byteLength(JSON.stringify(result)) <= STARTING_LIMITS.resultBytes);
     for (const item of result.evidence) if (item.kind === 'language_aid' && item.span.span_id === 'long-span') {
       assert.equal(item.span.segments[0].start, expectedStart);
@@ -98,7 +108,7 @@ test('long verified lexical bodies continue without loss and preserve exact sour
       firstReadCount = longReads;
       assert.ok(firstReadCount > 1, 'the first part reads and verifies the source range');
     } else {
-      assert.equal(longReads, firstReadCount, 'continuation reuses verified wording without R2 reads');
+      assert.equal(longReads, firstReadCount, 'cross-instance continuation reuses digest-checked KV wording');
     }
     next = result.continuation;
     if (!next) break;

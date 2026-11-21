@@ -1,4 +1,4 @@
-import { canonicalJson, isIdentifier, isSafeCount, utf8Length } from '../read/bytes.ts';
+import { canonicalJson, isIdentifier, isSafeCount, sha256Hex, utf8Length } from '../read/bytes.ts';
 import { readSpans, type SpanEvidence } from '../read/evidence.ts';
 import type { ReadSession } from '../read/session.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
@@ -8,6 +8,7 @@ import { encodeContinuation, resumeContinuation } from '../results/continuation.
 export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info'] as const;
 const MAX_PENDING_ENTRIES = 4;
 const MAX_PENDING_BODY_BYTES = 96 * 1024;
+const SHARED_CACHE_TTL_SECONDS = 600;
 /** Worker-local, bounded verified wording for entries awaiting continuation.
  *  It never outlives a completed entry or crosses a selected-release change. */
 const PENDING_TEXT = new WeakMap<object, { releaseId: string; entries: Map<string, SpanEvidence> }>();
@@ -18,6 +19,40 @@ function pendingText(session: ReadSession): Map<string, SpanEvidence> {
   PENDING_TEXT.set(session.objects, { releaseId: session.release.id, entries });
   return entries;
 }
+async function sharedKey(session: ReadSession, entryKey: string): Promise<string> {
+  return 'verified-aid:v1:' + await sha256Hex(canonicalJson([session.release.id, entryKey]));
+}
+
+/** Verify global-cache wording against the *selected* D1 span's exact body digest.
+ *  A shared cache hit must never turn untrusted or stale wording into source evidence. */
+async function sharedPending(session: ReadSession, entryKey: string, row: Record<string, unknown>):
+  Promise<SpanEvidence | undefined> {
+  if (!session.verifiedWords) return undefined;
+  try {
+    const saved = await session.verifiedWords.get(await sharedKey(session, entryKey));
+    if (!saved || utf8Length(saved) > MAX_PENDING_BODY_BYTES + 4096) return undefined;
+    const candidate = JSON.parse(saved) as SpanEvidence;
+    if (!candidate || !Array.isArray(candidate.text) || candidate.text.length !== 1
+        || typeof candidate.text[0] !== 'string'
+        || candidate.span_id !== row.span_id || candidate.source_revision_id !== row.source_revision_id
+        || utf8Length(candidate.text[0]) > MAX_PENDING_BODY_BYTES) return undefined;
+    const selected = await session.queryIfAvailable('spans', { ids: [candidate.span_id] });
+    const source = selected?.rows.find(item => item.id === candidate.span_id);
+    if (!source || String(source.source_revision_id) !== candidate.source_revision_id
+        || String(source.kind) !== candidate.kind || String(source.reading_kind) !== candidate.reading_kind) return undefined;
+    const ranges = JSON.parse(String(source.body_ranges_json));
+    const segments = JSON.parse(String(source.segments_json));
+    if (!Array.isArray(ranges) || ranges.length !== 1 || !Array.isArray(segments)
+        || segments.length !== 1 || JSON.stringify(segments) !== JSON.stringify(candidate.segments)
+        || !ranges[0] || typeof ranges[0].sha256 !== 'string'
+        || utf8Length(candidate.text[0]) !== ranges[0].byte_length
+        || await sha256Hex(candidate.text[0]) !== ranges[0].sha256) return undefined;
+    return candidate;
+  } catch {
+    return undefined; // KV is optional; always fall back to a verified R2 read.
+  }
+}
+
 type Position = [string, string, string];
 export interface AidWorkload { mode: string; depth: string; language: string; lookup: string; key: string; sources: string[] | null }
 
@@ -71,7 +106,9 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
         ? [`oshb-bdb:${indexId[1]}:${ref[0]}`] : []))];
     }
     const entryKey = JSON.stringify([row.output_id, row.span_id, row.id, row.source_revision_id]);
-    const cached = anchor !== null && offset > 0 ? pending.get(entryKey) : undefined;
+    const cached = anchor !== null && offset > 0
+      ? pending.get(entryKey) ?? await sharedPending(session, entryKey, row)
+      : undefined;
     if (cached) { pending.delete(entryKey); pending.set(entryKey, cached); }
     const read = cached ? null : await readSpans(session, [String(row.span_id)], true);
     if (read?.remaining.length) { remaining = true; break; }
@@ -116,6 +153,12 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
             pending.delete(entryKey);
             pending.set(entryKey, span);
             if (pending.size > MAX_PENDING_ENTRIES) pending.delete(pending.keys().next().value!);
+            if (!cached && session.verifiedWords) {
+              try {
+                await session.verifiedWords.put(await sharedKey(session, entryKey), JSON.stringify(span),
+                  { expirationTtl: SHARED_CACHE_TTL_SECONDS });
+              } catch { /* Optional cache failure never changes verified evidence. */ }
+            }
           }
           offset = low; anchor = String(row.id); remaining = true; break;
         }

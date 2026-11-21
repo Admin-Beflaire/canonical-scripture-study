@@ -20,12 +20,16 @@ def instance(bindings,client):
             "ZONE_NAME":bindings["zone_name"],"INSTANCE":bindings["instance"],
             "STUDY_HOSTNAME":hosts["study"],"CONTROL_HOSTNAME":hosts["control"],
             "DATABASE_ID":bindings["database_id"],"ACCESS_ISSUER":bindings["access_issuer"],
-            "VERIFIED_WORD_CACHE_NAMESPACE_ID":bindings["verified_word_cache_namespace_id"],
             "STUDY_AUDIENCE":audiences["study"],"CONTROL_AUDIENCE":audiences["control"],
             "JOB_AUDIENCE":audiences["jobs"],"DEPLOYMENT_CLIENT_ID":client,
             "ENHANCEMENTS":False,"MAX_PAGE_BYTES":65536,"REQUEST_BYTES":262144,
             "MAX_D1_CALLS":25,"MAX_SUBREQUESTS":40,"CPU_BUDGET_MS":10
         }
+        # A previously reviewed Worker commit must remain deployable for rollback.
+        # Only new Study templates require the optional KV binding in rendered inputs.
+        study_template = Path("services/study/wrangler.jsonc")
+        if study_template.exists() and "{{VERIFIED_WORD_CACHE_NAMESPACE_ID}}" in study_template.read_text():
+            result["VERIFIED_WORD_CACHE_NAMESPACE_ID"] = bindings["verified_word_cache_namespace_id"]
         if bindings["database_name"]!="css-data-"+result["INSTANCE"] or bindings["bucket_name"]!="css-private-"+result["INSTANCE"]:
             raise InstanceError("State resource naming mismatch")
         return result

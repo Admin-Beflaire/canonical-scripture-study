@@ -157,7 +157,10 @@ class AidRecipe:
 
         full, groups = self._native(storage)  # Always verifies the original before caching.
         bases = full.scalar_bases()
-        if callable(write_cache):
+        # Only the first partition publishes the common derived cache. Other
+        # concurrently dispatched units may parse on a miss but must not each
+        # attempt to write every partition (up to 64 x 64 R2 PUTs).
+        if callable(write_cache) and unit == 'p000':
             for i, group in enumerate(groups):
                 name = f'p{i:03d}'
                 value = {'version': _CACHE_VERSION, 'prefix': prefix, 'unit': name,

@@ -110,7 +110,7 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
     }
   }
   const cap = session.budget.limits.resultBytes;
-  const note = (state: 'budget' | 'corrupt' | 'missing_evidence' | 'exceeds_limits', scope: string, detail: string) => {
+  const note = (state: Limitation['state'], scope: string, detail: string) => {
     const item = limitation(state, scope, detail);
     batch.limitations.push(item);
     if (utf8Length(JSON.stringify(batch)) > cap) batch.limitations.pop();
@@ -147,8 +147,7 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
   const ids = [...new Set([...fresh.values()].flatMap(value => value.rows.map(row => row.span_id)))];
   if (ids.length) {
     const read = await readSpans(session, ids);
-    for (const issue of read.limitations) note(issue.state === 'exceeds_limits' ? 'exceeds_limits' :
-      issue.state === 'corrupt' ? 'corrupt' : 'missing_evidence', issue.scope, issue.detail);
+    for (const issue of read.limitations) note(issue.state, issue.scope, issue.detail);
     if (read.remaining.length) note('budget', 'word_aids', 'Some linked source bodies need another request');
     const spans = new Map(read.spans.map(span => [span.span_id, span]));
     for (const [identity, entry] of fresh) {

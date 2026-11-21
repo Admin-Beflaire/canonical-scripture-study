@@ -183,5 +183,12 @@ test('Matthew 1 onoma (G3686) word-study attaches attributed lexicon and grammar
   assert.ok(session.budget.usage().r2Reads <= AID_LIMITS.r2Reads);
   const standalone = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G3686' }] });
   assert.ok((standalone.evidence as Array<{ kind: string }>).some(item => item.kind === 'language_aid'));
-
+  // One study can span multiple bounded calls. The complete, selected aid entries
+  // are reused rather than queried and verified again.
+  const next = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'lemma', key: 'G3686', sources: [A] },
+    null, 'test', [], adapter);
+  assert.equal(lexCalls, 1, 'cached lexicon not queried again');
+  assert.equal(gramCalls, 1, 'cached grammar not queried again');
+  assert.equal(next.evidence.filter(item => item.kind === 'language_aid').length, 2);
 });

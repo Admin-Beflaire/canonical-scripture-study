@@ -1,0 +1,20 @@
+name: Diagnose failed Cloudflare state
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: provisioning
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Report verified non-sensitive status
+        env:
+          PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        run: python3 infrastructure/github/diagnose_failed_state.py

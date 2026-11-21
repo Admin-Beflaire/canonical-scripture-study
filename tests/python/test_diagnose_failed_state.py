@@ -31,6 +31,15 @@ class DiagnosticTest(unittest.TestCase):
         self.assertTrue(result['error_categories']['authentication_or_authorization'])
         self.assertNotIn('secret-should-not-appear', json.dumps(result))
 
+    def test_plan_failure_is_reported_when_apply_did_not_run(self):
+        receipt, state = self.fixture({'resources': []})
+        result = diagnostic.summarize(receipt, state,
+                    b'=== plan ===\nError: permission denied: private-plan-detail')
+        self.assertTrue(result['plan_log_present'])
+        self.assertFalse(result['apply_log_present'])
+        self.assertTrue(result['error_categories']['authentication_or_authorization'])
+        self.assertNotIn('private-plan-detail', json.dumps(result))
+
     def test_detects_existing_kv_and_rejects_tampered_state(self):
         receipt, state = self.fixture({'resources': [{'type': 'cloudflare_workers_kv_namespace',
                    'name': 'verified_word_cache', 'instances': [{}]}]})

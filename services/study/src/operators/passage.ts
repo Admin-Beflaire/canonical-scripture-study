@@ -7,7 +7,7 @@ import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
 import { candidateUnits, contextUnits, parseReference, type PassageRequest } from '../scope/references.ts';
-import { readerBook, readerVerses } from '../../../../packages/shared/src/reader-catalogue.ts';
+import { readerAlias, readerBook, readerVerses } from '../../../../packages/shared/src/reader-catalogue.ts';
 
 /** The passage part of a Study workload: references in each source's own numbering, the
  *  sources to read (all selected sources when null) and whether to add the surrounding chapter. */
@@ -325,14 +325,23 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     throw new ReadError('unresolved_mapping', 'The current release does not contain the NRSVA reader catalogue; use source-qualified inspection');
   const refs = w.references.map(parseReference);
   const requested = new Set<string>();
+  const numberingNotes: string[] = [];
   const references = refs.flatMap(ref => {
     const book = readerBook(ref.book);
     if (!book) throw new ReadError('invalid_request', `Unknown reader catalogue book ${ref.book}`);
     let verses: string[];
     try {
-      for (const verse of readerVerses(book, ref.from, ref.to)) requested.add(verse);
+      const fromAlias = readerAlias(book, ref.from), toAlias = readerAlias(book, ref.to);
+      for (const alias of [fromAlias, toAlias]) if (alias && !numberingNotes.includes(alias.note)) numberingNotes.push(alias.note);
+      const resolved = (point: typeof ref.from, alias: typeof fromAlias) => {
+        if (!alias) return point;
+        const [, chapter, verse] = alias.to.split('.');
+        return { chapter: Number(chapter), verse: Number(verse) };
+      };
+      const from = resolved(ref.from, fromAlias), to = resolved(ref.to, toAlias);
+      for (const verse of readerVerses(book, from, to)) requested.add(verse);
       verses = w.context ? readerVerses(book, { chapter: ref.from.chapter, verse: null }, { chapter: ref.to.chapter, verse: null })
-        : readerVerses(book, ref.from, ref.to);
+        : readerVerses(book, from, to);
     }
     catch { throw new ReadError('invalid_request', `Reference ${ref.text} is outside the NRSVA catalogue`); }
     const aliases = [book.book_id, ...book.aliases].filter(alias => /^[1-4]?[A-Za-z][A-Za-z0-9]*$/.test(alias));
@@ -442,7 +451,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       }
       const item: EvidenceItem = { kind: 'source_text', span: piece.evidence, role: 'context', literary_part: part + 1 };
       const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
-        delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' },
+        delivered_scope: { references: w.references, sources: w.sources ?? 'all selected', ...(numberingNotes.length ? { numbering_notes: numberingNotes } : {}) },
         context_scope: { literary_unit: { source_revision_id: source, span_id: unitId,
           basis: row.evidence.basis, part: part + 1, parts: row.evidence.segments.length } },
         evidence: [item], citations: [], searched_scope: [], coverage: [], limitations,
@@ -460,7 +469,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
       } catch (error) {
         if (!(error instanceof ReadError) || !['corrupt', 'missing_evidence', 'exceeds_limits'].includes(error.state)) throw error;
         const { batch } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
-          delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' }, context_scope: {},
+          delivered_scope: { references: w.references, sources: w.sources ?? 'all selected', ...(numberingNotes.length ? { numbering_notes: numberingNotes } : {}) }, context_scope: {},
           evidence: [], citations: [], searched_scope: [], coverage: [],
           limitations: [...notes, limitation(error.state, unitId, `${error.message}; literary-unit context is withheld`)],
           remaining: { passage: 'continues' }, continuation: null, guidance_version: guidanceVersion,
@@ -517,7 +526,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
     items.push({ item, key }); processed = key;
   }
   const { batch, deferred } = assembleBatch({ release_id: session.release.id, mode: w.mode, depth: w.depth,
-    delivered_scope: { references: w.references, sources: w.sources ?? 'all selected' }, context_scope: w.context ? { chapters: refs.map(r => `${r.book} ${r.from.chapter}`) } : null,
+    delivered_scope: { references: w.references, sources: w.sources ?? 'all selected', ...(numberingNotes.length ? { numbering_notes: numberingNotes } : {}) }, context_scope: w.context ? { chapters: refs.map(r => `${r.book} ${r.from.chapter}`) } : null,
     evidence: items.map(i => i.item), citations: [], searched_scope: [], coverage: [], limitations: limits,
     remaining: null, continuation: null, guidance_version: guidanceVersion, ...(rules ? { translation_rules: rules } : {}) }, session.budget);
   const delivered = items.length - deferred.length;

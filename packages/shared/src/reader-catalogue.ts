@@ -1,4 +1,5 @@
 import catalogue from '../../../schemas/reader-references/nrsva-1.json' with { type: 'json' };
+import readerAliases from '../../../schemas/reader-references/aliases.json' with { type: 'json' };
 import { foldBookName } from './book-names.ts';
 
 type Book = (typeof catalogue.books)[number];
@@ -23,4 +24,11 @@ export function readerVerses(book: Book, from: { chapter: number; verse: number 
     for (let verse = start; verse <= end; verse++) result.push(`${book.book_id}.${chapter}.${verse}`);
   }
   return result;
+}
+
+/** Resolve declared alternate-number endpoints before enumerating NRSVA verses. */
+export function readerAlias(book: Book, point: { chapter: number; verse: number | null }) {
+  if (point.verse === null) return null;
+  const key = `${book.book_id}.${point.chapter}.${point.verse}`;
+  return readerAliases.aliases.find(alias => alias.from === key) ?? null;
 }

@@ -32,3 +32,9 @@ export function readerAlias(book: Book, point: { chapter: number; verse: number 
   const key = `${book.book_id}.${point.chapter}.${point.verse}`;
   return readerAliases.aliases.find(alias => alias.from === key) ?? null;
 }
+
+/** Explain a numbering ambiguity when its NRSVA target is requested directly too. */
+export function readerNumberingNotes(references: Iterable<string>): string[] {
+  const asked = new Set(references);
+  return readerAliases.aliases.filter(alias => asked.has(alias.to)).map(alias => alias.note);
+}

@@ -7,7 +7,7 @@ import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem, type PassageAnnotation } from '../results/batch.ts';
 import { encodeContinuation, resumeContinuation, type PositionCheck } from '../results/continuation.ts';
 import { candidateUnits, contextUnits, parseReference, type PassageRequest } from '../scope/references.ts';
-import { readerAlias, readerBook, readerVerses } from '../../../../packages/shared/src/reader-catalogue.ts';
+import { readerAlias, readerBook, readerNumberingNotes, readerVerses } from '../../../../packages/shared/src/reader-catalogue.ts';
 
 /** The passage part of a Study workload: references in each source's own numbering, the
  *  sources to read (all selected sources when null) and whether to add the surrounding chapter. */
@@ -351,6 +351,7 @@ async function readerPassageBatch(session: ReadSession, w: PassageWorkload, cont
         native_units: [...new Set(aliases.map(alias => `${alias}.${chapter}.${verse}`))] };
     });
   });
+  for (const note of readerNumberingNotes(requested)) if (!numberingNotes.includes(note)) numberingNotes.push(note);
   if (references.length > 540) throw new ReadError('exceeds_limits', 'The requested references are too long');
   const checks: Readonly<Record<string, PositionCheck>> = { reader(pos, key) {
     return key === null && Array.isArray(pos) && pos.length === 6 && Number.isSafeInteger(pos[0]) && pos[0] >= -1 && pos[0] < references.length

@@ -47,7 +47,7 @@ test('alternate 2 Corinthians 13:14 resolves to NRSVA 13:13 with a numbering not
   db.sqlite.exec(`INSERT INTO release_outputs SELECT 'rel-alias', output_id FROM release_outputs WHERE release_id='rel-m'`);
   db.sqlite.exec(`INSERT INTO release_outputs VALUES ('rel-alias','alias-map')`);
   db.sqlite.exec(`UPDATE release_selection SET current_release_id='rel-alias' WHERE singleton_id=1`);
-  for (const [reference, expected] of [['2 Cor 13:14', ['2Cor.13.13']],
+  for (const [reference, expected] of [['2 Cor 13:14', ['2Cor.13.13']], ['2 Cor 13:13', ['2Cor.13.13']],
     ['2 Cor 13:11-14', ['2Cor.13.11', '2Cor.13.12', '2Cor.13.13']]] as const) {
     const batch = await study(env, { mode: 'passage', depth: 'focused', references: [reference], sources: [HEB] }) as {
       evidence: { reader_reference?: string }[]; delivered_scope: { numbering_notes: string[] };

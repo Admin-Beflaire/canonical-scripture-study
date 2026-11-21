@@ -7,7 +7,10 @@ import recordSchema from "../../schemas/reader-references/records.v1.schema.json
 import evidenceSchema from "../../schemas/evidence-records.v1.schema.json" with { type: "json" };
 import nativeSchema from "../../schemas/native-reference.v1.schema.json" with { type: "json" };
 import fixture from "../conformance/reader-references.v1.json" with { type: "json" };
-import { readerBook, readerVerses } from "../../packages/shared/src/reader-catalogue.ts";
+import { readerAlias, readerBook, readerVerses } from "../../packages/shared/src/reader-catalogue.ts";
+import aliasData from "../../schemas/reader-references/aliases.json" with { type: "json" };
+import aliasSchema from "../../schemas/reader-references/aliases.v1.schema.json" with { type: "json" };
+import aliasFixture from "../conformance/reader-aliases.v1.json" with { type: "json" };
 
 const ajv = new Ajv({ strict: true, allErrors: true })
   .addSchema(recordSchema).addSchema(evidenceSchema).addSchema(nativeSchema);
@@ -41,6 +44,25 @@ test("2 Corinthians 13 follows NRSVA, including its final verse", () => {
   assert.ok(book);
   assert.deepEqual(readerVerses(book, { chapter: 13, verse: 13 }, { chapter: 13, verse: 13 }), ["2Cor.13.13"]);
   assert.throws(() => readerVerses(book, { chapter: 13, verse: 14 }, { chapter: 13, verse: 14 }), /outside/);
+});
+
+test("reader aliases conform to the shared cases and target real catalogue verses", () => {
+  const validate = ajv.compile(aliasSchema);
+  assert.equal(validate(aliasData), true, JSON.stringify(validate.errors));
+  assert.equal(new Set(aliasData.aliases.map(alias => alias.from)).size, aliasData.aliases.length);
+  for (const alias of aliasData.aliases) {
+    const [name, chapter, verse] = alias.to.split('.');
+    const book = readerBook(name);
+    assert.ok(book);
+    assert.deepEqual(readerVerses(book, { chapter: Number(chapter), verse: Number(verse) },
+      { chapter: Number(chapter), verse: Number(verse) }), [alias.to]);
+  }
+  for (const item of aliasFixture.cases) {
+    const [name, chapter, verse] = item.reference.split('.');
+    const book = readerBook(name);
+    assert.ok(book);
+    assert.equal(readerAlias(book, { chapter: Number(chapter), verse: Number(verse) })?.to ?? null, item.target);
+  }
 });
 
 test("mapping records preserve the separate superscription, numbered span and unresolved reference", () => {

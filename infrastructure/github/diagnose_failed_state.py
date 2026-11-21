@@ -66,8 +66,10 @@ def main():
         text = platform_state.download(recovery).decode('utf-8', errors='replace')
         summary = re.findall(r'Plan: (\d+) to add, (\d+) to change, (\d+) to destroy\.', text)
         actions = re.findall(r'^  # (cloudflare_[a-z0-9_]+)(?:\.[^\s]+) will be (created|updated in-place|destroyed|replaced)', text, re.M)
+        changed_fields = sorted(set(re.findall(r'^\s*[~+\-]\s+([a-z][a-z0-9_]*)\s*=', text, re.M)))
         print(json.dumps({'recovery_plan_counts': summary[-1] if summary else None,
                           'recovery_actions': actions,
+                          'recovery_changed_fields': changed_fields,
                           'recovery_has_error': bool(re.search(r'\bError:', text))}, sort_keys=True))
 
 

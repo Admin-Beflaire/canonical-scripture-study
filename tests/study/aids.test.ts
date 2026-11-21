@@ -296,3 +296,33 @@ test('TIPNR lookup and word evidence retain distinct disambiguated identity cand
   assert.ok(batch.evidence.some(item => item.kind === 'language_aid' && item.details.identity === 'Alex@Mat.1.1=G1234G'));
   assert.ok(!batch.evidence.some(item => item.kind === 'language_aid' && item.details.identity === 'Alex@Mat.2.1=G1234H'));
 });
+
+test('TIPNR candidates use only budget remaining after all lexical and grammar keys', async () => {
+  for (const used of [3, 4]) {
+    const f = aids();
+    f.select(null, null);
+    const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    add.run('lex-budget', 'syn-ev', A, 'a-u1', 'lexicon_entry', 'lexicon', '{}',
+      JSON.stringify({ strong_base: 'G1234', entry_id: 'lex-budget' }));
+    add.run('grammar-budget', 'syn-ev', A, 'a-u2', 'grammar_expansion', 'grammar', '{}',
+      JSON.stringify({ code: 'N-ASN', entry_id: 'grammar-budget' }));
+    add.run('name-budget', 'syn-ev', A, 'a-u1', 'proper_name', 'TIPNR', '{}',
+      JSON.stringify({ disambiguated_strong: 'G1234G', identity: 'Alex' }));
+    f.select('rel-2', 'rel-1');
+    const hit: SearchHit = { source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1',
+      native_order: 0, occurrence_id: 'budget', native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+        coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: 0, end: 1 }] },
+      analyses: [{ analysis_id: 'one', lemma_id: 'G1234G', grammar: { language: 'greek', morphology: 'N-ASN' } }] };
+    const adapter: SearchAdapter = { async search() { return { state: 'complete', lookup: 'word', key: 'a', hits: [hit],
+      searched: [], limitations: [], remaining: null, ranked: false, resume_after: [{ source: A, output: 'syn-word',
+        order: 0, dir: 0, entry: 0, after: null, anchor: null }] }; } };
+    const session = await ReadSession.open(f.env, AID_LIMITS);
+    while (session.budget.usage().d1Calls < used) session.budget.spendQuery();
+    const batch = await languageBatch(session,
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, null, 'test', [], adapter);
+    const word = batch.evidence.find(item => item.kind === 'search_hit');
+    assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].lexicon.length, 1);
+    assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].grammar.length, used === 3 ? 1 : 0);
+    assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].proper_name?.length, 0);
+  }
+});

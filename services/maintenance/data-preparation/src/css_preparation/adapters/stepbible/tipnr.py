@@ -31,7 +31,7 @@ def read_tipnr(original: bytes, *, commit: str) -> list[AidEntry]:
                                         f'STEPBible-Data:{commit}', body,
                                         {'disambiguated_strong': code, 'identity': identity,
                                          'category': category, 'body_field': 'name_form',
-                                         'source_limitation': 'Candidate by source tag; check the source references and uncertainty before assigning an occurrence.'}))
+                                         'source_limitation': 'Candidate by source tag; check references and any ambiguity link before assigning an occurrence. Relationship fields are not included.'}))
 
     for line in original.decode('utf-8-sig').splitlines():
         fields = line.rstrip().split('\t')

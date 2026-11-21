@@ -7,11 +7,11 @@ from css_preparation.adapters.step_aids import AidRecipe
 from test_language_aid_preparation import Store, STEP
 
 SYNTHETIC = '''$========== PERSON(s)
-Alex@Mat.1.1=G1234G\tFirst person
-– Named\tAlex@Mat.1.1\tG1234G«G1234=α\tAlex\tMat.1.1a; Mat.1.2(?)
+Alex@Mat.1.1=G1234G\tFirst person\tParent@Mat.1.1(?)
+– Named\tAlex@Mat.1.1\tG1234G«G1234=α\tAlex\tMat.1.1a; Mat.1.2
 – Greek\tAlex@Mat.1.1\tG4321«G4321=β\tAlexander\tAct.1.1
 – Total\tAlex\tAlex\tG1234G\tMat.1.1ff
-@Ambiguity=The identity is uncertain.
+@Ambiguity=https://example.test/ambiguity
 $========== PERSON(s)
 Alex@Mat.2.1=G1234H\tSecond person
 – Named\tAlex@Mat.2.1\tG1234H«G1234=α\tAlex\tMat.2.1
@@ -30,8 +30,8 @@ class TipnrTest(unittest.TestCase):
         self.assertEqual([e.lookup['disambiguated_strong'] for e in entries], ['G1234G', 'G4321', 'G1234H', 'G1234I'])
         self.assertEqual(entries[0].lookup['identity'], entries[1].lookup['identity'])
         self.assertNotEqual(entries[0].lookup['identity'], entries[2].lookup['identity'])
-        self.assertIn('Mat.1.1a; Mat.1.2(?)', entries[0].body)
-        self.assertIn('Ambiguity: The identity is uncertain.', entries[0].body)
+        self.assertIn('Mat.1.1a; Mat.1.2', entries[0].body)
+        self.assertIn('Ambiguity: https://example.test/ambiguity', entries[0].body)
         self.assertEqual(entries[-1].lookup['category'], 'PLACE')
 
     def test_preparation_and_recipe(self):

@@ -106,15 +106,18 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
   if (!hits.length) return;
   const wanted = new Map<SearchHit, AnalysisKeys[]>();
   const keys = new Map<string, Key>();
+  const nameKeys = new Map<string, Key>();
   for (const hit of hits) {
     const analyses = wordKeys(hit);
     wanted.set(hit, analyses);
     for (const analysis of analyses) {
-      if (analysis.proper_name) keys.set(cacheKey('proper_name', analysis.proper_name), { lookup: 'proper_name', key: analysis.proper_name });
+      if (analysis.proper_name) nameKeys.set(cacheKey('proper_name', analysis.proper_name), { lookup: 'proper_name', key: analysis.proper_name });
       if (analysis.lexicon) keys.set(cacheKey('lexicon', analysis.lexicon), { lookup: 'lexicon', key: analysis.lexicon });
       for (const code of analysis.grammar) keys.set(cacheKey('grammar_info', code), { lookup: 'grammar_info', key: code });
     }
   }
+  // Existing lexical and grammar evidence keeps priority across all analyses.
+  for (const [key, value] of nameKeys) keys.set(key, value);
   const cap = session.budget.limits.resultBytes;
   const note = (state: Limitation['state'], scope: string, detail: string) => {
     const item = limitation(state, scope, detail);

@@ -24,6 +24,7 @@ _HEX = re.compile(r'[0-9a-f]{64}')
 _PAGE_ROWS = 500           # Keeps each paged result far below D1's 50 MB response limit.
 _BATCH_STATEMENTS = 1000   # One unit's candidate rows; larger units must be split by the recipe.
 _BOUND_IDS = 90            # D1 binds at most 100 parameters per statement (two more for paging).
+_PARTITION_CACHE = re.compile(r'prepared/language-aid-cache/v1/[0-9a-f]{64}/p[0-9]{3}\.json')
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,19 @@ class CloudflareStorage:
         if data is None:
             raise KeyError('Saved object is missing')
         return data
+
+    def read_partition_cache(self, key: str) -> bytes | None:
+        """Read an optional, reproducible language-aid partition. Not release data."""
+        if not _PARTITION_CACHE.fullmatch(key):
+            raise ProviderError('Invalid language-aid cache key')
+        data = self._objects.get(key)
+        return data if data is None or len(data) <= 8 * 1024 * 1024 else None
+
+    def write_partition_cache(self, key: str, data: bytes) -> None:
+        """First writer wins; parallel units may derive the same immutable cache."""
+        if not _PARTITION_CACHE.fullmatch(key) or len(data) > 8 * 1024 * 1024:
+            return  # The cache is optional; ordinary verified preparation remains valid.
+        self._objects.create(key, data)
 
     def put_blob(self, key: str, data: bytes) -> None:
         """Write once: identical bytes at an existing key are kept; different bytes are refused.

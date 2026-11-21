@@ -56,6 +56,17 @@ class CloudflareStorageTest(unittest.TestCase):
         self.assertTrue(self.api.signed_paths[-1][1].endswith('/a%20b%23c%3F.txt'))
         self.assertNotIn('/client/v4/accounts/acct/r2/', ''.join(path for _, path, _ in self.api.requests))
 
+    def test_preparation_cache_keys_are_bounded_and_shared(self):
+        key = f"prepared/language-aid-cache/v1/{'a' * 64}/p000.json"
+        self.assertIsNone(self.storage.read_partition_cache(key))
+        self.storage.write_partition_cache(key, b'{"test":true}')
+        self.assertEqual(self.storage.read_partition_cache(key), b'{"test":true}')
+        # First-writer-wins: simultaneous independent jobs cannot replace it.
+        self.storage.write_partition_cache(key, b'changed')
+        self.assertEqual(self.storage.read_partition_cache(key), b'{"test":true}')
+        with self.assertRaisesRegex(ProviderError, 'Invalid language-aid cache key'):
+            self.storage.read_partition_cache('prepared/../elsewhere')
+
     def test_paged_reads_return_every_row(self):
         records = evidence_a()
         persist_candidate(records, self.storage.candidate_store())

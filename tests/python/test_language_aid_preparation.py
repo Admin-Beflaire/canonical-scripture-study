@@ -140,6 +140,74 @@ class PreparationTest(unittest.TestCase):
                         self.assertLess(len(records.statements()), _BATCH_STATEMENTS,
                                              f"{name} {unit['unit_id']}")
 
+    def test_independent_partition_jobs_reuse_verified_r2_cache(self):
+        from unittest.mock import patch
+        from css_preparation.adapters.language_aid_entries import step_entries
+
+        rev = 'fixture-tbesh/1'
+        store = Store({rev: HEBREW.encode()})
+        store.partitions = {}
+        store.read_partition_cache = lambda key: store.partitions.get(key)
+        store.write_partition_cache = lambda key, data: store.partitions.setdefault(key, data)
+        coord = 'language-aids/tbesh/1'
+        units = [{'unit_id': f'prepare-{i:03d}', 'kind': 'prepare',
+                  'native_extent': {'unit_ids': [f'p{i:03d}'], 'coordinate_version': coord},
+                  'depends_on': []} for i in range(2)]
+        reader = AidRecipe({'native_extent': {'coordinate_version': coord}, 'units': units},
+                           'tbesh', STEP, rev, 'lexicon_entry', 2)
+        def run(unit):
+            return reader.prepare({'kind': 'prepare', 'unit_id': unit['unit_id'],
+                                   'native_extent': unit['native_extent'],
+                                   'input_refs': [{'kind': 'source_revision', 'id': rev}]}, store)
+        with patch('css_preparation.adapters.step_aids.step_entries', wraps=step_entries) as parsed:
+            first = run(units[0])
+            assert parsed.call_count == 1  # One original read/parse for all partitions.
+            second = run(units[1])
+            self.assertEqual(parsed.call_count, 1, 'later job must not reparse the full source')
+            self.assertEqual(len(store.partitions), 2)
+            self.assertNotEqual(first.rows('prepared_output')[0]['id'],
+                                second.rows('prepared_output')[0]['id'])
+            # Cache hits must reconstruct *identical* evidence, including exact
+            # body bytes, coordinate offsets, output statements and digests.
+            direct = Store({rev: HEBREW.encode()})
+            uncached = reader.prepare({'kind': 'prepare', 'unit_id': units[1]['unit_id'],
+                                       'native_extent': units[1]['native_extent'],
+                                       'input_refs': [{'kind': 'source_revision', 'id': rev}]}, direct)
+            self.assertEqual(second.statements(), uncached.statements())
+            self.assertEqual(second.blobs, uncached.blobs)
+            self.assertEqual(parsed.call_count, 2, 'uncached comparison intentionally parses once more')
+            # Quality reads the pinned original directly, independent of cached partitions.
+            self.assertEqual(len(reader.read_source(rev, store).units), 2)
+            self.assertEqual(parsed.call_count, 3)
+            # Changing the registered digest invalidates the cache rather than using stale bytes.
+            store.nodes[rev]['details_json']['sha256'] = 'f' * 64
+            with self.assertRaises(RecordError):
+                run(units[1])
+
+    def test_partition_cache_write_failure_logs_once_and_preparation_succeeds(self):
+        from unittest.mock import Mock
+
+        rev = 'fixture-tbesh/1'
+        store = Store({rev: HEBREW.encode()})
+        store.write_partition_cache = Mock(side_effect=OSError('cache unavailable'))
+        coord = 'language-aids/tbesh/1'
+        units = [{'unit_id': f'prepare-{i:03d}', 'kind': 'prepare',
+                  'native_extent': {'unit_ids': [f'p{i:03d}'], 'coordinate_version': coord},
+                  'depends_on': []} for i in range(2)]
+        reader = AidRecipe({'native_extent': {'coordinate_version': coord}, 'units': units},
+                           'tbesh', STEP, rev, 'lexicon_entry', 2)
+        job = {'kind': 'prepare', 'unit_id': units[0]['unit_id'],
+               'native_extent': units[0]['native_extent'],
+               'input_refs': [{'kind': 'source_revision', 'id': rev}]}
+        expected = reader.prepare(job, Store({rev: HEBREW.encode()}))
+        with self.assertLogs('css_preparation.adapters.step_aids', level='WARNING') as logs:
+            actual = reader.prepare(job, store)
+        self.assertEqual(store.write_partition_cache.call_count, 2)
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn('Partition cache write failed', logs.output[0])
+        self.assertEqual(actual.statements(), expected.statements())
+        self.assertEqual(actual.blobs, expected.blobs)
+
     def test_original_digest_is_checked(self):
         rev = 'fixture-tbesh/1'
         store = Store({rev: HEBREW.encode()})

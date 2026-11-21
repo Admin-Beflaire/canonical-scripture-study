@@ -14,6 +14,7 @@ export function validateInstance(input) {
     STUDY_HOSTNAME: DNS_NAME,
     CONTROL_HOSTNAME: DNS_NAME,
     DATABASE_ID: /^[a-f0-9-]{36}$/,
+    VERIFIED_WORD_CACHE_NAMESPACE_ID: /^[a-f0-9]{32}$/,
     DEPLOYMENT_CLIENT_ID: /^[a-f0-9]{32}\.access$/,
     ACCESS_ISSUER: /^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/,
     STUDY_AUDIENCE: /^[a-f0-9]{64}$/, CONTROL_AUDIENCE: /^[a-f0-9]{64}$/, JOB_AUDIENCE: /^[a-f0-9]{64}$/,
@@ -32,7 +33,8 @@ export function validateInstance(input) {
   }
   if (Number(v.MAX_PAGE_BYTES) > Number(v.REQUEST_BYTES) || Number(v.MAX_D1_CALLS) > Number(v.MAX_SUBREQUESTS)) throw new Error('Inconsistent request budgets');
   if (typeof v.ENHANCEMENTS !== 'boolean') throw new Error('Explicit ENHANCEMENTS boolean required');
-  const known = new Set([...Object.keys(patterns), ...Object.keys(caps), 'ENHANCEMENTS']);
+  if (typeof v.AID_KV_CACHE_ENABLED !== 'boolean') throw new Error('Explicit AID_KV_CACHE_ENABLED boolean required');
+  const known = new Set([...Object.keys(patterns), ...Object.keys(caps), 'ENHANCEMENTS', 'AID_KV_CACHE_ENABLED']);
   if (Object.keys(v).some(k => !known.has(k))) throw new Error('Unknown instance input (secrets do not belong here)');
   return /** @type {Record<string, string | number | boolean>} */ (v);
 }

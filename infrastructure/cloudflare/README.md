@@ -1,7 +1,7 @@
 # Cloudflare construction
 
 Terraform 1.13.5 / Cloudflare provider 5.28.1 own one D1 database, one private R2
-bucket, disabled managed public access, two owner-only Managed OAuth resources
+bucket, one private short-lived verified-word KV cache, disabled managed public access, two owner-only Managed OAuth resources
 and a more-specific Service Auth resource at Control `/internal/jobs/*`.
 An existing internal-jobs and deployment-check Access service-token **ID** are inputs; its credentials are issued
 separately and stay in protected runner secrets. No secret generation or Worker
@@ -22,6 +22,7 @@ Terraform does not apply SQL or duplicate Worker/domain/DNS settings.
 | `ACCOUNT_ID`, `ZONE_ID`, `ZONE_NAME`, `INSTANCE` | Destination account, zone and suffix |
 | `STUDY_HOSTNAME`, `CONTROL_HOSTNAME` | Distinct custom hostnames inside the zone |
 | `DATABASE_ID` | Terraform-created database |
+| `VERIFIED_WORD_CACHE_NAMESPACE_ID` | Terraform-created optional shared verified-word cache namespace, bound only to Study |
 | `ACCESS_ISSUER` | HTTPS Access team issuer |
 | `STUDY_AUDIENCE`, `CONTROL_AUDIENCE`, `JOB_AUDIENCE` | Distinct Terraform-created application audiences |
 | `DEPLOYMENT_CLIENT_ID` | Non-secret Access deployment-check Client ID, shared by both Workers; not the resource ID or secret |
@@ -130,3 +131,7 @@ defaults (`MAX_PAGE_BYTES=65536`, `REQUEST_BYTES=262144`,
 `MAX_D1_CALLS=25`, `MAX_SUBREQUESTS=40`, `CPU_BUDGET_MS=10`).
 They are reviewed construction choices, not owner-maintained settings. Adjust
 them in code only after measured Worker/host fit requires it.
+
+## Verified language-aid KV plan switch
+
+`aid_kv_cache_enabled` is a Terraform plan variable (default `true` for Workers Paid). Its protected state output renders `AID_KV_CACHE_ENABLED` for Study. Set it `false` in the plan configuration for a move to Workers Free, apply the approved change and deploy Study. Disabled Study makes no `VERIFIED_WORD_CACHE` calls and uses selected D1 and verified R2 instead, silently. The namespace remains private and bound; disabling avoids its read/write quota. A cache miss or provider failure also falls back to R2. Only verified unfinished wording is cached, not host requests or source metadata.

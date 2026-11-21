@@ -81,12 +81,23 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .run('long-annotation', 'syn-ev', A, 'long-span', 'lexicon_entry', 'synthetic', '{}', JSON.stringify({ strong_base: 'G1234' }));
   f.select('rel-2', 'rel-1');
+  // Shared verified text is visible to a new Worker instance with an empty local WeakMap.
+  const shared = new Map<string, string>();
+  let kvReads = 0, kvWrites = 0;
+  const withCache = { ...f.env, VERIFIED_WORD_CACHE: {
+    get: async (key: string) => { kvReads++; return shared.get(key) ?? null; },
+    put: async (key: string, value: string) => { kvWrites++; shared.set(key, value); },
+  } };
+  const freshInstance = () => ({ ...withCache, PRIVATE_OBJECTS: {
+    get: (key: string, options?: { range: { offset: number; length: number } }) => f.bucket.get(key, options),
+  } });
   let next: string | null = null;
   const chunks: string[] = [];
   let expectedStart = 0;
   let firstReadCount = 0;
   for (let i = 0; i < 10; i++) {
-    const result = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, next, 'test');
+    const result = await aidBatch(await ReadSession.open(i ? freshInstance() : withCache, AID_LIMITS),
+      { ...workload, key: 'G1234' }, next, 'test');
     assert.ok(Buffer.byteLength(JSON.stringify(result)) <= STARTING_LIMITS.resultBytes);
     for (const item of result.evidence) if (item.kind === 'language_aid' && item.span.span_id === 'long-span') {
       assert.equal(item.span.segments[0].start, expectedStart);
@@ -100,7 +111,7 @@ test('long verified lexical bodies continue without loss and preserve exact sour
       firstReadCount = longReads;
       assert.ok(firstReadCount > 1, 'the first part reads and verifies the source range');
     } else {
-      assert.equal(longReads, firstReadCount, 'continuation reuses verified wording without R2 reads');
+      assert.equal(longReads, firstReadCount, 'cross-instance continuation reuses digest-checked KV wording');
     }
     next = result.continuation;
     if (!next) break;
@@ -108,6 +119,8 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   assert.equal(next, null);
   assert.ok(chunks.length > 1);
   assert.equal(chunks.join(''), body);
+  assert.ok(kvReads > 0 && kvWrites > 0, 'enabled by default: KV was read and written');
+  assert.equal([...shared.values()][0], body, 'KV stores only wording, no span metadata');
   const routed = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G1234' }] });
   assert.equal((routed.evidence as unknown[]).length, 1);
   assert.ok(routed.continuation, 'Study selects the larger bounded allowance for language-aid retrieval');
@@ -123,6 +136,25 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
   assert.ok(f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length > beforeReselection,
     'reselected source is verified again after a release change');
+  // Free-plan switch: even with a KV binding, perform no KV get/put at all.
+  // A new R2 binding on each call simulates separate Workers without local cache.
+  const beforeOffKv = [kvReads, kvWrites];
+  const beforeOffR2 = f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length;
+  const disabledEnv = () => ({ ...withCache, AID_KV_CACHE_ENABLED: false,
+    PRIVATE_OBJECTS: { get: (key: string, options?: { range: { offset: number; length: number } }) =>
+      f.bucket.get(key, options) } });
+  const offFirst = await aidBatch(await ReadSession.open(disabledEnv(), AID_LIMITS),
+    { ...workload, key: 'G1234' }, null, 'test');
+  assert.ok(offFirst.continuation);
+  const offSecond = await aidBatch(await ReadSession.open(disabledEnv(), AID_LIMITS),
+    { ...workload, key: 'G1234' }, offFirst.continuation, 'test');
+  assert.ok(offSecond.evidence.some(item => item.kind === 'language_aid'));
+  assert.deepEqual([kvReads, kvWrites], beforeOffKv, 'off means zero KV operations');
+  assert.ok(f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length > beforeOffR2,
+    'off uses normal verified R2 reads');
+  assert.ok(!offSecond.limitations.some(item => /cache|kv/i.test(item.detail)),
+    'the absence of KV is never a user-visible error');
+
   f.bucket.corrupt.add('synthetic/long-body');
   const corrupt = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
   assert.equal(corrupt.evidence.length, 0);

@@ -77,3 +77,9 @@ variable "deployment_service_token_id" {
     error_message = "Provide the existing deployment service token resource ID."
   }
 }
+
+# Default-on on Workers Paid; set false in the plan configuration for Free.
+variable "aid_kv_cache_enabled" {
+  type    = bool
+  default = true
+}

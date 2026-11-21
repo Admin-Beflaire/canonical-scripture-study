@@ -1,5 +1,5 @@
-import { canonicalJson, isIdentifier, isSafeCount, utf8Length } from '../read/bytes.ts';
-import { readSpans, type SpanEvidence } from '../read/evidence.ts';
+import { canonicalJson, isIdentifier, isSafeCount, sha256Hex, utf8Length } from '../read/bytes.ts';
+import { readSpans, selectedCachedSpan, type SpanEvidence } from '../read/evidence.ts';
 import type { ReadSession } from '../read/session.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem } from '../results/batch.ts';
@@ -8,6 +8,7 @@ import { encodeContinuation, resumeContinuation } from '../results/continuation.
 export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info'] as const;
 const MAX_PENDING_ENTRIES = 4;
 const MAX_PENDING_BODY_BYTES = 96 * 1024;
+const SHARED_CACHE_TTL_SECONDS = 600;
 /** Worker-local, bounded verified wording for entries awaiting continuation.
  *  It never outlives a completed entry or crosses a selected-release change. */
 const PENDING_TEXT = new WeakMap<object, { releaseId: string; entries: Map<string, SpanEvidence> }>();
@@ -18,6 +19,26 @@ function pendingText(session: ReadSession): Map<string, SpanEvidence> {
   PENDING_TEXT.set(session.objects, { releaseId: session.release.id, entries });
   return entries;
 }
+async function sharedKey(entryKey: string): Promise<string> {
+  // Immutable source/output/span/annotation identities survive release promotions.
+  return 'verified-aid:v2:' + await sha256Hex(entryKey);
+}
+
+/** Optional KV holds wording only; selected D1 span metadata and its digest
+ * are rechecked before any KV text can become evidence. */
+async function sharedPending(session: ReadSession, entryKey: string, row: Record<string, unknown>):
+  Promise<SpanEvidence | undefined> {
+  if (!session.verifiedWords) return undefined;
+  try {
+    const wording = await session.verifiedWords.get(await sharedKey(entryKey));
+    if (!wording || utf8Length(wording) > MAX_PENDING_BODY_BYTES) return undefined;
+    const span = await selectedCachedSpan(session, String(row.span_id), wording);
+    return span && span.source_revision_id === row.source_revision_id ? span : undefined;
+  } catch {
+    return undefined; // No KV errors escape into the Study result; read verified R2 instead.
+  }
+}
+
 type Position = [string, string, string];
 export interface AidWorkload { mode: string; depth: string; language: string; lookup: string; key: string; sources: string[] | null }
 
@@ -71,7 +92,9 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
         ? [`oshb-bdb:${indexId[1]}:${ref[0]}`] : []))];
     }
     const entryKey = JSON.stringify([row.output_id, row.span_id, row.id, row.source_revision_id]);
-    const cached = anchor !== null && offset > 0 ? pending.get(entryKey) : undefined;
+    const cached = anchor !== null && offset > 0
+      ? pending.get(entryKey) ?? await sharedPending(session, entryKey, row)
+      : undefined;
     if (cached) { pending.delete(entryKey); pending.set(entryKey, cached); }
     const read = cached ? null : await readSpans(session, [String(row.span_id)], true);
     if (read?.remaining.length) { remaining = true; break; }
@@ -116,6 +139,12 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
             pending.delete(entryKey);
             pending.set(entryKey, span);
             if (pending.size > MAX_PENDING_ENTRIES) pending.delete(pending.keys().next().value!);
+            if (!cached && session.verifiedWords) {
+              try {
+                await session.verifiedWords.put(await sharedKey(entryKey), span.text[0],
+                  { expirationTtl: SHARED_CACHE_TTL_SECONDS });
+              } catch { /* Optional cache failure never changes verified evidence. */ }
+            }
           }
           offset = low; anchor = String(row.id); remaining = true; break;
         }

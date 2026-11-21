@@ -9,7 +9,7 @@ import input from "./instance.fixture.json" with { type: "json" };
 
 test('one template renders two independent instance/binding sets', () => {
   const first = renderWorkerConfigs(input, root);
-  const second = renderWorkerConfigs({...input,ACCOUNT_ID:'d'.repeat(32),ZONE_ID:'e'.repeat(32),ZONE_NAME:'second.invalid',INSTANCE:'fixture-b',STUDY_HOSTNAME:'s.second.invalid',CONTROL_HOSTNAME:'c.second.invalid',DATABASE_ID:'22222222-2222-4222-8222-222222222222',ACCESS_ISSUER:'https://second.cloudflareaccess.com',STUDY_AUDIENCE:'d'.repeat(64),CONTROL_AUDIENCE:'e'.repeat(64),JOB_AUDIENCE:'f'.repeat(64)},root);
+  const second = renderWorkerConfigs({...input,ACCOUNT_ID:'d'.repeat(32),ZONE_ID:'e'.repeat(32),ZONE_NAME:'second.invalid',INSTANCE:'fixture-b',STUDY_HOSTNAME:'s.second.invalid',CONTROL_HOSTNAME:'c.second.invalid',DATABASE_ID:'22222222-2222-4222-8222-222222222222',VERIFIED_WORD_CACHE_NAMESPACE_ID:'e'.repeat(32),ACCESS_ISSUER:'https://second.cloudflareaccess.com',STUDY_AUDIENCE:'d'.repeat(64),CONTROL_AUDIENCE:'e'.repeat(64),JOB_AUDIENCE:'f'.repeat(64)},root);
   assert.notDeepEqual(first,second);
   for (const config of [first,second]) {
     for (const role of ['study','control']) {
@@ -18,7 +18,13 @@ test('one template renders two independent instance/binding sets', () => {
       assert.equal(config[role].routes[0].custom_domain,true);
       assert.equal(config[role].d1_databases[0].binding,'DATA_DB');
       assert.equal(config[role].r2_buckets[0].binding,'PRIVATE_OBJECTS');
+      if (role==='study') {
+        assert.equal(config[role].kv_namespaces[0].binding,'VERIFIED_WORD_CACHE');
+        assert.equal(config[role].kv_namespaces[0].id, config===first ? input.VERIFIED_WORD_CACHE_NAMESPACE_ID : 'e'.repeat(32));
+      }
+
       assert.equal(config[role].vars.ENHANCEMENTS,false);
+      if (role==='study') assert.equal(config[role].vars.AID_KV_CACHE_ENABLED,true);
       assert.equal(config[role].vars.DEPLOYMENT_CLIENT_ID,input.DEPLOYMENT_CLIENT_ID);
       assert.doesNotMatch(JSON.stringify(config[role]),/\{\{/);
     }
@@ -26,10 +32,17 @@ test('one template renders two independent instance/binding sets', () => {
     assert.notEqual(config.control.vars.HOST_AUDIENCE,config.control.vars.JOB_AUDIENCE);
   }
 });
+test('aid KV plan setting can turn cache off without removing the private binding', () => {
+  const off = renderWorkerConfigs({...input, AID_KV_CACHE_ENABLED:false},root);
+  assert.equal(off.study.vars.AID_KV_CACHE_ENABLED,false);
+  assert.equal(off.study.kv_namespaces[0].binding,'VERIFIED_WORD_CACHE');
+});
+
 test('missing, injected, reused and oversized settings fail before rendering', () => {
   for (const key of Object.keys(input)) {
     const copy: Record<string,unknown> = {...input}; delete copy[key];
-    const message = key === 'ENHANCEMENTS' ? 'Explicit ENHANCEMENTS boolean required' : `Invalid or missing ${key}`;
+    const message = key === 'ENHANCEMENTS' || key === 'AID_KV_CACHE_ENABLED'
+      ? `Explicit ${key} boolean required` : `Invalid or missing ${key}`;
     assert.throws(()=>renderWorkerConfigs(copy,root),{message});
   }
   assert.throws(()=>renderWorkerConfigs({...input,INSTANCE:'{{missing}}'},root),/Invalid or missing INSTANCE/);
@@ -38,7 +51,8 @@ test('missing, injected, reused and oversized settings fail before rendering', (
 test('no competing Worker or SQL writer in Terraform; R2 managed access disabled',()=>{
   const directory = resolve(root,'infrastructure/cloudflare');
   const terraform = readdirSync(directory).filter(name=>name.endsWith('.tf')).map(name=>readFileSync(resolve(directory,name),'utf8')).join('\n');
-  assert.doesNotMatch(terraform,/resource "cloudflare_workers|resource "cloudflare_dns|local-exec/);
+  assert.doesNotMatch(terraform,/resource "cloudflare_workers_(?!kv_namespace")|resource "cloudflare_dns|local-exec/);
+  assert.match(terraform,/resource "cloudflare_workers_kv_namespace" "verified_word_cache"/);
   assert.match(terraform,/resource "cloudflare_r2_managed_domain"[\s\S]*?enabled\s+= false/);
   assert.match(terraform,/\/internal\/jobs\/\*/);
   assert.match(terraform,/resource "cloudflare_zero_trust_access_policy" "deployment_check"/);

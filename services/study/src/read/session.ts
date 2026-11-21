@@ -1,4 +1,4 @@
-import type { D1ReadDatabase, R2ReadBucket, StudyReadEnvironment } from './bindings.ts';
+import type { D1ReadDatabase, R2ReadBucket, StudyReadEnvironment, VerifiedWordCache } from './bindings.ts';
 import { RequestBudget, limitsFor, type BudgetLimits } from './budget.ts';
 import { QUERIES, isQueryName, type QueryInput, type QueryName } from './queries.ts';
 import { ReadError } from './states.ts';
@@ -56,10 +56,12 @@ export class ReadSession {
   readonly #db: D1ReadDatabase;
   readonly #cache: Map<string, string>;
   readonly objects: R2ReadBucket;
+  readonly verifiedWords?: VerifiedWordCache;
   readonly budget: RequestBudget;
   readonly release: CurrentRelease;
-  private constructor(db: D1ReadDatabase, objects: R2ReadBucket, budget: RequestBudget, release: CurrentRelease) {
-    this.#db = db; this.objects = objects; this.budget = budget; this.release = release;
+  private constructor(db: D1ReadDatabase, objects: R2ReadBucket, budget: RequestBudget, release: CurrentRelease,
+    verifiedWords?: VerifiedWordCache) {
+    this.#db = db; this.objects = objects; this.budget = budget; this.release = release; this.verifiedWords = verifiedWords;
     const cached = READ_CACHES.get(db);
     this.#cache = cached?.releaseId === release.id ? cached.results : new Map();
     if (cached?.releaseId !== release.id) READ_CACHES.set(db, { releaseId: release.id, results: this.#cache });
@@ -72,7 +74,9 @@ export class ReadSession {
     const row = rows[0];
     if (!row || row.release_id === null) throw new ReadError('no_current_release', 'No release is currently selected');
     if (row.schema_versions_json === null) throw new ReadError('incompatible_release', 'The selected release record is missing');
-    return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, { id: row.release_id, schema_versions: checkVersions(row.schema_versions_json) });
+    return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, { id: row.release_id, schema_versions: checkVersions(row.schema_versions_json) },
+      env.AID_KV_CACHE_ENABLED === false || env.AID_KV_CACHE_ENABLED === 'false'
+        ? undefined : env.VERIFIED_WORD_CACHE);
   }
 
   /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`

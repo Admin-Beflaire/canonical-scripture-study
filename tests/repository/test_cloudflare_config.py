@@ -48,11 +48,30 @@ class CloudflareConfigTests(unittest.TestCase):
             "instance":"main","hostnames":{"study":"study.example.invalid","control":"control.example.invalid"},
             "access_issuer":"https://team.cloudflareaccess.com",
             "database_id":"22222222-2222-4222-8222-222222222222","database_name":"css-data-main",
-            "bucket_name":"css-private-main","audiences":{"study":"c"*64,"control":"d"*64,"jobs":"e"*64}
+            "bucket_name":"css-private-main","verified_word_cache_namespace_id":"f"*32,
+            "audiences":{"study":"c"*64,"control":"d"*64,"jobs":"e"*64}
         }
         result=instance.instance(binding,"f"*32+".access")
         self.assertEqual(result["DATABASE_ID"],binding["database_id"])
         self.assertEqual(result["DEPLOYMENT_CLIENT_ID"],"f"*32+".access")
+        self.assertIs(result["AID_KV_CACHE_ENABLED"], True)
+        self.assertIs(instance.instance({**binding,"aid_kv_cache_enabled":False},"f"*32+".access")["AID_KV_CACHE_ENABLED"], False)
+        self.assertEqual(result["VERIFIED_WORD_CACHE_NAMESPACE_ID"],"f"*32)
+        # Rollbacks render the target commit's older Wrangler template. The
+        # trusted current instance reader must not send unsupported inputs.
+        with patch.object(instance.Path, "exists", return_value=True):
+            with patch.object(instance.Path, "read_text",
+                              return_value='{"kv":"{{VERIFIED_WORD_CACHE_NAMESPACE_ID}}"}'):
+                old = instance.instance(binding,"f"*32+".access")
+                self.assertEqual(old["VERIFIED_WORD_CACHE_NAMESPACE_ID"],"f"*32)
+                self.assertNotIn("AID_KV_CACHE_ENABLED",old)
+            with patch.object(instance.Path, "read_text",
+                              return_value='{"vars":"{{ENHANCEMENTS}}"}'):
+                older = instance.instance(binding,"f"*32+".access")
+                self.assertNotIn("VERIFIED_WORD_CACHE_NAMESPACE_ID",older)
+                self.assertNotIn("AID_KV_CACHE_ENABLED",older)
+        with self.assertRaises(instance.InstanceError):
+            instance.instance({k:v for k,v in binding.items() if k!="verified_word_cache_namespace_id"},"f"*32+".access")
         with self.assertRaises(instance.InstanceError):
             instance.instance(binding,"not-a-client-id")
         with self.assertRaises(instance.InstanceError):

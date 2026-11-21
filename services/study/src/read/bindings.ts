@@ -12,10 +12,18 @@ export interface R2ReadBucket {
   get(key: string, options?: { range: { offset: number; length: number } }): Promise<R2RangeObject | null>;
 }
 
+/** Optional, short-lived global cache. It stores only already verified unfinished entry wording. */
+export interface VerifiedWordCache {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options: { expirationTtl: number }): Promise<void>;
+}
+
 /** Bindings and configured limits as Platform supplies them to the Study Worker. */
 export interface StudyReadEnvironment {
   DATA_DB: D1ReadDatabase;
   PRIVATE_OBJECTS: R2ReadBucket;
+  VERIFIED_WORD_CACHE?: VerifiedWordCache;
+  AID_KV_CACHE_ENABLED?: boolean | 'true' | 'false';
   MAX_PAGE_BYTES?: string | number;
   REQUEST_BYTES?: string | number;
   MAX_D1_CALLS?: string | number;

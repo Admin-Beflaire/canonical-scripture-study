@@ -74,7 +74,7 @@ function wordKeys(hit: SearchHit): AnalysisKeys[] {
   return hit.analyses.filter(isObject).map(a => {
     // Source analyses may have a disambiguating trailing letter (e.g. H7225G).
     // Language-aid lexicon rows are indexed by the base Strong number.
-    const strong = typeof a.lemma_id === 'string' ? /^([HG])(\d{1,5})[A-Z]?$/i.exec(a.lemma_id) : null;
+    const strong = typeof a.lemma_id === 'string' ? a.lemma_id.match(/^([HG])(\d{1,5})[A-Z]?$/i) : null;
     const lemma = strong ? strong[1].toUpperCase() + strong[2].padStart(4, '0') : null;
     const sourceGrammar = isObject(a.grammar) ? a.grammar : null;
     const morphology = typeof sourceGrammar?.morphology === 'string' ? sourceGrammar.morphology : '';

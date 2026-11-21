@@ -12,6 +12,29 @@ FAILED = '44883634337-1'
 NAMESPACE = '8071e577bb1a49ddb0aad5d3f230bc31'
 
 
+def verify_plan(plan):
+    """Allow no changes except volatile, provider-computed D1 metadata."""
+    computed = {'file_size', 'num_tables', 'version'}
+    if not isinstance(plan, dict) or not isinstance(plan.get('resource_changes'), list):
+        raise state.StateError('Invalid provider plan')
+    for item in plan['resource_changes']:
+        change = item.get('change', {})
+        actions = change.get('actions')
+        if actions == ['no-op']:
+            continue
+        if item.get('mode') == 'data' and actions == ['read']:
+            continue
+        if item.get('address') != 'cloudflare_d1_database.data' or actions != ['update']:
+            raise state.StateError('Plan proposes an unrelated resource change')
+        before, after = change.get('before'), change.get('after')
+        unknown = change.get('after_unknown') or {}
+        if (not isinstance(before, dict) or not isinstance(after, dict) or not isinstance(unknown, dict)
+                or any(v and k not in computed for k, v in unknown.items())
+                or {k: v for k, v in before.items() if k not in computed}
+                != {k: v for k, v in after.items() if k not in computed}):
+            raise state.StateError('Plan proposes a database configuration change')
+
+
 def verified_source():
     metadata = state.request('GET', '/repos/' + state.REPOSITORY)
     if not isinstance(metadata, dict) or metadata.get('private') is not True or metadata.get('visibility') != 'private':
@@ -85,6 +108,8 @@ if __name__ == '__main__':
             prepare(sys.argv[2])
         elif sys.argv[1] == 'publish':
             publish(sys.argv[2], os.environ['ATTEMPT_ID'])
+        elif sys.argv[1] == 'verify-plan':
+            verify_plan(json.loads(Path(sys.argv[2]).read_text()))
         else:
             raise ValueError('Unknown operation')
         print('Recovery phase verified')

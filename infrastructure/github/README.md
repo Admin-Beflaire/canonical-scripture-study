@@ -168,8 +168,8 @@ allowed. Repair is a separately owner-approved manual operation:
 For the specific failed Cloudflare attempt `44883634337-1`, the manual
 `reconcile-cloudflare.yml` workflow preserves the original failed assets,
 imports the already existing verified-word namespace into a private copy of
-the checked snapshot, refreshes local state and requires a clean provider
-plan before publishing an independently identified baseline. The separate
+the checked snapshot, refreshes local state and requires a provider plan with no configuration changes
+(computed D1 size/count/version drift is allowed) before publishing an independently identified baseline. The separate
 reconciliation record links both snapshot hashes; an incomplete recovery
 blocks future runs and must be examined rather than retried blindly. Detailed
 Terraform diagnostics remain private. This is a one-off recovery, not a

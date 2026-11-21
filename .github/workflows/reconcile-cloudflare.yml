@@ -54,8 +54,10 @@ jobs:
           terraform init -input=false -lockfile=readonly -no-color > "$WORK/diagnostics.txt" 2>&1
           terraform import -input=false -no-color cloudflare_workers_kv_namespace.verified_word_cache "$PLATFORM_CF_ACCOUNT_ID/8071e577bb1a49ddb0aad5d3f230bc31" >> "$WORK/diagnostics.txt" 2>&1
           terraform apply -refresh-only -auto-approve -input=false -no-color >> "$WORK/diagnostics.txt" 2>&1
-          terraform plan -detailed-exitcode -input=false -no-color >> "$WORK/diagnostics.txt" 2>&1
-          echo 'Provider plan is clean'
+          terraform plan -input=false -no-color -out="$WORK/plan.tfplan" >> "$WORK/diagnostics.txt" 2>&1
+          terraform show -json "$WORK/plan.tfplan" > "$WORK/plan.json"
+          python3 "$GITHUB_WORKSPACE/infrastructure/github/reconcile_cloudflare_state.py" verify-plan "$WORK/plan.json"
+          echo 'Provider plan contains no configuration changes'
       - name: Publish verified recovery baseline
         if: steps.recover.outcome == 'success'
         env:

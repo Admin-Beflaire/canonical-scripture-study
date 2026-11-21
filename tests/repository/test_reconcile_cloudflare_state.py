@@ -17,6 +17,21 @@ with patch.dict(sys.modules, {'platform_state': state}):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_only_computed_database_metadata_can_differ(self):
+        before = {'name': 'css-data-main', 'account_id': 'account', 'file_size': 1, 'version': 'production'}
+        after = {'name': 'css-data-main', 'account_id': 'account', 'file_size': None, 'version': None}
+        change = {'address': 'cloudflare_d1_database.data', 'mode': 'managed', 'change': {
+            'actions': ['update'], 'before': before, 'after': after,
+            'after_unknown': {'file_size': True, 'version': True}}}
+        recovery.verify_plan({'resource_changes': [change]})
+        change['change']['after']['name'] = 'different'
+        with self.assertRaises(state.StateError):
+            recovery.verify_plan({'resource_changes': [change]})
+        change['change']['after']['name'] = 'css-data-main'
+        change['change']['actions'] = ['delete', 'create']
+        with self.assertRaises(state.StateError):
+            recovery.verify_plan({'resource_changes': [change]})
+
     def test_preserves_failed_receipt_and_checks_namespace(self):
         fake = FakePrivateRelease()
         with patch.object(state, 'request', side_effect=fake.request), tempfile.TemporaryDirectory() as tmp:

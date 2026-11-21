@@ -481,7 +481,7 @@ test('name presence scans many tags in one selected-release query', async () => 
   assert.deepEqual(JSON.parse(String(unindexed.rows[0].tags)), ['G3010']);
 });
 
-test('default three-query word search does not create an empty name batch', async () => {
+test('four-query word search does not create an empty name batch', async () => {
   const f = aids();
   const hits: SearchHit[] = Array.from({ length: 20 }, (_, i) => ({
     source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: i,
@@ -490,7 +490,7 @@ test('default three-query word search does not create an empty name batch', asyn
     analyses: [{ analysis_id: 'analysis-' + i, lemma_id: 'G' + String(3000 + i), grammar: {} }],
   }));
   const adapter: SearchAdapter = { async search(session) {
-    while (session.budget.usage().d1Calls < 3) session.budget.spendQuery();
+    while (session.budget.usage().d1Calls < 4) session.budget.spendQuery();
     return { state: 'complete', lookup: 'grammar', key: 'greek:N-NSM', hits, searched: [], limitations: [],
       remaining: null, ranked: false, resume_after: hits.map((_, i) => ({ source: A, output: 'syn-word', order: i,
         dir: 0, entry: 0, after: null, anchor: null })) };
@@ -504,6 +504,7 @@ test('default three-query word search does not create an empty name batch', asyn
 
 
 test('word budget stays within configured platform caps', () => {
-  assert.equal(limitsFor({}, WORD_LIMITS).d1Calls, 7);
+  assert.equal(limitsFor({}, WORD_LIMITS).d1Calls, 8);
   assert.equal(limitsFor({ MAX_D1_CALLS: 6 }, WORD_LIMITS).d1Calls, 6);
+  assert.equal(limitsFor({ MAX_D1_CALLS: 7 }, WORD_LIMITS).d1Calls, 7);
 });

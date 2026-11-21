@@ -14,6 +14,8 @@ def summarize(receipt_bytes, state_bytes, log_bytes):
     state = json.loads(state_bytes)
     if receipt.get('key') != 'cloudflare' or receipt.get('run') != RUN:
         raise ValueError('Receipt does not identify the expected attempt')
+    if receipt.get('outcome') not in ('uncertain', 'success'):
+        raise ValueError('Unknown receipt outcome')
     if (receipt.get('sha256') != hashlib.sha256(state_bytes).hexdigest()
             or receipt.get('bytes') != len(state_bytes)):
         raise ValueError('Saved state does not match its receipt')
@@ -24,7 +26,7 @@ def summarize(receipt_bytes, state_bytes, log_bytes):
     apply = text.partition('=== apply ===')[2]
     categories = {
         'authentication_or_authorization': bool(re.search(
-            r'authentication error|unauthori[sz]ed|forbidden|permission denied|not authorized', apply, re.I)),
+            r'authentication error|unauthori[sz]ed|forbidden|permission denied|not authorized|http[^\n]{0,20}\b(?:401|403)\b', apply, re.I)),
         'already_exists': bool(re.search(r'already exists|already been taken', apply, re.I)),
         'network_or_timeout': bool(re.search(r'timed? out|timeout|connection refused|network is unreachable', apply, re.I)),
         'terraform_error_present': bool(re.search(r'\bError:', apply, re.I)),

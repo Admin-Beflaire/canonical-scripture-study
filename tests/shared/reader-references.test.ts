@@ -7,6 +7,7 @@ import recordSchema from "../../schemas/reader-references/records.v1.schema.json
 import evidenceSchema from "../../schemas/evidence-records.v1.schema.json" with { type: "json" };
 import nativeSchema from "../../schemas/native-reference.v1.schema.json" with { type: "json" };
 import fixture from "../conformance/reader-references.v1.json" with { type: "json" };
+import { readerBook, readerVerses } from "../../packages/shared/src/reader-catalogue.ts";
 
 const ajv = new Ajv({ strict: true, allErrors: true })
   .addSchema(recordSchema).addSchema(evidenceSchema).addSchema(nativeSchema);
@@ -32,6 +33,14 @@ test("NRSVA catalogue defines the versioned chapter bounds and separate books", 
   assert.equal(books.get("Joel")?.last_verses[1], 32);
   assert.deepEqual(books.get("3John")?.last_verses, [15]);
   assert.equal(books.get("Rev")?.last_verses[11], 18);
+  assert.equal(books.get("2Cor")?.last_verses[12], 13);
+});
+
+test("2 Corinthians 13 follows NRSVA, including its final verse", () => {
+  const book = readerBook("2Co");
+  assert.ok(book);
+  assert.deepEqual(readerVerses(book, { chapter: 13, verse: 13 }, { chapter: 13, verse: 13 }), ["2Cor.13.13"]);
+  assert.throws(() => readerVerses(book, { chapter: 13, verse: 14 }, { chapter: 13, verse: 14 }), /outside/);
 });
 
 test("mapping records preserve the separate superscription, numbered span and unresolved reference", () => {

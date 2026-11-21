@@ -166,7 +166,7 @@ class AidRecipe:
                 value = {'version': _CACHE_VERSION, 'prefix': prefix, 'unit': name,
                          'coordinate': full.coordinate_version, 'base': bases[name],
                          'entries': [asdict(entry) for entry in group]}
-                payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                payload = json.dumps(value, ensure_ascii=False,
                                      separators=(',', ':')).encode('utf-8')
                 # Failed cache writes must not prevent correct preparation from original data.
                 try:

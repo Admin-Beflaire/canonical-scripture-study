@@ -54,6 +54,8 @@ class CloudflareConfigTests(unittest.TestCase):
         result=instance.instance(binding,"f"*32+".access")
         self.assertEqual(result["DATABASE_ID"],binding["database_id"])
         self.assertEqual(result["DEPLOYMENT_CLIENT_ID"],"f"*32+".access")
+        self.assertIs(result["AID_KV_CACHE_ENABLED"], True)
+        self.assertIs(instance.instance({**binding,"aid_kv_cache_enabled":False},"f"*32+".access")["AID_KV_CACHE_ENABLED"], False)
         self.assertEqual(result["VERIFIED_WORD_CACHE_NAMESPACE_ID"],"f"*32)
         with self.assertRaises(instance.InstanceError):
             instance.instance({k:v for k,v in binding.items() if k!="verified_word_cache_namespace_id"},"f"*32+".access")

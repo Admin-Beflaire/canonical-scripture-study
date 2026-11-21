@@ -131,3 +131,7 @@ defaults (`MAX_PAGE_BYTES=65536`, `REQUEST_BYTES=262144`,
 `MAX_D1_CALLS=25`, `MAX_SUBREQUESTS=40`, `CPU_BUDGET_MS=10`).
 They are reviewed construction choices, not owner-maintained settings. Adjust
 them in code only after measured Worker/host fit requires it.
+
+## Verified language-aid KV plan switch
+
+`aid_kv_cache_enabled` is a Terraform plan variable (default `true` for Workers Paid). Its protected state output renders `AID_KV_CACHE_ENABLED` for Study. Set it `false` in the plan configuration for a move to Workers Free, apply the approved change and deploy Study. Disabled Study makes no `VERIFIED_WORD_CACHE` calls and uses selected D1 and verified R2 instead, silently. The namespace remains private and bound; disabling avoids its read/write quota. A cache miss or provider failure also falls back to R2. Only verified unfinished wording is cached, not host requests or source metadata.

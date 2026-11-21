@@ -17,5 +17,6 @@
   "MAX_SUBREQUESTS": 45,
   "CPU_BUDGET_MS": 10,
   "DEPLOYMENT_CLIENT_ID": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.access",
-  "VERIFIED_WORD_CACHE_NAMESPACE_ID": "dddddddddddddddddddddddddddddddd"
+  "VERIFIED_WORD_CACHE_NAMESPACE_ID": "dddddddddddddddddddddddddddddddd",
+  "AID_KV_CACHE_ENABLED": true
 }

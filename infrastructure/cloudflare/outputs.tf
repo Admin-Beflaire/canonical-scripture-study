@@ -10,6 +10,7 @@ output "bindings" {
     database_name                    = cloudflare_d1_database.data.name
     bucket_name                      = cloudflare_r2_bucket.private.name
     verified_word_cache_namespace_id = cloudflare_workers_kv_namespace.verified_word_cache.id
+    aid_kv_cache_enabled            = var.aid_kv_cache_enabled
     audiences = {
       study   = cloudflare_zero_trust_access_application.host["study"].aud
       control = cloudflare_zero_trust_access_application.host["control"].aud

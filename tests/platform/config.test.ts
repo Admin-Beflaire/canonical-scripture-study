@@ -24,6 +24,7 @@ test('one template renders two independent instance/binding sets', () => {
       }
 
       assert.equal(config[role].vars.ENHANCEMENTS,false);
+      if (role==='study') assert.equal(config[role].vars.AID_KV_CACHE_ENABLED,true);
       assert.equal(config[role].vars.DEPLOYMENT_CLIENT_ID,input.DEPLOYMENT_CLIENT_ID);
       assert.doesNotMatch(JSON.stringify(config[role]),/\{\{/);
     }
@@ -31,10 +32,17 @@ test('one template renders two independent instance/binding sets', () => {
     assert.notEqual(config.control.vars.HOST_AUDIENCE,config.control.vars.JOB_AUDIENCE);
   }
 });
+test('aid KV plan setting can turn cache off without removing the private binding', () => {
+  const off = renderWorkerConfigs({...input, AID_KV_CACHE_ENABLED:false},root);
+  assert.equal(off.study.vars.AID_KV_CACHE_ENABLED,false);
+  assert.equal(off.study.kv_namespaces[0].binding,'VERIFIED_WORD_CACHE');
+});
+
 test('missing, injected, reused and oversized settings fail before rendering', () => {
   for (const key of Object.keys(input)) {
     const copy: Record<string,unknown> = {...input}; delete copy[key];
-    const message = key === 'ENHANCEMENTS' ? 'Explicit ENHANCEMENTS boolean required' : `Invalid or missing ${key}`;
+    const message = key === 'ENHANCEMENTS' || key === 'AID_KV_CACHE_ENABLED'
+      ? `Explicit ${key} boolean required` : `Invalid or missing ${key}`;
     assert.throws(()=>renderWorkerConfigs(copy,root),{message});
   }
   assert.throws(()=>renderWorkerConfigs({...input,INSTANCE:'{{missing}}'},root),/Invalid or missing INSTANCE/);

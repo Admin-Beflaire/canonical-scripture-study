@@ -23,6 +23,7 @@ export interface StudyReadEnvironment {
   DATA_DB: D1ReadDatabase;
   PRIVATE_OBJECTS: R2ReadBucket;
   VERIFIED_WORD_CACHE?: VerifiedWordCache;
+  AID_KV_CACHE_ENABLED?: boolean | 'true' | 'false';
   MAX_PAGE_BYTES?: string | number;
   REQUEST_BYTES?: string | number;
   MAX_D1_CALLS?: string | number;

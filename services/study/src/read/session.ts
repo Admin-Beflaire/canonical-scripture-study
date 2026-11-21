@@ -75,7 +75,8 @@ export class ReadSession {
     if (!row || row.release_id === null) throw new ReadError('no_current_release', 'No release is currently selected');
     if (row.schema_versions_json === null) throw new ReadError('incompatible_release', 'The selected release record is missing');
     return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, { id: row.release_id, schema_versions: checkVersions(row.schema_versions_json) },
-      env.VERIFIED_WORD_CACHE);
+      env.AID_KV_CACHE_ENABLED === false || env.AID_KV_CACHE_ENABLED === 'false'
+        ? undefined : env.VERIFIED_WORD_CACHE);
   }
 
   /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`

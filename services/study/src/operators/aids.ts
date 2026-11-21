@@ -1,5 +1,5 @@
 import { canonicalJson, isIdentifier, isSafeCount, sha256Hex, utf8Length } from '../read/bytes.ts';
-import { readSpans, type SpanEvidence } from '../read/evidence.ts';
+import { readSpans, selectedCachedSpan, type SpanEvidence } from '../read/evidence.ts';
 import type { ReadSession } from '../read/session.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem } from '../results/batch.ts';
@@ -19,37 +19,23 @@ function pendingText(session: ReadSession): Map<string, SpanEvidence> {
   PENDING_TEXT.set(session.objects, { releaseId: session.release.id, entries });
   return entries;
 }
-async function sharedKey(session: ReadSession, entryKey: string): Promise<string> {
-  return 'verified-aid:v1:' + await sha256Hex(canonicalJson([session.release.id, entryKey]));
+async function sharedKey(entryKey: string): Promise<string> {
+  // Immutable source/output/span/annotation identities survive release promotions.
+  return 'verified-aid:v2:' + await sha256Hex(entryKey);
 }
 
-/** Verify global-cache wording against the *selected* D1 span's exact body digest.
- *  A shared cache hit must never turn untrusted or stale wording into source evidence. */
+/** Optional KV holds wording only; selected D1 span metadata and its digest
+ * are rechecked before any KV text can become evidence. */
 async function sharedPending(session: ReadSession, entryKey: string, row: Record<string, unknown>):
   Promise<SpanEvidence | undefined> {
   if (!session.verifiedWords) return undefined;
   try {
-    const saved = await session.verifiedWords.get(await sharedKey(session, entryKey));
-    if (!saved || utf8Length(saved) > MAX_PENDING_BODY_BYTES + 4096) return undefined;
-    const candidate = JSON.parse(saved) as SpanEvidence;
-    if (!candidate || !Array.isArray(candidate.text) || candidate.text.length !== 1
-        || typeof candidate.text[0] !== 'string'
-        || candidate.span_id !== row.span_id || candidate.source_revision_id !== row.source_revision_id
-        || utf8Length(candidate.text[0]) > MAX_PENDING_BODY_BYTES) return undefined;
-    const selected = await session.queryIfAvailable('spans', { ids: [candidate.span_id] });
-    const source = selected?.rows.find(item => item.id === candidate.span_id);
-    if (!source || String(source.source_revision_id) !== candidate.source_revision_id
-        || String(source.kind) !== candidate.kind || String(source.reading_kind) !== candidate.reading_kind) return undefined;
-    const ranges = JSON.parse(String(source.body_ranges_json));
-    const segments = JSON.parse(String(source.segments_json));
-    if (!Array.isArray(ranges) || ranges.length !== 1 || !Array.isArray(segments)
-        || segments.length !== 1 || JSON.stringify(segments) !== JSON.stringify(candidate.segments)
-        || !ranges[0] || typeof ranges[0].sha256 !== 'string'
-        || utf8Length(candidate.text[0]) !== ranges[0].byte_length
-        || await sha256Hex(candidate.text[0]) !== ranges[0].sha256) return undefined;
-    return candidate;
+    const wording = await session.verifiedWords.get(await sharedKey(entryKey));
+    if (!wording || utf8Length(wording) > MAX_PENDING_BODY_BYTES) return undefined;
+    const span = await selectedCachedSpan(session, String(row.span_id), wording);
+    return span?.source_revision_id === row.source_revision_id ? span : undefined;
   } catch {
-    return undefined; // KV is optional; always fall back to a verified R2 read.
+    return undefined; // No KV errors escape into the Study result; read verified R2 instead.
   }
 }
 
@@ -155,7 +141,7 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
             if (pending.size > MAX_PENDING_ENTRIES) pending.delete(pending.keys().next().value!);
             if (!cached && session.verifiedWords) {
               try {
-                await session.verifiedWords.put(await sharedKey(session, entryKey), JSON.stringify(span),
+                await session.verifiedWords.put(await sharedKey(entryKey), span.text[0],
                   { expirationTtl: SHARED_CACHE_TTL_SECONDS });
               } catch { /* Optional cache failure never changes verified evidence. */ }
             }

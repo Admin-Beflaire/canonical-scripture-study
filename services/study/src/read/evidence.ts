@@ -1,4 +1,4 @@
-import { isIdentifier, sha256Hex } from './bytes.ts';
+import { isIdentifier, sha256Hex, utf8Length } from './bytes.ts';
 import { artifactFrom, readArtifact, readVerifiedRange, type RegisteredArtifact } from './objects.ts';
 import { RELATIONSHIPS_PER_QUERY } from './queries.ts';
 import type { ReadSession } from './session.ts';
@@ -28,6 +28,34 @@ const isSegments = (v: unknown) => Array.isArray(v) && v.length > 0 && v.every(s
   && Number.isSafeInteger(s.start) && Number.isSafeInteger(s.end) && s.start >= 0 && s.end >= s.start);
 interface BodyRange { segment_ordinal: number; artifact_id: string; byte_offset: number; byte_length: number; sha256: string }
 
+/** The selected D1 row, never a cache value, supplies all evidence metadata. */
+function spanMetadata(row: Record<string, unknown>, id: string): SpanEvidence {
+  return {
+    span_id: id, source_revision_id: String(row.source_revision_id), source_name: String(row.source_name),
+    attribution: String(row.source_attribution), kind: String(row.kind), label: String(row.label),
+    native_order: Number(row.native_order), coordinate_version: String(row.coordinate_version),
+    segments: json<NativeSegment[]>(row.segments_json, isSegments),
+    basis: json(row.basis_json, isObject), reading_kind: String(row.reading_kind), text: null,
+  };
+}
+
+/** Reconstruct a selected span from D1 fields and a cached *wording only* value.
+ * No cached labels, coordinates or other metadata are trusted. */
+export async function selectedCachedSpan(session: ReadSession, id: string, wording: string): Promise<SpanEvidence | null> {
+  const selected = await session.queryIfAvailable('spans', { ids: [id] });
+  const row = selected?.rows.find(item => item.id === id);
+  if (!row || row.reading_kind !== 'extracted' || row.content_id !== null) return null;
+  const span = spanMetadata(row, id);
+  const ranges = json<BodyRange[]>(row.body_ranges_json, Array.isArray);
+  if (span.segments.length !== 1 || ranges.length !== 1 || ranges[0].segment_ordinal !== 0
+      || typeof ranges[0].sha256 !== 'string' || !Number.isSafeInteger(ranges[0].byte_length)
+      || utf8Length(wording) !== ranges[0].byte_length
+      || await sha256Hex(wording) !== ranges[0].sha256
+      || span.segments[0].end - span.segments[0].start !== Array.from(wording).length) return null;
+  span.text = [wording];
+  return span;
+}
+
 /** Resolves span IDs to exact wording in the current release. Missing, corrupt and
  *  not-yet-read spans are reported separately; valid spans are returned regardless. */
 export async function readSpans(session: ReadSession, ids: string[], largeRanges = false): Promise<SpanRead> {
@@ -40,13 +68,8 @@ export async function readSpans(session: ReadSession, ids: string[], largeRanges
     const row = found.get(id);
     if (!row) { out.limitations.push(limitation('missing_evidence', id, 'Not available in the current release')); continue; }
     try {
-      const segments = json<NativeSegment[]>(row.segments_json, isSegments);
-      const evidence: SpanEvidence = {
-        span_id: id, source_revision_id: String(row.source_revision_id), source_name: String(row.source_name),
-        attribution: String(row.source_attribution), kind: String(row.kind), label: String(row.label),
-        native_order: Number(row.native_order), coordinate_version: String(row.coordinate_version), segments,
-        basis: json(row.basis_json, isObject), reading_kind: String(row.reading_kind), text: null,
-      };
+      const evidence = spanMetadata(row, id);
+      const segments = evidence.segments;
       if (row.content_id !== null) {
         if (typeof row.exact_text !== 'string' || await sha256Hex(row.exact_text) !== row.content_id)
           throw new ReadError('corrupt', 'Text payload does not match its digest');

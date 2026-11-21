@@ -81,9 +81,10 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   f.select('rel-2', 'rel-1');
   // Shared verified text is visible to a new Worker instance with an empty local WeakMap.
   const shared = new Map<string, string>();
+  let kvReads = 0, kvWrites = 0;
   const withCache = { ...f.env, VERIFIED_WORD_CACHE: {
-    get: async (key: string) => shared.get(key) ?? null,
-    put: async (key: string, value: string) => { shared.set(key, value); },
+    get: async (key: string) => { kvReads++; return shared.get(key) ?? null; },
+    put: async (key: string, value: string) => { kvWrites++; shared.set(key, value); },
   } };
   const freshInstance = () => ({ ...withCache, PRIVATE_OBJECTS: {
     get: (key: string, options?: { range: { offset: number; length: number } }) => f.bucket.get(key, options),
@@ -116,6 +117,8 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   assert.equal(next, null);
   assert.ok(chunks.length > 1);
   assert.equal(chunks.join(''), body);
+  assert.ok(kvReads > 0 && kvWrites > 0, 'enabled by default: KV was read and written');
+  assert.equal([...shared.values()][0], body, 'KV stores only wording, no span metadata');
   const routed = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G1234' }] });
   assert.equal((routed.evidence as unknown[]).length, 1);
   assert.ok(routed.continuation, 'Study selects the larger bounded allowance for language-aid retrieval');
@@ -131,6 +134,25 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
   assert.ok(f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length > beforeReselection,
     'reselected source is verified again after a release change');
+  // Free-plan switch: even with a KV binding, perform no KV get/put at all.
+  // A new R2 binding on each call simulates separate Workers without local cache.
+  const beforeOffKv = [kvReads, kvWrites];
+  const beforeOffR2 = f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length;
+  const disabledEnv = () => ({ ...withCache, AID_KV_CACHE_ENABLED: false,
+    PRIVATE_OBJECTS: { get: (key: string, options?: { range: { offset: number; length: number } }) =>
+      f.bucket.get(key, options) } });
+  const offFirst = await aidBatch(await ReadSession.open(disabledEnv(), AID_LIMITS),
+    { ...workload, key: 'G1234' }, null, 'test');
+  assert.ok(offFirst.continuation);
+  const offSecond = await aidBatch(await ReadSession.open(disabledEnv(), AID_LIMITS),
+    { ...workload, key: 'G1234' }, offFirst.continuation, 'test');
+  assert.ok(offSecond.evidence.some(item => item.kind === 'language_aid'));
+  assert.deepEqual([kvReads, kvWrites], beforeOffKv, 'off means zero KV operations');
+  assert.ok(f.bucket.reads.filter(read => read.key === 'synthetic/long-body').length > beforeOffR2,
+    'off uses normal verified R2 reads');
+  assert.ok(!offSecond.limitations.some(item => /cache|kv/i.test(item.detail)),
+    'the absence of KV is never a user-visible error');
+
   f.bucket.corrupt.add('synthetic/long-body');
   const corrupt = await aidBatch(await ReadSession.open(f.env, AID_LIMITS), { ...workload, key: 'G1234' }, null, 'test');
   assert.equal(corrupt.evidence.length, 0);

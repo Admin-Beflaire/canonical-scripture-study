@@ -22,7 +22,8 @@ def instance(bindings,client):
             "DATABASE_ID":bindings["database_id"],"ACCESS_ISSUER":bindings["access_issuer"],
             "STUDY_AUDIENCE":audiences["study"],"CONTROL_AUDIENCE":audiences["control"],
             "JOB_AUDIENCE":audiences["jobs"],"DEPLOYMENT_CLIENT_ID":client,
-            "ENHANCEMENTS":False,"MAX_PAGE_BYTES":65536,"REQUEST_BYTES":262144,
+            "ENHANCEMENTS":False,"AID_KV_CACHE_ENABLED":bindings.get("aid_kv_cache_enabled",True),
+            "MAX_PAGE_BYTES":65536,"REQUEST_BYTES":262144,
             "MAX_D1_CALLS":25,"MAX_SUBREQUESTS":40,"CPU_BUDGET_MS":10
         }
         # A previously reviewed Worker commit must remain deployable for rollback.
@@ -30,6 +31,8 @@ def instance(bindings,client):
         study_template = Path("services/study/wrangler.jsonc")
         if study_template.exists() and "{{VERIFIED_WORD_CACHE_NAMESPACE_ID}}" in study_template.read_text():
             result["VERIFIED_WORD_CACHE_NAMESPACE_ID"] = bindings["verified_word_cache_namespace_id"]
+        if type(result["AID_KV_CACHE_ENABLED"]) is not bool:
+            raise InstanceError("Invalid aid KV plan setting")
         if bindings["database_name"]!="css-data-"+result["INSTANCE"] or bindings["bucket_name"]!="css-private-"+result["INSTANCE"]:
             raise InstanceError("State resource naming mismatch")
         return result

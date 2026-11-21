@@ -33,7 +33,7 @@ async function sharedPending(session: ReadSession, entryKey: string, row: Record
     const wording = await session.verifiedWords.get(await sharedKey(entryKey));
     if (!wording || utf8Length(wording) > MAX_PENDING_BODY_BYTES) return undefined;
     const span = await selectedCachedSpan(session, String(row.span_id), wording);
-    return span?.source_revision_id === row.source_revision_id ? span : undefined;
+    return span && span.source_revision_id === row.source_revision_id ? span : undefined;
   } catch {
     return undefined; // No KV errors escape into the Study result; read verified R2 instead.
   }

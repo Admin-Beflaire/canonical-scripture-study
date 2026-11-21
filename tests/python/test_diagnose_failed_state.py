@@ -1,12 +1,17 @@
 import hashlib
+import importlib.util
 import json
+from pathlib import Path
 import sys
 import types
 import unittest
 from unittest.mock import patch
 
 with patch.dict(sys.modules, {'platform_state': types.ModuleType('platform_state')}):
-    import diagnose_failed_state as diagnostic
+    path = Path(__file__).resolve().parents[2] / 'infrastructure/github/diagnose_failed_state.py'
+    spec = importlib.util.spec_from_file_location('diagnose_failed_state', path)
+    diagnostic = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(diagnostic)
 
 
 class DiagnosticTest(unittest.TestCase):

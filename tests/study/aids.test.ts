@@ -326,3 +326,108 @@ test('TIPNR candidates use only budget remaining after all lexical and grammar k
     assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].proper_name?.length, 0);
   }
 });
+
+test('name evidence continues automatically when word-search budget is exhausted', async () => {
+  for (const used of [3]) {
+    const f = aids();
+    f.select(null, null);
+    const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    add.run('lex-budget', 'syn-ev', A, 'a-u1', 'lexicon_entry', 'lexicon', '{}',
+      JSON.stringify({ strong_base: 'G1234', entry_id: 'lex-budget' }));
+    add.run('grammar-budget', 'syn-ev', A, 'a-u2', 'grammar_expansion', 'grammar', '{}',
+      JSON.stringify({ code: 'N-ASN', entry_id: 'grammar-budget' }));
+    add.run('name-budget', 'syn-ev', A, 'a-u1', 'proper_name', 'TIPNR', '{}',
+      JSON.stringify({ disambiguated_strong: 'G1234G', identity: 'Alex' }));
+    f.select('rel-2', 'rel-1');
+    const hit: SearchHit = { source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1',
+      native_order: 0, occurrence_id: 'budget', native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+        coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: 0, end: 1 }] },
+      analyses: [{ analysis_id: 'one', lemma_id: 'G1234G', grammar: { language: 'greek', morphology: 'N-ASN' } }] };
+    const adapter: SearchAdapter = { async search() { return { state: 'complete', lookup: 'word', key: 'a', hits: [hit],
+      searched: [], limitations: [], remaining: null, ranked: false, resume_after: [{ source: A, output: 'syn-word',
+        order: 0, dir: 0, entry: 0, after: null, anchor: null }] }; } };
+    const session = await ReadSession.open(f.env, AID_LIMITS);
+    while (session.budget.usage().d1Calls < used) session.budget.spendQuery();
+    const batch = await languageBatch(session,
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, null, 'test', [], adapter);
+    const word = batch.evidence.find(item => item.kind === 'search_hit');
+    assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].lexicon.length, 1);
+    assert.equal(word?.kind === 'search_hit' && word.hit.aid_matches?.[0].grammar.length, used === 3 ? 1 : 0);
+    assert.ok(batch.continuation, 'name evidence must have a continuation when the budget is exhausted');
+    await assert.rejects(languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'different', sources: [A] },
+      batch.continuation, 'test', [], adapter));
+    const followed = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] }, batch.continuation,
+      'test', [], adapter);
+    assert.equal((followed.delivered_scope as {proper_name_for: string}).proper_name_for, 'G1234G');
+    assert.ok(followed.evidence.some(e => e.kind === 'language_aid' && e.details.identity === 'Alex'));
+    assert.equal(followed.continuation, null);
+  }
+});
+
+test('name continuations finish before the next page of word results', async () => {
+  const f = aids();
+  const hits: SearchHit[] = Array.from({ length: 5 }, (_, i) => ({
+    source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: i,
+    occurrence_id: 'word-' + i, native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: i, end: i + 1 }] },
+    analyses: [{ analysis_id: 'analysis-' + i, lemma_id: 'G123' + i + 'G', grammar: {} }],
+  }));
+  const position = (i: number) => ({ source: A, output: 'syn-word', order: i, dir: 0, entry: 0,
+    after: [i, 'word-' + i] as [number, string], anchor: { file: 'page', offset: 0, length: 1, sha256: 'a'.repeat(64) } });
+  const adapter: SearchAdapter = { async search(_session, request) {
+    const first = request.position?.after ? request.position.after[0] + 1 : 0;
+    const selected = hits.slice(first);
+    return { state: 'complete', lookup: 'word', key: 'a', hits: selected, searched: [], limitations: [],
+      remaining: null, ranked: false, resume_after: selected.map((_, i) => position(first + i)) };
+  } };
+  const workload = { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] };
+  let token: string | null = null;
+  const seen: string[] = [];
+  let calls = 0;
+  do {
+    const batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS), workload, token, 'test', [], adapter);
+    seen.push(...batch.evidence.flatMap(e => e.kind === 'search_hit' ? [e.hit.occurrence_id] : []));
+    token = batch.continuation;
+    assert.ok(++calls < 15, 'continuations must make progress');
+  } while (token);
+  assert.deepEqual(seen, ['word-0', 'word-1', 'word-2', 'word-3', 'word-4']);
+});
+
+test('continued name evidence delivers a long entry without losing wording', async () => {
+  const f = aids();
+  f.select(null, null);
+  const body = 'Long name entry α '.repeat(2000);
+  const bytes = Buffer.from(body);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  f.db.sqlite.prepare('INSERT INTO artifacts VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run('name-body', A, 'syn-ev', digest, bytes.length, 'text/utf-8', 'synthetic/name-body');
+  f.bucket.objects.set('synthetic/name-body', bytes);
+  f.db.sqlite.prepare(`INSERT INTO native_spans(id, output_id, source_revision_id, kind, label, native_order,
+    coordinate_version, segments_json, basis_json, body_ranges_json, reading_kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run('name-span', 'syn-ev', A, 'proper_name', 'name', 100, 'syn:unicode-scalars/1',
+      JSON.stringify([{ unit_id: 'name-unit', start: 0, end: Array.from(body).length }]), '{}',
+      JSON.stringify([{ segment_ordinal: 0, artifact_id: 'name-body', byte_offset: 0, byte_length: bytes.length, sha256: digest }]), 'extracted');
+  f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('name-long', 'syn-ev', A, 'name-span', 'proper_name', 'TIPNR', '{}', JSON.stringify({ disambiguated_strong: 'G1234G' }));
+  f.select('rel-2', 'rel-1');
+  const hit: SearchHit = { source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: 0,
+    occurrence_id: 'word', native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Mat.1.1', start: 0, end: 1 }] },
+    analyses: [{ analysis_id: 'one', lemma_id: 'G1234G', grammar: {} }] };
+  const adapter: SearchAdapter = { async search() { return { state: 'complete', lookup: 'word', key: 'a', hits: [hit],
+    searched: [], limitations: [], remaining: null, ranked: false, resume_after: [{ source: A, output: 'syn-word',
+      order: 0, dir: 0, entry: 0, after: null, anchor: null }] }; } };
+  const workload = { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'word', key: 'a', sources: [A] };
+  const initial = await ReadSession.open(f.env, AID_LIMITS);
+  while (initial.budget.usage().d1Calls < 4) initial.budget.spendQuery();
+  let batch = await languageBatch(initial, workload, null, 'test', [], adapter);
+  let text = '', calls = 0;
+  while (batch.continuation) {
+    batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS), workload, batch.continuation, 'test', [], adapter);
+    for (const item of batch.evidence) if (item.kind === 'language_aid') text += item.span.text?.join('') ?? '';
+    assert.ok(++calls < 10);
+  }
+  assert.equal(text, body);
+});

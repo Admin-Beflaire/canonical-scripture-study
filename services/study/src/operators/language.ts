@@ -4,7 +4,9 @@ import { PagedIndexSearch, SUPPORTED_LOOKUPS, UNSUPPORTED_LOOKUPS, type LookupKi
 import type { ReadSession } from '../read/session.ts';
 import { ReadError, limitation, type Limitation } from '../read/states.ts';
 import type { Batch, EvidenceItem } from '../results/batch.ts';
-import { searchBatch } from '../results/search-batch.ts';
+import { searchBatch, normalizeSearchWorkload, SEARCH_CHECKS } from '../results/search-batch.ts';
+import { encodeContinuation, resumeContinuation } from '../results/continuation.ts';
+import { aidBatch } from './aids.ts';
 import { normalizeKey } from '../scope/keys.ts';
 
 /** Capability each lookup needs from a selected index. */
@@ -46,9 +48,51 @@ export async function languageBatch(session: ReadSession, workload: LanguageWork
     sources = UNSUPPORTED_LOOKUPS.includes(lookup as LookupKind) ? ['none'] : await sourcesWith(session, CAPABILITY[lookup]);
     if (!sources.length) throw new ReadError('missing_index', `No selected source offers ${lookup} search`);
   }
-  const batch = await searchBatch(session, adapter, { mode: workload.mode, depth: workload.depth, language: workload.language, lookup,
-    key: normalizeKey(lookup, workload.key), sources }, continuation, guidanceVersion, notes);
-  if (SUPPORTED_LOOKUPS.includes(lookup as LookupKind)) await attachWordAids(session, batch);
+  const normalized = normalizeSearchWorkload({ mode: workload.mode, depth: workload.depth, language: workload.language, lookup,
+    key: normalizeKey(lookup, workload.key), sources });
+  type NameState = { tags: string[]; aid: string | null; search: string | null };
+  const checks = { ...SEARCH_CHECKS, word_names: (pos: unknown, key: unknown) => {
+    if (key !== null || !isObject(pos) || Object.keys(pos).sort().join(',') !== 'aid,search,tags') return false;
+    return Array.isArray(pos.tags) && pos.tags.length > 0 && pos.tags.length <= 16
+      && pos.tags.every((tag: unknown) => typeof tag === 'string' && /^[HG]\d{4,5}[A-Za-z]?$/.test(tag))
+      && (pos.aid === null || typeof pos.aid === 'string' && pos.aid.length <= 2048)
+      && (pos.search === null || typeof pos.search === 'string' && pos.search.length <= 2048);
+  } };
+  const state = continuation ? await resumeContinuation(continuation, normalized, checks) : null;
+  if (state?.op === 'word_names') {
+    const pending = state.pos as NameState;
+    const tag = pending.tags[0];
+    const result = await aidBatch(session, { ...normalized, lookup: 'proper_name', key: tag, sources: null }, pending.aid,
+      guidanceVersion);
+    // No matching identity is ordinary for non-name Strong tags.
+    result.limitations = result.limitations.filter(item => !(item.state === 'missing_evidence' && item.scope === tag));
+    result.delivered_scope = { lookup, key: normalized.key, sources, proper_name_for: tag };
+    const next = result.continuation ? { ...pending, aid: result.continuation }
+      : { ...pending, tags: pending.tags.slice(1), aid: null };
+    result.continuation = next.tags.length ? await encodeContinuation(normalized, { op: 'word_names', pos: next, key: null }) : pending.search;
+    result.remaining = result.continuation ? { word_names: next.tags.length, search: !!pending.search } : null;
+    return result;
+  }
+  // Bound distinct tags per search page so their continuation remains small.
+  const batch = await searchBatch(session, adapter, normalized, continuation, guidanceVersion, notes, hits => {
+    const tags = new Set<string>();
+    for (let i = 0; i < hits.length; i++) {
+      const next = new Set([...tags, ...wordKeys(hits[i]).flatMap(a => a.proper_name ? [a.proper_name] : [])]);
+      if (next.size > 4 && i > 0 || next.size > 16) return i;
+      for (const tag of next) tags.add(tag);
+    }
+    return hits.length;
+  });
+  if (SUPPORTED_LOOKUPS.includes(lookup as LookupKind)) {
+    const completed = await attachWordAids(session, batch);
+    const tags = [...new Set(batch.evidence.flatMap(item => item.kind === 'search_hit'
+      ? wordKeys(item.hit).flatMap(a => a.proper_name && !completed.has(a.proper_name) ? [a.proper_name] : []) : []))];
+    if (tags.length) {
+      batch.continuation = await encodeContinuation(normalized, { op: 'word_names',
+        pos: { tags, aid: null, search: batch.continuation }, key: null });
+      batch.remaining = { word_names: tags.length, search: !!batch.remaining };
+    }
+  }
   return batch;
 }
 
@@ -100,10 +144,10 @@ function aidDetails(raw: unknown): Record<string, unknown> {
 
 /** Adds uniquely retrieved attributed entries as separate evidence and links each word analysis
  * to them. Missing, large and undisplayed entries remain available via independent lookups. */
-export async function attachWordAids(session: ReadSession, batch: Batch): Promise<void> {
+export async function attachWordAids(session: ReadSession, batch: Batch): Promise<Set<string>> {
   const hits = batch.evidence.filter((item): item is Extract<EvidenceItem, {kind: 'search_hit'}> => item.kind === 'search_hit')
     .map(item => item.hit);
-  if (!hits.length) return;
+  if (!hits.length) return new Set();
   const wanted = new Map<SearchHit, AnalysisKeys[]>();
   const keys = new Map<string, Key>();
   const nameKeys = new Map<string, Key>();
@@ -169,6 +213,7 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
         catch { note('corrupt', identity, 'Unreadable linked language-aid metadata'); complete = false; }
       }
       values.set(identity, items);
+      entry.complete = complete;
       if (complete && utf8Length(JSON.stringify(items)) <= CACHE_BYTE_CAP) {
         cached.delete(identity);
         cached.set(identity, items);
@@ -207,6 +252,13 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
       delivered.set(identity, refs);
     }
   }
+  const completedNames = new Set<string>();
+  for (const [identity, key] of choice) {
+    if (key.lookup !== 'proper_name' || !values.has(identity)) continue;
+    const items = values.get(identity)!;
+    const complete = cached.has(identity) || fresh.get(identity)?.complete === true;
+    if (complete && (delivered.get(identity)?.length ?? 0) === items.length) completedNames.add(key.key);
+  }
   for (const hit of hits) {
     const matches = (wanted.get(hit) ?? []).map(a => ({
       analysis_id: a.analysis_id,
@@ -221,4 +273,5 @@ export async function attachWordAids(session: ReadSession, batch: Batch): Promis
       note('budget', 'word_aids', 'Not every occurrence can carry evidence links in this batch');
     }
   }
+  return completedNames;
 }

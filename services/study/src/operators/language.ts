@@ -72,12 +72,15 @@ const isObject = (x: unknown): x is Record<string, unknown> => !!x && typeof x =
 function wordKeys(hit: SearchHit): AnalysisKeys[] {
   if (!Array.isArray(hit.analyses)) return [];
   return hit.analyses.filter(isObject).map(a => {
-    const lemma = typeof a.lemma_id === 'string' && /^[HG]\d{1,5}$/i.test(a.lemma_id)
-      ? a.lemma_id[0].toUpperCase() + a.lemma_id.slice(1).padStart(4, '0') : null;
-    const morphology = isObject(a.grammar) && typeof a.grammar.morphology === 'string' ? a.grammar.morphology : '';
-    const prefix = morphology[0] === 'H' || morphology[0] === 'A' ? morphology[0] : '';
-    const grammar = morphology.split('/').map((part, i) =>
-      i && prefix && !/^[HA]/.test(part) ? prefix + part : part).filter(x => isIdentifier(x, 200));
+    // Source analyses may have a disambiguating trailing letter (e.g. H7225G).
+    // Language-aid lexicon rows are indexed by the base Strong number.
+    const strong = typeof a.lemma_id === 'string' ? /^([HG])(\d{1,5})[A-Z]?$/i.exec(a.lemma_id) : null;
+    const lemma = strong ? strong[1].toUpperCase() + strong[2].padStart(4, '0') : null;
+    const sourceGrammar = isObject(a.grammar) ? a.grammar : null;
+    const morphology = typeof sourceGrammar?.morphology === 'string' ? sourceGrammar.morphology : '';
+    const prefix = sourceGrammar?.language === 'hebrew' ? 'H' : sourceGrammar?.language === 'aramaic' ? 'A' : '';
+    const grammar = morphology.split('/').map(part =>
+      prefix && part && !/^[HA]/.test(part) ? prefix + part : part).filter(x => isIdentifier(x, 200));
     return { analysis_id: typeof a.analysis_id === 'string' ? a.analysis_id : '', lexicon: lemma, grammar };
   });
 }

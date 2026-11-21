@@ -192,3 +192,45 @@ test('Matthew 1 onoma (G3686) word-study attaches attributed lexicon and grammar
   assert.equal(gramCalls, 1, 'cached grammar not queried again');
   assert.equal(next.evidence.filter(item => item.kind === 'language_aid').length, 2);
 });
+
+for (const { language, lemma, base, morphology, code } of [
+  { language: 'hebrew', lemma: 'H7225G', base: 'H7225', morphology: 'Ncfsa', code: 'HNcfsa' },
+  { language: 'aramaic', lemma: 'H1254A', base: 'H1254', morphology: 'R', code: 'AR' },
+]) {
+  test(`TAHOT-shaped ${language} word analysis attaches base Strong lexicon and language-prefixed grammar`, async () => {
+    const f = aids();
+    f.select(null, null);
+    const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    add.run('lex-' + language, 'syn-ev', A, 'a-u1', 'lexicon_entry', 'synthetic STEP lexicon', '{}',
+      JSON.stringify({ entry_id: lemma, strong_base: base }));
+    add.run('grammar-' + language, 'syn-ev', A, 'a-u2', 'grammar_expansion', 'synthetic STEP morphology', '{}',
+      JSON.stringify({ entry_id: code, code }));
+    f.select('rel-2', 'rel-1');
+    const hit: SearchHit = {
+      source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: 1,
+      occurrence_id: 'Gen.1.1:1:6', form: 'בְּרֵאשִׁית',
+      native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+        coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Gen.1.1', start: 0, end: 6 }] },
+      analyses: [{ analysis_id: 'analysis-' + language, analysis_revision_id: 'syn:tags',
+        provider: 'synthetic TAHOT', lemma_id: lemma,
+        // TAHOT's word adapter strips the H/A letter from morphology; grammar_info retains it.
+        grammar: { language, morphology }, basis: 'STEP native morphological source' }],
+    };
+    const adapter: SearchAdapter = { async search() {
+      return { state: 'complete', lookup: 'lemma', key: lemma, hits: [hit], searched: [],
+        limitations: [], remaining: null, ranked: false as const,
+        resume_after: [{ source: A, output: 'syn-word', order: 1, dir: 0, entry: 0, after: null, anchor: null }] };
+    } };
+    const batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'lemma', key: lemma, sources: [A] },
+      null, 'test', [], adapter);
+    assert.equal(batch.evidence.filter(item => item.kind === 'language_aid').length, 2);
+    const word = batch.evidence.find(item => item.kind === 'search_hit');
+    assert.equal(word?.kind, 'search_hit');
+    if (word?.kind !== 'search_hit') throw new Error('Expected word hit');
+    assert.equal(word.hit.aid_matches?.[0].analysis_id, 'analysis-' + language);
+    assert.equal(word.hit.aid_matches?.[0].lexicon.length, 1, 'lettered Strong resolves base lexicon');
+    assert.equal(word.hit.aid_matches?.[0].grammar.length, 1, 'morphology receives H/A prefix');
+    assert.equal(batch.continuation, null);
+  });
+}

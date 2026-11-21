@@ -165,6 +165,16 @@ allowed. Repair is a separately owner-approved manual operation:
    baseline and recorded outcome before provisioning resumes. The helper
    intentionally contains no force-reset or automatic repair command.
 
+For the specific failed Cloudflare attempt `44883634337-1`, the manual
+`reconcile-cloudflare.yml` workflow preserves the original failed assets,
+imports the already existing verified-word namespace into a private copy of
+the checked snapshot, refreshes local state and requires a clean provider
+plan before publishing an independently identified baseline. The separate
+reconciliation record links both snapshot hashes; an incomplete recovery
+blocks future runs and must be examined rather than retried blindly. Detailed
+Terraform diagnostics remain private. This is a one-off recovery, not a
+general reset or approval to accept other uncertain states.
+
 There is **no** Contents API rescue fallback and no state written into Git.
 If GitHub release upload is unavailable after a resource mutation, the
 updated runner-local state may be lost. Future runs stay blocked and

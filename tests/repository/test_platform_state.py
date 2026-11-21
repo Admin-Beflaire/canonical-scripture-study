@@ -87,6 +87,28 @@ class StateTests(unittest.TestCase):
             with self.assertRaises(state.StateError):
                 state.restore("github", Path(tmp) / "out", True)
 
+    def test_reconciliation_requires_matching_preserved_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "state"
+            p.write_bytes(b'{"version":4,"serial":1}')
+            state.begin("cloudflare", "44883634337-1")
+            with self.assertRaises(state.StateError):
+                state.finish("cloudflare", "44883634337-1", p, False)
+            failed_hash = state.digest(p.read_bytes())
+            p.write_bytes(b'{"version":4,"serial":2}')
+            # Recovery creates an independent completed attempt before its marker.
+            state.upload(self.fake.release, state.names("cloudflare", "50000000000-1")[0], b'{}')
+            state.finish("cloudflare", "50000000000-1", p, True)
+            marker = {"key": "cloudflare", "failed_run": "44883634337-1", "failed_sha256": failed_hash,
+                      "baseline_run": "50000000000-1", "baseline_sha256": state.digest(p.read_bytes())}
+            state.upload(self.fake.release, "reconciled--cloudflare--44883634337-1.json", json.dumps(marker).encode())
+            out = Path(tmp) / "out"
+            self.assertEqual(state.restore("cloudflare", out), "verified")
+            self.assertEqual(out.read_bytes(), p.read_bytes())
+            self.fake.items[-1]["payload"] = json.dumps({**marker, "failed_sha256": "wrong"}).encode()
+            with self.assertRaisesRegex(state.StateError, "evidence mismatch"):
+                state.restore("cloudflare", out)
+
     def test_interrupted_begin_with_no_state_blocks_reuse(self):
         state.begin("cloudflare", "300-1")
         with self.assertRaisesRegex(state.StateError, "Interrupted"):

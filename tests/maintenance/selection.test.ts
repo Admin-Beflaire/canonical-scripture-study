@@ -946,3 +946,34 @@ test('an interrupted release safely retries against an unrelated new base', asyn
   assert.equal(selected(w).previous_release_id, 'release-other');
   assert.equal(membersOf(w, selected(w).current_release_id).length, 6);
 });
+
+
+test('R74-2: a parallel build cancelled at guarded selection leaves no orphan combined release', async () => {
+  const w = world();
+  const genesis = await runBook(w, prepareTask('gen', 'guard-gen'), 'rev-1', { release: false });
+  const exodus = await runBook(w, prepareTask('exo', 'guard-exo'), 'rev-1', { release: false });
+  const first = await releaseBuild(w, genesis.taskId, 'guard-release-gen');
+  assert.equal(first.report.state, 'completed');
+  const current = selected(w).current_release_id;
+  const counts = () => ({
+    releases: (w.db.sqlite.prepare('SELECT COUNT(*) AS total FROM releases').get() as {total: number}).total,
+    members: (w.db.sqlite.prepare('SELECT COUNT(*) AS total FROM release_outputs').get() as {total: number}).total,
+  });
+  const before = counts();
+  const batch = w.db.batch.bind(w.db);
+  let changed = false;
+  w.db.batch = async statements => {
+    if (!changed && w.db.sqlite.prepare("SELECT 1 FROM maintenance_tasks WHERE request_key = 'guard-release-exo' AND state = 'checked'").get()) {
+      changed = true;
+      w.db.sqlite.prepare("UPDATE maintenance_tasks SET state = 'cancelled', revision = revision + 1 WHERE id = ?")
+        .run(exodus.taskId);
+    }
+    return batch(statements);
+  };
+  const second = await releaseBuild(w, exodus.taskId, 'guard-release-exo');
+  assert.equal(changed, true, 'test reached the guarded parallel selection');
+  assert.notEqual(second.report.state, 'completed');
+  assert.equal(selected(w).current_release_id, current);
+  assert.deepEqual(counts(), before, 'no unselected release row or members left behind');
+  assert.equal((await taskReport(w.db, owner, exodus.taskId))!.state, 'cancelled');
+});

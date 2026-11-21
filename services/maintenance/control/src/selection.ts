@@ -358,15 +358,32 @@ async function promote(db: D1Database, task: TaskRow, release: { members: string
 
 /** Select a saved, checked release in one guarded batch: base, task revision, candidate and exclusion state
  *  must be unchanged. `scope` supplies the exclusion changes that commit with the selection. */
+interface CombinedRelease { manifest: string; recipe: string; formats: Record<string, string>;
+  coverage: string; quality: string; scope: string; members: string[] }
+
 async function selectSaved(db: D1Database, taskId: string, revision: number, scope: Scope, releaseId: string, base: string | null,
-  exclusions: string, checked: Outcome, build?: { id: string; revision: number; outcome: Outcome; candidate: string }): Promise<SelectResult> {
+  exclusions: string, checked: Outcome, build?: { id: string; revision: number; outcome: Outcome; candidate: string },
+  combined?: CombinedRelease): Promise<SelectResult> {
   const token = crypto.randomUUID();
   const done: Outcome = { ...checked, completion: token, selection: { current_release_id: releaseId, became_current: true } };
   const selected = `(SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`;
   // A release also requires its build to still be the same checked build: cancelled or superseded after the check, it is not selected.
   const buildGuard = build ? `AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)` : '';
+  // Constructing a parallel combined release is part of the SAME guarded D1 batch
+  // as selecting it. If the release task, build, base or exclusions change, neither
+  // the release nor its members is inserted.
+  const combinedGuard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?) AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ? AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) AND ${EXCLUSION_STATE} = ? ${buildGuard}`;
+  const guardedArgs = [taskId, revision, releaseId, base, releaseId, exclusions,
+    ...(build ? [build.id, build.revision, build.candidate] : [])];
   try {
     await db.batch([
+      ...(combined ? [
+        db.prepare(`INSERT INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt) SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${combinedGuard} AND NOT EXISTS (SELECT 1 FROM releases WHERE id = ?)`)
+          .bind(releaseId, combined.manifest, combined.recipe, canonicalJson(combined.formats),
+            combined.coverage, combined.quality, combined.scope, ...guardedArgs, releaseId),
+        db.prepare(`INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?) WHERE ${combinedGuard} AND EXISTS (SELECT 1 FROM releases WHERE id = ?)`)
+          .bind(releaseId, JSON.stringify(combined.members), ...guardedArgs, releaseId),
+      ] : []),
       db.prepare(`UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
         WHERE singleton_id = 1 AND current_release_id IS ? AND ? IS NOT current_release_id
           AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)
@@ -497,6 +514,7 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
   if (listed !== candidate.length) check.problems.unshift(`${listed - candidate.length} listed output(s) are not saved`);
   if (check.problems.length) return refuse(`The candidate release no longer validates: ${check.problems[0]}`);
   let releaseId = built.candidate.release_id;
+  let combinedRelease: CombinedRelease | undefined;
   if (current.current_release_id !== built.candidate.base_release_id) {
     const source = await db.prepare('SELECT manifest_revision, recipe_revision FROM releases WHERE id = ?')
       .bind(built.candidate.release_id).first<{ manifest_revision: string; recipe_revision: string }>();
@@ -507,14 +525,8 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
     const report = { build: build.id, candidate: built.candidate.release_id, base: current.current_release_id, members: combined.ids };
     const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
     releaseId = `release-${(await sha256(canonicalJson({ members: combined.ids, quality: build.quality_ref, scope: scopeRef }))).slice(0, 32)}`;
-    // The selection transaction below still guards both the current release and original build.
-    await db.batch([
-      db.prepare(`INSERT OR IGNORE INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .bind(releaseId, source.manifest_revision, source.recipe_revision, canonicalJson(releaseVersions(items)), coverage, build.quality_ref, scopeRef),
-      db.prepare('INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?)')
-        .bind(releaseId, JSON.stringify(combined.ids)),
-    ]);
+    combinedRelease = { manifest: source.manifest_revision, recipe: source.recipe_revision,
+      formats: releaseVersions(items), coverage, quality: build.quality_ref, scope: scopeRef, members: combined.ids };
   }
   // Record the candidate on this task (once), then select it with the build's own exclusion changes.
   let revision = task.revision;
@@ -530,7 +542,7 @@ export async function releaseCandidate(db: D1Database, objects: ObjectStore | nu
   }
   return selectSaved(db, task.id, revision, buildScope, releaseId, current.current_release_id, exclusions,
     { ...outcome, checks: built.checks, limitations: [...outcome.limitations, ...check.notes] },
-    { id: build.id, revision: build.revision, outcome: built, candidate: built.candidate.release_id });
+    { id: build.id, revision: build.revision, outcome: built, candidate: built.candidate.release_id }, combinedRelease);
 }
 
 /** Validate a saved release whole before selecting it again (rollback, restore). The deployed

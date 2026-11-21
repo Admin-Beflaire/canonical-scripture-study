@@ -25,6 +25,8 @@ export interface SearchHit {
   source_revision_id: string; span_id: string; coordinate_version: string; native_order: number; occurrence_id: string;
   native_reference: { schema_version: string; source_revision_id: string; coordinate_version: string; segments: { unit_id: string; start: number; end: number }[] };
   form?: string; analyses?: unknown[];
+  /** Selected evidence shared by occurrences with the same lemma and morphology. */
+  aid_matches?: Array<{ analysis_id: string; lexicon: string[]; grammar: string[] }>;
 }
 
 /** What this request searched. `complete` covers the stated extent from `resumed_after`

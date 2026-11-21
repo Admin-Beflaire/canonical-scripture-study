@@ -5,6 +5,8 @@ import { A, buildFixture } from './fixture.ts';
 import { ReadSession } from '../../services/study/src/read/session.ts';
 import { AID_LIMITS, STARTING_LIMITS } from '../../services/study/src/read/budget.ts';
 import { aidBatch } from '../../services/study/src/operators/aids.ts';
+import { languageBatch } from '../../services/study/src/operators/language.ts';
+import type { SearchAdapter, SearchHit } from '../../services/study/src/read/search.ts';
 import { study } from '../../services/study/src/coordinator.ts';
 
 function aids() {
@@ -126,3 +128,110 @@ test('long verified lexical bodies continue without loss and preserve exact sour
   assert.equal(corrupt.evidence.length, 0);
   assert.ok(corrupt.limitations.some(item => item.state === 'corrupt'));
 });
+
+
+test('Matthew 1 onoma (G3686) word-study attaches attributed lexicon and grammar once for repeated occurrences', async () => {
+  const f = aids();
+  f.select(null, null);
+  const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  add.run('lex-onoma', 'syn-ev', A, 'a-u1', 'lexicon_entry', 'synthetic Greek lexicon', '{}',
+    JSON.stringify({ entry_id: 'G3686', strong_base: 'G3686', entry_key: 'onoma' }));
+  add.run('grammar-onoma', 'syn-ev', A, 'a-u2', 'grammar_expansion', 'synthetic Greek morphology', '{}',
+    JSON.stringify({ code: 'N-ASN', entry_id: 'N-ASN' }));
+  f.select('rel-2', 'rel-1');
+
+  const positions = ['Mat.1.21', 'Mat.1.23', 'Mat.1.25'];
+  const hits: SearchHit[] = positions.map((unit, i) => ({
+    source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: i,
+    occurrence_id: unit + ':33:38', form: 'ὄνομα',
+    native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+      coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: unit, start: 33, end: 38 }] },
+    analyses: [{ analysis_id: unit + ':1', analysis_revision_id: 'syn:tags', provider: 'synthetic TAGNT',
+      lemma_id: 'G3686', grammar: { language: 'greek', morphology: 'N-ASN' }, basis: 'TAGNT dStrong=Grammar' }],
+  }));
+  const adapter: SearchAdapter = { async search() {
+    return { state: 'complete', lookup: 'lemma', key: 'G3686', hits, searched: [], limitations: [],
+      remaining: null, ranked: false as const, resume_after: hits.map((hit, i) => ({
+        source: A, output: 'syn-word', order: i, dir: 0, entry: 0, after: null, anchor: null,
+      })) };
+  } };
+  const prepare = f.db.prepare.bind(f.db);
+  let lexCalls = 0, gramCalls = 0;
+  f.db.prepare = sql => {
+    if (sql.includes("a.kind = 'lexicon_entry'")) lexCalls++;
+    if (sql.includes("a.kind = 'grammar_expansion'")) gramCalls++;
+    return prepare(sql);
+  };
+  const session = await ReadSession.open(f.env, AID_LIMITS);
+  const batch = await languageBatch(session,
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'lemma', key: 'G3686', sources: [A] },
+    null, 'test', [], adapter);
+  const attached = batch.evidence.filter(item => item.kind === 'language_aid');
+  assert.equal(attached.length, 2, 'lexicon and morphology evidence included once, not once per occurrence');
+  assert.deepEqual(attached.map(item => item.kind === 'language_aid' ? item.provider : ''), [
+    'synthetic Greek lexicon', 'synthetic Greek morphology',
+  ]);
+  assert.equal(lexCalls, 1); assert.equal(gramCalls, 1);
+  for (const hit of batch.evidence.filter(item => item.kind === 'search_hit')) {
+    if (hit.kind !== 'search_hit') continue;
+    assert.equal(hit.hit.aid_matches?.[0].lexicon.length, 1);
+    assert.equal(hit.hit.aid_matches?.[0].grammar.length, 1);
+  }
+  assert.equal(batch.continuation, null);
+  assert.ok(Buffer.byteLength(JSON.stringify(batch)) <= AID_LIMITS.resultBytes);
+  assert.ok(session.budget.usage().d1Calls <= AID_LIMITS.d1Calls);
+  assert.ok(session.budget.usage().r2Reads <= AID_LIMITS.r2Reads);
+  const standalone = await study(f.env, { mode: 'word_study', search_leads: [{ lookup: 'lexicon', key: 'G3686' }] });
+  assert.ok((standalone.evidence as Array<{ kind: string }>).some(item => item.kind === 'language_aid'));
+  // One study can span multiple bounded calls. The complete, selected aid entries
+  // are reused rather than queried and verified again.
+  const next = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+    { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'lemma', key: 'G3686', sources: [A] },
+    null, 'test', [], adapter);
+  assert.equal(lexCalls, 1, 'cached lexicon not queried again');
+  assert.equal(gramCalls, 1, 'cached grammar not queried again');
+  assert.equal(next.evidence.filter(item => item.kind === 'language_aid').length, 2);
+});
+
+for (const { language, lemma, base, morphology, code } of [
+  { language: 'hebrew', lemma: 'H7225G', base: 'H7225', morphology: 'Ncfsa', code: 'HNcfsa' },
+  { language: 'hebrew', lemma: 'H7225G', base: 'H7225', morphology: 'Aamsa', code: 'HAamsa' },
+  { language: 'aramaic', lemma: 'H1254A', base: 'H1254', morphology: 'R', code: 'AR' },
+]) {
+  test(`TAHOT-shaped ${language} ${morphology} word analysis attaches base Strong lexicon and language-prefixed grammar`, async () => {
+    const f = aids();
+    f.select(null, null);
+    const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    add.run('lex-' + language, 'syn-ev', A, 'a-u1', 'lexicon_entry', 'synthetic STEP lexicon', '{}',
+      JSON.stringify({ entry_id: lemma, strong_base: base }));
+    add.run('grammar-' + language, 'syn-ev', A, 'a-u2', 'grammar_expansion', 'synthetic STEP morphology', '{}',
+      JSON.stringify({ entry_id: code, code }));
+    f.select('rel-2', 'rel-1');
+    const hit: SearchHit = {
+      source_revision_id: A, span_id: 'a-u1', coordinate_version: 'syn:unicode-scalars/1', native_order: 1,
+      occurrence_id: 'Gen.1.1:1:6', form: 'בְּרֵאשִׁית',
+      native_reference: { schema_version: 'native-reference/1', source_revision_id: A,
+        coordinate_version: 'syn:unicode-scalars/1', segments: [{ unit_id: 'Gen.1.1', start: 0, end: 6 }] },
+      analyses: [{ analysis_id: 'analysis-' + language, analysis_revision_id: 'syn:tags',
+        provider: 'synthetic TAHOT', lemma_id: lemma,
+        // TAHOT's word adapter strips the H/A letter from morphology; grammar_info retains it.
+        grammar: { language, morphology }, basis: 'STEP native morphological source' }],
+    };
+    const adapter: SearchAdapter = { async search() {
+      return { state: 'complete', lookup: 'lemma', key: lemma, hits: [hit], searched: [],
+        limitations: [], remaining: null, ranked: false as const,
+        resume_after: [{ source: A, output: 'syn-word', order: 1, dir: 0, entry: 0, after: null, anchor: null }] };
+    } };
+    const batch = await languageBatch(await ReadSession.open(f.env, AID_LIMITS),
+      { mode: 'word_study', depth: 'focused', language: 'en', lookup: 'lemma', key: lemma, sources: [A] },
+      null, 'test', [], adapter);
+    assert.equal(batch.evidence.filter(item => item.kind === 'language_aid').length, 2);
+    const word = batch.evidence.find(item => item.kind === 'search_hit');
+    assert.equal(word?.kind, 'search_hit');
+    if (word?.kind !== 'search_hit') throw new Error('Expected word hit');
+    assert.equal(word.hit.aid_matches?.[0].analysis_id, 'analysis-' + language);
+    assert.equal(word.hit.aid_matches?.[0].lexicon.length, 1, 'lettered Strong resolves base lexicon');
+    assert.equal(word.hit.aid_matches?.[0].grammar.length, 1, 'morphology receives H/A prefix');
+    assert.equal(batch.continuation, null);
+  });
+}

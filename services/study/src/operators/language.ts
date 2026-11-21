@@ -80,7 +80,7 @@ function wordKeys(hit: SearchHit): AnalysisKeys[] {
     const morphology = typeof sourceGrammar?.morphology === 'string' ? sourceGrammar.morphology : '';
     const prefix = sourceGrammar?.language === 'hebrew' ? 'H' : sourceGrammar?.language === 'aramaic' ? 'A' : '';
     const grammar = morphology.split('/').map(part =>
-      prefix && part && !/^[HA]/.test(part) ? prefix + part : part).filter(x => isIdentifier(x, 200));
+      prefix && part ? prefix + part : part).filter(x => isIdentifier(x, 200));
     return { analysis_id: typeof a.analysis_id === 'string' ? a.analysis_id : '', lexicon: lemma, grammar };
   });
 }

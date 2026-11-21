@@ -195,9 +195,10 @@ test('Matthew 1 onoma (G3686) word-study attaches attributed lexicon and grammar
 
 for (const { language, lemma, base, morphology, code } of [
   { language: 'hebrew', lemma: 'H7225G', base: 'H7225', morphology: 'Ncfsa', code: 'HNcfsa' },
+  { language: 'hebrew', lemma: 'H7225G', base: 'H7225', morphology: 'Aamsa', code: 'HAamsa' },
   { language: 'aramaic', lemma: 'H1254A', base: 'H1254', morphology: 'R', code: 'AR' },
 ]) {
-  test(`TAHOT-shaped ${language} word analysis attaches base Strong lexicon and language-prefixed grammar`, async () => {
+  test(`TAHOT-shaped ${language} ${morphology} word analysis attaches base Strong lexicon and language-prefixed grammar`, async () => {
     const f = aids();
     f.select(null, null);
     const add = f.db.sqlite.prepare('INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)');

@@ -145,17 +145,38 @@ def inventory(key, allow_missing=False):
             attempts.setdefault(match[1], {})[match[2]] = asset
     # Every begin MUST have a successful terminal receipt to start any new run.
     completed = []
+    uncertain = []
     for run, parts in attempts.items():
         if "begin.json" not in parts or "receipt.json" not in parts or "state.tfstate" not in parts:
             raise StateError("Interrupted state attempt; reconcile before another run")
         receipt = json.loads(download(parts["receipt.json"]))
         if not isinstance(receipt, dict) or receipt.get("run") != run or receipt.get("key") != key:
             raise StateError("State receipt identity mismatch")
+        if receipt.get("outcome") == "uncertain":
+            uncertain.append((run, parts, receipt))
+            continue
         if receipt.get("outcome") != "success":
-            raise StateError("Failed/uncertain apply requires independent reconciliation")
+            raise StateError("Unknown state outcome")
         completed.append((int(run.split("-")[0]), int(run.split("-")[1]), parts, receipt))
+    for run, parts, receipt in uncertain:
+        if key != "cloudflare" or run != "44883634337-1":
+            raise StateError("Failed/uncertain apply requires independent reconciliation")
+        marker = found.get("reconciled--" + key + "--" + run + ".json")
+        if marker is None:
+            raise StateError("Failed/uncertain apply requires independent reconciliation")
+        record = json.loads(download(marker))
+        if not isinstance(record, dict):
+            raise StateError("Invalid reconciliation record")
+        candidates = [x for x in completed if str(x[0]) + "-" + str(x[1]) == record.get("baseline_run")]
+        if (record.get("key") != key or record.get("failed_run") != run
+                or record.get("failed_sha256") != receipt.get("sha256")
+                or digest(download(parts["state.tfstate"])) != receipt.get("sha256")
+                or len(candidates) != 1 or tuple(map(int, record["baseline_run"].split("-"))) <= tuple(map(int, run.split("-")))
+                or record.get("baseline_sha256") != candidates[0][3].get("sha256")
+                or digest(download(candidates[0][2]["state.tfstate"])) != record.get("baseline_sha256")):
+            raise StateError("Reconciliation evidence mismatch")
     completed.sort()
-    if len(completed) != len(attempts):
+    if len(completed) + len(uncertain) != len(attempts):
         raise StateError("Inconsistent state inventory")
     return rel, (completed[-1] if completed else None)
 

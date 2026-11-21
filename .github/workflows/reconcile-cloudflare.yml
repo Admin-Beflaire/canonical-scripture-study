@@ -1,0 +1,75 @@
+name: Reconcile Cloudflare state
+on:
+  workflow_dispatch:
+    inputs:
+      approval:
+        description: Type RECONCILE to repair the identified failed state
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: platform-state
+  cancel-in-progress: false
+jobs:
+  reconcile:
+    if: github.ref == 'refs/heads/main' && inputs.approval == 'RECONCILE'
+    runs-on: ubuntu-24.04
+    environment: provisioning
+    timeout-minutes: 25
+    env:
+      PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
+      ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      TF_IN_AUTOMATION: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: '1.13.5'
+          terraform_wrapper: false
+      - name: Recover private snapshot, import existing namespace and verify provider
+        id: recover
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.PLATFORM_CLOUDFLARE_TOKEN }}
+          PLATFORM_CF_ACCOUNT_ID: ${{ vars.PLATFORM_CF_ACCOUNT_ID }}
+          PLATFORM_CF_ZONE_NAME: ${{ vars.PLATFORM_CF_ZONE_NAME }}
+          PLATFORM_CF_ACCESS_ISSUER: ${{ vars.PLATFORM_CF_ACCESS_ISSUER }}
+          PLATFORM_CF_OWNER_EMAIL: ${{ vars.PLATFORM_CF_OWNER_EMAIL }}
+          PLATFORM_CF_STUDY_OWNER_EMAIL: ${{ vars.PLATFORM_CF_STUDY_OWNER_EMAIL }}
+          PLATFORM_CF_OAUTH_REDIRECT_URIS: ${{ vars.PLATFORM_CF_OAUTH_REDIRECT_URIS }}
+          PLATFORM_CF_INSTANCE: ${{ vars.PLATFORM_CF_INSTANCE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          WORK="$RUNNER_TEMP/reconcile-cloudflare"
+          mkdir -p "$WORK/config"
+          cp -a infrastructure/cloudflare/. "$WORK/config/"
+          python3 infrastructure/github/reconcile_cloudflare_state.py prepare "$WORK/config/terraform.tfstate"
+          python3 infrastructure/github/cloudflare_inputs.py "$WORK/config/instance.auto.tfvars.json"
+          cd "$WORK/config"
+          terraform init -input=false -lockfile=readonly -no-color > "$WORK/diagnostics.txt" 2>&1
+          terraform import -input=false -no-color cloudflare_workers_kv_namespace.verified_word_cache "$PLATFORM_CF_ACCOUNT_ID/8071e577bb1a49ddb0aad5d3f230bc31" >> "$WORK/diagnostics.txt" 2>&1
+          terraform apply -refresh-only -auto-approve -input=false -no-color >> "$WORK/diagnostics.txt" 2>&1
+          terraform plan -detailed-exitcode -input=false -no-color >> "$WORK/diagnostics.txt" 2>&1
+          echo 'Provider plan is clean'
+      - name: Publish verified recovery baseline
+        if: steps.recover.outcome == 'success'
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        run: python3 infrastructure/github/reconcile_cloudflare_state.py publish "$RUNNER_TEMP/reconcile-cloudflare/config/terraform.tfstate"
+      - name: Preserve private diagnostics
+        if: always()
+        env:
+          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -s "$RUNNER_TEMP/reconcile-cloudflare/diagnostics.txt" ]]; then
+            python3 infrastructure/github/platform_state.py diagnostic --key cloudflare --run "$ATTEMPT_ID" --path "$RUNNER_TEMP/reconcile-cloudflare/diagnostics.txt"
+          fi
+      - name: Remove private local files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/reconcile-cloudflare"

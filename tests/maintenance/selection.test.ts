@@ -963,7 +963,7 @@ test('R74-2: a parallel build cancelled at guarded selection leaves no orphan co
   const batch = w.db.batch.bind(w.db);
   let changed = false;
   w.db.batch = async statements => {
-    if (!changed && w.db.sqlite.prepare("SELECT 1 FROM maintenance_tasks WHERE request_key = 'guard-release-exo' AND state = 'checked'").get()) {
+    if (!changed && statements.length >= 6 && w.db.sqlite.prepare("SELECT 1 FROM maintenance_tasks WHERE request_key = 'guard-release-exo' AND state IN ('queued','running','checked')").get()) {
       changed = true;
       w.db.sqlite.prepare("UPDATE maintenance_tasks SET state = 'cancelled', revision = revision + 1 WHERE id = ?")
         .run(exodus.taskId);

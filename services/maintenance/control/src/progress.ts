@@ -141,7 +141,7 @@ export async function advance(
   objects: ObjectStore | null = null,
 ): Promise<Progress> {
   const progress = await advanceTask(db, github, taskId, objects);
-  if (ENDED.has(progress.state)) await tidyReleases(db);
+  if (ENDED.has(progress.state)) await tidyReleases(db, objects);
   return progress;
 }
 

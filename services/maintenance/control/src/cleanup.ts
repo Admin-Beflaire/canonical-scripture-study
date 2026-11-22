@@ -1,5 +1,6 @@
 import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import type {D1Database} from './d1.ts';
+import type {ObjectStore} from './selection.ts';
 import {OPEN_STATES} from './tasks.ts';
 
 /** Release cleanup (Proposal M2): keep only what selection and open work need.
@@ -7,9 +8,11 @@ import {OPEN_STATES} from './tasks.ts';
  *  Kept: the current and previous releases, the base and candidate releases of every open
  *  task, and the saved outputs of an open task's finished jobs. Removed: the membership rows
  *  of every other release, then the saved outputs that nothing kept uses, with their D1
- *  rows. Release records stay (tasks refer to them). Stored objects are not touched here: an
- *  object that nothing refers to any more is removed separately, after the owner's recovery
- *  copy.
+ *  rows. Release records stay (tasks refer to them). The stored objects of a removed output
+ *  go first, in one call to the bucket, except an object another artifact record still names
+ *  and anything under receipts, checkpoints or the language-aid cache. Without a bucket no
+ *  output is removed, so no object is left without a record. The owner decided that no
+ *  recovery copy is needed first.
  *
  *  It never changes what is selected, only deletes rows nothing kept refers to. Each call
  *  does a bounded amount of work, so a large backlog is cleared over several calls. A
@@ -19,6 +22,16 @@ const OPEN = `('${OPEN_STATES.join("','")}')`;
 const UNFINISHED = `('intended','dispatched','running','checkpointed')`;
 const RELEASES_PER_CALL = 20; // Releases whose membership is removed by one call.
 const OUTPUTS_PER_CALL = 4; // Saved outputs removed by one call.
+const OBJECTS_PER_DELETE = 1000; // Keys one bucket delete accepts.
+
+/** Stored objects of one output that no other artifact record names. */
+const OUTPUT_OBJECTS = `SELECT a.registered_locator AS key FROM artifacts a WHERE a.output_id = ?
+  AND a.registered_locator LIKE 'prepared/%'
+  AND a.registered_locator NOT LIKE 'prepared/receipts/%'
+  AND a.registered_locator NOT LIKE 'prepared/checkpoints/%'
+  AND a.registered_locator NOT LIKE 'prepared/language-aid-cache/%'
+  AND NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.registered_locator = a.registered_locator
+    AND (o.output_id IS NULL OR o.output_id <> a.output_id))`;
 
 const KEPT_RELEASES = `SELECT current_release_id AS id FROM release_selection WHERE current_release_id IS NOT NULL
   UNION SELECT previous_release_id FROM release_selection WHERE previous_release_id IS NOT NULL
@@ -61,7 +74,10 @@ export interface Tidied {
 }
 
 /** Remove what nothing kept uses. Never throws and never changes the selection. */
-export async function tidyReleases(db: D1Database): Promise<Tidied> {
+export async function tidyReleases(
+  db: D1Database,
+  objects: ObjectStore | null = null,
+): Promise<Tidied> {
   const done: Tidied = {memberships: 0, outputs: 0, skipped: 0};
   try {
     const gone = (
@@ -92,7 +108,7 @@ export async function tidyReleases(db: D1Database): Promise<Tidied> {
         `SELECT 1 AS found FROM maintenance_jobs WHERE state IN ${UNFINISHED} LIMIT 1`,
       )
       .first();
-    if (running) return done;
+    if (running || !objects?.remove) return done;
     const unused = (
       await db
         .prepare(UNUSED_OUTPUTS)
@@ -101,10 +117,16 @@ export async function tidyReleases(db: D1Database): Promise<Tidied> {
     ).results;
     for (const {id} of unused) {
       try {
+        const keys = (
+          await db.prepare(OUTPUT_OBJECTS).bind(id).all<{key: string}>()
+        ).results.map(row => row.key);
+        for (let at = 0; at < keys.length; at += OBJECTS_PER_DELETE)
+          await objects.remove(keys.slice(at, at + OBJECTS_PER_DELETE));
         await db.batch(OUTPUT_ROWS.map(sql => db.prepare(sql).bind(id)));
         done.outputs += 1;
       } catch {
-        done.skipped += 1; // Another saved output still refers to it; it is removed first, then this.
+        // Another saved output still refers to it, or the bucket failed: tried again on the next call.
+        done.skipped += 1;
       }
     }
     if (done.outputs)

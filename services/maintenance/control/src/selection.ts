@@ -17,6 +17,8 @@ export interface ObjectStore {
     prefix: string,
     cursor?: string,
   ): Promise<{objects: Array<{key: string; size: number}>; cursor?: string}>;
+  /** Remove stored objects (release cleanup only); a missing key is not an error. */
+  remove?(keys: string[]): Promise<void>;
 }
 
 /** Stored artifact formats a release may hold; index-manifest/2 adds the paged directory. */

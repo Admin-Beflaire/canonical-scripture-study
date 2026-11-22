@@ -8,13 +8,13 @@ import {OPEN_STATES} from './tasks.ts';
  *  Kept: the current and previous releases, the base and candidate releases of every open
  *  task, and the saved outputs of an open task's finished jobs. Removed: the membership rows
  *  of every other release, then the saved outputs that nothing kept uses, with their D1
- *  rows. Release records stay (tasks refer to them). A removed output goes in three steps:
- *  its content rows, then its stored objects in one call to the bucket (except an object
- *  another artifact record still names, and anything under receipts, checkpoints or the
- *  language-aid cache), then its artifact records. The records stay until the objects are gone,
- *  so a failure at any step is found and finished by the next call and no object is left
- *  without a record. Without a bucket no output is removed. The owner decided that no recovery
- *  copy is needed first.
+ *  rows. Release records stay (tasks refer to them). A removed output leaves D1 whole, in one
+ *  transaction, so it is never half removed and a later preparation of the same output finds
+ *  nothing and writes it fresh. Only after that are its stored objects removed, in one call to
+ *  the bucket: except an object another artifact record still names, and anything under
+ *  receipts, checkpoints or the language-aid cache. If that call fails, the objects are left
+ *  (an unreferenced object is only wasted space) and the failure is reported. Without a bucket
+ *  no output is removed. The owner decided that no recovery copy is needed first.
  *
  *  It never changes what is selected, only deletes rows nothing kept refers to. Each call
  *  does a bounded amount of work, so a large backlog is cleared over several calls. A
@@ -53,8 +53,8 @@ const UNUSED_OUTPUTS = `SELECT po.id FROM prepared_outputs po
       WHERE a.output_id = po.id AND j.state = 'succeeded' AND t.state IN ${OPEN})
   LIMIT ?`;
 
-/** The D1 rows of one saved output that hold its content, children first. */
-const OUTPUT_CONTENT = [
+/** The D1 rows of one saved output, children first. */
+export const OUTPUT_ROWS = [
   `DELETE FROM span_segments WHERE span_id IN (SELECT id FROM native_spans WHERE output_id = ?)`,
   `DELETE FROM relation_members WHERE relationship_id IN (SELECT id FROM relationships WHERE output_id = ?)`,
   `DELETE FROM annotations WHERE output_id = ?`,
@@ -64,17 +64,33 @@ const OUTPUT_CONTENT = [
   `DELETE FROM coverage WHERE output_id = ?`,
   `DELETE FROM study_packages WHERE output_id = ?`,
   `DELETE FROM native_spans WHERE output_id = ?`,
-];
-
-/** Its artifact records and the output itself. They are kept until the stored objects are gone,
- *  so an interrupted or failed removal can find the objects again. */
-const OUTPUT_RECORDS = [
   `DELETE FROM artifacts WHERE output_id = ?`,
   `DELETE FROM prepared_outputs WHERE id = ?`,
 ];
 
-/** Every D1 row of one saved output, children first. */
-export const OUTPUT_ROWS = [...OUTPUT_CONTENT, ...OUTPUT_RECORDS];
+/** Remove stored objects; one more try on failure, then report and leave them. Never throws. */
+async function removeObjects(
+  objects: {remove?(keys: string[]): Promise<void>},
+  keys: string[],
+): Promise<void> {
+  for (let at = 0; at < keys.length; at += OBJECTS_PER_DELETE) {
+    const some = keys.slice(at, at + OBJECTS_PER_DELETE);
+    try {
+      try {
+        await objects.remove?.(some);
+      } catch {
+        await objects.remove?.(some);
+      }
+    } catch (error) {
+      reportError(error, {
+        tool: 'control',
+        stage: 'cleanup',
+        code: 'objects_left',
+        counts: {objects: some.length},
+      });
+    }
+  }
+}
 
 export interface Tidied {
   memberships: number;
@@ -126,21 +142,20 @@ export async function tidyReleases(
         .all<{id: string}>()
     ).results;
     for (const {id} of unused) {
+      let keys: string[];
       try {
-        // First the content rows, in one transaction: if another saved output still refers to
-        // them nothing changes and the objects stay. Then the objects, then the records that name them.
-        await db.batch(OUTPUT_CONTENT.map(sql => db.prepare(sql).bind(id)));
-        const keys = (
+        keys = (
           await db.prepare(OUTPUT_OBJECTS).bind(id).all<{key: string}>()
         ).results.map(row => row.key);
-        for (let at = 0; at < keys.length; at += OBJECTS_PER_DELETE)
-          await objects.remove(keys.slice(at, at + OBJECTS_PER_DELETE));
-        await db.batch(OUTPUT_RECORDS.map(sql => db.prepare(sql).bind(id)));
-        done.outputs += 1;
+        // All of the output or none of it: if another saved output still refers to it,
+        // nothing changes and its objects stay.
+        await db.batch(OUTPUT_ROWS.map(sql => db.prepare(sql).bind(id)));
       } catch {
-        // Tried again on the next call: the records still name whatever was not removed yet.
-        done.skipped += 1;
+        done.skipped += 1; // Tried again on the next call.
+        continue;
       }
+      done.outputs += 1;
+      await removeObjects(objects, keys);
     }
     if (done.outputs)
       await db

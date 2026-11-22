@@ -18,8 +18,8 @@ const DIGEST = 'a'.repeat(64);
 const SCOPE = JSON.stringify({kind: 'prepare'});
 const OUTCOME = JSON.stringify({limitations: []});
 
-/** A bucket that remembers what it holds and what was removed; `failing` makes a removal fail. */
-function bucket(keys: string[] = [], failing = false) {
+/** A bucket that remembers what it holds and what was removed; `failures` removals fail first. */
+function bucket(keys: string[] = [], failures = 0) {
   const held = new Set(keys);
   const calls: string[][] = [];
   const store: ObjectStore & {held: Set<string>; calls: string[][]} = {
@@ -29,7 +29,7 @@ function bucket(keys: string[] = [], failing = false) {
       return {objects: [...held].map(key => ({key, size: 1}))};
     },
     async remove(removed) {
-      if (failing) throw new Error('bucket unavailable');
+      if (failures-- > 0) throw new Error('bucket unavailable');
       calls.push(removed);
       for (const key of removed) held.delete(key);
     },
@@ -229,21 +229,38 @@ test('the stored objects of a removed output are removed; others stay', async ()
   assert.deepEqual(store.calls.flat().sort(), ['prepared/gone.json']);
 });
 
-test('without a bucket, or when removing objects fails, the output stays and is tried again', async () => {
+test('without a bucket no output is removed', async () => {
   const w = world();
   w.output('leftover', 'leftover');
   assert.equal((await tidyReleases(w.db)).outputs, 0);
-  const failing = await tidyReleases(
-    w.db,
-    bucket(['prepared/leftover.json'], true),
-  );
-  assert.deepEqual([failing.outputs, failing.skipped], [0, 1]);
   assert.equal(w.count('prepared_outputs'), 1);
-  assert.equal(w.count('artifacts'), 1);
-  const store = bucket(['prepared/leftover.json']);
-  assert.equal((await tidyReleases(w.db, store)).outputs, 1);
-  assert.equal(store.held.size, 0);
-  assert.equal(w.count('prepared_outputs'), 0);
+});
+
+test('a bucket that fails once is tried again; one that keeps failing leaves objects, never half an output', async () => {
+  const w = world();
+  w.output('retried', 'retried');
+  const once = bucket(['prepared/retried.json'], 1);
+  assert.equal((await tidyReleases(w.db, once)).outputs, 1);
+  assert.equal(once.held.size, 0);
+
+  w.output('left', 'left');
+  const failing = bucket(['prepared/left.json'], Infinity);
+  const done = await tidyReleases(w.db, failing);
+  assert.equal(done.outputs, 1);
+  // The objects stay, unreferenced. Nothing of the output stays in D1, in any table.
+  assert.deepEqual([...failing.held], ['prepared/left.json']);
+  for (const table of [
+    'prepared_outputs',
+    'artifacts',
+    'native_spans',
+    'coverage',
+  ])
+    assert.equal(w.count(table), 0, table);
+  // A later preparation of the same output writes it fresh, complete, without a clash.
+  w.output('left', 'left');
+  assert.equal(w.count('prepared_outputs'), 1);
+  assert.equal(w.count('native_spans'), 1);
+  assert.equal(w.count('coverage'), 1);
 });
 
 test('nothing is removed from saved outputs while a job is unfinished', async () => {

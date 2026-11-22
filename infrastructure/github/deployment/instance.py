@@ -7,8 +7,10 @@ from pathlib import Path
 import re
 import sys
 
+from css_shared.error_record import OwnMessage, annotation, error_record
 
-class InstanceError(Exception):
+
+class InstanceError(OwnMessage, Exception):
     pass
 
 
@@ -90,6 +92,16 @@ def main(output, state_path):
 if __name__ == "__main__":
     try:
         main(sys.argv[1], sys.argv[2])
-    except Exception:
-        print("Verified Cloudflare instance unavailable", file=sys.stderr)
+    except Exception as error:
+        print(
+            annotation(
+                error_record(
+                    error,
+                    tool="deploy",
+                    stage="instance",
+                    code="instance_unavailable",
+                    outcome="blocked",
+                )
+            )
+        )
         sys.exit(1)

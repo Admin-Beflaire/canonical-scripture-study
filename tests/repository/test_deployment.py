@@ -5,9 +5,12 @@ import io
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -83,6 +86,78 @@ class DeploymentTests(unittest.TestCase):
                 execute.return_value.returncode = 1
                 with self.assertRaisesRegex(d.DeploymentError, "phase failed"):
                     d.run(["failed"], io.StringIO())
+
+    def test_failed_command_keeps_a_safe_record_and_no_tool_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deployment.log"
+            with path.open("a") as log:
+                log.write(
+                    "\x1b[31m✘ [ERROR]\x1b[0m A request to the Cloudflare API (/accounts/0123456789abcdef0123456789abcdef/d1) failed.\n\n  Authentication error [code: 10000]\nprivate-marker\n"
+                )
+                with patch.object(d.subprocess, "run") as execute:
+                    execute.return_value.returncode = 3
+                    with self.assertRaises(d.DeploymentError) as raised:
+                        d.run(["wrangler"], log, None, "migrations")
+        record = raised.exception.records[0]
+        self.assertEqual(
+            (record["stage"], record["exit"], record["provider_code"]),
+            ("migrations", 3, 10000),
+        )
+        self.assertNotIn("private-marker", json.dumps(record))
+        self.assertNotIn("0123456789abcdef", json.dumps(record))
+
+    def test_provider_failures_keep_status_and_code_without_the_response(self):
+        error = urllib.error.HTTPError(
+            "https://x.invalid", 503, "private-marker", {}, None
+        )
+        with patch.object(d.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(d.DeploymentError) as raised:
+                d.api("path", "token")
+        self.assertEqual(raised.exception.http_status, 503)
+        body = io.BytesIO(
+            json.dumps(
+                {
+                    "success": False,
+                    "errors": [{"code": 10000, "message": "private-marker"}],
+                }
+            ).encode()
+        )
+        with patch.object(d.urllib.request, "urlopen", return_value=body):
+            with self.assertRaises(d.DeploymentError) as raised:
+                d.api("path", "token")
+        self.assertEqual(raised.exception.provider_code, 10000)
+
+    def test_entry_point_prints_only_a_record_for_any_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "infrastructure/github/deployment/deploy.py"),
+                    "deploy",
+                    "--root",
+                    tmp,
+                    "--trusted",
+                    tmp,
+                    "--work",
+                    tmp,
+                    "--target",
+                    "study",
+                ],
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(ROOT / "packages/shared-python/src"),
+                    "CLOUDFLARE_API_TOKEN": "private-marker",
+                },
+            )
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(completed.stdout.startswith("::error title=deploy deploy::"))
+        record = json.loads(completed.stdout.split("::", 2)[2])
+        self.assertEqual(
+            (record["code"], record["stage"]), ("deployment_failed", "deploy")
+        )
+        self.assertNotIn("private-marker", completed.stdout + completed.stderr)
 
     def test_real_forward_migrations_preserve_selection_for_compatible_code_revert(
         self,
@@ -192,7 +267,7 @@ class DeploymentTests(unittest.TestCase):
             root, _ = self.fixture(tmp)
             commands = []
 
-            def fail(command, log, env=None):
+            def fail(command, log, env=None, stage=None):
                 commands.append(command)
                 raise d.DeploymentError("migration failed")
 
@@ -245,7 +320,9 @@ class DeploymentTests(unittest.TestCase):
                 patch.object(
                     d,
                     "run",
-                    side_effect=lambda command, log, env=None: commands.append(command),
+                    side_effect=lambda command, log, env=None, stage=None: (
+                        commands.append(command)
+                    ),
                 ),
             ):
                 d.deploy(root, root, root, "study")
@@ -356,7 +433,7 @@ class DeploymentTests(unittest.TestCase):
                     with self.assertRaises(d.DeploymentError):
                         d.selection(query, supported)
 
-    def test_diagnostics_capacity_blocks_before_any_upload(self):
+    def test_receipt_capacity_blocks_before_any_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             trusted = root
@@ -368,17 +445,18 @@ REPOSITORY = "fixture/private"
 SAFE_ID = re.compile(r"^[0-9]+-[0-9]+$")
 def request(*args): return {"private": True, "visibility": "private"}
 def release(create=False): return {"id": 1}
-def assets(*args): return list(range(999))
+def assets(*args): return list(range(1000))
 def upload(*args): raise AssertionError("unexpected partial upload")
 """)
-            (root / "build.log").write_text("fixture")
-            (root / "deployment.log").write_text("fixture")
+            (root / "receipt.json").write_text("{}")
             with patch.dict(
                 os.environ,
                 {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"},
             ):
-                with self.assertRaisesRegex(d.DeploymentError, "release is full"):
-                    d.diagnostics(trusted, root)
+                with self.assertRaisesRegex(
+                    d.DeploymentError, "receipt release is full"
+                ):
+                    d.receipt(trusted, root)
 
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()

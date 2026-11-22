@@ -2,7 +2,7 @@
 
 Attempt-qualified begin/state/receipt assets are append-only under client checks.
 An unfinished or failed attempt blocks future runs pending independent repair.
-State bytes and detailed diagnostics remain in the private release, never logs.
+State bytes remain in the private release, never logs; failures are reported as safe records.
 """
 
 import argparse
@@ -16,14 +16,17 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
+from css_shared.error_record import OwnMessage, annotation, error_record
+
 REPOSITORY = os.environ.get("PLATFORM_STATE_REPO", "")
 TAG = "platform-state-v1"
 ROOT = "https://api.github.com"
 KEYS = {"github", "cloudflare"}
+COMMANDS = ("restore", "begin", "finish")
 SAFE_ID = re.compile(r"^[0-9]{1,20}-[0-9]{1,5}$")
 
 
-class StateError(Exception):
+class StateError(OwnMessage, Exception):
     pass
 
 
@@ -282,7 +285,7 @@ def begin(key, run):
         raise StateError("Stale run attempt; use a new workflow dispatch")
     if rel is None:
         rel = release(create=True)
-    # Reserve begin, state, receipt and one private diagnostics asset.
+    # Reserve begin, state and receipt, with a little spare room.
     if len(assets(rel)) > 996:
         raise StateError("State release capacity exhausted; migrate before apply")
     upload(
@@ -320,27 +323,9 @@ def finish(key, run, state_path, success):
         raise StateError("Apply failed: state saved but reconciliation is required")
 
 
-def diagnostic(key, run, path):
-    """Save one private log asset for planning or reconciliation; never public logs."""
-    if key not in KEYS or not SAFE_ID.fullmatch(run):
-        raise StateError("Invalid diagnostics identity")
-    data = Path(path).read_bytes()
-    if not data:
-        raise StateError("Private diagnostics empty")
-    rel = release(create=True)
-    if len(assets(rel)) >= 1000:
-        raise StateError(
-            "State release capacity exhausted; private diagnostics unavailable"
-        )
-    name = "log--" + key + "--" + run + "--diagnostics.txt"
-    stored = upload(rel, name, data)
-    if digest(download(stored)) != digest(data):
-        raise StateError("Private diagnostics verification failed")
-
-
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("command", choices=("restore", "begin", "finish", "diagnostic"))
+    p.add_argument("command", choices=COMMANDS)
     p.add_argument("--key", required=True, choices=sorted(KEYS))
     p.add_argument("--run")
     p.add_argument("--path")
@@ -356,7 +341,7 @@ def main():
         raise StateError("Protected state destination is not verified private")
     if a.command in ("begin", "finish") and (not a.run or not SAFE_ID.fullmatch(a.run)):
         raise StateError("Run must be the fixed GitHub run-id/attempt")
-    if a.command in ("restore", "finish", "diagnostic") and not a.path:
+    if a.command in ("restore", "finish") and not a.path:
         raise StateError("Missing state path")
     if a.command == "restore":
         restore(a.key, a.path, a.allow_empty)
@@ -364,17 +349,26 @@ def main():
         begin(a.key, a.run)
     elif a.command == "finish":
         finish(a.key, a.run, a.path, a.success)
-    elif a.command == "diagnostic":
-        diagnostic(a.key, a.run, a.path)
     print("Protected state " + a.command + " verified")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (StateError, KeyError, ValueError, OSError, json.JSONDecodeError):
+    except Exception as error:
+        # Our own messages are fixed words; anything else is reported by class only.
+        command = (
+            sys.argv[1] if sys.argv[1:2] and sys.argv[1] in COMMANDS else "startup"
+        )
         print(
-            "Protected state operation blocked; inspect private state release and reconcile",
-            file=sys.stderr,
+            annotation(
+                error_record(
+                    error,
+                    tool="platform_state",
+                    stage=command,
+                    code="state_blocked",
+                    outcome="blocked",
+                )
+            )
         )
         sys.exit(1)

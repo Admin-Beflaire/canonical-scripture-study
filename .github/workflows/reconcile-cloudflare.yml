@@ -21,6 +21,7 @@ jobs:
       PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
       ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       TF_IN_AUTOMATION: '1'
+      PYTHONPATH: ${{ github.workspace }}/packages/shared-python/src
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -51,10 +52,20 @@ jobs:
           python3 infrastructure/github/reconcile_cloudflare_state.py prepare "$WORK/config/terraform.tfstate"
           python3 infrastructure/github/cloudflare_inputs.py "$WORK/config/instance.auto.tfvars.json"
           cd "$WORK/config"
-          terraform init -input=false -lockfile=readonly -no-color > "$WORK/diagnostics.txt" 2>&1
-          terraform import -input=false -no-color cloudflare_workers_kv_namespace.verified_word_cache "$PLATFORM_CF_ACCOUNT_ID/8071e577bb1a49ddb0aad5d3f230bc31" >> "$WORK/diagnostics.txt" 2>&1
-          terraform apply -refresh-only -auto-approve -input=false -no-color >> "$WORK/diagnostics.txt" 2>&1
-          terraform plan -input=false -no-color -out="$WORK/plan.tfplan" >> "$WORK/diagnostics.txt" 2>&1
+          tf() {
+            stage=$1
+            shift
+            terraform "$@" > "$WORK/$stage.log" 2>&1 || {
+              status=$?
+              python3 -P -m css_shared.tool_log terraform --tool reconcile --stage "$stage" --exit "$status" --log "$WORK/$stage.log" --id run="$ATTEMPT_ID" || true
+              exit 1
+            }
+          }
+          tf init init -input=false -lockfile=readonly -no-color
+          tf import import -input=false -no-color cloudflare_workers_kv_namespace.verified_word_cache "$PLATFORM_CF_ACCOUNT_ID/8071e577bb1a49ddb0aad5d3f230bc31"
+          tf refresh apply -refresh-only -auto-approve -input=false -no-color
+          tf plan plan -input=false -no-color -out="$WORK/plan.tfplan"
+          python3 -P -m css_shared.tool_log terraform --tool reconcile --stage plan --log "$WORK/plan.log" --id run="$ATTEMPT_ID" || true
           terraform show -json "$WORK/plan.tfplan" > "$WORK/plan.json"
           python3 "$GITHUB_WORKSPACE/infrastructure/github/reconcile_cloudflare_state.py" verify-plan "$WORK/plan.json"
           echo 'Provider plan contains no configuration changes'
@@ -63,15 +74,6 @@ jobs:
         env:
           PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
         run: python3 infrastructure/github/reconcile_cloudflare_state.py publish "$RUNNER_TEMP/reconcile-cloudflare/config/terraform.tfstate"
-      - name: Preserve private diagnostics
-        if: always()
-        env:
-          PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
-        shell: bash
-        run: |
-          if [[ -s "$RUNNER_TEMP/reconcile-cloudflare/diagnostics.txt" ]]; then
-            python3 infrastructure/github/platform_state.py diagnostic --key cloudflare --run "$ATTEMPT_ID" --path "$RUNNER_TEMP/reconcile-cloudflare/diagnostics.txt"
-          fi
       - name: Remove private local files
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/reconcile-cloudflare"

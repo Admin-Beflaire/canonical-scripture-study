@@ -44,7 +44,7 @@ unrelated workflows could reach them.
 | `DEPLOYMENT_ACCESS_CLIENT_ID` variable | Shared deployment-check Access service token Client ID, also rendered into Worker config. |
 | `DEPLOYMENT_ACCESS_CLIENT_SECRET` secret | Shared deployment-check service token Client Secret, supplied only for authenticated HTTP checks. |
 | `DEPLOYMENT_DIAGNOSTICS_REPO` variable | Actual private design repository in `owner/name` form. |
-| `DEPLOYMENT_DIAGNOSTICS_TOKEN` secret | Dedicated private-repository Contents read/write token for diagnostic release uploads/readback. |
+| `DEPLOYMENT_DIAGNOSTICS_TOKEN` secret | Dedicated private-repository Contents read/write token for receipt release uploads/readback (the name is unchanged). |
 
 Actual token scope/resource restrictions, environment enforcement and
 verified Access service-token policies must be recorded at authorized setup.
@@ -63,16 +63,19 @@ owner-managed Worker secrets and are not copied into rendered configuration.
 
 ## Results and failure handling
 
-Provider/tool output is captured locally, then uploaded with digest verification to
-the private `deployment-diagnostics` release using run/attempt-qualified names.
-It is never a public Actions artifact. The private success receipt separates exact
+Tool output is captured in a private file on the runner and removed at the end; it
+is never stored or uploaded. A failed step prints `::error` annotations with the
+tool's error summary line, the exit code and any provider error code
+(`python3 -m css_shared.tool_log`). Only the private success receipt is uploaded, with digest verification,
+to the private `deployment-diagnostics` release using run/attempt-qualified names;
+it separates exact
 commit/run, selected data and HTTP checks from actual host observations. A failure
-has no success receipt; inspect private build/deployment logs. Migration/deployment
+has no success receipt; read the run's error annotations. Migration/deployment
 can have partial effects even if the workflow fails. A smoke failure does not
 undo a deployment or change data selection. Repair or redeploy an authorized
 compatible reviewed commit; never assume a failed deployment changed nothing.
-If private upload fails, the run fails and detailed diagnostics may be unavailable;
-local temporary files are removed in all ordinary completion paths.
+If the receipt upload fails, the run fails; local temporary files are removed in all
+ordinary completion paths.
 
 Readbacks compare D1/R2 identities and runtime variables, and check that workers.dev
 and preview access are disabled. Protected HTTP probes reject missing/invalid
@@ -95,6 +98,5 @@ Deployment uses that checked state and does not maintain resource-ID JSON.
 A selected older Worker that lacks the deployment client ID is rejected
 before the first database query or migration.
 
-The deployment diagnostics release has a 1,000-asset limit. Before writing a
-run's log or receipt files, the runner reserves the needed slots; exhaustion
-blocks instead of starting an incomplete upload.
+The deployment release has a 1,000-asset limit. Before writing a run's receipt,
+the runner reserves the slot; exhaustion blocks instead of starting an incomplete upload.

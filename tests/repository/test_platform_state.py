@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -167,35 +169,6 @@ class StateTests(unittest.TestCase):
         with self.assertRaisesRegex(state.StateError, "capacity exhausted"):
             state.begin("cloudflare", "502-1")
 
-    def test_private_diagnostics_are_one_verified_asset(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "diagnostics"
-            path.write_bytes(b"plan or apply details: private")
-            state.diagnostic("github", "600-1", path)
-            self.assertEqual(len(self.fake.items), 1)
-            self.assertEqual(
-                self.fake.items[0]["name"], "log--github--600-1--diagnostics.txt"
-            )
-            self.assertEqual(self.fake.items[0]["payload"], path.read_bytes())
-            with self.assertRaisesRegex(state.StateError, "Duplicate"):
-                state.diagnostic("github", "600-1", path)
-
-    def test_diagnostics_upload_readback_failure_is_reported(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "diagnostics"
-            path.write_bytes(b"private")
-            original = self.fake.request
-
-            def tampered(method, name, data=None, binary=False, upload=False):
-                result = original(method, name, data, binary, upload)
-                if binary:
-                    return b"tampered"
-                return result
-
-            with patch.object(state, "request", side_effect=tampered):
-                with self.assertRaisesRegex(state.StateError, "verification failed"):
-                    state.diagnostic("github", "601-1", path)
-
     def test_existing_legacy_assets_untouched_by_explicit_empty_start(self):
         self.fake.release = {"id": 1}
         self.fake.items = [
@@ -286,6 +259,47 @@ class StateTests(unittest.TestCase):
             )
 
 
+class FailureRecordTests(unittest.TestCase):
+    def test_entry_point_prints_only_a_record(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "infrastructure/github/platform_state.py"),
+                "begin",
+                "--key",
+                "github",
+                "--run",
+                "1-1",
+            ],
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "PYTHONPATH": str(ROOT / "packages/shared-python/src"),
+                "PLATFORM_STATE_REPO": "",
+                "PLATFORM_STATE_TOKEN": "private-marker",
+            },
+        )
+        self.assertEqual(completed.returncode, 1)
+        record = json.loads(completed.stdout.split("::", 2)[2])
+        self.assertTrue(
+            completed.stdout.startswith("::error title=platform_state begin::")
+        )
+        self.assertEqual(
+            (record["code"], record["outcome"]), ("state_blocked", "blocked")
+        )
+        self.assertEqual(record["message"], "Invalid private state repository boundary")
+        self.assertNotIn("private-marker", completed.stdout + completed.stderr)
+
+    def test_workflows_report_failures_as_records_and_keep_no_diagnostic_assets(self):
+        for name in ("platform", "deploy", "reconcile-cloudflare"):
+            workflow = (ROOT / f".github/workflows/{name}.yml").read_text()
+            self.assertIn("css_shared.tool_log", workflow)
+            self.assertNotIn("diagnostics.txt", workflow)
+            self.assertNotIn("Preserve private diagnostics", workflow)
+            self.assertNotIn("private diagnostics", workflow)
+
+
 class WorkflowTests(unittest.TestCase):
     def test_minimal_manual_trusted_workflow_with_step_scoped_secrets(self):
         workflow = (ROOT / ".github/workflows/platform.yml").read_text()
@@ -303,7 +317,6 @@ class WorkflowTests(unittest.TestCase):
             "terraform apply -input=false",
             "begin --key",
             "finish --key",
-            "diagnostic --key",
             "if: always()",
         ):
             self.assertIn(item, workflow)
@@ -311,6 +324,9 @@ class WorkflowTests(unittest.TestCase):
             'cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"', workflow
         )
         for removed in (
+            "diagnostic --key",
+            "diagnostics.txt",
+            "private diagnostics",
             "docker run",
             "terraform_isolated.sh",
             "plan-save",

@@ -1,4 +1,4 @@
-"""Authorized deployment runner. Tool/provider details stay in private diagnostics."""
+"""Authorized deployment runner. Failures are reported as safe records, never raw tool output."""
 
 import argparse
 import importlib.util
@@ -7,14 +7,37 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
+from css_shared.error_record import OwnMessage, annotation, error_record
+from css_shared.tool_log import failure_records
 
-class DeploymentError(Exception):
-    pass
+
+PHASES = ("deploy", "receipt")
 
 
-def run(command, log, env=None):
+class DeploymentError(OwnMessage, Exception):
+    """Our own fixed-word message, with the status or code the provider gave."""
+
+    def __init__(self, message, *, http_status=None, provider_code=None, records=None):
+        super().__init__(message)
+        self.http_status = http_status
+        self.provider_code = provider_code
+        self.records = records
+
+
+def logged_text(log):
+    log.flush()
+    path = getattr(log, "name", None)
+    return (
+        Path(path).read_text(errors="replace")
+        if isinstance(path, str) and Path(path).is_file()
+        else ""
+    )
+
+
+def run(command, log, env=None, stage="command"):
     # No shell, inherited deployment credentials, raw exception text or tool output.
     safe_env = {
         k: v
@@ -30,7 +53,15 @@ def run(command, log, env=None):
     safe_env.update(env or {})
     result = subprocess.run(command, stdout=log, stderr=log, env=safe_env)
     if result.returncode:
-        raise DeploymentError("Deployment phase failed")
+        # The tool's own output stays in a private file that is removed after the run.
+        records = failure_records(
+            "wrangler",
+            logged_text(log),
+            tool="deploy",
+            stage=stage,
+            exit_code=result.returncode,
+        )
+        raise DeploymentError("Deployment phase failed", records=records)
 
 
 def api(path, token, payload=None):
@@ -42,10 +73,22 @@ def api(path, token, payload=None):
             "Content-Type": "application/json",
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        data = json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise DeploymentError("Provider request failed", http_status=exc.code) from None
     if data.get("success") is not True:
-        raise DeploymentError("Provider check failed")
+        errors = data.get("errors")
+        code = (
+            errors[0].get("code")
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict)
+            else None
+        )
+        raise DeploymentError(
+            "Provider check failed",
+            provider_code=code if isinstance(code, int) else None,
+        )
     return data["result"]
 
 
@@ -177,12 +220,18 @@ def deploy(root, trusted, work, role):
             ],
             log,
             provider_env,
+            "migrations",
         )
         if selection(query, supported) != current:
             raise DeploymentError(
                 "Selection changed during migration; retry against current data"
             )
-        run([wrangler, "deploy", "--config", str(config_path)], log, provider_env)
+        run(
+            [wrangler, "deploy", "--config", str(config_path)],
+            log,
+            provider_env,
+            "wrangler_deploy",
+        )
         settings = api(
             f"accounts/{account}/workers/scripts/{config['name']}/settings", token
         )
@@ -206,6 +255,7 @@ def deploy(root, trusted, work, role):
                 "DEPLOYMENT_ACCESS_CLIENT_ID": check_id,
                 "DEPLOYMENT_ACCESS_CLIENT_SECRET": check_secret,
             },
+            "http_check",
         )
         if selection(query, supported) != current:
             raise DeploymentError(
@@ -223,8 +273,8 @@ def deploy(root, trusted, work, role):
         (work / "receipt.json").write_text(json.dumps(receipt))
 
 
-def diagnostics(trusted, work):
-    # Reuse the checked private release transport, with a separate diagnostic tag.
+def receipt(trusted, work):
+    # Reuse the checked private release transport, with a separate tag for deployment receipts.
     spec = importlib.util.spec_from_file_location(
         "private_transport", trusted / "infrastructure/github/platform_state.py"
     )
@@ -237,32 +287,26 @@ def diagnostics(trusted, work):
         or metadata.get("private") is not True
         or metadata.get("visibility") != "private"
     ):
-        raise DeploymentError("Diagnostics destination must be private")
+        raise DeploymentError("Receipt destination must be private")
     rel = transport.release(create=True)
     attempt = os.environ["ATTEMPT_ID"]
     if not transport.SAFE_ID.fullmatch(attempt):
         raise DeploymentError("Invalid run identity")
-    # Reserve room for this entire attempt before uploading any asset.
-    pending = [
-        name
-        for name in ("build.log", "deployment.log", "receipt.json")
-        if (work / name).exists()
-    ]
-    if len(transport.assets(rel)) + len(pending) > 1000:
-        raise DeploymentError("Private diagnostics release is full")
-    # Only captured tool output and the receipt; never credentials or instance files.
-    for name in pending:
-        path = work / name
-        if path.exists():
-            data = path.read_bytes()
-            saved = transport.upload(rel, f"deploy--{attempt}--{name}", data)
-            if transport.digest(transport.download(saved)) != transport.digest(data):
-                raise DeploymentError("Private diagnostics integrity failed")
+    path = work / "receipt.json"
+    if not path.exists():
+        return
+    # Reserve room before uploading; only the receipt is kept, never tool output.
+    if len(transport.assets(rel)) + 1 > 1000:
+        raise DeploymentError("Private receipt release is full")
+    data = path.read_bytes()
+    saved = transport.upload(rel, f"deploy--{attempt}--receipt.json", data)
+    if transport.digest(transport.download(saved)) != transport.digest(data):
+        raise DeploymentError("Private receipt integrity failed")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=("deploy", "diagnostics"))
+    parser.add_argument("phase", choices=PHASES)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--trusted", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
@@ -271,7 +315,7 @@ def main():
     if args.phase == "deploy":
         deploy(args.root, args.trusted, args.work, args.target)
     else:
-        diagnostics(args.trusted, args.work)
+        receipt(args.trusted, args.work)
     print("Deployment " + args.phase + " phase passed")
 
 
@@ -279,23 +323,17 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        work = next(
-            (sys.argv[i + 1] for i, arg in enumerate(sys.argv[:-1]) if arg == "--work"),
-            None,
-        )
-        if work and Path(work).is_dir():
-            # Fixed failure types are useful without persisting credential-bearing exceptions.
-            with (Path(work) / "deployment.log").open("a") as log:
-                log.write(
-                    type(exc).__name__
-                    + ": "
-                    + (
-                        str(exc)
-                        if isinstance(exc, DeploymentError)
-                        else "Private operation failed"
-                    )
-                    + "\n"
-                )
-        # Provider errors/JSON/body/paths can contain private identifiers.
-        print("Deployment phase blocked; inspect private diagnostics", file=sys.stderr)
+        phase = sys.argv[1] if sys.argv[1:2] and sys.argv[1] in PHASES else "startup"
+        records = getattr(exc, "records", None) or [
+            error_record(
+                exc,
+                tool="deploy",
+                stage=phase,
+                code="deployment_failed",
+                http_status=getattr(exc, "http_status", None),
+                provider_code=getattr(exc, "provider_code", None),
+            )
+        ]
+        for record in records:
+            print(annotation(record))
         sys.exit(1)

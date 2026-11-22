@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import sys
 
+from css_shared.error_record import annotation, error_record
 import platform_state as state
 
 FAILED = "44883634337-1"
@@ -166,9 +167,16 @@ if __name__ == "__main__":
         else:
             raise ValueError("Unknown operation")
         print("Recovery phase verified")
-    except Exception:
+    except Exception as error:
         print(
-            "Recovery blocked; preserve private state and inspect diagnostics",
-            file=sys.stderr,
+            annotation(
+                error_record(
+                    error,
+                    tool="reconcile",
+                    stage="recovery",
+                    code="recovery_blocked",
+                    outcome="blocked",
+                )
+            )
         )
         sys.exit(1)

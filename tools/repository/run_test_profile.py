@@ -50,11 +50,13 @@ def select_suites(paths):
             )
         ):
             selected.add("typescript")
+        elif path.startswith("packages/shared-python/"):
+            # The deployment and provisioning scripts import it, so their tests run too.
+            selected.update(("python", "repository"))
         elif (
             path.startswith(
                 (
                     "services/maintenance/data-preparation/",
-                    "packages/shared-python/",
                     "tests/python/",
                 )
             )

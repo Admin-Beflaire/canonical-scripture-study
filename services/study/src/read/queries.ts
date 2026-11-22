@@ -1,11 +1,14 @@
-import { isIdentifier, isSafeCount } from './bytes.ts';
-import { ReadError } from './states.ts';
+import {isIdentifier, isSafeCount} from './bytes.ts';
+import {ReadError} from './states.ts';
 
 /** The only D1 statements Study runs. Every statement is a fixed SELECT whose first
  *  parameter is the current release ID and which reaches evidence rows only through
  *  `release_outputs` membership. Hosts never supply SQL, table names or object keys.
  *  The final parameter is always the row limit (one more than returned, to detect more). */
-interface Declaration<I> { sql: string; params(input: I): unknown[] }
+interface Declaration<I> {
+  sql: string;
+  params(input: I): unknown[];
+}
 
 const MAX_LIST = 20;
 /** Candidate verse units for one passage read: three chapters of candidates. */
@@ -13,46 +16,119 @@ export const MAX_UNITS = 540;
 /** The relationship query limits relationships in its inner statement and rows in the outer one. */
 export const RELATIONSHIPS_PER_QUERY = 10;
 const list = (value: unknown, max = MAX_LIST): string[] => {
-  if (!Array.isArray(value) || value.length < 1 || value.length > max || !value.every(v => isIdentifier(v)) || new Set(value).size !== value.length)
-    throw new ReadError('invalid_request', 'Expected a short list of distinct identifiers');
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > max ||
+    !value.every(v => isIdentifier(v)) ||
+    new Set(value).size !== value.length
+  )
+    throw new ReadError(
+      'invalid_request',
+      'Expected a short list of distinct identifiers',
+    );
   return value as string[];
 };
 const id = (value: unknown): string => {
-  if (!isIdentifier(value)) throw new ReadError('invalid_request', 'Expected an identifier');
+  if (!isIdentifier(value))
+    throw new ReadError('invalid_request', 'Expected an identifier');
   return value;
 };
 const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.length !== size || !value.every(v => v === '' || v === -1 || isIdentifier(v, 1024) || isSafeCount(v)))
+  if (
+    !Array.isArray(value) ||
+    value.length !== size ||
+    !value.every(
+      v => v === '' || v === -1 || isIdentifier(v, 1024) || isSafeCount(v),
+    )
+  )
     throw new ReadError('invalid_request', 'Invalid query position');
   return value;
 };
 const order = (value: unknown): number => {
-  if (!isSafeCount(value)) throw new ReadError('invalid_request', 'Expected a native order');
+  if (!isSafeCount(value))
+    throw new ReadError('invalid_request', 'Expected a native order');
   return value;
 };
 
-export interface SpansInput { ids: string[] }
-export interface OverlapInput { source_revision_id: string; kinds: string[]; start: number; end: number; after?: [number, string, number] | null }
-export interface AnnotationsInput { span_ids: string[]; after?: [string, string] | null }
-export interface RelationshipsInput { span_id: string; kinds?: string[] | null; after?: [string] | null }
-export interface CountsInput { span_id: string }
-export interface CoverageInput { source_revision_ids: string[]; after?: [string, string, string] | null }
-export interface PackagesInput { subject: string; after?: [string] | null }
-export interface StatementInput { [key: string]: never }
-export interface NamePresenceInput { tags: string[] }
-export interface LanguageAidInput { key: string; after?: [string, string, string] | null }
-export interface ReleaseSourcesInput { capability?: string | null; after?: [string, string] | null }
-export interface UnitPresenceInput { units: string[]; sources?: string[] | null }
-export interface UnitSpansInput { units: string[]; sources?: string[] | null; after?: [string, number] | null }
-export interface IndexFilesInput { source_revision_ids: string[]; capability: string; after?: [string, number, string] | null }
+export interface SpansInput {
+  ids: string[];
+}
+export interface OverlapInput {
+  source_revision_id: string;
+  kinds: string[];
+  start: number;
+  end: number;
+  after?: [number, string, number] | null;
+}
+export interface AnnotationsInput {
+  span_ids: string[];
+  after?: [string, string] | null;
+}
+export interface RelationshipsInput {
+  span_id: string;
+  kinds?: string[] | null;
+  after?: [string] | null;
+}
+export interface CountsInput {
+  span_id: string;
+}
+export interface CoverageInput {
+  source_revision_ids: string[];
+  after?: [string, string, string] | null;
+}
+export interface PackagesInput {
+  subject: string;
+  after?: [string] | null;
+}
+export interface StatementInput {
+  [key: string]: never;
+}
+export interface NamePresenceInput {
+  tags: string[];
+}
+export interface LanguageAidInput {
+  key: string;
+  after?: [string, number] | null;
+}
+export interface ReleaseSourcesInput {
+  capability?: string | null;
+  after?: [string, string] | null;
+}
+export interface UnitPresenceInput {
+  units: string[];
+  sources?: string[] | null;
+}
+export interface UnitSpansInput {
+  units: string[];
+  sources?: string[] | null;
+  after?: [string, number] | null;
+}
+export interface IndexFilesInput {
+  source_revision_ids: string[];
+  capability: string;
+  after?: [string, number, string] | null;
+}
 export interface ReaderMappingInput {
-  references: { ref: string; book: string; chapter: number; verse: number; native_units: string[] }[];
+  references: {
+    ref: string;
+    book: string;
+    chapter: number;
+    verse: number;
+    native_units: string[];
+  }[];
   scheme: string;
   sources: string[] | null;
   after?: [number, string, number, number, string, string] | null;
 }
-export interface LiteraryContextInput extends Omit<ReaderMappingInput, 'after'> { after?: [string, string] | null; include_current?: boolean }
+export interface LiteraryContextInput extends Omit<
+  ReaderMappingInput,
+  'after'
+> {
+  after?: [string, string] | null;
+  include_current?: boolean;
+}
 
 const SPANS = `SELECT n.id, n.output_id, n.source_revision_id, n.parent_id, n.kind, n.label, n.native_order,
   n.coordinate_version, n.segments_json, n.basis_json, n.content_id, n.body_ranges_json, n.reading_kind,
@@ -87,13 +163,24 @@ WHERE a.span_id IN (SELECT value FROM json_each(?2)) AND (a.span_id, a.id) > (?3
 ORDER BY a.span_id, a.id
 LIMIT ?5`;
 
-/** Exact source entries only: the host never supplies a SQL field or an object path. */
-const languageAidQuery = (kind: 'lexicon_entry' | 'grammar_expansion' | 'proper_name', field: 'strong_base' | 'entry_key' | 'code' | 'disambiguated_strong') => `
-SELECT a.id, a.output_id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
-FROM annotations a JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
-WHERE a.kind = '${kind}' AND json_extract(a.details_json, '$.${field}') = ?2
-  AND (a.output_id, a.span_id, a.id) > (?3, ?4, ?5)
-ORDER BY a.output_id, a.span_id, a.id LIMIT ?6`;
+/** Exact source entries only: the host never supplies a SQL field or an object path. One small row
+ *  per entry says where its line is in the output's entries file; the line holds the wording. */
+const languageAidQuery = (
+  kind: 'lexicon_entry' | 'grammar_expansion' | 'proper_name',
+  field: 'lookup_key' | 'entry_key',
+) => `
+SELECT e.output_id, e.entry, e.kind, e.entry_key, e.byte_offset, e.byte_length, e.sha256 AS line_sha256,
+  a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator, a.source_revision_id,
+  s.name AS source_name, s.attribution AS source_attribution,
+  json_extract(o.native_extent_json, '$.coordinate_version') AS coordinate_version
+FROM aid_entries e
+CROSS JOIN release_outputs ro ON ro.output_id = e.output_id AND ro.release_id = ?1
+CROSS JOIN prepared_outputs o ON o.id = e.output_id
+CROSS JOIN coverage c ON c.output_id = e.output_id AND c.capability = e.kind
+CROSS JOIN artifacts a ON a.id = c.index_artifact_id
+CROSS JOIN source_nodes s ON s.id = a.source_revision_id
+WHERE e.kind = '${kind}' AND e.${field} = ?2 AND (e.output_id, e.entry) > (?3, ?4)
+ORDER BY e.output_id, e.entry LIMIT ?5`;
 
 /** A mapping may point to an extracted slice while source-authored notes are attached to the
  * original native verse. Return notes on either selected span, scoped to that source. */
@@ -320,7 +407,12 @@ ORDER BY position, source_revision_id, role_order, ordinal, mapping_id, COALESCE
 
 /** Resolve overlapping units from the same checked targets; seek units independently of
  * reader-mapping pages so a unit spanning several pages is returned only once. */
-const LITERARY_CONTEXTS = READER_MAPPINGS.slice(0, READER_MAPPINGS.indexOf('\nSELECT * FROM all_mappings WHERE')) + `
+const LITERARY_CONTEXTS =
+  READER_MAPPINGS.slice(
+    0,
+    READER_MAPPINGS.indexOf('\nSELECT * FROM all_mappings WHERE'),
+  ) +
+  `
 SELECT DISTINCT unit.source_revision_id, unit.id AS span_id
 FROM all_mappings mapped
 CROSS JOIN span_segments anchor INDEXED BY sqlite_autoindex_span_segments_1
@@ -335,63 +427,167 @@ WHERE mapped.status != 'native_candidate' AND ((unit.source_revision_id, unit.id
 ORDER BY unit.source_revision_id, unit.id LIMIT ?14`;
 
 function readerParams(i: ReaderMappingInput): unknown[] {
-  if (!Array.isArray(i.references) || !i.references.length || i.references.length > MAX_UNITS ||
-      i.references.some(r => !isIdentifier(r.ref) || !isIdentifier(r.book) || !isSafeCount(r.chapter) || !isSafeCount(r.verse) ||
-        !Array.isArray(r.native_units) || !r.native_units.length || r.native_units.length > 20 || !r.native_units.every(x => isIdentifier(x))))
+  if (
+    !Array.isArray(i.references) ||
+    !i.references.length ||
+    i.references.length > MAX_UNITS ||
+    i.references.some(
+      r =>
+        !isIdentifier(r.ref) ||
+        !isIdentifier(r.book) ||
+        !isSafeCount(r.chapter) ||
+        !isSafeCount(r.verse) ||
+        !Array.isArray(r.native_units) ||
+        !r.native_units.length ||
+        r.native_units.length > 20 ||
+        !r.native_units.every(x => isIdentifier(x)),
+    )
+  )
     throw new ReadError('invalid_request', 'Invalid reader references');
-  return [JSON.stringify(i.references), id(i.scheme), i.sources == null ? null : JSON.stringify(list(i.sources)),
-    ...(optionalAfter(i.after, 6) ?? [-1, '', -1, -1, '', ''])];
+  return [
+    JSON.stringify(i.references),
+    id(i.scheme),
+    i.sources == null ? null : JSON.stringify(list(i.sources)),
+    ...(optionalAfter(i.after, 6) ?? [-1, '', -1, -1, '', '']),
+  ];
 }
 
+const aidParams = (i: LanguageAidInput) => [
+  id(i.key),
+  ...(optionalAfter(i.after, 2) ?? ['', -1]),
+];
+
 export const QUERIES = {
-  proper_name_presence: { sql: `SELECT COALESCE(json_group_array(tag.value), '[]') AS tags
+  proper_name_presence: {
+    sql: `SELECT COALESCE(json_group_array(tag.value), '[]') AS tags
 FROM json_each(?2) tag WHERE EXISTS (
-  SELECT 1 FROM annotations a
-  JOIN release_outputs ro ON ro.output_id = a.output_id AND ro.release_id = ?1
-  WHERE a.kind = 'proper_name' AND json_extract(a.details_json, '$.disambiguated_strong') = tag.value
-) LIMIT ?3`, params: (i: NamePresenceInput) => [JSON.stringify(list(i.tags, 1000))] },
-  proper_name: { sql: languageAidQuery('proper_name', 'disambiguated_strong'), params: (i: LanguageAidInput) =>
-    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
-  lexicon_strong: { sql: languageAidQuery('lexicon_entry', 'strong_base'), params: (i: LanguageAidInput) =>
-    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
-  lexicon_entry: { sql: languageAidQuery('lexicon_entry', 'entry_key'), params: (i: LanguageAidInput) =>
-    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
-  grammar_expansion: { sql: languageAidQuery('grammar_expansion', 'code'), params: (i: LanguageAidInput) =>
-    [id(i.key), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
-  spans: { sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))] },
-  literary_overlap: { sql: OVERLAP, params: (i: OverlapInput) => {
-    const start = order(i.start), end = order(i.end);
-    if (end < start) throw new ReadError('invalid_request', 'Empty native order range');
-    const after = optionalAfter(i.after, 3) ?? [-1, '', -1];
-    return [id(i.source_revision_id), JSON.stringify(list(i.kinds, 8)), start, end, ...after];
-  } },
-  annotations: { sql: ANNOTATIONS, params: (i: AnnotationsInput) =>
-    [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
-  mapped_annotations: { sql: MAPPED_ANNOTATIONS, params: (i: AnnotationsInput) =>
-    [JSON.stringify(list(i.span_ids)), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
-  relationships: { sql: RELATIONSHIPS, params: (i: RelationshipsInput) =>
-    [id(i.span_id), i.kinds == null ? null : JSON.stringify(list(i.kinds, 8)), ...(optionalAfter(i.after, 1) ?? ['']),
-      RELATIONSHIPS_PER_QUERY + 1] },
-  relationship_counts: { sql: COUNTS, params: (i: CountsInput) => [id(i.span_id)] },
-  coverage: { sql: COVERAGE, params: (i: CoverageInput) =>
-    [JSON.stringify(list(i.source_revision_ids)), ...(optionalAfter(i.after, 3) ?? ['', '', ''])] },
-  packages: { sql: PACKAGES, params: (i: PackagesInput) => [id(i.subject), ...(optionalAfter(i.after, 1) ?? [''])] },
-  statement: { sql: STATEMENT, params: (_: StatementInput) => [] },
-  release_sources: { sql: RELEASE_SOURCES, params: (i: ReleaseSourcesInput) => [i.capability == null ? null : id(i.capability), ...(optionalAfter(i.after, 2) ?? ['', ''])] },
-  unit_presence: { sql: UNIT_PRESENCE, params: (i: UnitPresenceInput) =>
-    [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources))] },
-  unit_spans: { sql: UNIT_SPANS, params: (i: UnitSpansInput) =>
-    [JSON.stringify(list(i.units, MAX_UNITS)), i.sources == null ? null : JSON.stringify(list(i.sources)), ...(optionalAfter(i.after, 2) ?? ['', -1])] },
-  reader_mappings: { sql: READER_MAPPINGS, params: readerParams },
-  literary_contexts: { sql: LITERARY_CONTEXTS, params: (i: LiteraryContextInput) =>
-    [...readerParams({ ...i, after: null }), ...(optionalAfter(i.after, 2) ?? ['', '']), i.include_current ? 1 : 0] },
-  index_files: { sql: INDEX_FILES, params: (i: IndexFilesInput) =>
-    [JSON.stringify(list(i.source_revision_ids)), id(i.capability), ...(optionalAfter(i.after, 3) ?? ['', -1, ''])] },
+  SELECT 1 FROM aid_entries e
+  JOIN release_outputs ro ON ro.output_id = e.output_id AND ro.release_id = ?1
+  WHERE e.kind = 'proper_name' AND e.lookup_key = tag.value
+) LIMIT ?3`,
+    params: (i: NamePresenceInput) => [JSON.stringify(list(i.tags, 1000))],
+  },
+  proper_name: {
+    sql: languageAidQuery('proper_name', 'lookup_key'),
+    params: aidParams,
+  },
+  lexicon_strong: {
+    sql: languageAidQuery('lexicon_entry', 'lookup_key'),
+    params: aidParams,
+  },
+  lexicon_entry: {
+    sql: languageAidQuery('lexicon_entry', 'entry_key'),
+    params: aidParams,
+  },
+  grammar_expansion: {
+    sql: languageAidQuery('grammar_expansion', 'lookup_key'),
+    params: aidParams,
+  },
+  spans: {sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))]},
+  literary_overlap: {
+    sql: OVERLAP,
+    params: (i: OverlapInput) => {
+      const start = order(i.start),
+        end = order(i.end);
+      if (end < start)
+        throw new ReadError('invalid_request', 'Empty native order range');
+      const after = optionalAfter(i.after, 3) ?? [-1, '', -1];
+      return [
+        id(i.source_revision_id),
+        JSON.stringify(list(i.kinds, 8)),
+        start,
+        end,
+        ...after,
+      ];
+    },
+  },
+  annotations: {
+    sql: ANNOTATIONS,
+    params: (i: AnnotationsInput) => [
+      JSON.stringify(list(i.span_ids)),
+      ...(optionalAfter(i.after, 2) ?? ['', '']),
+    ],
+  },
+  mapped_annotations: {
+    sql: MAPPED_ANNOTATIONS,
+    params: (i: AnnotationsInput) => [
+      JSON.stringify(list(i.span_ids)),
+      ...(optionalAfter(i.after, 2) ?? ['', '']),
+    ],
+  },
+  relationships: {
+    sql: RELATIONSHIPS,
+    params: (i: RelationshipsInput) => [
+      id(i.span_id),
+      i.kinds == null ? null : JSON.stringify(list(i.kinds, 8)),
+      ...(optionalAfter(i.after, 1) ?? ['']),
+      RELATIONSHIPS_PER_QUERY + 1,
+    ],
+  },
+  relationship_counts: {
+    sql: COUNTS,
+    params: (i: CountsInput) => [id(i.span_id)],
+  },
+  coverage: {
+    sql: COVERAGE,
+    params: (i: CoverageInput) => [
+      JSON.stringify(list(i.source_revision_ids)),
+      ...(optionalAfter(i.after, 3) ?? ['', '', '']),
+    ],
+  },
+  packages: {
+    sql: PACKAGES,
+    params: (i: PackagesInput) => [
+      id(i.subject),
+      ...(optionalAfter(i.after, 1) ?? ['']),
+    ],
+  },
+  statement: {sql: STATEMENT, params: (_: StatementInput) => []},
+  release_sources: {
+    sql: RELEASE_SOURCES,
+    params: (i: ReleaseSourcesInput) => [
+      i.capability == null ? null : id(i.capability),
+      ...(optionalAfter(i.after, 2) ?? ['', '']),
+    ],
+  },
+  unit_presence: {
+    sql: UNIT_PRESENCE,
+    params: (i: UnitPresenceInput) => [
+      JSON.stringify(list(i.units, MAX_UNITS)),
+      i.sources == null ? null : JSON.stringify(list(i.sources)),
+    ],
+  },
+  unit_spans: {
+    sql: UNIT_SPANS,
+    params: (i: UnitSpansInput) => [
+      JSON.stringify(list(i.units, MAX_UNITS)),
+      i.sources == null ? null : JSON.stringify(list(i.sources)),
+      ...(optionalAfter(i.after, 2) ?? ['', -1]),
+    ],
+  },
+  reader_mappings: {sql: READER_MAPPINGS, params: readerParams},
+  literary_contexts: {
+    sql: LITERARY_CONTEXTS,
+    params: (i: LiteraryContextInput) => [
+      ...readerParams({...i, after: null}),
+      ...(optionalAfter(i.after, 2) ?? ['', '']),
+      i.include_current ? 1 : 0,
+    ],
+  },
+  index_files: {
+    sql: INDEX_FILES,
+    params: (i: IndexFilesInput) => [
+      JSON.stringify(list(i.source_revision_ids)),
+      id(i.capability),
+      ...(optionalAfter(i.after, 3) ?? ['', -1, '']),
+    ],
+  },
 } satisfies Record<string, Declaration<never>>;
 
 export type QueryName = keyof typeof QUERIES;
-export type QueryInput<N extends QueryName> = Parameters<(typeof QUERIES)[N]['params']>[0];
-
+export type QueryInput<N extends QueryName> = Parameters<
+  (typeof QUERIES)[N]['params']
+>[0];
 
 export function isQueryName(name: unknown): name is QueryName {
   return typeof name === 'string' && Object.hasOwn(QUERIES, name);

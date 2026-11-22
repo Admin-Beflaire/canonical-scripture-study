@@ -31,10 +31,14 @@ export interface RegisteredArtifact {
   registered_locator: string;
 }
 
+/** One line per language-aid entry: the entry's wording, coordinates and details. */
+export const AID_ENTRIES_FORMAT = 'application/x-ndjson; profile=aid-entries';
+
 export const SUPPORTED_FORMATS: ReadonlySet<string> = new Set([
   'application/json',
   'application/x-ndjson',
   'application/x-ndjson; profile=index-directory',
+  AID_ENTRIES_FORMAT,
   'text/utf-8',
 ]);
 const HEX = /^[0-9a-f]{64}$/;

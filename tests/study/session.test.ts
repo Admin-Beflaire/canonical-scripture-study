@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {mock, test} from 'node:test';
 import {buildFixture, A, B} from './fixture.ts';
+import {addAids} from './aid-fixture.ts';
 import {buildPassageFixture, HEB} from './passage-fixture.ts';
 import {
   ReadSession,
@@ -158,63 +159,52 @@ test('two releases: reads are scoped to current release membership only', async 
 test('language-aid lookups return only selected entries and preserve same-key alternatives', async () => {
   const fixture = buildFixture();
   fixture.select(null, null);
-  const insert = fixture.db.sqlite.prepare(
-    'INSERT INTO annotations VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  );
-  const add = (
-    name: string,
-    output: string,
-    span: string,
-    kind: string,
-    details: object,
-  ) =>
-    insert.run(
-      name,
-      output,
-      A,
-      span,
-      kind,
-      'synthetic provider',
-      '{}',
-      JSON.stringify(details),
-    );
-  add('lex-1', 'syn-ev', 'a-u1', 'lexicon_entry', {
-    strong_base: 'H1234',
-    entry_key: 'lex:one',
-  });
-  add('lex-2', 'syn-ev', 'a-u2', 'lexicon_entry', {
-    strong_base: 'H1234',
-    entry_key: 'lex:two',
-  });
-  add('lex-old', 'syn-ev-old', 'a-old', 'lexicon_entry', {
-    strong_base: 'H1234',
-    entry_key: 'lex:old',
-  });
-  add('grammar-1', 'syn-ev', 'a-u1', 'grammar_expansion', {code: 'Ncmsa'});
+  addAids(fixture, 'syn-ev', [
+    {
+      kind: 'lexicon_entry',
+      details: {strong_base: 'H1234', entry_key: 'lex:one'},
+    },
+    {
+      kind: 'lexicon_entry',
+      details: {strong_base: 'H1234', entry_key: 'lex:two'},
+    },
+    {
+      kind: 'grammar_expansion',
+      details: {code: 'Ncmsa', entry_key: 'grammar-1'},
+    },
+  ]);
+  addAids(fixture, 'syn-ev-old', [
+    {
+      kind: 'lexicon_entry',
+      details: {strong_base: 'H1234', entry_key: 'lex:old'},
+    },
+  ]);
   fixture.select('rel-2', 'rel-1');
   const session = await ReadSession.open(fixture.env, roomy);
   const lex = await session.query('lexicon_strong', {key: 'H1234'});
   assert.deepEqual(
-    lex.rows.map(row => row.id),
-    ['lex-1', 'lex-2'],
+    lex.rows.map(row => row.entry_key),
+    ['lex:one', 'lex:two'],
   );
   assert.deepEqual(
     (await session.query('lexicon_entry', {key: 'lex:two'})).rows.map(
-      row => row.id,
+      row => row.entry_key,
     ),
-    ['lex-2'],
+    ['lex:two'],
   );
   assert.deepEqual(
     (await session.query('grammar_expansion', {key: 'Ncmsa'})).rows.map(
-      row => row.id,
+      row => row.entry_key,
     ),
     ['grammar-1'],
   );
   fixture.select('rel-1');
   const old = await ReadSession.open(fixture.env, roomy);
   assert.deepEqual(
-    (await old.query('lexicon_strong', {key: 'H1234'})).rows.map(row => row.id),
-    ['lex-old'],
+    (await old.query('lexicon_strong', {key: 'H1234'})).rows.map(
+      row => row.entry_key,
+    ),
+    ['lex:old'],
   );
 });
 

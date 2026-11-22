@@ -60,6 +60,7 @@ export const OUTPUT_ROWS = [
   `DELETE FROM span_segments WHERE span_id IN (SELECT id FROM native_spans WHERE output_id = ?)`,
   `DELETE FROM relation_members WHERE relationship_id IN (SELECT id FROM relationships WHERE output_id = ?)`,
   `DELETE FROM annotations WHERE output_id = ?`,
+  `DELETE FROM aid_entries WHERE output_id = ?`,
   `DELETE FROM relationships WHERE output_id = ?`,
   `DELETE FROM reader_reference_links WHERE output_id = ?`,
   `DELETE FROM reader_reference_bases WHERE output_id = ?`,

@@ -267,6 +267,23 @@ test('a bucket that fails once is tried again; one that keeps failing leaves obj
   assert.equal(w.count('coverage'), 1);
 });
 
+test('a language-aid output leaves D1 whole with its entry rows, and its entries file goes too', async () => {
+  const w = world();
+  w.output('aid', 'entries', 'aid_entries');
+  for (const entry of [0, 1])
+    w.sql
+      .prepare(
+        `INSERT INTO aid_entries VALUES ('aid', ?, 'lexicon_entry', ?, 'H0001', ?, 10, ?)`,
+      )
+      .run(entry, `key-${entry}`, entry * 10, DIGEST);
+  const store = bucket(['prepared/aid.json']);
+  const done = await tidyReleases(w.db, store);
+  assert.deepEqual([done.outputs, done.objects, done.objectsLeft], [1, 1, 0]);
+  assert.equal(store.held.size, 0);
+  for (const table of ['aid_entries', 'artifacts', 'prepared_outputs'])
+    assert.equal(w.count(table), 0, table);
+});
+
 test('nothing is removed from saved outputs while a job is unfinished', async () => {
   const w = world();
   w.output('half-saved', 'not reported yet');

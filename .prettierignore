@@ -12,7 +12,6 @@ packages/shared/src/versification.ts
 services/maintenance/control/src/contracts.ts
 services/maintenance/control/src/d1.ts
 services/maintenance/control/src/index.ts
-services/maintenance/control/src/selection.ts
 services/study/src/coordinator.ts
 services/study/src/guidance.ts
 services/study/src/index.ts

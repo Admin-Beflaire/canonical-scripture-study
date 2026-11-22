@@ -49,7 +49,7 @@ IDs before the first release. Maintenance selects a checked compatible release i
 one transaction, retaining the previous selection for operational rollback. Study
 resolves current once per request and restricts each evidence read to that membership.
 Control removes the membership of a release that is neither current, previous nor needed by
-an open task, and then the saved outputs nothing kept uses, each whole in one transaction and followed by its stored objects (`services/maintenance/control/src/cleanup.ts`);
+an open task, and then the saved outputs nothing kept uses, each whole in one transaction and followed by its stored objects, and reports the objects and bytes removed and any left after a bucket error (`services/maintenance/control/src/cleanup.ts`);
 release records stay, and a release without members is not selected again.
 Membership inserts/deletes are rejected for both current and previous releases;
 Rows belonging to either selected output set also reject inserts/deletes, including

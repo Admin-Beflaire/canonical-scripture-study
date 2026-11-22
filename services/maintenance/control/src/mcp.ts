@@ -3,7 +3,7 @@ import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
 import type {GitHubActions} from './github.ts';
-import {tidyReleases} from './cleanup.ts';
+import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import type {ObjectStore} from './selection.ts';
 import {
@@ -321,7 +321,7 @@ export function controlServer(
       owner();
       const done = await tidyReleases(db, objects);
       return reply(
-        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s)${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
+        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s) and asked the bucket to delete ${done.objects} stored object(s) (${formatBytes(done.bytes)} as recorded, not measured)${done.objectsLeft ? `, ${done.objectsLeft} object(s) left after a bucket error` : ''}${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
         done,
       );
     },

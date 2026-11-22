@@ -97,6 +97,8 @@ export interface Tidied {
   outputs: number;
   /** Saved outputs that could not be removed in this call (they are tried again next time). */
   skipped: number;
+  /** A limit was reached while work was still being done: another call may find more. */
+  more: boolean;
 }
 
 /** Remove what nothing kept uses. Never throws and never changes the selection. */
@@ -104,7 +106,7 @@ export async function tidyReleases(
   db: D1Database,
   objects: ObjectStore | null = null,
 ): Promise<Tidied> {
-  const done: Tidied = {memberships: 0, outputs: 0, skipped: 0};
+  const done: Tidied = {memberships: 0, outputs: 0, skipped: 0, more: false};
   try {
     const gone = (
       await db
@@ -127,6 +129,7 @@ export async function tidyReleases(
         ),
       );
       done.memberships = removed.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
+      done.more = gone.length === RELEASES_PER_CALL;
     }
     // A job that is still running may have saved outputs it has not reported yet.
     const running = await db
@@ -157,6 +160,7 @@ export async function tidyReleases(
       done.outputs += 1;
       await removeObjects(objects, keys);
     }
+    done.more ||= done.outputs > 0 && unused.length === OUTPUTS_PER_CALL;
     if (done.outputs)
       await db
         .prepare(

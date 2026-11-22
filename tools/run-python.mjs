@@ -9,9 +9,11 @@ const commands = {
   repository: ["tools/repository/run_test_profile.py", "repository"],
   "ruff-check": ["-m", "ruff", "check"],
   "ruff-format": ["-m", "ruff", "format", "--check"],
+  baselines: ["tools/repository/check_baselines.py"],
+  standards: ["-m", "unittest", "discover", "-s", "tests/standards", "-p", "test_*.py", "-v"],
 };
 const command = process.argv[2];
-if (!command || !Object.hasOwn(commands, command)) throw new Error("Choose import, test, boundaries, repository, ruff-check or ruff-format");
+if (!command || !Object.hasOwn(commands, command)) throw new Error("Choose import, test, boundaries, repository, ruff-check, ruff-format, baselines or standards");
 const interpreter = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const result = spawnSync(interpreter, commands[command], {
   shell: false,

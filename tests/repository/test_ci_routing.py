@@ -27,13 +27,13 @@ class RoutingTests(unittest.TestCase):
 
     def test_shared_contract_changes_run_both_languages(self):
         for path in ("schemas/new.json", "tests/conformance/reference.json"):
-            self.assertEqual(profiles.select_profiles([path]), ["python", "typescript"])
+            self.assertEqual(profiles.select_profiles([path]), ["python", "standards", "typescript"])
 
     def test_owning_modules_run_only_their_consumer(self):
         for path in ("services/study/src/search.ts", "services/maintenance/control/src/index.ts", "packages/shared/src/index.ts", "tests/study/search.test.ts"):
-            self.assertEqual(profiles.select_profiles([path]), ["typescript"])
+            self.assertEqual(profiles.select_profiles([path]), ["standards", "typescript"])
         for path in ("services/maintenance/data-preparation/src/acquire.py", "packages/shared-python/src/css_shared/references.py", "tests/python/test_conformance.py", ".python-version"):
-            self.assertEqual(profiles.select_profiles([path]), ["python"])
+            self.assertEqual(profiles.select_profiles([path]), ["python", "standards"])
 
     def test_workflow_tooling_config_and_unknown_code_fail_closed(self):
         for path in (".github/workflows/checks.yml", "infrastructure/github/main.tf", "tools/build.mjs", "tests/repository/test_ci_routing.py", "future/unknown.py", "package-lock.json", "tests/platform/platform.test.ts", "infrastructure/cloudflare/render.mjs", "infrastructure/github/deployment/deploy.py", "infrastructure/github/deployment/smoke.mjs", "infrastructure/github/deployment/compatibility.json", "tests/platform/deployment.test.ts", ".github/workflows/deploy.yml", ".github/workflows/prepare.yml"):
@@ -43,7 +43,20 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(profiles.select_profiles(["README.md", "CONTRIBUTING.md"]), [])
 
     def test_removed_and_renamed_inputs_are_routed_as_paths(self):
-        self.assertEqual(profiles.select_profiles(["packages/shared/old.ts", "packages/shared-python/new.py"]), ["python", "typescript"])
+        self.assertEqual(profiles.select_profiles(["packages/shared/old.ts", "packages/shared-python/new.py"]), ["python", "standards", "typescript"])
+
+    def test_locked_python_tools_run_only_the_code_standards(self):
+        self.assertEqual(profiles.select_profiles(["requirements-dev.txt"]), ["standards"])
+
+    def test_code_standards_run_with_every_code_change(self):
+        for path in ("services/study/src/search.ts", "tests/python/test_conformance.py", "ruff.toml", "eslint.config.mjs", ".prettierignore", ".github/workflows/checks.yml"):
+            self.assertIn("standards", profiles.select_profiles([path]))
+
+    def test_standards_profile_runs_the_checks_and_their_tests(self):
+        with patch.object(profiles.subprocess, "run") as execute:
+            profiles.run("standards")
+        commands = [call.args[0] for call in execute.call_args_list]
+        self.assertEqual(commands, [["npm", "run", "check:standards"], ["npm", "run", "test:standards"]])
 
     def test_public_workflow_cannot_access_privileged_inputs(self):
         workflow = (ROOT / ".github/workflows/checks.yml").read_text()
@@ -54,6 +67,8 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("package-manager-cache: false", workflow)
         self.assertIn("npm ci --ignore-scripts", workflow)
+        self.assertIn("pip install --require-hashes --only-binary=:all:", workflow)
+        self.assertIn("run_test_profile.py standards", workflow)
         for line in workflow.splitlines():
             if "uses:" in line:
                 self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")

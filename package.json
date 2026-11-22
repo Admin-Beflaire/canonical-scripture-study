@@ -12,8 +12,8 @@
     "build:control": "node tools/build.mjs control",
     "build": "npm run build:study && npm run build:control && npm run build:shared",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.workers.json",
-    "test": "npm run test:typescript && npm run test:python",
-    "check": "npm run typecheck && npm run check:boundaries && npm run check:python && npm test && npm run check:repository && npm run build && npm run check:platform",
+    "test": "npm run test:typescript && npm run test:python && npm run test:standards",
+    "check": "npm run typecheck && npm run check:standards && npm run check:boundaries && npm run check:python && npm test && npm run check:repository && npm run build && npm run check:platform",
     "build:shared": "node tools/build.mjs shared",
     "check:boundaries": "node tools/check-boundaries.mjs && node tools/run-python.mjs boundaries",
     "test:typescript": "node --test \"tests/**/*.test.ts\"",
@@ -25,7 +25,10 @@
     "format:ts": "prettier --check \"**/*.{ts,mjs}\"",
     "lint:py": "node tools/run-python.mjs ruff-check",
     "format:py": "node tools/run-python.mjs ruff-format",
-    "check:duplicates": "jscpd"
+    "check:duplicates": "jscpd",
+    "check:baselines": "node tools/run-python.mjs baselines",
+    "check:standards": "npm run lint:ts && npm run format:ts && npm run lint:py && npm run format:py && npm run check:duplicates && npm run check:baselines",
+    "test:standards": "node tools/run-python.mjs standards"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",

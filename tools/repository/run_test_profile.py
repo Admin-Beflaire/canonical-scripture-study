@@ -8,10 +8,10 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-PROFILES = ("typescript", "python", "repository")
+PROFILES = ("typescript", "python", "repository", "standards")
 
 
-def select_profiles(paths):
+def select_suites(paths):
     selected = set()
     for path in paths:
         typescript_home = path.startswith(("services/study/", "services/maintenance/control/", "packages/shared/", "tests/shared/", "tests/study/"))
@@ -37,6 +37,14 @@ def select_profiles(paths):
     return sorted(selected)
 
 
+def select_profiles(paths):
+    """Code standards run with any code change, and alone for their locked tools."""
+    selected = set(select_suites(paths))
+    if selected or "requirements-dev.txt" in paths:
+        selected.add("standards")
+    return sorted(selected)
+
+
 def changed_paths(base):
     if not base or not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40:
         return None
@@ -54,6 +62,7 @@ def run(profile):
                        ["npm", "run", "test:typescript"], ["npm", "run", "build"], ["npm", "run", "check:platform"]],
         "python": [["node", "tools/run-python.mjs", mode] for mode in ("boundaries", "import", "test")],
         "repository": [[sys.executable, "-m", "unittest", "discover", "-s", "tests/repository", "-p", "test_*.py", "-v"]],
+        "standards": [["npm", "run", "check:standards"], ["npm", "run", "test:standards"]],
     }
     if profile not in commands:
         raise ValueError("Unknown check profile")

@@ -45,6 +45,13 @@ class RoutingTests(unittest.TestCase):
             profiles.run("repository")
         self.assertEqual(execute.call_args.args[0][0], "selected-python")
 
+    def test_repository_profile_can_import_the_shared_python_package(self):
+        with patch.object(profiles.subprocess, "run") as execute:
+            profiles.run("repository")
+        shared = str(profiles.ROOT / "packages/shared-python/src")
+        paths = execute.call_args.kwargs["env"]["PYTHONPATH"].split(profiles.os.pathsep)
+        self.assertEqual(paths[0], shared)
+
     def test_shared_contract_changes_run_both_languages(self):
         for path in ("schemas/new.json", "tests/conformance/reference.json"):
             self.assertEqual(

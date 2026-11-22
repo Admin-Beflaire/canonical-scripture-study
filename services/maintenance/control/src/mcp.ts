@@ -321,7 +321,7 @@ export function controlServer(
       owner();
       const done = await tidyReleases(db, objects);
       return reply(
-        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s)${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
+        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s) with ${done.objects} stored object(s) (${(done.bytes / 1e6).toFixed(1)} MB)${done.objectsLeft ? `, ${done.objectsLeft} object(s) left after a bucket error` : ''}${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
         done,
       );
     },

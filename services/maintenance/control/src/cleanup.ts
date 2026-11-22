@@ -28,13 +28,14 @@ const OUTPUTS_LOOKED_AT = 12; // Saved outputs one call tries, so blocked ones d
 const OBJECTS_PER_DELETE = 1000; // Keys one bucket delete accepts.
 
 /** Stored objects of one output that no other artifact record names. */
-const OUTPUT_OBJECTS = `SELECT a.registered_locator AS key FROM artifacts a WHERE a.output_id = ?
+const OUTPUT_OBJECTS = `SELECT a.registered_locator AS key, MAX(a.byte_count) AS bytes FROM artifacts a WHERE a.output_id = ?
   AND a.registered_locator LIKE 'prepared/%'
   AND a.registered_locator NOT LIKE 'prepared/receipts/%'
   AND a.registered_locator NOT LIKE 'prepared/checkpoints/%'
   AND a.registered_locator NOT LIKE 'prepared/language-aid-cache/%'
   AND NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.registered_locator = a.registered_locator
-    AND (o.output_id IS NULL OR o.output_id <> a.output_id))`;
+    AND (o.output_id IS NULL OR o.output_id <> a.output_id))
+  GROUP BY a.registered_locator`;
 
 const KEPT_RELEASES = `SELECT current_release_id AS id FROM release_selection WHERE current_release_id IS NOT NULL
   UNION SELECT previous_release_id FROM release_selection WHERE previous_release_id IS NOT NULL
@@ -72,17 +73,22 @@ export const OUTPUT_ROWS = [
 /** Remove stored objects; one more try on failure, then report and leave them. Never throws. */
 async function removeObjects(
   objects: {remove?(keys: string[]): Promise<void>},
-  keys: string[],
+  stored: Array<{key: string; bytes: number}>,
+  done: Tidied,
 ): Promise<void> {
-  for (let at = 0; at < keys.length; at += OBJECTS_PER_DELETE) {
-    const some = keys.slice(at, at + OBJECTS_PER_DELETE);
+  for (let at = 0; at < stored.length; at += OBJECTS_PER_DELETE) {
+    const batch = stored.slice(at, at + OBJECTS_PER_DELETE);
+    const some = batch.map(item => item.key);
     try {
       try {
         await objects.remove?.(some);
       } catch {
         await objects.remove?.(some);
       }
+      done.objects += batch.length;
+      done.bytes += batch.reduce((sum, item) => sum + item.bytes, 0);
     } catch (error) {
+      done.objectsLeft += batch.length;
       reportError(error, {
         tool: 'control',
         stage: 'cleanup',
@@ -98,8 +104,58 @@ export interface Tidied {
   outputs: number;
   /** Saved outputs tried in this call that could not be removed (another output refers to them). */
   skipped: number;
+  /** Stored objects removed, the bytes they held (as registered), and objects left after a bucket error. */
+  objects: number;
+  bytes: number;
+  objectsLeft: number;
   /** More may be removable: something was removed and work was left, or a blocked output may now be free. */
   more: boolean;
+}
+
+/** Remove unused saved outputs, whole from D1 first and then their stored objects. */
+async function tidyOutputs(
+  db: D1Database,
+  objects: {remove?(keys: string[]): Promise<void>},
+  done: Tidied,
+): Promise<void> {
+  const unused = (
+    await db.prepare(UNUSED_OUTPUTS).bind(OUTPUTS_LOOKED_AT).all<{id: string}>()
+  ).results;
+  let untried = 0;
+  for (const {id} of unused) {
+    if (done.outputs >= OUTPUTS_PER_CALL) {
+      untried += 1;
+      continue;
+    }
+    let stored: Array<{key: string; bytes: number}>;
+    try {
+      stored = (
+        await db
+          .prepare(OUTPUT_OBJECTS)
+          .bind(id)
+          .all<{key: string; bytes: number}>()
+      ).results;
+      // All of the output or none of it: if another saved output still refers to it,
+      // nothing changes and its objects stay.
+      await db.batch(OUTPUT_ROWS.map(sql => db.prepare(sql).bind(id)));
+    } catch {
+      done.skipped += 1; // Blocked for now: tried again on a later call.
+      continue;
+    }
+    done.outputs += 1;
+    await removeObjects(objects, stored, done);
+  }
+  // Only after progress: an output that stays blocked must not make a caller repeat for ever.
+  done.more ||=
+    done.outputs > 0 &&
+    (untried > 0 || done.skipped > 0 || unused.length === OUTPUTS_LOOKED_AT);
+  if (done.outputs)
+    await db
+      .prepare(
+        `DELETE FROM text_payloads WHERE NOT EXISTS (
+          SELECT 1 FROM native_spans s WHERE s.content_id = text_payloads.content_id)`,
+      )
+      .run();
 }
 
 /** Remove what nothing kept uses. Never throws and never changes the selection. */
@@ -107,7 +163,15 @@ export async function tidyReleases(
   db: D1Database,
   objects: ObjectStore | null = null,
 ): Promise<Tidied> {
-  const done: Tidied = {memberships: 0, outputs: 0, skipped: 0, more: false};
+  const done: Tidied = {
+    memberships: 0,
+    outputs: 0,
+    skipped: 0,
+    objects: 0,
+    bytes: 0,
+    objectsLeft: 0,
+    more: false,
+  };
   try {
     const gone = (
       await db
@@ -139,44 +203,7 @@ export async function tidyReleases(
       )
       .first();
     if (running || !objects?.remove) return done;
-    const unused = (
-      await db
-        .prepare(UNUSED_OUTPUTS)
-        .bind(OUTPUTS_LOOKED_AT)
-        .all<{id: string}>()
-    ).results;
-    let untried = 0;
-    for (const {id} of unused) {
-      if (done.outputs >= OUTPUTS_PER_CALL) {
-        untried += 1;
-        continue;
-      }
-      let keys: string[];
-      try {
-        keys = (
-          await db.prepare(OUTPUT_OBJECTS).bind(id).all<{key: string}>()
-        ).results.map(row => row.key);
-        // All of the output or none of it: if another saved output still refers to it,
-        // nothing changes and its objects stay.
-        await db.batch(OUTPUT_ROWS.map(sql => db.prepare(sql).bind(id)));
-      } catch {
-        done.skipped += 1; // Blocked for now: tried again on a later call.
-        continue;
-      }
-      done.outputs += 1;
-      await removeObjects(objects, keys);
-    }
-    // Only after progress: an output that stays blocked must not make a caller repeat for ever.
-    done.more ||=
-      done.outputs > 0 &&
-      (untried > 0 || done.skipped > 0 || unused.length === OUTPUTS_LOOKED_AT);
-    if (done.outputs)
-      await db
-        .prepare(
-          `DELETE FROM text_payloads WHERE NOT EXISTS (
-            SELECT 1 FROM native_spans s WHERE s.content_id = text_payloads.content_id)`,
-        )
-        .run();
+    await tidyOutputs(db, objects, done);
   } catch (error) {
     reportError(error, {
       tool: 'control',

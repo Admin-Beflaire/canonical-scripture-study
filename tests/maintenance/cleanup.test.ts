@@ -220,6 +220,8 @@ test('the stored objects of a removed output are removed; others stay', async ()
   ]);
   const done = await tidyReleases(w.db, store);
   assert.equal(done.outputs, 2);
+  // One object of a removed output goes (the shared and receipt objects stay): 10 bytes.
+  assert.deepEqual([done.objects, done.bytes, done.objectsLeft], [1, 10, 0]);
   assert.deepEqual([...store.held].sort(), [
     'prepared/kept.json',
     'prepared/receipts/r.json',
@@ -247,6 +249,7 @@ test('a bucket that fails once is tried again; one that keeps failing leaves obj
   const failing = bucket(['prepared/left.json'], Infinity);
   const done = await tidyReleases(w.db, failing);
   assert.equal(done.outputs, 1);
+  assert.deepEqual([done.objects, done.bytes, done.objectsLeft], [0, 0, 1]);
   // The objects stay, unreferenced. Nothing of the output stays in D1, in any table.
   assert.deepEqual([...failing.held], ['prepared/left.json']);
   for (const table of [
@@ -299,7 +302,15 @@ test('a cleanup that fails is reported and never throws', async () => {
   const w = world();
   w.sql.exec('DROP TABLE release_outputs');
   const done = await tidyReleases(w.db, bucket());
-  assert.deepEqual(done, {memberships: 0, outputs: 0, skipped: 0, more: false});
+  assert.deepEqual(done, {
+    memberships: 0,
+    outputs: 0,
+    skipped: 0,
+    objects: 0,
+    bytes: 0,
+    objectsLeft: 0,
+    more: false,
+  });
 });
 
 test('a release is removed whole or not at all, also when a call reaches its limit', async () => {

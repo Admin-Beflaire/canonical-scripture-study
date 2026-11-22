@@ -1,16 +1,22 @@
 """Synthetic deployment ordering, compatibility, credentials and failure checks."""
+
 import importlib.util
 import io
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("deployment", ROOT / "infrastructure/github/deployment/deploy.py")
+spec = importlib.util.spec_from_file_location(
+    "deployment", ROOT / "infrastructure/github/deployment/deploy.py"
+)
 d = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(d)
 
@@ -25,53 +31,194 @@ class DeploymentTests(unittest.TestCase):
 
     def test_selection_initial_existing_and_incompatible_revert(self):
         self.assertIsNone(d.selection(lambda sql: [], {}))
-        responses = iter([[{"name": "release_selection"}], [{"current_release_id": "r1", "schema_versions_json": '{"evidence_records":"1"}'}]])
-        self.assertEqual(d.selection(lambda sql: next(responses), {"evidence_records": ["1"]}), "r1")
-        responses = iter([[{"name": "release_selection"}], [{"current_release_id": "r1", "schema_versions_json": '{"evidence_records":"2"}'}]])
+        responses = iter(
+            [
+                [{"name": "release_selection"}],
+                [
+                    {
+                        "current_release_id": "r1",
+                        "schema_versions_json": '{"evidence_records":"1"}',
+                    }
+                ],
+            ]
+        )
+        self.assertEqual(
+            d.selection(lambda sql: next(responses), {"evidence_records": ["1"]}), "r1"
+        )
+        responses = iter(
+            [
+                [{"name": "release_selection"}],
+                [
+                    {
+                        "current_release_id": "r1",
+                        "schema_versions_json": '{"evidence_records":"2"}',
+                    }
+                ],
+            ]
+        )
         with self.assertRaises(d.DeploymentError):
             d.selection(lambda sql: next(responses), {"evidence_records": ["1"]})
 
     def test_subprocess_has_no_shell_and_only_explicit_privileged_credentials(self):
-        with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "private-marker", "PLATFORM_STATE_TOKEN": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_ID": "private-marker", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "private-marker"}):
+        with patch.dict(
+            os.environ,
+            {
+                "CLOUDFLARE_API_TOKEN": "private-marker",
+                "PLATFORM_STATE_TOKEN": "private-marker",
+                "DEPLOYMENT_ACCESS_CLIENT_ID": "private-marker",
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "private-marker",
+            },
+        ):
             with patch.object(d.subprocess, "run") as execute:
                 execute.return_value.returncode = 0
                 d.run(["node", "build"], io.StringIO())
                 self.assertNotIn("shell", execute.call_args.kwargs)
-                self.assertNotIn("CLOUDFLARE_API_TOKEN", execute.call_args.kwargs["env"])
-                self.assertNotIn("PLATFORM_STATE_TOKEN", execute.call_args.kwargs["env"])
+                self.assertNotIn(
+                    "CLOUDFLARE_API_TOKEN", execute.call_args.kwargs["env"]
+                )
+                self.assertNotIn(
+                    "PLATFORM_STATE_TOKEN", execute.call_args.kwargs["env"]
+                )
                 d.run(["wrangler"], io.StringIO(), {"CLOUDFLARE_API_TOKEN": "scoped"})
-                self.assertEqual(execute.call_args.kwargs["env"]["CLOUDFLARE_API_TOKEN"], "scoped")
+                self.assertEqual(
+                    execute.call_args.kwargs["env"]["CLOUDFLARE_API_TOKEN"], "scoped"
+                )
                 execute.return_value.returncode = 1
                 with self.assertRaisesRegex(d.DeploymentError, "phase failed"):
                     d.run(["failed"], io.StringIO())
 
-    def test_real_forward_migrations_preserve_selection_for_compatible_code_revert(self):
+    def test_failed_command_keeps_a_safe_record_and_no_tool_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "deployment.log"
+            with path.open("a") as log:
+                log.write(
+                    "\x1b[31m✘ [ERROR]\x1b[0m A request to the Cloudflare API (/accounts/0123456789abcdef0123456789abcdef/d1) failed.\n\n  Authentication error [code: 10000]\nprivate-marker\n"
+                )
+                with patch.object(d.subprocess, "run") as execute:
+                    execute.return_value.returncode = 3
+                    with self.assertRaises(d.DeploymentError) as raised:
+                        d.run(["wrangler"], log, None, "migrations")
+        record = raised.exception.records[0]
+        self.assertEqual(
+            (record["stage"], record["exit"], record["provider_code"]),
+            ("migrations", 3, 10000),
+        )
+        self.assertNotIn("private-marker", json.dumps(record))
+        self.assertNotIn("0123456789abcdef", json.dumps(record))
+
+    def test_provider_failures_keep_status_and_code_without_the_response(self):
+        error = urllib.error.HTTPError(
+            "https://x.invalid", 503, "private-marker", {}, None
+        )
+        with patch.object(d.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(d.DeploymentError) as raised:
+                d.api("path", "token")
+        self.assertEqual(raised.exception.http_status, 503)
+        body = io.BytesIO(
+            json.dumps(
+                {
+                    "success": False,
+                    "errors": [{"code": 10000, "message": "private-marker"}],
+                }
+            ).encode()
+        )
+        with patch.object(d.urllib.request, "urlopen", return_value=body):
+            with self.assertRaises(d.DeploymentError) as raised:
+                d.api("path", "token")
+        self.assertEqual(raised.exception.provider_code, 10000)
+
+    def test_entry_point_prints_only_a_record_for_any_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "infrastructure/github/deployment/deploy.py"),
+                    "deploy",
+                    "--root",
+                    tmp,
+                    "--trusted",
+                    tmp,
+                    "--work",
+                    tmp,
+                    "--target",
+                    "study",
+                ],
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PYTHONPATH": str(ROOT / "packages/shared-python/src"),
+                    "CLOUDFLARE_API_TOKEN": "private-marker",
+                },
+            )
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(completed.stdout.startswith("::error title=deploy deploy::"))
+        record = json.loads(completed.stdout.split("::", 2)[2])
+        self.assertEqual(
+            (record["code"], record["stage"]), ("deployment_failed", "deploy")
+        )
+        self.assertNotIn("private-marker", completed.stdout + completed.stderr)
+
+    def test_real_forward_migrations_preserve_selection_for_compatible_code_revert(
+        self,
+    ):
         db = sqlite3.connect(":memory:")
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         migrations = sorted((ROOT / "schemas/migrations").glob("*.sql"))
         db.executescript(migrations[0].read_text())
-        db.execute("INSERT INTO releases VALUES(?,?,?,?,?,?,?)",
-                   ("r1", "manifest", "recipe", '{"evidence_records":"1","native_reference":"1"}', "coverage", "quality", "scope"))
-        db.execute("UPDATE release_selection SET current_release_id='r1' WHERE singleton_id=1")
+        db.execute(
+            "INSERT INTO releases VALUES(?,?,?,?,?,?,?)",
+            (
+                "r1",
+                "manifest",
+                "recipe",
+                '{"evidence_records":"1","native_reference":"1"}',
+                "coverage",
+                "quality",
+                "scope",
+            ),
+        )
+        db.execute(
+            "UPDATE release_selection SET current_release_id='r1' WHERE singleton_id=1"
+        )
         query = lambda sql: [dict(row) for row in db.execute(sql)]  # noqa: E731
-        supported = json.loads((ROOT / "infrastructure/github/deployment/compatibility.json").read_text())
+        supported = json.loads(
+            (ROOT / "infrastructure/github/deployment/compatibility.json").read_text()
+        )
         self.assertEqual(d.selection(query, supported), "r1")
         for migration in migrations[1:]:
             db.executescript(migration.read_text())
         self.assertEqual(d.selection(query, supported), "r1")
         with self.assertRaises(d.DeploymentError):
             d.selection(query, {"evidence_records": ["0"]})
-        self.assertEqual(db.execute("SELECT current_release_id FROM release_selection").fetchone()[0], "r1")
+        self.assertEqual(
+            db.execute("SELECT current_release_id FROM release_selection").fetchone()[
+                0
+            ],
+            "r1",
+        )
         db.close()
 
     def fixture(self, directory):
         root = Path(directory)
-        config = {"account_id": "a" * 32, "name": "css-study-test", "d1_databases": [{"database_id": "database"}], "r2_buckets": [{"bucket_name": "bucket"}], "vars": {"HOSTNAME": "study.example.invalid", "ENHANCEMENTS": False, "DEPLOYMENT_CLIENT_ID": "a"*32+".access"}}
+        config = {
+            "account_id": "a" * 32,
+            "name": "css-study-test",
+            "d1_databases": [{"database_id": "database"}],
+            "r2_buckets": [{"bucket_name": "bucket"}],
+            "vars": {
+                "HOSTNAME": "study.example.invalid",
+                "ENHANCEMENTS": False,
+                "DEPLOYMENT_CLIENT_ID": "a" * 32 + ".access",
+            },
+        }
         (root / "dist/config").mkdir(parents=True)
         (root / "dist/config/study.json").write_text(json.dumps(config))
         (root / "infrastructure/github/deployment").mkdir(parents=True)
-        (root / "infrastructure/github/deployment/compatibility.json").write_text('{"evidence_records":["1"]}')
+        (root / "infrastructure/github/deployment/compatibility.json").write_text(
+            '{"evidence_records":["1"]}'
+        )
         (root / "schemas/migrations").mkdir(parents=True)
         (root / "schemas/migrations/0001.sql").write_text("CREATE TABLE fixture(id);")
         return root, config
@@ -79,7 +226,15 @@ class DeploymentTests(unittest.TestCase):
     def test_binding_identity_and_settings_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             _, config = self.fixture(tmp)
-            settings = {"bindings": [{"name": "DATA_DB", "id": "database"}, {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"}, {"name": "HOSTNAME", "text": "study.example.invalid"}, {"name": "ENHANCEMENTS", "type": "json", "json": False}, {"name": "DEPLOYMENT_CLIENT_ID", "text": "a"*32+".access"}]}
+            settings = {
+                "bindings": [
+                    {"name": "DATA_DB", "id": "database"},
+                    {"name": "PRIVATE_OBJECTS", "bucket_name": "bucket"},
+                    {"name": "HOSTNAME", "text": "study.example.invalid"},
+                    {"name": "ENHANCEMENTS", "type": "json", "json": False},
+                    {"name": "DEPLOYMENT_CLIENT_ID", "text": "a" * 32 + ".access"},
+                ]
+            }
             d.check_bindings(settings, config)
             settings["bindings"][0]["id"] = "wrong"
             with self.assertRaises(d.DeploymentError):
@@ -90,11 +245,18 @@ class DeploymentTests(unittest.TestCase):
             root, config = self.fixture(tmp)
             config["vars"].pop("DEPLOYMENT_CLIENT_ID")
             (root / "dist/config/study.json").write_text(json.dumps(config))
-            with patch.dict(os.environ, {
-                "CLOUDFLARE_API_TOKEN": "fixture",
-                "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access",
-                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "fixture"
-            }), patch.object(d, "api") as api, patch.object(d, "run") as run:
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "CLOUDFLARE_API_TOKEN": "fixture",
+                        "DEPLOYMENT_ACCESS_CLIENT_ID": "a" * 32 + ".access",
+                        "DEPLOYMENT_ACCESS_CLIENT_SECRET": "fixture",
+                    },
+                ),
+                patch.object(d, "api") as api,
+                patch.object(d, "run") as run,
+            ):
                 with self.assertRaisesRegex(d.DeploymentError, "does not enforce"):
                     d.deploy(root, root, root, "study")
                 api.assert_not_called()
@@ -104,20 +266,37 @@ class DeploymentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, _ = self.fixture(tmp)
             commands = []
-            def fail(command, log, env=None):
+
+            def fail(command, log, env=None, stage=None):
                 commands.append(command)
                 raise d.DeploymentError("migration failed")
-            with patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret"}), patch.object(d, "selection", return_value=None), patch.object(d, "api", return_value=[{"success": True, "results": []}]), patch.object(d, "run", side_effect=fail):
+
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "CLOUDFLARE_API_TOKEN": "secret",
+                        "DEPLOYMENT_ACCESS_CLIENT_ID": "a" * 32 + ".access",
+                        "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret",
+                    },
+                ),
+                patch.object(d, "selection", return_value=None),
+                patch.object(d, "api", return_value=[{"success": True, "results": []}]),
+                patch.object(d, "run", side_effect=fail),
+            ):
                 with self.assertRaises(d.DeploymentError):
                     d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
             self.assertEqual(len(commands), 1)
             self.assertFalse((root / "receipt.json").exists())
 
-    def test_success_orders_migrations_deploy_readback_smoke_without_selection_write(self):
+    def test_success_orders_migrations_deploy_readback_smoke_without_selection_write(
+        self,
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root, config = self.fixture(tmp)
             commands, queries = [], []
+
             def provider(path, token, payload=None):
                 if payload:
                     queries.append(payload["sql"])
@@ -125,8 +304,27 @@ class DeploymentTests(unittest.TestCase):
                 if path.endswith("/subdomain"):
                     return {"enabled": False, "previews_enabled": False}
                 return {"bindings": []}
-            env = {"CLOUDFLARE_API_TOKEN": "secret", "DEPLOYMENT_ACCESS_CLIENT_ID": "a"*32+".access", "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret", "SELECTED_SHA": "a"*40, "ATTEMPT_ID": "1-1"}
-            with patch.dict(os.environ, env), patch.object(d, "selection", return_value="r1"), patch.object(d, "api", side_effect=provider), patch.object(d, "check_bindings"), patch.object(d, "run", side_effect=lambda command, log, env=None: commands.append(command)):
+
+            env = {
+                "CLOUDFLARE_API_TOKEN": "secret",
+                "DEPLOYMENT_ACCESS_CLIENT_ID": "a" * 32 + ".access",
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": "secret",
+                "SELECTED_SHA": "a" * 40,
+                "ATTEMPT_ID": "1-1",
+            }
+            with (
+                patch.dict(os.environ, env),
+                patch.object(d, "selection", return_value="r1"),
+                patch.object(d, "api", side_effect=provider),
+                patch.object(d, "check_bindings"),
+                patch.object(
+                    d,
+                    "run",
+                    side_effect=lambda command, log, env=None, stage=None: (
+                        commands.append(command)
+                    ),
+                ),
+            ):
                 d.deploy(root, root, root, "study")
             self.assertEqual(commands[0][1:4], ["d1", "migrations", "apply"])
             self.assertEqual(commands[1][1], "deploy")
@@ -140,7 +338,9 @@ class DeploymentTests(unittest.TestCase):
     def test_study_fit_requires_approval_and_selected_fixture_before_deploy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root, config = self.fixture(tmp)
-            config["observability"] = {"logs": {"enabled": True, "invocation_logs": False}}
+            config["observability"] = {
+                "logs": {"enabled": True, "invocation_logs": False}
+            }
             (root / "dist/config/study.json").write_text(json.dumps(config))
             env = {
                 "CLOUDFLARE_API_TOKEN": "fixture",
@@ -149,34 +349,83 @@ class DeploymentTests(unittest.TestCase):
                 "STUDY_FIT": "true",
                 "APPROVAL": "DEPLOY",
             }
-            with patch.dict(os.environ, env), patch.object(d, "api") as api, patch.object(d, "run") as run:
+            with (
+                patch.dict(os.environ, env),
+                patch.object(d, "api") as api,
+                patch.object(d, "run") as run,
+            ):
                 with self.assertRaisesRegex(d.DeploymentError, "approval required"):
                     d.deploy(root, root, root, "study")
                 api.assert_not_called()
                 run.assert_not_called()
             env["APPROVAL"] = "DEPLOY-FIT"
             unstaged = [{"success": True, "results": []}]
-            with patch.dict(os.environ, env), patch.object(d, "selection", return_value="other") as selection, \
-                    patch.object(d, "api", return_value=unstaged), patch.object(d, "run") as run:
-                with self.assertRaisesRegex(d.DeploymentError, "Staged synthetic fixture required"):
+            with (
+                patch.dict(os.environ, env),
+                patch.object(d, "selection", return_value="other") as selection,
+                patch.object(d, "api", return_value=unstaged),
+                patch.object(d, "run") as run,
+            ):
+                with self.assertRaisesRegex(
+                    d.DeploymentError, "Staged synthetic fixture required"
+                ):
                     d.deploy(root, root, root, "study")
                 self.assertNotIn("index_manifest", selection.call_args.args[1])
                 run.assert_not_called()
-            with patch.dict(os.environ, env), patch.object(d, "selection", return_value=d.FIT_RELEASE), \
-                    patch.object(d, "api", return_value=[{"success": True, "results": [{"staged": 1}]}]), patch.object(d, "run") as run:
-                with self.assertRaisesRegex(d.DeploymentError, "Staged synthetic fixture required"):
-                    d.deploy(root, root, root, "study")   # the fixture must never be the selected release
+            with (
+                patch.dict(os.environ, env),
+                patch.object(d, "selection", return_value=d.FIT_RELEASE),
+                patch.object(
+                    d,
+                    "api",
+                    return_value=[{"success": True, "results": [{"staged": 1}]}],
+                ),
+                patch.object(d, "run") as run,
+            ):
+                with self.assertRaisesRegex(
+                    d.DeploymentError, "Staged synthetic fixture required"
+                ):
+                    d.deploy(
+                        root, root, root, "study"
+                    )  # the fixture must never be the selected release
                 run.assert_not_called()
 
-    def test_fit_and_ordinary_deploys_accept_current_releases_with_and_without_the_index_version(self):
+    def test_fit_and_ordinary_deploys_accept_current_releases_with_and_without_the_index_version(
+        self,
+    ):
         # The live current release records only evidence_records and native_reference; releases built
         # after the v2 rebuild also record index_manifest 2. A release recording index_manifest 1 is refused.
-        supported = json.loads((ROOT / "infrastructure/github/deployment/compatibility.json").read_text())
-        for versions, ok in (({"evidence_records": "1", "native_reference": "1"}, True),
-                             ({"evidence_records": "1", "native_reference": "1", "index_manifest": "2"}, True),
-                             ({"evidence_records": "1", "native_reference": "1", "index_manifest": "1"}, False)):
-            rows = [{"current_release_id": "r1", "schema_versions_json": json.dumps(versions)}]
-            query = lambda sql, rows=rows: rows if "release_selection s" in sql else [{"name": "x"}]  # noqa: E731
+        supported = json.loads(
+            (ROOT / "infrastructure/github/deployment/compatibility.json").read_text()
+        )
+        for versions, ok in (
+            ({"evidence_records": "1", "native_reference": "1"}, True),
+            (
+                {
+                    "evidence_records": "1",
+                    "native_reference": "1",
+                    "index_manifest": "2",
+                },
+                True,
+            ),
+            (
+                {
+                    "evidence_records": "1",
+                    "native_reference": "1",
+                    "index_manifest": "1",
+                },
+                False,
+            ),
+        ):
+            rows = [
+                {
+                    "current_release_id": "r1",
+                    "schema_versions_json": json.dumps(versions),
+                }
+            ]
+            query = lambda sql, rows=rows: (  # noqa: E731
+                rows if "release_selection s" in sql else [{"name": "x"}]
+            )
             with self.subTest(versions=versions):
                 if ok:
                     self.assertEqual(d.selection(query, supported), "r1")
@@ -184,7 +433,7 @@ class DeploymentTests(unittest.TestCase):
                     with self.assertRaises(d.DeploymentError):
                         d.selection(query, supported)
 
-    def test_diagnostics_capacity_blocks_before_any_upload(self):
+    def test_receipt_capacity_blocks_before_any_upload(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             trusted = root
@@ -196,26 +445,56 @@ REPOSITORY = "fixture/private"
 SAFE_ID = re.compile(r"^[0-9]+-[0-9]+$")
 def request(*args): return {"private": True, "visibility": "private"}
 def release(create=False): return {"id": 1}
-def assets(*args): return list(range(999))
+def assets(*args): return list(range(1000))
 def upload(*args): raise AssertionError("unexpected partial upload")
 """)
-            (root / "build.log").write_text("fixture")
-            (root / "deployment.log").write_text("fixture")
-            with patch.dict(os.environ, {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"}):
-                with self.assertRaisesRegex(d.DeploymentError, "release is full"):
-                    d.diagnostics(trusted, root)
+            (root / "receipt.json").write_text("{}")
+            with patch.dict(
+                os.environ,
+                {"PLATFORM_STATE_REPO": "fixture/private", "ATTEMPT_ID": "1-1"},
+            ):
+                with self.assertRaisesRegex(
+                    d.DeploymentError, "receipt release is full"
+                ):
+                    d.receipt(trusted, root)
 
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
-        for required in ("workflow_dispatch:", "github.ref == 'refs/heads/main'", "environment: deployment", "persist-credentials: false", "git merge-base --is-ancestor", "npm ci --ignore-scripts", 'npm run "build:$TARGET"', '"$APPROVAL" == DEPLOY', "if: always()", "cancel-in-progress: false"):
+        for required in (
+            "workflow_dispatch:",
+            "github.ref == 'refs/heads/main'",
+            "environment: deployment",
+            "persist-credentials: false",
+            "git merge-base --is-ancestor",
+            "npm ci --ignore-scripts",
+            'npm run "build:$TARGET"',
+            '"$APPROVAL" == DEPLOY',
+            "if: always()",
+            "cancel-in-progress: false",
+        ):
             self.assertIn(required, workflow)
-        for denied in ("pull_request:", "pull_request_target:", "workflow_run:", "upload-artifact", "download-artifact", "actions/cache", "contents: write"):
+        for denied in (
+            "pull_request:",
+            "pull_request_target:",
+            "workflow_run:",
+            "upload-artifact",
+            "download-artifact",
+            "actions/cache",
+            "contents: write",
+        ):
             self.assertNotIn(denied, workflow)
-        build = workflow.split("      - name: Build selected", 1)[1].split("      - name: Restore verified", 1)[0]
+        build = workflow.split("      - name: Build selected", 1)[1].split(
+            "      - name: Restore verified", 1
+        )[0]
         self.assertNotIn("secrets.", build)
-        render = workflow.split("      - name: Render private", 1)[1].split("      - name: Apply compatible", 1)[0]
+        render = workflow.split("      - name: Render private", 1)[1].split(
+            "      - name: Apply compatible", 1
+        )[0]
         self.assertNotIn("secrets.", render)
-        self.assertIn('PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}', workflow)
+        self.assertIn(
+            "PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}",
+            workflow,
+        )
         self.assertNotIn("DEPLOYMENT_SMOKE_JWT", workflow)
         self.assertNotIn("DEPLOYMENT_INSTANCE_JSON", workflow)
         for line in workflow.splitlines():

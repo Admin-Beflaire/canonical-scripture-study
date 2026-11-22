@@ -45,6 +45,13 @@ class RoutingTests(unittest.TestCase):
             profiles.run("repository")
         self.assertEqual(execute.call_args.args[0][0], "selected-python")
 
+    def test_repository_profile_can_import_the_shared_python_package(self):
+        with patch.object(profiles.subprocess, "run") as execute:
+            profiles.run("repository")
+        shared = str(profiles.ROOT / "packages/shared-python/src")
+        paths = execute.call_args.kwargs["env"]["PYTHONPATH"].split(profiles.os.pathsep)
+        self.assertEqual(paths[0], shared)
+
     def test_shared_contract_changes_run_both_languages(self):
         for path in ("schemas/new.json", "tests/conformance/reference.json"):
             self.assertEqual(
@@ -63,11 +70,18 @@ class RoutingTests(unittest.TestCase):
             )
         for path in (
             "services/maintenance/data-preparation/src/acquire.py",
-            "packages/shared-python/src/css_shared/references.py",
             "tests/python/test_conformance.py",
             ".python-version",
         ):
             self.assertEqual(profiles.select_profiles([path]), ["python", "standards"])
+
+    def test_shared_python_changes_also_run_the_scripts_that_import_it(self):
+        self.assertEqual(
+            profiles.select_profiles(
+                ["packages/shared-python/src/css_shared/error_record.py"]
+            ),
+            ["python", "repository", "standards"],
+        )
 
     def test_workflow_tooling_config_and_unknown_code_fail_closed(self):
         for path in (
@@ -98,7 +112,7 @@ class RoutingTests(unittest.TestCase):
             profiles.select_profiles(
                 ["packages/shared/old.ts", "packages/shared-python/new.py"]
             ),
-            ["python", "standards", "typescript"],
+            ["python", "repository", "standards", "typescript"],
         )
 
     def test_locked_python_tools_run_only_the_code_standards(self):

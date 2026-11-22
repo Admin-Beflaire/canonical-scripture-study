@@ -62,8 +62,13 @@ jobs:
           cp -a infrastructure/github/deployment "$WORK/trusted/infrastructure/github/"
           cp infrastructure/github/platform_state.py "$WORK/trusted/infrastructure/github/"
           cp -a schemas/migrations "$WORK/trusted/schemas/"
+          cp -a packages/shared-python/src/css_shared "$WORK/trusted/"
           echo "WORK=$WORK" >> "$GITHUB_ENV"
-          git checkout --detach "$SELECTED_SHA" > "$WORK/build.log" 2>&1
+          git checkout --detach "$SELECTED_SHA" > "$WORK/build.log" 2>&1 || {
+            status=$?
+            PYTHONPATH="$WORK/trusted" python3 -P -m css_shared.tool_log none --tool deploy --stage checkout --exit "$status" --id target="$TARGET" || true
+            exit 1
+          }
           echo "Exact trusted commit validated"
       - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
         with:
@@ -77,13 +82,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund >> "$WORK/build.log" 2>&1 || { echo "Dependency install blocked"; exit 1; }
+          report() { PYTHONPATH="$WORK/trusted" python3 -P -m css_shared.tool_log "$@" || true; }
+          npm ci --ignore-scripts --no-audit --no-fund >> "$WORK/build.log" 2>&1 || {
+            status=$?
+            report none --tool deploy --stage install --exit "$status" --log "$WORK/build.log" --id target="$TARGET"
+            exit 1
+          }
           if [[ "$STUDY_FIT" == true ]]; then
             node_modules/.bin/esbuild tools/cloudflare/study-fit.ts --bundle --format=esm \
               --platform=neutral --conditions=workerd,worker,browser --target=es2023 \
-              --outfile=dist/study/index.js >> "$WORK/build.log" 2>&1 || { echo "Fixture build blocked"; exit 1; }
+              --outfile=dist/study/index.js >> "$WORK/build.log" 2>&1 || {
+            status=$?
+            report wrangler --tool deploy --stage fixture_build --exit "$status" --log "$WORK/build.log" --id target="$TARGET"
+            exit 1
+          }
           else
-            npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || { echo "Worker build blocked"; exit 1; }
+            npm run "build:$TARGET" >> "$WORK/build.log" 2>&1 || {
+            status=$?
+            report wrangler --tool deploy --stage worker_build --exit "$status" --log "$WORK/build.log" --id target="$TARGET"
+            exit 1
+          }
           fi
           test -f infrastructure/github/deployment/compatibility.json || { echo "Commit predates deployment compatibility contract"; exit 1; }
           echo "Selected Worker built"
@@ -97,15 +115,24 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          python3 "$WORK/trusted/infrastructure/github/deployment/instance.py" "$WORK/instance.json" "$WORK/cloudflare.tfstate" || { echo "Verified Cloudflare instance unavailable"; exit 1; }
+          PYTHONPATH="$WORK/trusted" python3 "$WORK/trusted/infrastructure/github/deployment/instance.py" "$WORK/instance.json" "$WORK/cloudflare.tfstate" || { echo "Verified Cloudflare instance unavailable"; exit 1; }
       - name: Render private instance configuration and validate bundle
         id: render
         shell: bash
         run: |
           set -euo pipefail
           umask 077
-          node infrastructure/cloudflare/render.mjs "$WORK/instance.json" >> "$WORK/build.log" 2>&1 || { echo "Instance rendering blocked"; exit 1; }
-          node_modules/.bin/wrangler deploy --dry-run --config "dist/config/$TARGET.json" >> "$WORK/build.log" 2>&1 || { echo "Worker validation blocked"; exit 1; }
+          report() { PYTHONPATH="$WORK/trusted" python3 -P -m css_shared.tool_log "$@" || true; }
+          node infrastructure/cloudflare/render.mjs "$WORK/instance.json" >> "$WORK/build.log" 2>&1 || {
+            status=$?
+            report none --tool deploy --stage render --exit "$status" --log "$WORK/build.log" --id target="$TARGET"
+            exit 1
+          }
+          node_modules/.bin/wrangler deploy --dry-run --config "dist/config/$TARGET.json" >> "$WORK/build.log" 2>&1 || {
+            status=$?
+            report wrangler --tool deploy --stage validate_bundle --exit "$status" --log "$WORK/build.log" --id target="$TARGET"
+            exit 1
+          }
           echo "Temporary configuration and bundle checked"
       - name: Apply compatible migrations, deploy and read back protected endpoint
         id: deploy
@@ -113,13 +140,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.DEPLOYMENT_CLOUDFLARE_TOKEN }}
           DEPLOYMENT_ACCESS_CLIENT_ID: ${{ vars.DEPLOYMENT_ACCESS_CLIENT_ID }}
           DEPLOYMENT_ACCESS_CLIENT_SECRET: ${{ secrets.DEPLOYMENT_ACCESS_CLIENT_SECRET }}
-        run: python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" deploy --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
-      - name: Retain private diagnostics and exact receipt
+        run: PYTHONPATH="$WORK/trusted" python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" deploy --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
+      - name: Retain exact receipt
         if: always() && env.WORK != ''
         env:
           PLATFORM_STATE_REPO: ${{ vars.DEPLOYMENT_DIAGNOSTICS_REPO }}
           PLATFORM_STATE_TOKEN: ${{ secrets.DEPLOYMENT_DIAGNOSTICS_TOKEN }}
-        run: python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" diagnostics --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
+        run: PYTHONPATH="$WORK/trusted" python3 "$WORK/trusted/infrastructure/github/deployment/deploy.py" receipt --root "$GITHUB_WORKSPACE" --trusted "$WORK/trusted" --work "$WORK" --target "$TARGET"
       - name: Report public outcome and remove private local files
         if: always()
         env:
@@ -129,6 +156,6 @@ jobs:
           if [[ "$DEPLOY_OUTCOME" == success ]]; then
             echo "Selected code deployed and HTTP-checked; private receipt records commit/run/data. Host acceptance is separate."
           else
-            echo "Deployment incomplete; inspect private diagnostics. No data selection or automatic rollback requested."
+            echo "Deployment incomplete; see the error annotations of this run. No data selection or automatic rollback requested."
           fi
           rm -rf -- "$RUNNER_TEMP/gh03" "$GITHUB_WORKSPACE/dist/config" "$GITHUB_WORKSPACE/.wrangler"

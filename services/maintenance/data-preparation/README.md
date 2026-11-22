@@ -54,15 +54,16 @@ and quality checks.
 
 ## Runner in GitHub Actions
 
-`.github/workflows/prepare.yml` runs one job per dispatch on reviewed `main`: a
-validate job routes the envelope to one fixed `acquire`, `prepare` or `quality`
-job in the `preparation` environment. The runner reads the job from the event file,
+`.github/workflows/prepare.yml` runs one job per dispatch on reviewed `main`, in the
+`preparation` environment; the runner takes the kind (`acquire`, `prepare` or
+`quality`) from the job. The runner reads the job from the event file,
 never from a step environment or shell. Control also sends `dispatch_ref`, the job's SHA-256, which becomes the run title, and the runner refuses a job that does not match it. It writes D1 candidate rows through the
 Cloudflare REST API (one batch per unit) and immutable private R2 objects, keeps
 checkpoints under `prepared/checkpoints/` and quality receipts under
 `prepared/receipts/`, and submits the result to Control
-(`tests/conformance/internal-jobs.v1.json`). Public logs show only fixed status
-lines; details stay in the private result. A job's `recipe_revision` must belong to a
+(`tests/conformance/internal-jobs.v1.json`). A failure is one safe error record
+(`css_shared.error_record`): it is printed as an `::error` annotation and is the
+diagnostic message of the result that Control stores and `get_task` shows. A job's `recipe_revision` must belong to a
 reviewed recipe in `collection/recipes/` that resolves against a declared adapter
 (`runner/recipes.py`); any other job ends as `failed` with `no_registered_recipe`.
 Job inputs must be saved, except those the recipe itself declares: its acquisition

@@ -6,8 +6,8 @@ run-name: Preparation ${{ inputs.dispatch_ref }}
 # The job stays in the event file: it is never placed in a step environment or a shell command,
 # because public run logs show step environments. Plain settings (Control origin, account, database,
 # bucket, service-token client ID) are environment variables; only the two credentials are secrets.
-# Raw runner output is deleted after each run. A separate diagnostic artifact retains
-# only explicitly safe fields for one day; no raw exception text or secrets.
+# One job runs every kind: the runner reads the kind from the job. Failures are printed as one
+# safe error record per `::error` annotation (our own messages only, never source text or secrets).
 # No merge, deployment, scope approval or data selection occurs here.
 on:
   workflow_dispatch:
@@ -23,12 +23,11 @@ on:
 permissions:
   contents: read
 jobs:
-  validate:
+  preparation:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      kind: ${{ steps.route.outputs.kind }}
+    environment: preparation
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -36,155 +35,24 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version-file: .python-version
-      - name: Validate job envelope and route to one fixed job
-        id: route
+      - name: Run the preparation unit
         env:
           PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
           PYTHONDONTWRITEBYTECODE: '1'
+          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
+          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
+          PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
+          PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
         shell: bash
         run: |
           set -uo pipefail
           status="$RUNNER_TEMP/preparation-status.txt"
           # GitHub runs bash with -e: capture the exit code so the status line is still printed.
           code=0
-          python3 -m css_preparation.runner --validate --status "$status" > /dev/null 2>&1 || code=$?
-          cat "$status" 2>/dev/null || echo "Preparation job input refused; no work started."
-          exit "$code"
-
-  acquire:
-    needs: validate
-    if: github.ref == 'refs/heads/main' && needs.validate.outputs.kind == 'acquire'
-    runs-on: ubuntu-24.04
-    environment: preparation
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        with:
-          python-version-file: .python-version
-      - name: Run acquisition unit with output captured privately
-        env:
-          PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
-          PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
-          PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
-          PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          umask 077
-          status="$RUNNER_TEMP/preparation-status.txt"
-          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
-          code=0
-          python3 -m css_preparation.runner --kind acquire --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
-          rm -f -- "$RUNNER_TEMP/preparation-private.log"
+          python3 -m css_preparation.runner --status "$status" || code=$?
           if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
           exit "$code"
-      - name: Retain structured diagnostics for one day
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
-          if-no-files-found: ignore
-          retention-days: 1
-
-  prepare:
-    needs: validate
-    if: github.ref == 'refs/heads/main' && needs.validate.outputs.kind == 'prepare'
-    runs-on: ubuntu-24.04
-    environment: preparation
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        with:
-          python-version-file: .python-version
-      - name: Run preparation and indexing unit with output captured privately
-        env:
-          PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
-          PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
-          PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
-          PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          umask 077
-          status="$RUNNER_TEMP/preparation-status.txt"
-          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
-          code=0
-          python3 -m css_preparation.runner --kind prepare --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
-          rm -f -- "$RUNNER_TEMP/preparation-private.log"
-          if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
-          exit "$code"
-      - name: Retain structured diagnostics for one day
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
-          if-no-files-found: ignore
-          retention-days: 1
-
-  quality:
-    needs: validate
-    if: github.ref == 'refs/heads/main' && needs.validate.outputs.kind == 'quality'
-    runs-on: ubuntu-24.04
-    environment: preparation
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        with:
-          python-version-file: .python-version
-      - name: Run candidate quality check with output captured privately
-        env:
-          PYTHONPATH: packages/shared-python/src:services/maintenance/data-preparation/src
-          PYTHONDONTWRITEBYTECODE: '1'
-          CONTROL_ORIGIN: ${{ vars.CONTROL_ORIGIN }}
-          PREPARATION_ACCESS_CLIENT_ID: ${{ vars.PREPARATION_ACCESS_CLIENT_ID }}
-          PREPARATION_ACCESS_CLIENT_SECRET: ${{ secrets.PREPARATION_ACCESS_CLIENT_SECRET }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ vars.R2_ACCESS_KEY_ID }}
-          PREPARATION_CLOUDFLARE_TOKEN: ${{ secrets.PREPARATION_CLOUDFLARE_TOKEN }}
-        shell: bash
-        run: |
-          set -uo pipefail
-          umask 077
-          status="$RUNNER_TEMP/preparation-status.txt"
-          # GitHub runs bash with -e: capture the exit code so cleanup and status still run.
-          code=0
-          python3 -m css_preparation.runner --kind quality --status "$status" --diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl" > "$RUNNER_TEMP/preparation-private.log" 2>&1 || code=$?
-          rm -f -- "$RUNNER_TEMP/preparation-private.log"
-          if [[ -s "$status" ]]; then cat "$status"; cat "$status" >> "$GITHUB_STEP_SUMMARY"; else echo "Preparation runner stopped before reporting; Control reconciles this run."; fi
-          exit "$code"
-      - name: Retain structured diagnostics for one day
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
-          path: ${{ runner.temp }}/preparation-diagnostics.jsonl
-          if-no-files-found: ignore
-          retention-days: 1

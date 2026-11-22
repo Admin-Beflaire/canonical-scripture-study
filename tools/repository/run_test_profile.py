@@ -50,11 +50,13 @@ def select_suites(paths):
             )
         ):
             selected.add("typescript")
+        elif path.startswith("packages/shared-python/"):
+            # The deployment and provisioning scripts import it, so their tests run too.
+            selected.update(("python", "repository"))
         elif (
             path.startswith(
                 (
                     "services/maintenance/data-preparation/",
-                    "packages/shared-python/",
                     "tests/python/",
                 )
             )
@@ -131,8 +133,18 @@ def run(profile):
     }
     if profile not in commands:
         raise ValueError("Unknown check profile")
+    environment = None
+    if profile == "repository":
+        # The deployment and provisioning scripts under test import the shared Python package.
+        shared = str(ROOT / "packages/shared-python/src")
+        environment = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                filter(None, [shared, os.environ.get("PYTHONPATH")])
+            ),
+        }
     for command in commands[profile]:
-        subprocess.run(command, cwd=ROOT, check=True)
+        subprocess.run(command, cwd=ROOT, check=True, env=environment)
 
 
 def main():

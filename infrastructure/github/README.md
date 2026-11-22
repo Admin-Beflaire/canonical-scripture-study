@@ -103,7 +103,7 @@ Restrict the environment to trusted `main`, and verify actual secrets,
 repository permissions and resource identities before the first operation.
 Tokens and Terraform output never belong in public logs, PR comments,
 source control or public Actions artifacts. The default Actions token is
-read-only. State and diagnostics are **unencrypted private release assets**,
+read-only. State is kept as **unencrypted private release assets**,
 not Git files. Encryption of release assets is deliberately not part of GH-02.
 
 ### Execution and review
@@ -111,16 +111,19 @@ not Git files. Encryption of release assets is deliberately not part of GH-02.
 The workflow checks out the exact reviewed commit, but retains the state
 helper from the trusted dispatch revision. It initializes the selected
 Terraform root with its declared local backend, restores the last verified
-state (if any), and runs a plan. Plan output is written to one private
-`log--<target>--<run>--diagnostics.txt` release asset. Inspect this private
-output and the target commit before separately authorizing an apply.
+state (if any), and runs a plan. Terraform's own output stays in a private
+file on the runner, which is removed at the end. The run log shows only
+`::notice` annotations built from it: the plan totals, and for each resource
+its address, its action and the names of the attributes that would change,
+never their values. Inspect this and the target commit before separately
+authorizing an apply.
 
 An apply dispatch makes its **own** plan and applies that plan during the
 same run, after writing an attempt-qualified begin marker. A prior plan
 dispatch is for information; it is *not* cryptographically bound to the apply.
 Resource/state drift could change the plan between dispatches. When strict
 change verification matters, obtain independent provider readbacks and
-review the resulting private diagnostics before accepting the operation.
+review the resulting plan before accepting the operation.
 
 State is stored as `<target>--<run>--begin.json`,
 `<target>--<run>--state.tfstate`, and
@@ -138,10 +141,12 @@ resources first; the old encrypted `github-*`, `attempt-*` and
 `complete-*` assets remain untouched. Do not interpret their presence as
 a verified current state; no migration/encryption mechanism is added.
 
-### Failure handling and private diagnostics
+### Failure handling and error records
 
-The workflow captures initialization, validation, plan and apply logs in a
-**single private release asset**, including on failed runs. If apply has
+A failed initialization, validation, plan or apply prints `::error`
+annotations: a fixed message for the kind of failure (never the tool's own text), the resource address, the exit code and
+the key counts (`python3 -m css_shared.tool_log`). No raw Terraform output is
+stored anywhere. If apply has
 begun, it attempts to preserve whatever nonempty state file Terraform left,
 even when apply fails, with an uncertain receipt. Never publish raw logs.
 A successful Terraform command is not a provider readback or deployment
@@ -153,7 +158,7 @@ No automatic fallback to older state, deleting markers, or blind retry is
 allowed. Repair is a separately owner-approved manual operation:
 
 1. Stop new dispatches. Privately inspect the relevant release assets,
-   diagnostics and preceding checked snapshot; check actual provider
+   the run's error annotations and the preceding checked snapshot; check actual provider
    resources against their configurations.
 2. If the attempt has a state snapshot, verify it against the actual
    provider resources before repairing its incomplete/uncertain receipt.
@@ -171,8 +176,7 @@ imports the already existing verified-word namespace into a private copy of
 the checked snapshot, refreshes local state and requires a provider plan with no configuration changes
 (computed D1 size/count/version drift is allowed) before publishing an independently identified baseline. The separate
 reconciliation record links both snapshot hashes; an incomplete recovery
-blocks future runs and must be examined rather than retried blindly. Detailed
-Terraform diagnostics remain private. This is a one-off recovery, not a
+blocks future runs and must be examined rather than retried blindly. This is a one-off recovery, not a
 general reset or approval to accept other uncertain states.
 
 There is **no** Contents API rescue fallback and no state written into Git.
@@ -184,8 +188,8 @@ accepted for the small free-first MVP; no extra backup service is implied.
 ### Release capacity
 
 GitHub releases allow 1,000 assets. The helper reserves **four slots**
-before apply: begin, snapshot, receipt, and one private diagnostics asset.
-A plan-only dispatch adds one diagnostics asset. When capacity approaches
+before apply: begin, snapshot, receipt and one spare. A plan-only dispatch
+adds no asset. When capacity approaches
 the limit, stop and migrate to a separately reviewed release/tag with
 verified state baselines. Do not delete prior checked state or failed markers
 just to free slots.

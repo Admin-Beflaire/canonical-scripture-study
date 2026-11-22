@@ -17,4 +17,5 @@ jobs:
         env:
           PLATFORM_STATE_REPO: ${{ vars.PLATFORM_STATE_REPO }}
           PLATFORM_STATE_TOKEN: ${{ secrets.PLATFORM_STATE_TOKEN }}
+          PYTHONPATH: packages/shared-python/src
         run: python3 infrastructure/github/diagnose_failed_state.py

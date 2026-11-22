@@ -1,4 +1,5 @@
-"""Authorized deployment runner. Tool/provider details stay in private diagnostics."""
+"""Authorized deployment runner. Failures are reported as safe records, never raw tool output."""
+
 import argparse
 import importlib.util
 import json
@@ -6,37 +7,100 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 
+from css_shared.error_record import OwnMessage, annotation, error_record
+from css_shared.tool_log import failure_records
 
-class DeploymentError(Exception):
-    pass
+
+PHASES = ("deploy", "receipt")
 
 
-def run(command, log, env=None):
+class DeploymentError(OwnMessage, Exception):
+    """Our own fixed-word message, with the status or code the provider gave."""
+
+    def __init__(self, message, *, http_status=None, provider_code=None, records=None):
+        super().__init__(message)
+        self.http_status = http_status
+        self.provider_code = provider_code
+        self.records = records
+
+
+def logged_text(log):
+    log.flush()
+    path = getattr(log, "name", None)
+    return (
+        Path(path).read_text(errors="replace")
+        if isinstance(path, str) and Path(path).is_file()
+        else ""
+    )
+
+
+def run(command, log, env=None, stage="command"):
     # No shell, inherited deployment credentials, raw exception text or tool output.
-    safe_env = {k: v for k, v in os.environ.items() if k not in {
-        "CLOUDFLARE_API_TOKEN", "DEPLOYMENT_ACCESS_CLIENT_ID", "DEPLOYMENT_ACCESS_CLIENT_SECRET", "PLATFORM_STATE_TOKEN"}}
+    safe_env = {
+        k: v
+        for k, v in os.environ.items()
+        if k
+        not in {
+            "CLOUDFLARE_API_TOKEN",
+            "DEPLOYMENT_ACCESS_CLIENT_ID",
+            "DEPLOYMENT_ACCESS_CLIENT_SECRET",
+            "PLATFORM_STATE_TOKEN",
+        }
+    }
     safe_env.update(env or {})
     result = subprocess.run(command, stdout=log, stderr=log, env=safe_env)
     if result.returncode:
-        raise DeploymentError("Deployment phase failed")
+        # The tool's own output stays in a private file that is removed after the run.
+        records = failure_records(
+            "wrangler",
+            logged_text(log),
+            tool="deploy",
+            stage=stage,
+            exit_code=result.returncode,
+        )
+        raise DeploymentError("Deployment phase failed", records=records)
 
 
 def api(path, token, payload=None):
-    request = urllib.request.Request("https://api.cloudflare.com/client/v4/" + path,
+    request = urllib.request.Request(
+        "https://api.cloudflare.com/client/v4/" + path,
         data=None if payload is None else json.dumps(payload).encode(),
-        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        data = json.load(response)
+        headers={
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise DeploymentError("Provider request failed", http_status=exc.code) from None
     if data.get("success") is not True:
-        raise DeploymentError("Provider check failed")
+        errors = data.get("errors")
+        code = (
+            errors[0].get("code")
+            if isinstance(errors, list) and errors and isinstance(errors[0], dict)
+            else None
+        )
+        raise DeploymentError(
+            "Provider check failed",
+            provider_code=code if isinstance(code, int) else None,
+        )
     return data["result"]
 
 
 def compatible(versions, supported):
-    if not isinstance(versions, dict) or not versions or any(
-            key not in supported or value not in supported[key] for key, value in versions.items()):
+    if (
+        not isinstance(versions, dict)
+        or not versions
+        or any(
+            key not in supported or value not in supported[key]
+            for key, value in versions.items()
+        )
+    ):
         raise DeploymentError("Selected data is incompatible with this code")
 
 
@@ -44,13 +108,19 @@ FIT_RELEASE = "fit-release"
 
 
 def selection(query, supported):
-    exists = query("SELECT name FROM sqlite_master WHERE type='table' AND name='release_selection'")
+    exists = query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='release_selection'"
+    )
     if not exists:
         # Only a genuinely empty database can take the initial migrations.
-        if query("SELECT name FROM sqlite_master WHERE type='table' AND name='releases'"):
+        if query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='releases'"
+        ):
             raise DeploymentError("Incomplete schema")
         return None
-    rows = query("SELECT s.current_release_id, r.schema_versions_json FROM release_selection s LEFT JOIN releases r ON r.id=s.current_release_id WHERE s.singleton_id=1")
+    rows = query(
+        "SELECT s.current_release_id, r.schema_versions_json FROM release_selection s LEFT JOIN releases r ON r.id=s.current_release_id WHERE s.singleton_id=1"
+    )
     if len(rows) != 1:
         raise DeploymentError("Invalid release selection")
     row = rows[0]
@@ -64,7 +134,10 @@ def check_bindings(settings, config):
     expected = config["d1_databases"][0]
     if bindings.get("DATA_DB", {}).get("id") != expected["database_id"]:
         raise DeploymentError("D1 binding mismatch")
-    if bindings.get("PRIVATE_OBJECTS", {}).get("bucket_name") != config["r2_buckets"][0]["bucket_name"]:
+    if (
+        bindings.get("PRIVATE_OBJECTS", {}).get("bucket_name")
+        != config["r2_buckets"][0]["bucket_name"]
+    ):
         raise DeploymentError("R2 binding mismatch")
     for key, value in config["vars"].items():
         actual = bindings.get(key, {})
@@ -86,88 +159,154 @@ def deploy(root, trusted, work, role):
     config = json.loads(config_path.read_text())
     if config.get("vars", {}).get("DEPLOYMENT_CLIENT_ID") != check_id:
         raise DeploymentError("Selected Worker does not enforce deployment identity")
-    supported = json.loads((root / "infrastructure/github/deployment/compatibility.json").read_text())
+    supported = json.loads(
+        (root / "infrastructure/github/deployment/compatibility.json").read_text()
+    )
     study_fit = os.environ.get("STUDY_FIT") == "true"
     if study_fit:
         if role != "study" or os.environ.get("APPROVAL") != "DEPLOY-FIT":
             raise DeploymentError("Fixture deployment approval required")
-        config["observability"]["logs"].update({"invocation_logs": True, "head_sampling_rate": 1})
+        config["observability"]["logs"].update(
+            {"invocation_logs": True, "head_sampling_rate": 1}
+        )
     account = config["account_id"]
     database = config["d1_databases"][0]["database_id"]
+
     def query(sql):
-        result = api(f"accounts/{account}/d1/database/{database}/query", token, {"sql": sql})
+        result = api(
+            f"accounts/{account}/d1/database/{database}/query", token, {"sql": sql}
+        )
         if len(result) != 1 or result[0].get("success") is not True:
             raise DeploymentError("D1 check failed")
         return result[0]["results"]
+
     with (work / "deployment.log").open("a") as log:
         current = selection(query, supported)
         # The fit build reads a staged, unselected synthetic release; current data stays selected.
-        if study_fit and (current == FIT_RELEASE or not query(
-                f"SELECT 1 AS staged FROM release_outputs WHERE release_id='{FIT_RELEASE}' LIMIT 1")):
+        if study_fit and (
+            current == FIT_RELEASE
+            or not query(
+                f"SELECT 1 AS staged FROM release_outputs WHERE release_id='{FIT_RELEASE}' LIMIT 1"
+            )
+        ):
             raise DeploymentError("Staged synthetic fixture required")
         # Use the trusted dispatch revision's single forward migration sequence,
         # including when selected code is an older compatible revert.
         migration_dir = trusted / "schemas/migrations"
         names = {p.name for p in migration_dir.glob("*.sql")}
-        if query("SELECT name FROM sqlite_master WHERE type='table' AND name='d1_migrations'"):
-            if any(r["name"] not in names for r in query("SELECT name FROM d1_migrations")):
-                raise DeploymentError("Database is ahead of the trusted migration sequence")
+        if query(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='d1_migrations'"
+        ):
+            if any(
+                r["name"] not in names for r in query("SELECT name FROM d1_migrations")
+            ):
+                raise DeploymentError(
+                    "Database is ahead of the trusted migration sequence"
+                )
         config["d1_databases"][0]["migrations_dir"] = str(migration_dir)
         config_path.write_text(json.dumps(config))
         provider_env = {"CLOUDFLARE_API_TOKEN": token, "CLOUDFLARE_ACCOUNT_ID": account}
         wrangler = str(root / "node_modules/.bin/wrangler")
-        run([wrangler, "d1", "migrations", "apply", "DATA_DB", "--remote", "--config", str(config_path)], log, provider_env)
+        run(
+            [
+                wrangler,
+                "d1",
+                "migrations",
+                "apply",
+                "DATA_DB",
+                "--remote",
+                "--config",
+                str(config_path),
+            ],
+            log,
+            provider_env,
+            "migrations",
+        )
         if selection(query, supported) != current:
-            raise DeploymentError("Selection changed during migration; retry against current data")
-        run([wrangler, "deploy", "--config", str(config_path)], log, provider_env)
-        settings = api(f"accounts/{account}/workers/scripts/{config['name']}/settings", token)
+            raise DeploymentError(
+                "Selection changed during migration; retry against current data"
+            )
+        run(
+            [wrangler, "deploy", "--config", str(config_path)],
+            log,
+            provider_env,
+            "wrangler_deploy",
+        )
+        settings = api(
+            f"accounts/{account}/workers/scripts/{config['name']}/settings", token
+        )
         check_bindings(settings, config)
-        alternate = api(f"accounts/{account}/workers/scripts/{config['name']}/subdomain", token)
-        if alternate.get("enabled") is not False or alternate.get("previews_enabled") is not False:
+        alternate = api(
+            f"accounts/{account}/workers/scripts/{config['name']}/subdomain", token
+        )
+        if (
+            alternate.get("enabled") is not False
+            or alternate.get("previews_enabled") is not False
+        ):
             raise DeploymentError("Alternate Worker access is enabled")
-        run(["node", str(trusted / "infrastructure/github/deployment/smoke.mjs"),
-             config["vars"]["HOSTNAME"]], log, {
-                 "DEPLOYMENT_ACCESS_CLIENT_ID": check_id,
-                 "DEPLOYMENT_ACCESS_CLIENT_SECRET": check_secret})
+        run(
+            [
+                "node",
+                str(trusted / "infrastructure/github/deployment/smoke.mjs"),
+                config["vars"]["HOSTNAME"],
+            ],
+            log,
+            {
+                "DEPLOYMENT_ACCESS_CLIENT_ID": check_id,
+                "DEPLOYMENT_ACCESS_CLIENT_SECRET": check_secret,
+            },
+            "http_check",
+        )
         if selection(query, supported) != current:
-            raise DeploymentError("Selection changed during deployment; recheck compatibility")
-        receipt = {"commit": os.environ["SELECTED_SHA"], "run": os.environ["ATTEMPT_ID"],
-                   "target": role, "study_fit": study_fit, "selected_data": current, "http_checks": "passed",
-                   "host_observations": "not_performed"}
+            raise DeploymentError(
+                "Selection changed during deployment; recheck compatibility"
+            )
+        receipt = {
+            "commit": os.environ["SELECTED_SHA"],
+            "run": os.environ["ATTEMPT_ID"],
+            "target": role,
+            "study_fit": study_fit,
+            "selected_data": current,
+            "http_checks": "passed",
+            "host_observations": "not_performed",
+        }
         (work / "receipt.json").write_text(json.dumps(receipt))
 
 
-def diagnostics(trusted, work):
-    # Reuse the checked private release transport, with a separate diagnostic tag.
-    spec = importlib.util.spec_from_file_location("private_transport", trusted / "infrastructure/github/platform_state.py")
+def receipt(trusted, work):
+    # Reuse the checked private release transport, with a separate tag for deployment receipts.
+    spec = importlib.util.spec_from_file_location(
+        "private_transport", trusted / "infrastructure/github/platform_state.py"
+    )
     transport = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(transport)
     transport.TAG = "deployment-diagnostics"
     metadata = transport.request("GET", "/repos/" + transport.REPOSITORY)
-    if not metadata or metadata.get("private") is not True or metadata.get("visibility") != "private":
-        raise DeploymentError("Diagnostics destination must be private")
+    if (
+        not metadata
+        or metadata.get("private") is not True
+        or metadata.get("visibility") != "private"
+    ):
+        raise DeploymentError("Receipt destination must be private")
     rel = transport.release(create=True)
     attempt = os.environ["ATTEMPT_ID"]
     if not transport.SAFE_ID.fullmatch(attempt):
         raise DeploymentError("Invalid run identity")
-    # Reserve room for this entire attempt before uploading any asset.
-    pending = [name for name in ("build.log", "deployment.log", "receipt.json")
-               if (work / name).exists()]
-    if len(transport.assets(rel)) + len(pending) > 1000:
-        raise DeploymentError("Private diagnostics release is full")
-    # Only captured tool output and the receipt; never credentials or instance files.
-    for name in pending:
-        path = work / name
-        if path.exists():
-            data = path.read_bytes()
-            saved = transport.upload(rel, f"deploy--{attempt}--{name}", data)
-            if transport.digest(transport.download(saved)) != transport.digest(data):
-                raise DeploymentError("Private diagnostics integrity failed")
+    path = work / "receipt.json"
+    if not path.exists():
+        return
+    # Reserve room before uploading; only the receipt is kept, never tool output.
+    if len(transport.assets(rel)) + 1 > 1000:
+        raise DeploymentError("Private receipt release is full")
+    data = path.read_bytes()
+    saved = transport.upload(rel, f"deploy--{attempt}--receipt.json", data)
+    if transport.digest(transport.download(saved)) != transport.digest(data):
+        raise DeploymentError("Private receipt integrity failed")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("phase", choices=("deploy", "diagnostics"))
+    parser.add_argument("phase", choices=PHASES)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--trusted", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
@@ -176,7 +315,7 @@ def main():
     if args.phase == "deploy":
         deploy(args.root, args.trusted, args.work, args.target)
     else:
-        diagnostics(args.trusted, args.work)
+        receipt(args.trusted, args.work)
     print("Deployment " + args.phase + " phase passed")
 
 
@@ -184,11 +323,17 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        work = next((sys.argv[i+1] for i, arg in enumerate(sys.argv[:-1]) if arg == "--work"), None)
-        if work and Path(work).is_dir():
-            # Fixed failure types are useful without persisting credential-bearing exceptions.
-            with (Path(work) / "deployment.log").open("a") as log:
-                log.write(type(exc).__name__ + ": " + (str(exc) if isinstance(exc, DeploymentError) else "Private operation failed") + "\n")
-        # Provider errors/JSON/body/paths can contain private identifiers.
-        print("Deployment phase blocked; inspect private diagnostics", file=sys.stderr)
+        phase = sys.argv[1] if sys.argv[1:2] and sys.argv[1] in PHASES else "startup"
+        records = getattr(exc, "records", None) or [
+            error_record(
+                exc,
+                tool="deploy",
+                stage=phase,
+                code="deployment_failed",
+                http_status=getattr(exc, "http_status", None),
+                provider_code=getattr(exc, "provider_code", None),
+            )
+        ]
+        for record in records:
+            print(annotation(record))
         sys.exit(1)

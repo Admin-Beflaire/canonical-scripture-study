@@ -2,7 +2,8 @@
 
 Use Node.js 24 and Python 3.12 (the checked patch version is recorded in
 `.python-version`). Install the locked Node dependencies with `npm ci`.
-Python checks use only the standard library; no pip installation is needed.
+Python tests use only the standard library. The code standard checks use Ruff,
+installed with `python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.txt`.
 
 ```sh
 npm run check
@@ -41,6 +42,38 @@ establish real source coverage or hosted behaviour.
 The Python runner selects `python3` on Unix or `python` on Windows. Set
 `PYTHON` to an interpreter executable path when needed; no shell command is used.
 
+
+## Code standards
+
+`npm run check:standards` checks the named standards as far as tools can: DRY,
+Single Responsibility, composition, KISS and YAGNI, the Google TypeScript Style
+Guide and PEP 8. Each check also runs on its own:
+
+- `lint:ts` (ESLint with typescript-eslint) and `lint:py` (Ruff) report unused
+  code, unsafe types, common bug patterns and functions over 15 branches
+  (complexity) or over 80 lines (TypeScript) or 50 statements (Python).
+- `format:ts` (Prettier, Google style options) and `format:py` (Ruff format).
+- `check:duplicates` (jscpd) reports copied code in both languages.
+- `check:baselines` fails when a baseline keeps a file that is missing or
+  already formatted, or a copy that is gone. `test:standards` tests that each
+  check fails on a new problem.
+
+Whether a function has one responsibility, is simple enough, or reuses the right
+existing piece is still judged in writing and review. The reports are input for
+that judgement.
+
+Existing findings are recorded as a baseline, so only new problems fail. The
+baseline only shrinks. New code adds nothing to it, and code you touch leaves it
+smaller:
+
+- ESLint findings are in `eslint-suppressions.json`. After fixing one, run
+  `npx eslint --prune-suppressions`.
+- Ruff findings are `# noqa` comments. Remove the comment with the fix; a `noqa`
+  that no longer suppresses anything fails.
+- Files not yet formatted are listed in `.prettierignore` and in the `[format]`
+  `exclude` list of `ruff.toml`. Remove a file from its list, then format it.
+- Copied code is recorded in `.jscpd-baseline.json`. After removing a copy, run
+  `npx jscpd --update-baseline`.
 
 Public CI uses `tools/repository/run_test_profile.py` to route TypeScript,
 Python and repository checks by changed paths. Run `npm run check:repository`

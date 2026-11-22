@@ -15,7 +15,7 @@ ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}')
 NOTICE_NAMES = ('license', 'licence', 'readme', 'notice', 'copying', 'copyright')
 
 
-class BlockedInput(ValueError):
+class BlockedInput(ValueError):  # noqa: N818
     """The input cannot be used: eligibility is unresolved or the record is inconsistent."""
 
 

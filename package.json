@@ -22,7 +22,9 @@
     "check:repository": "node tools/run-python.mjs repository",
     "check:platform": "node --conditions=workerd --test tests/platform/*.test.ts && node infrastructure/cloudflare/render.mjs tests/platform/instance.fixture.json && wrangler deploy --dry-run --config dist/config/study.json && wrangler deploy --dry-run --config dist/config/control.json",
     "lint:ts": "eslint",
-    "format:ts": "prettier --check \"**/*.{ts,mjs}\""
+    "format:ts": "prettier --check \"**/*.{ts,mjs}\"",
+    "lint:py": "node tools/run-python.mjs ruff-check",
+    "format:py": "node tools/run-python.mjs ruff-format"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",

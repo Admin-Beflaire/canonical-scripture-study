@@ -57,7 +57,7 @@ def _checked_artifact(row: Mapping, blobs: Mapping[str, bytes],
     return content
 
 
-def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Iterable[Mapping],
+def verify_saved_index(basis: OutputBasis, saved_output: Mapping, artifacts: Iterable[Mapping],  # noqa: C901, PLR0915
                        coverage: Iterable[Mapping], blobs: Mapping[str, bytes], *,
                        max_page_bytes: int = PAGE_CAP) -> dict:
     """Reject corrupt, incomplete, incompatible or out-of-budget saved indexes.

@@ -1,5 +1,5 @@
 """DP-04 Stage 5: semantic quality and immutable receipts using saved fixtures."""
-from copy import deepcopy
+from copy import deepcopy  # noqa: F401
 from dataclasses import replace
 import hashlib
 import json
@@ -157,8 +157,8 @@ class CandidateQualityStageFive(unittest.TestCase):
             with self.subTest(fail_at=fail_at):
                 calls = []
                 def control(*_):
-                    calls.append(1)
-                    if len(calls) == fail_at:
+                    calls.append(1)  # noqa: B023
+                    if len(calls) == fail_at:  # noqa: B023
                         raise ProviderError('private', status=503)
                     return self.state
                 failed = self.invoke(control=control)
@@ -285,9 +285,9 @@ class CandidateQualityStageFive(unittest.TestCase):
                 calls = [0]
                 def disappearing(key):
                     if key == locator:
-                        calls[0] += 1
-                        if calls[0] > 1:
-                            raise error_class('synthetic storage disappearance')
+                        calls[0] += 1  # noqa: B023
+                        if calls[0] > 1:  # noqa: B023
+                            raise error_class('synthetic storage disappearance')  # noqa: B023
                     return self.saved.blobs[key]
                 result = self.invoke(read_blob=disappearing)
                 self.assertEqual(result['state'], 'failed')

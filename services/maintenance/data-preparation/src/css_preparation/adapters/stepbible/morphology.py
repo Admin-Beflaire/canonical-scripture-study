@@ -28,7 +28,7 @@ def _unquote(text: str) -> str:
     return text[1:-1] if len(text) >= 2 and text[0] == text[-1] == '"' and '"' not in text[1:-1] else text
 
 
-def read_morphology(original: bytes | str, language: Language) -> dict[str, tuple[MorphologyExplanation, ...]]:
+def read_morphology(original: bytes | str, language: Language) -> dict[str, tuple[MorphologyExplanation, ...]]:  # noqa: C901
     """Return all explanations under their exact STEP code, retaining repeated codes.
 
     Missing codes have no entry; no grammar is inferred from code characters.

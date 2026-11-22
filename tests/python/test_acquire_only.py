@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from css_preparation.acquire.transfer import TransferResult, TransferError
+from css_preparation.acquire.transfer import TransferResult, TransferError  # noqa: F401
 from css_preparation.adapters.acquire_only import AcquireRecipe
 from css_preparation.prepare.records import RecordError
 from css_preparation.runner.recipes import load_recipes
@@ -117,8 +117,8 @@ class AcquireOnlyTest(unittest.TestCase):
         self.assertEqual(storage.blobs[row['details_json']['locator']], data)
         self.assertEqual(records.rows('admission')[0]['public_redistribution'], 'unresolved')
         self.assertEqual(records.rows('prepared_output'), [])
-        bad = deepcopy(job); bad['input_refs'] = []
-        with self.assertRaises(RecordError): recipe.acquire(bad, storage)
+        bad = deepcopy(job); bad['input_refs'] = []  # noqa: E702
+        with self.assertRaises(RecordError): recipe.acquire(bad, storage)  # noqa: E701
 
     def test_refuses_unknown_host(self):
         value = json.loads((ROOT / 'collection/recipes/berean-bsb-v5-24.json').read_text())
@@ -126,4 +126,4 @@ class AcquireOnlyTest(unittest.TestCase):
         manifest['url'] = 'https://unexpected.example/archive.zip'
         with tempfile.TemporaryDirectory() as d, patch('css_preparation.adapters.acquire_only.MANIFESTS', Path(d)):
             Path(d, value['parameters']['manifest']).write_text(json.dumps(manifest))
-            with self.assertRaises(RecordError): AcquireRecipe.from_recipe(value)
+            with self.assertRaises(RecordError): AcquireRecipe.from_recipe(value)  # noqa: E701

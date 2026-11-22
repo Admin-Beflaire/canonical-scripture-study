@@ -16,7 +16,7 @@ from ..provider import ProviderError
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise ProviderError('Redirect refused', status=code)
 
 

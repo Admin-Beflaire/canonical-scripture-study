@@ -60,7 +60,7 @@ class StartsOnNativeVersesTest(unittest.TestCase):
         [proposal] = self.place(Start('Mat.1.7', 'section', 'Heading'))
         self.assertEqual(proposal.label, 'Heading')
         self.assertEqual(dict(proposal.notes), {'granularity': 'verse'})
-        self.assertEqual([(s, 0, len(v.text)) for s, v in zip(verses_of(proposal), self.verses[6:])],
+        self.assertEqual([(s, 0, len(v.text)) for s, v in zip(verses_of(proposal), self.verses[6:])],  # noqa: B905
                          list(proposal.segments))
 
     def test_order_is_checked_within_a_scale_only(self):

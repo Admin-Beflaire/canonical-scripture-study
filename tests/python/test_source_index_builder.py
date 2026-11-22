@@ -110,10 +110,10 @@ class SourceIndexStageOne(unittest.TestCase):
 
     def test_reject_indexed_segment_outside_native_text(self):
         class CorruptEvidence:
-            def output_ids(inner):
+            def output_ids(inner):  # noqa: N805
                 return self.evidence.output_ids()
 
-            def rows(inner, kind):
+            def rows(inner, kind):  # noqa: N805
                 rows = self.evidence.rows(kind)
                 if kind == 'native_span':
                     rows[0]['segments_json'][0]['end'] = 10_000

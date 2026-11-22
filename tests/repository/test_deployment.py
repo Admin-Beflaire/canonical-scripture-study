@@ -54,7 +54,7 @@ class DeploymentTests(unittest.TestCase):
         db.execute("INSERT INTO releases VALUES(?,?,?,?,?,?,?)",
                    ("r1", "manifest", "recipe", '{"evidence_records":"1","native_reference":"1"}', "coverage", "quality", "scope"))
         db.execute("UPDATE release_selection SET current_release_id='r1' WHERE singleton_id=1")
-        query = lambda sql: [dict(row) for row in db.execute(sql)]
+        query = lambda sql: [dict(row) for row in db.execute(sql)]  # noqa: E731
         supported = json.loads((ROOT / "infrastructure/github/deployment/compatibility.json").read_text())
         self.assertEqual(d.selection(query, supported), "r1")
         for migration in migrations[1:]:
@@ -176,7 +176,7 @@ class DeploymentTests(unittest.TestCase):
                              ({"evidence_records": "1", "native_reference": "1", "index_manifest": "2"}, True),
                              ({"evidence_records": "1", "native_reference": "1", "index_manifest": "1"}, False)):
             rows = [{"current_release_id": "r1", "schema_versions_json": json.dumps(versions)}]
-            query = lambda sql, rows=rows: rows if "release_selection s" in sql else [{"name": "x"}]
+            query = lambda sql, rows=rows: rows if "release_selection s" in sql else [{"name": "x"}]  # noqa: E731
             with self.subTest(versions=versions):
                 if ok:
                     self.assertEqual(d.selection(query, supported), "r1")

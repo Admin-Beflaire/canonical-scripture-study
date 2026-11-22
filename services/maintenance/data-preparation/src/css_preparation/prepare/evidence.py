@@ -90,7 +90,7 @@ class NativeText:
             if (not isinstance(bases, tuple) or len(bases) != len(self.units)
                     or any(type(base) is not int or not 0 <= base <= 2**53 - 1 for base in bases)):
                 raise RecordError('Order bases must be one safe non-negative integer per unit')
-            for (_, text), base, following in zip(self.units, bases, bases[1:]):
+            for (_, text), base, following in zip(self.units, bases, bases[1:]):  # noqa: B905
                 if base + len(text) > following:
                     raise RecordError('Order bases must follow native order without overlapping units')
             if bases[-1] + len(self.units[-1][1]) > 2**53 - 1:
@@ -113,7 +113,7 @@ class NativeText:
     def scalar_bases(self) -> dict[str, int]:
         """Linear source order of each unit's first scalar, for navigation intervals."""
         if self.order_bases is not None:
-            return {unit_id: base for (unit_id, _), base in zip(self.units, self.order_bases)}
+            return {unit_id: base for (unit_id, _), base in zip(self.units, self.order_bases)}  # noqa: B905
         bases, offset = {}, 0
         for unit_id, text in self.units:
             bases[unit_id] = offset
@@ -224,7 +224,7 @@ def _ordered(specs: Iterable[SpanSpec]) -> list[SpanSpec]:
     return ordered
 
 
-def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[SpanSpec], basis: OutputBasis, *,
+def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[SpanSpec], basis: OutputBasis, *,  # noqa: C901, PLR0915
                    d1_body_max_bytes: int, annotations: Iterable[AnnotationSpec] = (),
                    source_context_coverage: bool = True) -> RecordSet:
     """Prepare one output for one source revision: identities, spans, bodies, annotations, coverage."""
@@ -269,7 +269,7 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                 records.add('text_payload', {'content_id': content_id, 'exact_text': pieces[0]})
             else:
                 uses_body = True
-                for ordinal, ((unit_id, start, _), data) in enumerate(zip(spec.segments, encoded)):
+                for ordinal, ((unit_id, start, _), data) in enumerate(zip(spec.segments, encoded)):  # noqa: B905
                     offset = byte_bases[unit_id] + len(text.unit(unit_id)[:start].encode('utf-8'))
                     body_range = {'segment_ordinal': ordinal, 'artifact_id': body_artifact, 'byte_offset': offset,
                                   'byte_length': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
@@ -284,8 +284,8 @@ def build_evidence(source: SourceIdentity, text: NativeText, spans: Iterable[Spa
                                 raw = part.encode('utf-8')
                                 chunks.append({'start': scalar, 'end': scalar + len(part), 'byte_offset': byte_pos,
                                                'byte_length': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
-                                scalar += len(part); byte_pos += len(raw); part = ''; part_bytes = 0
-                            part += character; part_bytes += character_bytes
+                                scalar += len(part); byte_pos += len(raw); part = ''; part_bytes = 0  # noqa: E702
+                            part += character; part_bytes += character_bytes  # noqa: E702
                         if part:
                             raw = part.encode('utf-8')
                             chunks.append({'start': scalar, 'end': scalar + len(part), 'byte_offset': byte_pos,

@@ -30,7 +30,7 @@ class SemanticEvidence:
     limitations: tuple[str, ...]
 
 
-def check_saved_semantics(
+def check_saved_semantics(  # noqa: C901, PLR0915
     job: dict[str, Any], inventory: CandidateInventory, *,
     read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
     read_blob: Callable[[str], bytes],
@@ -58,7 +58,7 @@ def check_saved_semantics(
             if kind in SHARED:
                 continue
             def key(row):
-                return tuple(row[k] for k in KEYS[kind])
+                return tuple(row[k] for k in KEYS[kind])  # noqa: B023
             wanted = [comparable(kind, row) for row in expected.rows(kind)]
             if sorted(rows[kind], key=key) != sorted(wanted, key=key):
                 raise RecordError(f'Saved {kind} differs from the checked reader references')

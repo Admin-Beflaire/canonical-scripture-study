@@ -100,7 +100,7 @@ class BookRecipe:
                 except TransferError as error:
                     raise RecordError(f'Acquisition failed: {error}') from None
                 if not result.complete:
-                    raise RetryableUnitError('Transfer interrupted')
+                    raise RetryableUnitError('Transfer interrupted')  # noqa: B904
                 data = component.check_original(result.path.read_bytes())
             storage.put_blob(key, data)
             component.check_original(storage.read_blob(key))

@@ -7,9 +7,11 @@ const commands = {
   test: ["-m", "unittest", "discover", "-s", "tests/python", "-p", "test_*.py", "-v"],
   boundaries: ["tools/check_python_boundaries.py"],
   repository: ["tools/repository/run_test_profile.py", "repository"],
+  "ruff-check": ["-m", "ruff", "check"],
+  "ruff-format": ["-m", "ruff", "format", "--check"],
 };
 const command = process.argv[2];
-if (!command || !Object.hasOwn(commands, command)) throw new Error("Choose import, test, boundaries or repository");
+if (!command || !Object.hasOwn(commands, command)) throw new Error("Choose import, test, boundaries, repository, ruff-check or ruff-format");
 const interpreter = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const result = spawnSync(interpreter, commands[command], {
   shell: false,

@@ -63,7 +63,7 @@ class _ConfinedRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | None = None, timeout: float = 60) -> TransferResult:
+def transfer(route: Route, destination: Path, *, credential: tuple[str, str] | None = None, timeout: float = 60) -> TransferResult:  # noqa: C901, PLR0915
     """Download the route into `destination`, resuming a matching partial file."""
     if route.max_bytes < 1:
         raise TransferError(f'{route.id}: a byte limit is required')

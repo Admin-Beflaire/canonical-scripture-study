@@ -8,7 +8,7 @@ import unittest
 
 from css_preparation.acquire.retention import AdmissionBasis, record_supplied, assert_usable
 from css_preparation.executor import ControlState, UnitNotRunnable
-from css_preparation.executor.candidate import CandidateStore, persist_candidate, run_candidate_unit
+from css_preparation.executor.candidate import CandidateStore, persist_candidate, run_candidate_unit  # noqa: F401
 from css_preparation.indexes.files import build_index_files
 from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.records import RecordError, RecordSet, decoded, scoped_query

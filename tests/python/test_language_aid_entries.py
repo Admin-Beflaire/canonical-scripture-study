@@ -1,4 +1,4 @@
-import json
+import json  # noqa: F401
 import unittest
 from css_preparation.adapters.language_aid_entries import bdb_entries, bdb_index_entries, step_entries
 import test_stepbible_lexicon as testlex

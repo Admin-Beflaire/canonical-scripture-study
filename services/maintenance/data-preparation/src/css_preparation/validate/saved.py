@@ -61,7 +61,7 @@ def _schema(kind: str, row: dict) -> None:
         raise RecordError(f'Invalid saved {kind}: ' + '; '.join(errors[:3]))
 
 
-def verify_candidate_inventory(
+def verify_candidate_inventory(  # noqa: C901, PLR0915
     inventory: CandidateInventory, *,
     read_rows: Callable[[str, Sequence[str]], Iterable[Mapping[str, Any]]],
     read_blob: Callable[[str], bytes],
@@ -181,7 +181,7 @@ def verify_candidate_inventory(
                             or chunk['end'] != scalar_pos + len(text) or len(raw) != chunk['byte_length']
                             or hashlib.sha256(raw).hexdigest() != chunk['sha256']):
                         raise RecordError('Saved body chunks are inconsistent')
-                    byte_pos += len(raw); scalar_pos += len(text)
+                    byte_pos += len(raw); scalar_pos += len(text)  # noqa: E702
                 segment = span['segments_json'][br['segment_ordinal']]
                 if byte_pos != start + length or scalar_pos != segment['end'] - segment['start']:
                     raise RecordError('Saved body chunks do not cover the segment')

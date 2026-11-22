@@ -100,7 +100,7 @@ class SchemaSubset:
         self._check(schema, value, '$', probe, document)
         return not probe
 
-    def _check(self, schema: dict[str, Any], value: Any, path: str, errors: list[str],
+    def _check(self, schema: dict[str, Any], value: Any, path: str, errors: list[str],  # noqa: C901, PLR0915
                document: dict[str, Any]) -> None:
         unknown = set(schema) - _SUPPORTED - _ANNOTATIONS
         if unknown:

@@ -64,7 +64,7 @@ def build_units(book: str, order: Sequence[str], proposals: Sequence[Proposal]) 
             built.append((scale, extent, unit))
     larger = {scale: n for n, scale in enumerate(SCALES)}
     result = []
-    for scale, extent, unit in built:
+    for scale, extent, unit in built:  # noqa: B007
         candidates = [(sum(e - b for _, b, e in o.segments), o.key) for s, _, o in built
                       if larger[s] > larger[scale] and _inside(unit.segments, o.segments)]
         result.append(LiteraryUnit(unit.key, unit.label, unit.segments, unit.provider, unit.method, unit.boundary_status,

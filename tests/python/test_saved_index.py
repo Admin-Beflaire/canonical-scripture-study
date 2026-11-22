@@ -78,7 +78,7 @@ class SavedIndexStageFour(unittest.TestCase):
         posting_id = f'{output}:postings:{body_sha[:20]}'
         if entries is None:
             _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                                   for l in body.splitlines(keepends=True)], cap)
+                                   for l in body.splitlines(keepends=True)], cap)  # noqa: E741
             entries = [{'postings_artifact_id': posting_id, **page} for page in pages]
         lines = [(e['first_key'], e['last_key'], json.dumps(e, sort_keys=True, ensure_ascii=False,
                   separators=(',', ':')).encode('utf-8') + b'\n') for e in entries]
@@ -189,7 +189,7 @@ class SavedIndexStageFour(unittest.TestCase):
     def test_page_caps_and_manifest_directory_fail_closed(self):
         with self.assertRaisesRegex(RecordError, 'page cap'):
             self.check(self.a, max_page_bytes=1024)
-        self.assertEqual(self.check(self.a, **dict(zip(('artifacts', 'coverage', 'blobs'), self.forge(self.a))))['format_version'],
+        self.assertEqual(self.check(self.a, **dict(zip(('artifacts', 'coverage', 'blobs'), self.forge(self.a))))['format_version'],  # noqa: B905
                          'index-manifest/2', 'the forging helper itself yields a valid index')
         root = self.blobs[self.a.directory_artifact_id]
         good = [json.loads(line) for line in root.splitlines()]
@@ -278,7 +278,7 @@ class SavedIndexAcrossFiles(unittest.TestCase):
         output, cap = part.basis.output_id, 2048
         body = built.records.blobs[built.postings_artifact_id]
         _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                               for l in body.splitlines(keepends=True)], cap)
+                               for l in body.splitlines(keepends=True)], cap)  # noqa: E741
         self.assertGreater(len(pages), 1)
         cut = pages[1]['byte_offset']
         files = []
@@ -288,10 +288,10 @@ class SavedIndexAcrossFiles(unittest.TestCase):
         entries = []
         for file in files:
             _, fpages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                                    for l in file['data'].splitlines(keepends=True)], cap)
+                                    for l in file['data'].splitlines(keepends=True)], cap)  # noqa: E741
             entries.append([{'postings_artifact_id': file['id'], **p} for p in fpages])
         ordered = (entries[1] + entries[0]) if reverse else (entries[0] + entries[1])
-        line = lambda e: json.dumps(e, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8') + b'\n'
+        line = lambda e: json.dumps(e, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8') + b'\n'  # noqa: E731
         directory, dpages = page_lines([(e['first_key'], e['last_key'], line(e)) for e in ordered], cap)
         dsha = hashlib.sha256(directory).hexdigest()
         manifest = deepcopy(built.manifest)

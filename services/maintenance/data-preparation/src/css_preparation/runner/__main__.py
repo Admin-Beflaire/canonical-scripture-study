@@ -176,7 +176,7 @@ PUBLIC = {
 }
 
 
-def main(argv: list[str], environ: Mapping[str, str]) -> int:
+def main(argv: list[str], environ: Mapping[str, str]) -> int:  # noqa: PLR0915
     parser = argparse.ArgumentParser(prog='css_preparation.runner')
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--kind', choices=KINDS)
@@ -229,7 +229,7 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
         try:
             result = run_job(job_text, args.kind, run_id=environ['GITHUB_RUN_ID'], control=control,
                              storage=storage, on_error=diagnostics.exception)
-        except Exception as error:  # noqa: BLE001 - unexpected: record privately, print nothing
+        except Exception as error:
             diagnostics.exception('runner', error)
             result = _result(job, environ['GITHUB_RUN_ID'], 'failed', diagnostics=_diagnostic('runner_error', error))
         diagnostics.outcome(result['state'])

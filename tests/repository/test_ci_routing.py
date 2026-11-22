@@ -146,6 +146,9 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("npm ci --ignore-scripts", workflow)
         self.assertIn("pip install --require-hashes --only-binary=:all:", workflow)
         self.assertIn("run_test_profile.py standards", workflow)
+        # The standards step needs the base commit, as the routing step does.
+        base = "CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}"
+        self.assertEqual(workflow.count(base), 2)
         for line in workflow.splitlines():
             if "uses:" in line:
                 self.assertRegex(line, r"uses: [\w/-]+@[0-9a-f]{40}(?: |$)")

@@ -83,13 +83,13 @@ def select_profiles(paths):
     return sorted(selected)
 
 
-def changed_paths(base):
+def changed_paths(base, root=ROOT):
     if not base or not re.fullmatch(r"[0-9a-f]{40}", base) or base == "0" * 40:
         return None
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "-z", base, "HEAD"],
-            cwd=ROOT,
+            cwd=root,
             check=True,
             capture_output=True,
         )

@@ -46,6 +46,8 @@ jobs:
         run: python3 tools/repository/run_test_profile.py python
       - name: Code standards
         if: steps.route.outputs.standards == 'true'
+        env:
+          CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 tools/repository/run_test_profile.py standards
       - name: Repository routing and configuration checks
         if: steps.route.outputs.repository == 'true'

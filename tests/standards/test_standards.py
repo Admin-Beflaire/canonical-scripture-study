@@ -140,6 +140,81 @@ class DuplicateCheck(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
 
 
+def git(root, *arguments):
+    identity = ["-c", "user.name=test", "-c", "user.email=test@example.com"]
+    result = subprocess.run(
+        ["git", *identity, *arguments],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def baselined_repository(root):
+    """A repository with an old.ts and an old.py in the formatting baselines."""
+    git(root, "init", "-q")
+    for file, code in (("old.ts", "a\n"), ("old.py", "a\n"), ("other.ts", "a\n")):
+        Path(root, file).write_text(code)
+    Path(root, ".prettierignore").write_text("# baseline\ndist/\nold.ts\n")
+    Path(root, "ruff.toml").write_text('[format]\nexclude = ["old.py"]\n')
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "baseline")
+    return git(root, "rev-parse", "HEAD")
+
+
+class ChangedBaselineChecks(unittest.TestCase):
+    def test_a_changed_baselined_file_must_leave_the_baseline(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = baselined_repository(root)
+            for file in ("old.ts", "old.py", "other.ts"):
+                Path(root, file).write_text("b\n")
+            git(root, "commit", "-q", "-am", "change")
+            self.assertEqual(
+                baselines.touched_baseline_files(root, base),
+                [(".prettierignore", "old.ts"), ("ruff.toml", "old.py")],
+            )
+
+    def test_a_changed_file_that_left_the_baseline_is_not_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = baselined_repository(root)
+            Path(root, "old.ts").write_text("b\n")
+            Path(root, ".prettierignore").write_text("# baseline\ndist/\n")
+            git(root, "commit", "-q", "-am", "format")
+            self.assertEqual(baselines.touched_baseline_files(root, base), [])
+
+    def test_a_baselined_file_that_is_not_changed_is_not_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = baselined_repository(root)
+            Path(root, "other.ts").write_text("b\n")
+            git(root, "commit", "-q", "-am", "unrelated")
+            self.assertEqual(baselines.touched_baseline_files(root, base), [])
+
+    def test_the_change_that_introduces_the_baselines_is_not_held_to_them(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            git(root, "init", "-q")
+            Path(root, "old.ts").write_text("a\n")
+            git(root, "add", "-A")
+            git(root, "commit", "-q", "-m", "before the baselines")
+            base = git(root, "rev-parse", "HEAD")
+            Path(root, "old.ts").write_text("b\n")
+            Path(root, ".prettierignore").write_text("old.ts\n")
+            git(root, "add", "-A")
+            git(root, "commit", "-q", "-m", "introduce")
+            self.assertEqual(baselines.touched_baseline_files(root, base), [])
+
+    def test_an_unknown_base_is_an_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            baselined_repository(Path(folder))
+            with self.assertRaises(RuntimeError):
+                baselines.touched_baseline_files(Path(folder), None)
+
+
 class BaselineChecks(unittest.TestCase):
     def test_entries_are_read_without_comments_and_folders(self):
         text = "# comment\ndist/\n\nservices/a.ts\ntools/b.mjs\n"

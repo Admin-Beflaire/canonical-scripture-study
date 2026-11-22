@@ -23,7 +23,6 @@ max-statements = 50
 exclude = [
   "infrastructure/github/cloudflare_inputs.py",
   "infrastructure/github/diagnose_failed_state.py",
-  "packages/shared-python/src/css_shared/references.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/acquire_only.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/berean_units.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/language_aid_entries.py",

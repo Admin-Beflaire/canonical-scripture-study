@@ -154,7 +154,7 @@ class AidRecipe:
                     text = ''.join(entry.body + '\n' for entry in group)
                     return NativeText(value['coordinate'], ((unit, text),),
                                       order_bases=(value['base'],)), group
-            except Exception:  # noqa: BLE001 - optional cache must not block correct original-based work
+            except Exception:
                 pass  # Invalid/unavailable cache: rederive from the pinned original.
 
         full, groups = self._native(storage)  # Always verifies the original before caching.
@@ -174,7 +174,7 @@ class AidRecipe:
                 # Failed cache writes must not prevent correct preparation from original data.
                 try:
                     write_cache(f'{prefix}/{name}.json', payload)
-                except Exception:  # noqa: BLE001 - cache write failure is non-authoritative
+                except Exception:
                     if not logged_failure:
                         _LOG.warning('Partition cache write failed; continuing from original data', exc_info=True)
                         logged_failure = True

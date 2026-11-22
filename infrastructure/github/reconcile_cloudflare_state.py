@@ -1,5 +1,5 @@
 """One-off recovery of the known failed Cloudflare state; never print state bytes."""
-import hashlib
+import hashlib  # noqa: F401
 import json
 import os
 from pathlib import Path

@@ -78,7 +78,7 @@ class LiteraryTest(unittest.TestCase):
             self.assertLessEqual(len(data), 1024)
             self.assertEqual((chunk['start'], chunk['byte_offset']), (scalar, offset))
             self.assertEqual(hashlib.sha256(data).hexdigest(), chunk['sha256'])
-            scalar += len(data.decode('utf-8')); offset += len(data)
+            scalar += len(data.decode('utf-8')); offset += len(data)  # noqa: E702
             self.assertEqual(chunk['end'], scalar)
         self.assertEqual((scalar, offset), (len(body), len(raw)))
         from css_preparation.validate.saved import CandidateInventory, verify_candidate_inventory

@@ -101,7 +101,7 @@ class _Handler(BaseHTTPRequestHandler):
                     cursor = api.db.execute(item['sql'], item.get('params', []))
                     rows = [dict(row) for row in cursor.fetchall()]
                     results.append({'success': True, 'results': rows, 'meta': {}})
-        except Exception as error:  # noqa: BLE001 - mirror a D1 error envelope
+        except Exception as error:
             api.last_error = repr(error)
             return self._send(400, json.dumps({'success': False, 'errors': [{'message': 'x'}]}).encode())
         return self._send(200, json.dumps({'success': True, 'result': results}).encode())

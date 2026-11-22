@@ -1,5 +1,5 @@
 """DP-04 Stage 4: saved D1/R2 candidate inventory checks with synthetic fixtures."""
-from copy import deepcopy
+from copy import deepcopy  # noqa: F401
 from dataclasses import replace
 import hashlib
 import json

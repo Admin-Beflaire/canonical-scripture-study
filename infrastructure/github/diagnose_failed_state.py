@@ -82,4 +82,4 @@ if __name__ == '__main__':
     except Exception:
         # State, credentials and provider errors can be private: never print them.
         print('Protected diagnosis unavailable')
-        raise SystemExit(1)
+        raise SystemExit(1)  # noqa: B904

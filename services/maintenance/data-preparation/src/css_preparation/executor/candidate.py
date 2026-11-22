@@ -63,7 +63,7 @@ def _check_saved_rows(records: RecordSet, output_id: str, storage: CandidateStor
             raise RecordError('Existing candidate metadata is incomplete or different')
 
 
-def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:
+def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:  # noqa: C901
     """Save immutable blobs before candidate records and report only read-back refs.
 
     An interrupted row commit may leave an unreferenced immutable blob. It must

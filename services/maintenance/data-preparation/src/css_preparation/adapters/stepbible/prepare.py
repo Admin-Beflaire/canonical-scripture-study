@@ -74,7 +74,7 @@ def book_verses(words: Iterable[TaggedWord], component: Component, book: str) ->
     verses = []
     for unit_id, rows in grouped.items():
         base = [_in_base(row, component) for row in rows]
-        text, joined = join_forms((native_form(row, language) for row, keep in zip(rows, base) if keep), language)
+        text, joined = join_forms((native_form(row, language) for row, keep in zip(rows, base) if keep), language)  # noqa: B905
         ranges, taken = [], iter(joined)
         for keep in base:
             ranges.append(next(taken) if keep else None)
@@ -109,7 +109,7 @@ def _label(unit_id: str) -> str:
 
 def _variant_entries(verse: Verse, component: Component) -> list[dict[str, Any]]:
     entries = []
-    for position, (word, span) in enumerate(zip(verse.words, verse.ranges), start=1):
+    for position, (word, span) in enumerate(zip(verse.words, verse.ranges), start=1):  # noqa: B905
         meaning, spelling = word.cells[5], word.cells[6]
         entry: dict[str, Any] = {'row': position, 'type': word.text_type}
         if component.source.language == 'greek':
@@ -147,7 +147,7 @@ def evidence_specs(verses: Sequence[Verse], component: Component) -> tuple[list[
             spans.append(SpanSpec(unit, 'verse', _label(unit), ((unit, 0, 0),), 'gap',
                                   {**basis, 'gap': 'No base-text wording in this verse'}))
         if component.source.language == 'hebrew':
-            for position, (word, span) in enumerate(zip(verse.words, verse.ranges), start=1):
+            for position, (word, span) in enumerate(zip(verse.words, verse.ranges), start=1):  # noqa: B905
                 letters = outer_type_letters(word.text_type)
                 if span is None or span[0] == span[1] or letters.startswith('L'):
                     continue
@@ -174,7 +174,7 @@ def _observations(text: NativeText, verses: Sequence[Verse], postings: Iterable[
         [segment] = posting['native_reference']['segments']
         unit, start, end = segment['unit_id'], segment['start'], segment['end']
         verse = rows[unit]
-        owner = [(word, span) for word, span in zip(verse.words, verse.ranges)
+        owner = [(word, span) for word, span in zip(verse.words, verse.ranges)  # noqa: B905
                  if span is not None and span[0] <= start and end <= span[1]]
         if len(owner) != 1:
             raise RecordError(f'Token {posting["occurrence_id"]} is not inside exactly one word row')

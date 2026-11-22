@@ -37,7 +37,7 @@ def module_index(root):
     return index
 
 
-def check_source(root, file, source):
+def check_source(root, file, source):  # noqa: C901
     owner, name = module_identity(file)
     if owner is None:
         return [f"{file}: unowned Python module path"]

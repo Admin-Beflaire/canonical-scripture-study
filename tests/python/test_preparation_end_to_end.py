@@ -4,7 +4,7 @@ This is a contract-faithful Control/transport double, not live D1/R2 or a
 deployed Workflow. Stage 6 never selects a release or admits a real source.
 """
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import replace  # noqa: F401
 import hashlib
 import json
 from pathlib import Path
@@ -300,8 +300,8 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         state = ControlState(job['task_id'], job['task_revision'] + 1, 'running',
                              job['basis_digest'], job['unit_id'], job['attempt'],
                              job['task_revision'], expected, 'run-wire', 'dispatched')
-        reader = lambda *_: state
-        registered = lambda ref: ref['kind'] == 'source_revision' and ref['id'] == SOURCE_REV
+        reader = lambda *_: state  # noqa: E731
+        registered = lambda ref: ref['kind'] == 'source_revision' and ref['id'] == SOURCE_REV  # noqa: E731
         self.assertEqual(execute_unit(raw, run_id='run-wire', read_control=reader,
                                       registered=registered, process=lambda _: 'ok'), 'ok')
         # Equivalent parsed data is NOT enough: Control has persisted the hash

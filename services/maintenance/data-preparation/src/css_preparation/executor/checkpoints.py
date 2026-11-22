@@ -50,7 +50,7 @@ class RetryableUnitError(Exception):
     """An explicitly classified transient failure; no unbounded retry."""
 
 
-class StopWork(Exception):
+class StopWork(Exception):  # noqa: N818
     """Classified quota, refusal, dependency or limit failure (no private detail)."""
 
     def __init__(self, reason: str):
@@ -84,7 +84,7 @@ def _check_ref(reference: Any, data: bytes) -> None:
         raise RecordError('Checkpoint artifact identity or bytes do not match')
 
 
-def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | None:
+def _saved_candidate(value: Any, storage: CandidateStore) -> SavedCandidate | None:  # noqa: C901
     """Reuse only saved candidate identities whose registered bytes still match."""
     if not isinstance(value, dict) or set(value) != {'output_ids', 'artifact_refs'}:
         return None
@@ -207,7 +207,7 @@ def _save(job: dict[str, Any], saved: SavedCandidate,
                         saved, dict(reference))
 
 
-def run_checkpointed_unit(job_json: str, *, run_id: str,
+def run_checkpointed_unit(job_json: str, *, run_id: str,  # noqa: C901, PLR0915
                           read_control: Callable[[str, str, int], ControlState | None],
                           registered: Callable[[dict[str, Any]], bool],
                           acquire: Callable[[dict[str, Any]], RecordSet],

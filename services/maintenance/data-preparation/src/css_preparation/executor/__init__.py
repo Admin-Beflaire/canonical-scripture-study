@@ -30,7 +30,7 @@ class ControlState:
     job_state: str
 
 
-class UnitNotRunnable(ContractError):
+class UnitNotRunnable(ContractError):  # noqa: N818
     """The job is invalid, unregistered or no longer eligible to run."""
 
 

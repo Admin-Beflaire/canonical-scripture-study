@@ -53,7 +53,7 @@ def _checked_ranges(anchors: list[Anchor]) -> list[dict]:
     return ranges
 
 
-def prepare_reader_reference_unit(
+def prepare_reader_reference_unit(  # noqa: C901, PLR0915
     data: bytes, component: Component, book: str, unit_ids: Sequence[str], *,
     literary_units: Sequence[LiteraryUnit] = (),
 ) -> RecordSet:

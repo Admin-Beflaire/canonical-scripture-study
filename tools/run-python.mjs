@@ -1,23 +1,54 @@
-import { spawnSync } from "node:child_process";
-import { delimiter, resolve } from "node:path";
+import {spawnSync} from 'node:child_process';
+import {delimiter, resolve} from 'node:path';
 
 /** @type {Record<string, string[]>} */
 const commands = {
-  import: ["-c", "import css_shared; import css_preparation"],
-  test: ["-m", "unittest", "discover", "-s", "tests/python", "-p", "test_*.py", "-v"],
-  boundaries: ["tools/check_python_boundaries.py"],
-  repository: ["tools/repository/run_test_profile.py", "repository"],
+  import: ['-c', 'import css_shared; import css_preparation'],
+  test: [
+    '-m',
+    'unittest',
+    'discover',
+    '-s',
+    'tests/python',
+    '-p',
+    'test_*.py',
+    '-v',
+  ],
+  boundaries: ['tools/check_python_boundaries.py'],
+  repository: ['tools/repository/run_test_profile.py', 'repository'],
+  'ruff-check': ['-m', 'ruff', 'check'],
+  'ruff-format': ['-m', 'ruff', 'format', '--check'],
+  baselines: ['tools/repository/check_baselines.py'],
+  standards: [
+    '-m',
+    'unittest',
+    'discover',
+    '-s',
+    'tests/standards',
+    '-p',
+    'test_*.py',
+    '-v',
+  ],
 };
 const command = process.argv[2];
-if (!command || !Object.hasOwn(commands, command)) throw new Error("Choose import, test, boundaries or repository");
-const interpreter = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
+if (!command || !Object.hasOwn(commands, command))
+  throw new Error(
+    'Choose import, test, boundaries, repository, ruff-check, ruff-format, baselines or standards',
+  );
+const interpreter =
+  process.env.PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
 const result = spawnSync(interpreter, commands[command], {
   shell: false,
-  stdio: "inherit",
+  stdio: 'inherit',
   env: {
     ...process.env,
-    PYTHONDONTWRITEBYTECODE: "1",
-    PYTHONPATH: ["packages/shared-python/src", "services/maintenance/data-preparation/src"].map(p => resolve(p)).join(delimiter),
+    PYTHONDONTWRITEBYTECODE: '1',
+    PYTHONPATH: [
+      'packages/shared-python/src',
+      'services/maintenance/data-preparation/src',
+    ]
+      .map(p => resolve(p))
+      .join(delimiter),
   },
 });
 if (result.error) throw result.error;

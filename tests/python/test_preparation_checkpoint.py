@@ -188,7 +188,7 @@ class CheckpointStageThree(unittest.TestCase):
         for state in ('paused', 'cancelled', 'superseded'):
             with self.subTest(state=state):
                 with self.assertRaises(UnitNotRunnable):
-                    self.invoke(control=lambda: replace(self.state, task_state=state),
+                    self.invoke(control=lambda: replace(self.state, task_state=state),  # noqa: B023
                                 builder=lambda _: self.fail('task not eligible'))
                 self.assertEqual(self.work_count, 0)
         def change_state(_):
@@ -223,7 +223,7 @@ class CheckpointStageThree(unittest.TestCase):
         for reason in ('quota', 'refused', 'missing_dependency', 'limit'):
             with self.subTest(reason=reason):
                 def stop(_):
-                    raise StopWork(reason)
+                    raise StopWork(reason)  # noqa: B023
                 failed = self.invoke(builder=stop)
                 self.assertEqual(failed.diagnostics, (reason,))
                 self.assertEqual(failed.remaining_extent, self.job['native_extent'])
@@ -295,7 +295,7 @@ class CheckpointStageThree(unittest.TestCase):
                 calls.clear()
                 def fail(_):
                     calls.append(1)
-                    raise ProviderError('private', status=503, transient=transient)
+                    raise ProviderError('private', status=503, transient=transient)  # noqa: B023
                 failed = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
                 self.assertEqual(len(calls), expected)
                 self.assertEqual(failed.diagnostic_detail, 'Provider request failed during saving_checkpoint with HTTP 503')

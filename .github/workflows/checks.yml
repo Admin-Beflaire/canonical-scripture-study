@@ -27,19 +27,28 @@ jobs:
           CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: python3 tools/repository/run_test_profile.py route
       - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
-        if: steps.route.outputs.typescript == 'true' || steps.route.outputs.python == 'true'
+        if: steps.route.outputs.typescript == 'true' || steps.route.outputs.python == 'true' || steps.route.outputs.standards == 'true'
         with:
           node-version: '24.22.1'
           package-manager-cache: false
       - name: Install locked development dependencies
-        if: steps.route.outputs.typescript == 'true'
+        if: steps.route.outputs.typescript == 'true' || steps.route.outputs.standards == 'true'
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install locked Python development tools
+        if: steps.route.outputs.standards == 'true'
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: --no-deps --disable-pip-version-check -r requirements-dev.txt
       - name: TypeScript and Worker checks
         if: steps.route.outputs.typescript == 'true'
         run: python3 tools/repository/run_test_profile.py typescript
       - name: Python preparation and common contracts
         if: steps.route.outputs.python == 'true'
         run: python3 tools/repository/run_test_profile.py python
+      - name: Code standards
+        if: steps.route.outputs.standards == 'true'
+        env:
+          CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 tools/repository/run_test_profile.py standards
       - name: Repository routing and configuration checks
         if: steps.route.outputs.repository == 'true'
         run: python3 tools/repository/run_test_profile.py repository

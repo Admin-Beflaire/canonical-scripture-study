@@ -52,7 +52,7 @@ def _partitions(text: NativeText, units: tuple[str, ...], max_units: int,
         yield tuple(group)
 
 
-def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBasis, rules: TextRules, *,
+def build_source_postings(text: NativeText, evidence: RecordSet, basis: OutputBasis, rules: TextRules, *,  # noqa: C901, PLR0915
                           max_units: int, max_scalars: int, max_occurrences: int,
                           encoded_page_cap_bytes: int = PAGE_CAP) -> tuple[SourcePartition, ...]:
     """Turn indexed native units into exact-referenced source postings, partitioned by recipe limits.

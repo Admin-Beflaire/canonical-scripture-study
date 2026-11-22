@@ -149,7 +149,7 @@ class IndexIntegratedStageFive(unittest.TestCase):
         )
 
     def test_complete_paged_search_round_trips_and_literary_context(self):
-        for part, built in zip(self.parts, self.files):
+        for part, built in zip(self.parts, self.files):  # noqa: B905
             saved = next(row for row in self.outputs if row['id'] == part.basis.output_id)
             self.assertEqual(verify_saved_index(
                 part.basis, saved, self.artifacts, self.coverage, self.blobs,

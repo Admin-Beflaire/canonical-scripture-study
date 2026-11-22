@@ -67,7 +67,7 @@ def request(method, path, data=None, binary=False, upload=False):
             return None
         # Provider response bodies may contain private values; never disclose them.
         raise StateError("Private state API request failed (HTTP " + str(exc.code) + ")") from None
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:  # noqa: F841
         raise StateError("Private state API request failed") from None
 
 
@@ -121,7 +121,7 @@ def download(asset):
     return data
 
 
-def inventory(key, allow_missing=False):
+def inventory(key, allow_missing=False):  # noqa: C901
     if key not in KEYS:
         raise StateError("Unknown state key")
     rel = release()

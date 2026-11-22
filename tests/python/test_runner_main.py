@@ -209,10 +209,10 @@ class RunnerTest(unittest.TestCase):
                 # Simulate an inconsistent read without changing the database's immutable rows.
                 def inconsistent_rows(requested, output_ids):
                     rows = read_rows(requested, output_ids)
-                    if requested == kind:
-                        row = next(row for row in rows if kind == 'reader_reference_base'
+                    if requested == kind:  # noqa: B023
+                        row = next(row for row in rows if kind == 'reader_reference_base'  # noqa: B023
                                    or row['status'] == 'missing')
-                        row[field] = altered
+                        row[field] = altered  # noqa: B023
                     return rows
 
                 with mock.patch.object(self.storage, 'read_rows', side_effect=inconsistent_rows):

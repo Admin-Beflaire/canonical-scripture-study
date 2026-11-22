@@ -50,7 +50,7 @@ def _valid(value: str) -> bool:
     return isinstance(value, str) and bool(value) and all(not 0xD800 <= ord(c) <= 0xDFFF for c in value)
 
 
-def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePartition],
+def build_word_postings(text: NativeText, source_partitions: Iterable[SourcePartition],  # noqa: C901, PLR0915
                         observations: Iterable[WordObservation],
                         expected_by_revision: Mapping[str, frozenset[str]],
                         admitted_analysis_revisions: tuple[str, ...], basis: OutputBasis, *,

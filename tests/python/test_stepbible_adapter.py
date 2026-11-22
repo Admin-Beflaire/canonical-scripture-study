@@ -11,7 +11,7 @@ from css_preparation.adapters.stepbible.format import FormatError, join_forms, n
 from css_preparation.adapters.stepbible.prepare import MAX_STATEMENTS, book_text, book_verses, prepare_unit, read_component
 from css_preparation.adapters.stepbible.recipes import MAX_PREPARE_UNITS, MAX_VERSES, dumps
 from css_preparation.adapters.stepbible.rules import RULES
-from css_preparation.adapters.stepbible.source import BOOK_STRIDE, Component
+from css_preparation.adapters.stepbible.source import BOOK_STRIDE, Component  # noqa: F401
 from css_preparation.contracts import contract_errors
 from css_preparation.prepare.evidence import NativeText
 from css_preparation.prepare.records import RecordError

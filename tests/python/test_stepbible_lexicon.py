@@ -19,7 +19,7 @@ H0001\tH0001H = a Part of\tH2438H, \tאָב\tav\tN:N-M-P\tfather of\tRESTRICTED 
 H0122a\tH0122A =\tH0122A\tאָדֹם\ta.dom\tH:A\tred\tRESTRICTED EXAMPLE THREE
 H2148\tH2148v = a Name of\tH2148v\tזָכַר\tzakar\tH:V\tremember\tRESTRICTED EXAMPLE FOUR
   
-'''
+'''  # noqa: W293
 
 GREEK = '''TBESG - Translators Brief lexicon of Extended Strongs for Greek - Synthetic
 $========== PERSON(s)

@@ -114,13 +114,13 @@ class NativeText:
         ids = [unit_id for unit_id, _ in self.units]
         if not self.units or len(set(ids)) != len(ids):
             raise RecordError("Native text needs distinct unit identities")
-        for unit_id, text in self.units:
+        for position, (unit_id, text) in enumerate(self.units, 1):
             if (
                 not unit_id
                 or not isinstance(text, str)
                 or not _surrogate_free(unit_id + text)
             ):
-                raise RecordError(f"Invalid native unit {unit_id!r}")
+                raise RecordError(f"Invalid native unit number {position}")
         if not self.complete and not self.limitation:
             raise RecordError("Partial native text needs a stated limitation")
         if self.order_bases is not None:
@@ -149,7 +149,7 @@ class NativeText:
         try:
             return self._index[unit_id]
         except (KeyError, TypeError):
-            raise RecordError(f"Unknown native unit {unit_id!r}") from None
+            raise RecordError("Unknown native unit") from None
 
     def byte_bases(self) -> dict[str, int]:
         bases, offset = {}, 0

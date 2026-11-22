@@ -12,11 +12,13 @@ from pathlib import Path, PurePosixPath
 import re
 from typing import Iterable, Literal
 
+from css_shared.error_record import OwnMessage
+
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 NOTICE_NAMES = ("license", "licence", "readme", "notice", "copying", "copyright")
 
 
-class BlockedInput(ValueError):  # noqa: N818
+class BlockedInput(OwnMessage, ValueError):  # noqa: N818
     """The input cannot be used: eligibility is unresolved or the record is inconsistent."""
 
 
@@ -47,7 +49,7 @@ class InputRecord:
             if not ID.fullmatch(value) or any(
                 part in ("", ".", "..") for part in value.split("/")
             ):
-                raise BlockedInput(f"Unsafe identifier {value[:40]!r}")
+                raise BlockedInput("Unsafe identifier")
         if (
             not re.fullmatch(r"[0-9a-f]{64}", self.sha256)
             or self.byte_count < 0

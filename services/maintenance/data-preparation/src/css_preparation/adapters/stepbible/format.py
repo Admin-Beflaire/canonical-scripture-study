@@ -18,6 +18,8 @@ from dataclasses import dataclass
 import re
 from typing import Iterable, Iterator, Literal
 
+from css_shared.error_record import OwnMessage
+
 Language = Literal["hebrew", "greek"]
 COLUMNS = 17
 _BOOK = r"(?:[1-3][A-Z][a-z]|[A-Z][a-z]{2})"
@@ -32,7 +34,7 @@ _GREEK_CELL = re.compile(r"(?P<form>.*?) \((?P<translit>[^()]*)\)")
 _HEBREW_MARKUP = str.maketrans("", "", "/\\")
 
 
-class FormatError(ValueError):
+class FormatError(OwnMessage, ValueError):
     """The file does not follow the declared STEPBible tagged-text layout."""
 
 

@@ -14,7 +14,8 @@ from typing import Any, Callable
 
 from ..contracts import parse_job_input
 from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
-from ..provider import ProviderError, provider_diagnostic, stage_diagnostic
+from ..diagnostics import diagnostic
+from ..provider import ProviderError
 from . import ControlState, UnitNotRunnable, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
 from .basis import check_unit_records, check_output_basis, registered_dependency_outputs
@@ -264,7 +265,7 @@ def _save(
     )
 
 
-def run_checkpointed_unit(  # noqa: C901, PLR0915
+def run_checkpointed_unit(  # noqa: C901
     job_json: str,
     *,
     run_id: str,
@@ -276,7 +277,6 @@ def run_checkpointed_unit(  # noqa: C901, PLR0915
     storage: CandidateStore,
     checkpoints: CheckpointStore,
     max_retries: int = 1,
-    on_error: Callable[[str, BaseException], None] | None = None,
 ) -> UnitProgress:
     """Check Control before each attempt; preserve saved units on pause/cancel.
 
@@ -290,9 +290,16 @@ def run_checkpointed_unit(  # noqa: C901, PLR0915
 
     stage = "checkpoint_recovery"
 
-    def failure(code: str, detail: str | None = None) -> UnitProgress:
+    def failure(code: str, error: BaseException | None = None) -> UnitProgress:
         return UnitProgress(
-            "failed", {}, dict(job["native_extent"]), None, None, None, (code,), detail
+            "failed",
+            {},
+            dict(job["native_extent"]),
+            None,
+            None,
+            None,
+            (code,),
+            diagnostic(job, stage, code, error)["message"],
         )
 
     def process(entry: dict[str, Any]) -> UnitProgress:
@@ -356,27 +363,14 @@ def run_checkpointed_unit(  # noqa: C901, PLR0915
         except StopWork as error:
             return failure(error.reason)
         except (RetryableUnitError, TimeoutError, ConnectionError) as error:
-            if on_error is not None:
-                on_error(stage, error)
             if retry == max_retries:
-                return failure(
-                    "transient_exhausted", stage_diagnostic(stage, transient=True)
-                )
+                return failure("transient_exhausted", error)
         except ReaderBoundaryError as error:
-            if on_error is not None:
-                on_error(stage, error)
-            return failure(
-                "reader_boundary",
-                f"Reader marker {error.marker} crosses the requested native unit boundary",
-            )
+            return failure("reader_boundary", error)
         except ProviderError as error:
-            if on_error is not None:
-                on_error(stage, error)
             if error.transient and stage == "saving_checkpoint" and retry < max_retries:
                 continue
-            return failure("provider_failure", provider_diagnostic(error, stage))
+            return failure("provider_failure", error)
         except (RecordError, OSError) as error:
-            if on_error is not None:
-                on_error(stage, error)
-            return failure("invalid_or_unavailable_output", stage_diagnostic(stage))
+            return failure("invalid_or_unavailable_output", error)
     raise AssertionError("Unreachable retry loop")

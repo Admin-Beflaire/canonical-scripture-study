@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from css_shared.error_record import OwnMessage
+
 from .validation import SchemaSubset
 
 CONTRACT_VERSION = "maintenance-job/1"
 _JOBS = SchemaSubset("maintenance/jobs.v1.schema.json")
 
 
-class ContractError(ValueError):
+class ContractError(OwnMessage, ValueError):
     """A job envelope does not match the versioned contract."""
 
 

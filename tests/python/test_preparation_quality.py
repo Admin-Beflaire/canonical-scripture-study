@@ -5,15 +5,13 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
-import tempfile
 import unittest
 
 from css_preparation.contracts import contract_errors
 from css_preparation.executor import ControlState
 from css_preparation.executor.checkpoints import CheckpointStore
 from css_preparation.executor.quality import check_candidate_quality
-from css_preparation.runner.diagnostics import DiagnosticRecorder
-from css_preparation.prepare.records import ReaderBoundaryError, RecordError
+from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, text_a
 from test_saved_candidate_inventory import SavedInventoryStageFour
@@ -70,7 +68,6 @@ class CandidateQualityStageFive(unittest.TestCase):
         inventory=None,
         control=None,
         read_blob=None,
-        on_error=None,
     ):
         job = dict(job or self.job)
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -98,8 +95,12 @@ class CandidateQualityStageFive(unittest.TestCase):
             read_blob=read_blob or self.saved.blobs.__getitem__,
             read_source=native or (lambda _: text_a()),
             receipts=receipts or self.receipts,
-            on_error=on_error,
         )
+
+    def record(self, result):
+        """The safe error record of a failed result's only diagnostic."""
+        (item,) = result["diagnostics"]
+        return item["code"], json.loads(item["message"])
 
     def test_valid_saved_candidate_receipt_repeats_exact_identity_and_actual_coverage(
         self,
@@ -149,85 +150,59 @@ class CandidateQualityStageFive(unittest.TestCase):
 
     def test_quality_stage_is_reported_without_exception_text(self):
         def fail_rows(*_):
-            raise RecordError("secret or source wording")
+            raise OSError("secret or source wording")
 
-        failed = self.invoke(rows=fail_rows)
+        code, record = self.record(self.invoke(rows=fail_rows))
         self.assertEqual(
-            failed["diagnostics"],
-            [
-                {
-                    "code": "quality_failed",
-                    "message": "Quality failure during validating_candidate; detail unavailable",
-                }
-            ],
+            (code, record["stage"]), ("quality_failed", "validating_candidate")
         )
+        self.assertNotIn("secret", json.dumps(record))
 
         def fail_save(_):
-            raise RecordError("secret or source wording")
+            raise OSError("secret or source wording")
 
         failed = self.invoke(receipts=CheckpointStore(fail_save, self.load))
-        self.assertEqual(
-            failed["diagnostics"],
-            [
-                {
-                    "code": "quality_failed",
-                    "message": "Quality failure during saving_receipt; detail unavailable",
-                }
-            ],
-        )
+        code, record = self.record(failed)
+        self.assertEqual((code, record["stage"]), ("quality_failed", "saving_receipt"))
+        self.assertNotIn("secret", json.dumps(record))
         self.assertIsNone(failed["quality_receipt_ref"])
 
     def test_quality_failure_diagnostic_keeps_cause_without_private_text(self):
         def fail_rows(*_):
-            raise RecordError("private source words and secret token")
+            raise KeyError("private source words and secret token")
 
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "diagnostics.jsonl"
-            recorder = DiagnosticRecorder(str(path), run_id="123", kind="quality")
-            result = self.invoke(rows=fail_rows, on_error=recorder.exception)
-            recorded = [json.loads(line) for line in path.read_text().splitlines()]
+        code, record = self.invoke_record(rows=fail_rows)
+        self.assertEqual(code, "quality_failed")
         self.assertEqual(
-            result["diagnostics"],
-            [
-                {
-                    "code": "quality_failed",
-                    "message": "Quality failure during validating_candidate; detail unavailable",
-                }
-            ],
+            (record["tool"], record["stage"], record["error"]),
+            ("quality", "validating_candidate", "KeyError"),
         )
-        self.assertEqual(len(recorded), 1)
-        self.assertEqual(recorded[0]["stage"], "validating_candidate")
-        self.assertEqual(recorded[0]["exception"], "RecordError")
-        self.assertNotIn("private source words", json.dumps(recorded))
-        self.assertNotIn("secret token", json.dumps(recorded))
+        self.assertNotIn("private source words", json.dumps(record))
+        self.assertNotIn("secret token", json.dumps(record))
 
     def test_quality_control_provider_diagnostic_keeps_status(self):
         def fail_control(*_):
-            raise ProviderError("credential and response text", status=503)
+            raise ProviderError("Control state request refused", status=503)
 
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "diagnostics.jsonl"
-            recorder = DiagnosticRecorder(str(path), run_id="123", kind="quality")
-            result = self.invoke(control=fail_control, on_error=recorder.exception)
-            recorded = [json.loads(line) for line in path.read_text().splitlines()]
+        code, record = self.invoke_record(control=fail_control)
+        self.assertEqual(code, "provider_failure")
+        self.assertEqual((record["stage"], record["http"]), ("control_check", 503))
+
+    def invoke_record(self, **fields):
+        result = self.invoke(**fields)
         self.assertEqual(result["state"], "failed")
-        self.assertEqual(recorded[0]["stage"], "control_check")
-        self.assertEqual(recorded[0]["http_status"], 503)
-        self.assertNotIn("credential and response text", json.dumps(recorded))
+        return self.record(result)
 
     def test_quality_provider_failure_retains_receipt_stage(self):
         def fail(_):
-            raise ProviderError("private", status=503)
+            raise ProviderError("Receipt read refused", status=503)
 
-        failed = self.invoke(receipts=CheckpointStore(self.save, fail))
+        code, record = self.record(
+            self.invoke(receipts=CheckpointStore(self.save, fail))
+        )
         self.assertEqual(
-            failed["diagnostics"],
-            [
-                {
-                    "code": "provider_failure",
-                    "message": "Provider request failed during verifying_receipt with HTTP 503",
-                }
-            ],
+            (code, record["stage"], record["http"]),
+            ("provider_failure", "verifying_receipt", 503),
         )
 
     def test_initial_and_pre_receipt_control_failures_identify_control_stage(self):
@@ -238,18 +213,14 @@ class CandidateQualityStageFive(unittest.TestCase):
                 def control(*_):
                     calls.append(1)  # noqa: B023
                     if len(calls) == fail_at:  # noqa: B023
-                        raise ProviderError("private", status=503)
+                        raise ProviderError("Control state request refused", status=503)
                     return self.state
 
                 failed = self.invoke(control=control)
+                code, record = self.record(failed)
                 self.assertEqual(
-                    failed["diagnostics"],
-                    [
-                        {
-                            "code": "provider_failure",
-                            "message": "Provider request failed during control_check with HTTP 503",
-                        }
-                    ],
+                    (code, record["stage"], record["http"]),
+                    ("provider_failure", "control_check", 503),
                 )
                 self.assertIsNone(failed["quality_receipt_ref"])
 
@@ -261,14 +232,13 @@ class CandidateQualityStageFive(unittest.TestCase):
             side_effect=ReaderBoundaryError("1Ch.12.5"),
         ):
             failed = self.invoke()
+        code, record = self.record(failed)
         self.assertEqual(
-            failed["diagnostics"],
-            [
-                {
-                    "code": "reader_boundary",
-                    "message": "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
-                }
-            ],
+            (code, record["message"]),
+            (
+                "reader_boundary",
+                "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
+            ),
         )
 
     def test_forged_saved_text_with_valid_digest_fails_source_fidelity(self):

@@ -11,6 +11,7 @@ from copy import deepcopy
 from pathlib import Path
 from unittest import mock
 
+from css_shared.error_record import annotation
 from css_preparation.contracts import ContractError, contract_errors
 from css_preparation.prepare.records import RecordError, RecordSet
 from css_preparation.prepare.records import ReaderBoundaryError
@@ -19,7 +20,6 @@ from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorag
 from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
 from css_preparation.runner.web import Origin, ProviderError
-from css_preparation.runner.diagnostics import DiagnosticRecorder
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi
 from stepbible_fixture import recipe as stepbible_recipe
@@ -163,35 +163,27 @@ class RunnerTest(unittest.TestCase):
         self.recipe = Recipe(prepare=fail)
         result = self.run_job(self.job())
         self.assertEqual(contract_errors("job_result", result), [])
+        [item] = result["diagnostics"]
+        self.assertEqual(item["code"], "reader_boundary")
         self.assertEqual(
-            result["diagnostics"],
-            [
-                {
-                    "code": "reader_boundary",
-                    "message": "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
-                }
-            ],
+            json.loads(item["message"])["message"],
+            "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
         )
         self.assertEqual(result["remaining_extent"], self.extent)
 
     def test_provider_failure_reports_status_without_response_or_credentials(self):
         def fail(job, storage):
-            raise ProviderError(
-                "private response and secret", status=429, transient=True
-            )
+            raise ProviderError("Provider request refused", status=429, transient=True)
 
         self.recipe = Recipe(prepare=fail)
         result = self.run_job(self.job())
+        [item] = result["diagnostics"]
+        record = json.loads(item["message"])
         self.assertEqual(
-            result["diagnostics"],
-            [
-                {
-                    "code": "provider_failure",
-                    "message": "Provider request failed during building_output with HTTP 429",
-                }
-            ],
+            (item["code"], record["stage"], record["http"]),
+            ("provider_failure", "building_output", 429),
         )
-        self.assertNotIn("secret", str(result))
+        self.assertEqual(record["message"], "Provider request refused")
 
     def test_unknown_recipe_and_missing_module_fail_without_writes(self):
         with mock.patch.dict(RECIPES, {}, clear=True):
@@ -384,7 +376,7 @@ class RunnerTest(unittest.TestCase):
             "PREPARATION_CLOUDFLARE_TOKEN": "synthetic-token",
         }
 
-    def main(self, environ, kind="prepare", mode=None):
+    def main(self, environ):
         out, err = io.StringIO(), io.StringIO()
         with tempfile.TemporaryDirectory() as directory:
             status = Path(directory) / "status.txt"
@@ -399,38 +391,20 @@ class RunnerTest(unittest.TestCase):
                 contextlib.redirect_stdout(out),
                 contextlib.redirect_stderr(err),
             ):
-                code = runner.main(
-                    (mode or ["--kind", kind]) + ["--status", str(status)], environ
-                )
+                code = runner.main(["--status", str(status)], environ)
             return (
                 code,
                 status.read_text(encoding="utf-8"),
                 out.getvalue() + err.getvalue(),
             )
 
-    def test_validate_routes_only_the_enumerated_kind(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "output.txt"
-            environ = {
-                "GITHUB_EVENT_PATH": self.environ(self.job("quality"))[
-                    "GITHUB_EVENT_PATH"
-                ],
-                "GITHUB_OUTPUT": str(output),
-            }
-            code, status, printed = self.main(environ, mode=["--validate"])
-            self.assertEqual((code, output.read_text()), (0, "kind=quality\n"))
-            self.assertEqual(status, "Preparation job accepted for the quality job.\n")
-            self.assertEqual(printed, "")
-            for text in ('{"kind":"prepare; rm -rf /"}', "not json at all"):
-                bad = {
-                    **environ,
-                    "GITHUB_EVENT_PATH": self.environ(text)["GITHUB_EVENT_PATH"],
-                }
-                code, status, _ = self.main(bad, mode=["--validate"])
-                self.assertEqual(
-                    (code, status, output.read_text()),
-                    (1, runner.PUBLIC["invalid"] + "\n", "kind=quality\n"),
-                )
+    def test_only_the_enumerated_kinds_run(self):
+        for text in ('{"kind":"prepare; rm -rf /"}', "not json at all"):
+            with self.subTest(text=text):
+                code, status, printed = self.main(self.environ(text))
+                self.assertEqual((code, status), (1, runner.PUBLIC["invalid"] + "\n"))
+                self.assertTrue(printed.startswith("::error title=runner job_input::"))
+        self.assertEqual(self.results, [])
 
     def test_main_submits_result_and_prints_only_fixed_status(self):
         code, status, printed = self.main(self.environ(self.job()))
@@ -446,26 +420,22 @@ class RunnerTest(unittest.TestCase):
 
     def test_private_markers_reach_only_the_private_result(self):
         def leak(job, storage):
-            raise RecordError(f"{MARKER} source wording and inventory detail")
+            raise OSError(f"{MARKER} source wording and inventory detail")
 
         self.recipe = Recipe(prepare=leak)
-        raw = self.job(unit_id=f"unit-{MARKER}")
-        code, status, printed = self.main(self.environ(raw))
+        code, status, printed = self.main(self.environ(self.job()))
         self.assertEqual(code, 1)
         for public in (status, printed):
             self.assertNotIn(MARKER, public)
             self.assertNotIn("synthetic-secret", public)
             self.assertNotIn("synthetic-token", public)
-        self.assertIn(MARKER, self.results[0]["result"]["unit_id"])
-        self.assertEqual(
-            self.results[0]["result"]["diagnostics"],
-            [
-                {
-                    "code": "invalid_or_unavailable_output",
-                    "message": "Failure during building_output; detail unavailable",
-                }
-            ],
-        )
+        [item] = self.results[0]["result"]["diagnostics"]
+        self.assertEqual(item["code"], "invalid_or_unavailable_output")
+        self.assertNotIn(MARKER, item["message"])
+        # The public annotation is the same record that Control stores.
+        [line] = printed.splitlines()
+        self.assertEqual(line, annotation(json.loads(item["message"])))
+        self.assertTrue(line.startswith("::error title=prepare building_output::"))
 
     def test_unexpected_crash_is_reported_privately(self):
         def crash(job, storage):
@@ -478,6 +448,23 @@ class RunnerTest(unittest.TestCase):
         [sent] = self.results
         self.assertEqual(sent["result"]["state"], "failed")
         self.assertEqual(sent["result"]["diagnostics"][0]["code"], "runner_error")
+        self.assertEqual(
+            json.loads(sent["result"]["diagnostics"][0]["message"])["error"],
+            "RuntimeError",
+        )
+
+    def test_a_crash_before_any_report_prints_a_record_and_no_traceback(self):
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(runner, "main", side_effect=RuntimeError(MARKER)),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = runner.run()
+        self.assertEqual(code, 1)
+        self.assertEqual(err.getvalue(), "")
+        self.assertNotIn(MARKER, out.getvalue())
+        self.assertTrue(out.getvalue().startswith("::error title=runner startup::"))
 
     def test_configuration_invalid_job_and_undelivered_result(self):
         environ = self.environ(self.job())
@@ -493,10 +480,6 @@ class RunnerTest(unittest.TestCase):
         for text in ("not json at all", '{"truncated": ', ""):
             code, status, _ = self.main(self.environ(text))
             self.assertEqual((code, status), (1, runner.PUBLIC["invalid"] + "\n"))
-        code, status, _ = self.main(
-            self.environ(self.job("quality"))
-        )  # kind mismatch with --kind prepare
-        self.assertEqual((code, status), (1, runner.PUBLIC["invalid"] + "\n"))
         self.assertEqual(self.results, [])
         # The dispatch reference must be the digest of exactly this job text.
         event = Path(environ["GITHUB_EVENT_PATH"])
@@ -507,7 +490,7 @@ class RunnerTest(unittest.TestCase):
         code, status, _ = self.main(environ)
         self.assertEqual((code, status), (1, runner.PUBLIC["invalid"] + "\n"))
         event.write_text(json.dumps({"inputs": {"job": self.job()}}), encoding="utf-8")
-        code, status, _ = self.main(environ, mode=["--validate"])
+        code, status, _ = self.main(environ)
         self.assertEqual((code, status), (1, runner.PUBLIC["invalid"] + "\n"))
         environ = self.environ(self.job())
         code, status, _ = self.main(
@@ -526,34 +509,31 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(status.endswith("Control rejected the result.\n"))
 
-    def test_executor_failure_reaches_diagnostic_artifact(self):
+    def test_executor_failure_record_carries_our_message_and_stage(self):
         def fail(job, storage):
             raise RecordError(
                 "Acquisition failed: bing-nt-outlines-2024/1: server answered 403"
             )
 
         self.recipe = Recipe(prepare=fail)
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "diagnostics.jsonl"
-            recorder = DiagnosticRecorder(str(path), run_id=RUN_ID, kind="prepare")
-            result = runner.run_job(
-                self.job(),
-                "prepare",
-                run_id=RUN_ID,
-                control=self.client,
-                storage=self.storage,
-                recipes={"recipe-1": self.recipe},
-                on_error=recorder.exception,
-            )
-            rows = [json.loads(line) for line in path.read_text().splitlines()]
-        self.assertEqual(
-            result["diagnostics"][0]["code"], "invalid_or_unavailable_output"
+        result = runner.run_job(
+            self.job(),
+            "prepare",
+            run_id=RUN_ID,
+            control=self.client,
+            storage=self.storage,
+            recipes={"recipe-1": self.recipe},
         )
+        [item] = result["diagnostics"]
+        record = json.loads(item["message"])
+        self.assertEqual(item["code"], "invalid_or_unavailable_output")
         self.assertEqual(
-            rows[0]["detail"],
+            record["message"],
             "Acquisition failed: bing-nt-outlines-2024/1: server answered 403",
         )
-        self.assertEqual(rows[0]["stage"], "building_output")
+        self.assertEqual(
+            (record["tool"], record["stage"]), ("prepare", "building_output")
+        )
 
 
 if __name__ == "__main__":

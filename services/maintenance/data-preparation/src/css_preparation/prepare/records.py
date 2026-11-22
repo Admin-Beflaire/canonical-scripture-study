@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
+from css_shared.error_record import OwnMessage
+
 from ..validation import SCHEMAS, SchemaSubset
 
 _RECORDS = SchemaSubset("evidence-records.v1.schema.json")
@@ -64,7 +66,7 @@ KEYS: dict[str, tuple[str, ...]] = {
 SHARED = ("source_node", "admission", "text_payload")
 
 
-class RecordError(ValueError):
+class RecordError(OwnMessage, ValueError):
     """A record does not match its contract or conflicts with one already prepared."""
 
 

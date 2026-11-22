@@ -15,10 +15,12 @@ import stat
 import tarfile
 import zipfile
 
+from css_shared.error_record import OwnMessage
+
 CHUNK = 1 << 16
 
 
-class ExtractionError(ValueError):
+class ExtractionError(OwnMessage, ValueError):
     """The archive is unsafe or exceeds its limits; nothing is kept."""
 
 
@@ -41,7 +43,7 @@ def safe_member(name: str) -> str:
         or any(part in ("", ".", "..") for part in name.split("/"))
         or any(ord(char) < 32 for char in name)
     ):
-        raise ExtractionError(f"Unsafe member path {name[:60]!r}")
+        raise ExtractionError("Unsafe member path")
     return name
 
 
@@ -67,9 +69,7 @@ def _members(archive: Path, limits: Limits):
             for info in infos:
                 kind = stat.S_IFMT(info.external_attr >> 16)
                 if info.flag_bits & 1 or kind not in (0, stat.S_IFREG, stat.S_IFDIR):
-                    raise ExtractionError(
-                        f"Encrypted or special member {info.filename[:60]!r}"
-                    )
+                    raise ExtractionError("Encrypted or special member")
                 if info.is_dir():
                     safe_member(info.filename.rstrip("/"))
                     continue
@@ -95,7 +95,7 @@ def _members(archive: Path, limits: Limits):
                 safe_member(info.name.rstrip("/"))
                 continue
             if not info.isreg():
-                raise ExtractionError(f"Link or special member {info.name[:60]!r}")
+                raise ExtractionError("Link or special member")
             source = package.extractfile(info)
             if source is None:
                 raise ExtractionError("Unreadable member")
@@ -118,10 +118,10 @@ def extract(
         for name, source in _members(Path(archive), limits):
             target = (root / name).resolve()
             if not target.is_relative_to(root):
-                raise ExtractionError(f"Member leaves the destination {name[:60]!r}")
+                raise ExtractionError("Member leaves the destination")
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
-                raise ExtractionError(f"Duplicate member {name[:60]!r}")
+                raise ExtractionError("Duplicate member")
             size, sha256 = _copy(source, target, limits.max_member_bytes, budget)
             files.append({"path": name, "bytes": size, "sha256": sha256})
     except Exception as error:  # corrupt streams raise many types (zlib, EOF, lzma, unsupported method)

@@ -9,12 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+from css_shared.error_record import OwnMessage
+
 from ..validation import SchemaSubset
 
 _RECIPES = SchemaSubset("maintenance/recipe.v1.schema.json")
 
 
-class RecipeError(ValueError):
+class RecipeError(OwnMessage, ValueError):
     """A recipe cannot be resolved to a declared adapter."""
 
 

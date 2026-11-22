@@ -326,6 +326,10 @@ class CheckpointStageThree(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.invoke(max_retries=4)
 
+    def record(self, progress):
+        """The safe error record in a failed unit's diagnostic detail."""
+        return json.loads(progress.diagnostic_detail)
+
     def test_exhausted_transient_and_permanent_failure_claim_no_progress(self):
         calls = []
 
@@ -336,21 +340,23 @@ class CheckpointStageThree(unittest.TestCase):
         failed = self.invoke(builder=never, max_retries=2)
         self.assertEqual(failed.diagnostics, ("transient_exhausted",))
         self.assertEqual(
-            failed.diagnostic_detail,
-            "Transient failure during building_output; retries exhausted",
+            (self.record(failed)["stage"], self.record(failed)["error"]),
+            ("building_output", "RetryableUnitError"),
         )
+        self.assertNotIn("message", self.record(failed))
         self.assertEqual(len(calls), 3)
         self.assertEqual(failed.completed_extent, {})
 
         def permanent(_):
-            raise RecordError("contains secret details; never copy to diagnostics")
+            raise OSError("contains secret details; never copy to diagnostics")
 
         failed = self.invoke(builder=permanent)
         self.assertEqual(failed.diagnostics, ("invalid_or_unavailable_output",))
         self.assertEqual(
-            failed.diagnostic_detail,
-            "Failure during building_output; detail unavailable",
+            (self.record(failed)["stage"], self.record(failed)["error"]),
+            ("building_output", "OSError"),
         )
+        self.assertNotIn("secret", failed.diagnostic_detail)
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0
         )
@@ -362,7 +368,7 @@ class CheckpointStageThree(unittest.TestCase):
         failed = self.invoke(builder=split)
         self.assertEqual(failed.diagnostics, ("reader_boundary",))
         self.assertEqual(
-            failed.diagnostic_detail,
+            self.record(failed)["message"],
             "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
         )
         with self.assertRaises(RecordError) as caught:
@@ -384,19 +390,19 @@ class CheckpointStageThree(unittest.TestCase):
         result = self.invoke(
             control=control, checkpoint_store=replace(self.checkpoints, save=save)
         )
-        self.assertEqual(
-            result.diagnostic_detail, "Failure during control_check; detail unavailable"
-        )
+        self.assertEqual(self.record(result)["stage"], "control_check")
+        self.assertNotIn("private", result.diagnostic_detail)
 
-    def test_checkpoint_provider_error_retains_stage_and_hides_detail(self):
+    def test_checkpoint_provider_error_retains_stage_and_status(self):
         def fail(_):
-            raise ProviderError("secret", status=503)
+            raise ProviderError("Checkpoint write refused", status=503)
 
         result = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
         self.assertEqual(result.diagnostics, ("provider_failure",))
+        record = self.record(result)
         self.assertEqual(
-            result.diagnostic_detail,
-            "Provider request failed during saving_checkpoint with HTTP 503",
+            (record["stage"], record["http"], record["message"]),
+            ("saving_checkpoint", 503, "Checkpoint write refused"),
         )
 
     def test_transient_checkpoint_provider_failures_retry_within_bound(self):
@@ -405,7 +411,9 @@ class CheckpointStageThree(unittest.TestCase):
         def eventually(data):
             calls.append(1)
             if len(calls) == 1:
-                raise ProviderError("private", status=503, transient=True)
+                raise ProviderError(
+                    "Checkpoint write refused", status=503, transient=True
+                )
             return self.save_checkpoint(data)
 
         result = self.invoke(
@@ -421,25 +429,44 @@ class CheckpointStageThree(unittest.TestCase):
 
                 def fail(_):
                     calls.append(1)
-                    raise ProviderError("private", status=503, transient=transient)  # noqa: B023
+                    raise ProviderError(
+                        "Checkpoint write refused",
+                        status=503,
+                        transient=transient,  # noqa: B023
+                    )
 
                 failed = self.invoke(
                     checkpoint_store=replace(self.checkpoints, save=fail)
                 )
                 self.assertEqual(len(calls), expected)
                 self.assertEqual(
-                    failed.diagnostic_detail,
-                    "Provider request failed during saving_checkpoint with HTTP 503",
+                    (self.record(failed)["stage"], self.record(failed)["http"]),
+                    ("saving_checkpoint", 503),
                 )
 
-    def test_acquisition_failure_reports_stage_without_private_detail(self):
+    def test_acquisition_failure_reports_stage_and_tool(self):
         def fail(_):
-            raise RecordError("secret source detail")
+            raise OSError("secret source detail")
 
         result = self.invoke(job={**self.job, "kind": "acquire"}, builder=fail)
+        record = self.record(result)
         self.assertEqual(
-            result.diagnostic_detail,
-            "Failure during acquiring_input; detail unavailable",
+            (record["tool"], record["stage"], record["error"]),
+            ("acquire", "acquiring_input", "OSError"),
+        )
+        self.assertNotIn("secret", result.diagnostic_detail)
+
+    def test_the_record_names_the_unit_and_never_holds_foreign_text(self):
+        def fail(_):
+            raise RecordError(
+                "Gen.3 line 1204, field morph: expected a morphology code"
+            )
+
+        record = self.record(self.invoke(builder=fail))
+        self.assertEqual(record["ids"]["unit"], self.job["unit_id"])
+        self.assertEqual(
+            record["message"],
+            "Gen.3 line 1204, field morph: expected a morphology code",
         )
 
 

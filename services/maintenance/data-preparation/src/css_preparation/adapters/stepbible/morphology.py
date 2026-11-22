@@ -102,9 +102,7 @@ def read_morphology(  # noqa: C901
             or not first[1].strip().startswith("Function=")
             or len(rows) < 4
         ):
-            raise RecordError(
-                f"Malformed {title} full morphology group: {rows[0][:40]}"
-            )
+            raise RecordError(f"Malformed {title} full morphology group")
         if not all(row.startswith("\t") for row in rows[1:4]):
             raise RecordError(f"Malformed {title} grammar explanation for {first[0]}")
         add(

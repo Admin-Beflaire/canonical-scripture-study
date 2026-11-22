@@ -10,7 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = (ROOT / ".github/workflows/prepare.yml").read_text(encoding="utf-8")
-RUN_JOBS = ("acquire", "prepare", "quality")
+JOB = "preparation"
 SECRETS = ("PREPARATION_ACCESS_CLIENT_SECRET", "PREPARATION_CLOUDFLARE_TOKEN")
 VARIABLES = (
     "CONTROL_ORIGIN",
@@ -40,8 +40,7 @@ class PrepareWorkflowTests(unittest.TestCase):
             "repository_dispatch",
         ):
             self.assertNotIn(denied, WORKFLOW)
-        for name in ("validate", *RUN_JOBS):
-            self.assertIn("if: github.ref == 'refs/heads/main'", job_block(name))
+        self.assertIn("if: github.ref == 'refs/heads/main'", job_block(JOB))
 
     def test_job_input_never_reaches_environment_or_shell(self):
         # Step environments are printed in public logs; the runner reads the event file instead.
@@ -69,63 +68,41 @@ class PrepareWorkflowTests(unittest.TestCase):
             "PLATFORM_STATE",
         ):
             self.assertNotIn(denied, WORKFLOW)
-        validate = job_block("validate")
-        self.assertNotIn("environment:", validate)
-        self.assertNotIn("secrets.", validate)
-        self.assertNotIn("vars.", validate)
-        for name in RUN_JOBS:
-            block = job_block(name)
-            self.assertIn("environment: preparation", block)
-            self.assertIn("needs: validate", block)
-            self.assertIn(f"needs.validate.outputs.kind == '{name}'", block)
-            self.assertIn(f"--kind {name} ", block)
-            for secret in SECRETS:
-                # Credentials are masked secrets.
-                self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", block)
-            for variable in VARIABLES:
-                # Plain, non-secret settings are environment variables (shown in run logs).
-                self.assertIn(f"{variable}: ${{{{ vars.{variable} }}}}", block)
-            self.assertEqual(
-                len(re.findall(r"\$\{\{\s*(?:secrets|vars)\.", block)),
-                len(SECRETS) + len(VARIABLES),
-            )
-
-    def test_runner_output_captured_and_only_fixed_status_published(self):
-        for name in RUN_JOBS:
-            block = job_block(name)
-            self.assertIn('> "$RUNNER_TEMP/preparation-private.log" 2>&1', block)
-            self.assertIn('rm -f -- "$RUNNER_TEMP/preparation-private.log"', block)
-            self.assertIn('cat "$status" >> "$GITHUB_STEP_SUMMARY"', block)
-            self.assertIn("umask 077", block)
-            self.assertIn(
-                '--diagnostics "$RUNNER_TEMP/preparation-diagnostics.jsonl"', block
-            )
-            self.assertIn(
-                "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-                block,
-            )
-            self.assertIn("retention-days: 1", block)
-            self.assertIn("if: always()", block)
-            self.assertIn("continue-on-error: true", block)
-            self.assertIn(
-                "name: preparation-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}",
-                block,
-            )
-            self.assertIn(
-                "path: ${{ runner.temp }}/preparation-diagnostics.jsonl", block
-            )
-
-        self.assertIn("--validate --status", job_block("validate"))
-        self.assertIn("> /dev/null 2>&1", job_block("validate"))
-
-    def test_upload_artifacts_use_only_the_approved_pinned_action(self):
-        pinned = "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
-        uploads = re.findall(
-            r"(?m)^\s*uses: (actions/upload-artifact@[^\s]+)", WORKFLOW
+        block = job_block(JOB)
+        self.assertIn("environment: preparation", block)
+        for secret in SECRETS:
+            # Credentials are masked secrets.
+            self.assertIn(f"{secret}: ${{{{ secrets.{secret} }}}}", block)
+        for variable in VARIABLES:
+            # Plain, non-secret settings are environment variables (shown in run logs).
+            self.assertIn(f"{variable}: ${{{{ vars.{variable} }}}}", block)
+        self.assertEqual(
+            len(re.findall(r"\$\{\{\s*(?:secrets|vars)\.", block)),
+            len(SECRETS) + len(VARIABLES),
         )
-        self.assertEqual(uploads, [pinned] * len(RUN_JOBS))
-        self.assertEqual(WORKFLOW.count("upload-artifact@"), len(RUN_JOBS))
-        self.assertNotIn("upload-artifact@", job_block("validate"))
+
+    def test_one_job_runs_every_kind_and_the_runner_reads_the_kind_from_the_job(self):
+        self.assertEqual(re.findall(r"(?m)^  ([a-z]+):\n", WORKFLOW), [JOB])
+        self.assertNotIn("--kind", WORKFLOW)
+        self.assertNotIn("--validate", WORKFLOW)
+        self.assertNotIn("needs:", WORKFLOW)
+        self.assertIn(
+            'python3 -m css_preparation.runner --status "$status"', job_block(JOB)
+        )
+
+    def test_runner_output_is_published_as_records_and_nothing_is_kept_or_deleted(self):
+        block = job_block(JOB)
+        self.assertIn('cat "$status" >> "$GITHUB_STEP_SUMMARY"', block)
+        # Nothing unsafe is printed any more, so there is no private log, no deletion and no artifact.
+        for removed in (
+            "preparation-private.log",
+            "rm -f",
+            "--diagnostics",
+            "upload-artifact",
+            "retention-days",
+            "preparation-diagnostics",
+        ):
+            self.assertNotIn(removed, WORKFLOW)
 
     def test_actions_pinned_and_credentials_not_persisted(self):
         uses = [line for line in WORKFLOW.splitlines() if "uses:" in line]
@@ -136,7 +113,7 @@ class PrepareWorkflowTests(unittest.TestCase):
             WORKFLOW.count("persist-credentials: false"),
             WORKFLOW.count("actions/checkout@"),
         )
-        self.assertEqual(WORKFLOW.count("python-version-file: .python-version"), 4)
+        self.assertEqual(WORKFLOW.count("python-version-file: .python-version"), 1)
 
 
 def run_script(name):
@@ -165,7 +142,7 @@ class FailurePathTests(unittest.TestCase):
                 status=""
                 while [[ $# -gt 0 ]]; do [[ "$1" == --status ]] && status="$2"; shift; done
                 {'echo "Preparation unit finished: failed." > "$status"' if write_status else ""}
-                echo "PRIVATE-MARKER stdout"; echo "PRIVATE-MARKER stderr" >&2
+                echo '::error title=prepare building_output::{{"code":"stand_in"}}'
                 exit {exit_code}
                 """)
             )
@@ -189,35 +166,21 @@ class FailurePathTests(unittest.TestCase):
             summary_text = summary.read_text() if summary.exists() else ""
             return completed, leftover, summary_text
 
-    def test_failed_runner_still_publishes_status_and_removes_private_log(self):
-        for name in RUN_JOBS:
-            completed, leftover, summary = self.run_step(name, 1)
-            self.assertEqual(completed.returncode, 1, name)
-            self.assertEqual(completed.stdout, "Preparation unit finished: failed.\n")
-            self.assertEqual(summary, "Preparation unit finished: failed.\n")
-            self.assertNotIn(
-                "PRIVATE-MARKER", completed.stdout + completed.stderr + summary
-            )
-            self.assertNotIn("preparation-private.log", leftover)
+    def test_failed_runner_still_publishes_its_records_and_status(self):
+        completed, leftover, summary = self.run_step(JOB, 1)
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(
+            completed.stdout,
+            '::error title=prepare building_output::{"code":"stand_in"}\nPreparation unit finished: failed.\n',
+        )
+        self.assertEqual(summary, "Preparation unit finished: failed.\n")
+        self.assertEqual(leftover, ["preparation-status.txt"])
 
     def test_runner_without_status_reports_fixed_line(self):
-        for name in RUN_JOBS:
-            completed, leftover, _ = self.run_step(name, 3, write_status=False)
-            self.assertEqual(completed.returncode, 3)
-            self.assertIn("Control reconciles this run.", completed.stdout)
-            self.assertNotIn("preparation-private.log", leftover)
+        completed, _, _ = self.run_step(JOB, 3, write_status=False)
+        self.assertEqual(completed.returncode, 3)
+        self.assertIn("Control reconciles this run.", completed.stdout)
 
     def test_successful_runner_exits_zero(self):
-        completed, leftover, _ = self.run_step("prepare", 0)
+        completed, _, _ = self.run_step(JOB, 0)
         self.assertEqual(completed.returncode, 0)
-        self.assertNotIn("preparation-private.log", leftover)
-
-    def test_failed_validation_prints_fixed_status(self):
-        completed, _, _ = self.run_step("validate", 1)
-        self.assertEqual(completed.returncode, 1)
-        self.assertEqual(completed.stdout, "Preparation unit finished: failed.\n")
-        self.assertNotIn("PRIVATE-MARKER", completed.stdout + completed.stderr)
-
-
-if __name__ == "__main__":
-    unittest.main()

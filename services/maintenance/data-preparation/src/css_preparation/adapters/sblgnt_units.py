@@ -77,7 +77,9 @@ class _Reader:
 
     def named(self, value: str) -> None:
         if _name(value) not in self.names:
-            raise RecordError(f'This SBLGNT file names "{value}", not {self.book}')
+            raise RecordError(
+                f"This SBLGNT file names a different book than {self.book}"
+            )
 
     def place(self) -> None:
         self.starts.append(
@@ -116,9 +118,7 @@ class _Reader:
             given = (self.number["id"] or self.number["text"]).strip()
             found = _COORDINATE.fullmatch(given)
             if not found:
-                raise RecordError(
-                    f"A verse number is not chapter:verse: {given[:40]!r}"
-                )
+                raise RecordError("A verse number is not chapter:verse")
             if found.group("name"):
                 self.named(found.group("name"))
             self.verse = (int(found.group("chapter")), int(found.group("verse")))

@@ -10,7 +10,8 @@ from ..indexes.files import PAGE_CAP
 from ..contracts import job_result, parse_job_input
 from ..prepare.evidence import NativeText
 from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
-from ..provider import ProviderError, provider_diagnostic, quality_diagnostic
+from ..diagnostics import diagnostic
+from ..provider import ProviderError
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
 from . import ControlState, UnitNotRunnable, execute_unit
@@ -32,7 +33,6 @@ def check_candidate_quality(
     receipts: CheckpointStore,
     max_page_bytes: int = PAGE_CAP,
     read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
-    on_error: Callable[[str, BaseException], None] | None = None,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)
@@ -53,9 +53,8 @@ def check_candidate_quality(
             diagnostics=fields.get("diagnostics", []),
         )
 
-    def report(stage: str, error: BaseException) -> None:
-        if on_error is not None:
-            on_error(stage, error)
+    def failed(stage: str, code: str, error: BaseException) -> dict[str, Any]:
+        return result("failed", diagnostics=[diagnostic(job, stage, code, error)])
 
     def process(entry: dict[str, Any]) -> dict[str, Any]:
         stage = "validating_candidate"
@@ -164,30 +163,11 @@ def check_candidate_quality(
         except UnitNotRunnable:
             raise  # A late cancellation is not a failed quality check.
         except ReaderBoundaryError as error:
-            report(stage, error)
-            return result(
-                "failed",
-                diagnostics=[{"code": "reader_boundary", "message": str(error)}],
-            )
+            return failed(stage, "reader_boundary", error)
         except ProviderError as error:
-            report(stage, error)
-            return result(
-                "failed",
-                diagnostics=[
-                    {
-                        "code": "provider_failure",
-                        "message": provider_diagnostic(error, stage),
-                    }
-                ],
-            )
+            return failed(stage, "provider_failure", error)
         except (RecordError, KeyError, ValueError, UnicodeError, OSError) as error:
-            report(stage, error)
-            return result(
-                "failed",
-                diagnostics=[
-                    {"code": "quality_failed", "message": quality_diagnostic(stage)}
-                ],
-            )
+            return failed(stage, "quality_failed", error)
 
     try:
         return execute_unit(
@@ -198,24 +178,6 @@ def check_candidate_quality(
             process=process,
         )
     except ProviderError as error:
-        report("control_check", error)
-        return result(
-            "failed",
-            diagnostics=[
-                {
-                    "code": "provider_failure",
-                    "message": provider_diagnostic(error, "control_check"),
-                }
-            ],
-        )
+        return failed("control_check", "provider_failure", error)
     except OSError as error:
-        report("control_check", error)
-        return result(
-            "failed",
-            diagnostics=[
-                {
-                    "code": "quality_failed",
-                    "message": quality_diagnostic("control_check"),
-                }
-            ],
-        )
+        return failed("control_check", "quality_failed", error)

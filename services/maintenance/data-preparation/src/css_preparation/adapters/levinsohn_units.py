@@ -57,7 +57,7 @@ def levinsohn_starts(book: str, xml: str | bytes) -> tuple[Start, ...]:
             match = _OSIS.fullmatch(osis)
             if not match:
                 raise RecordError(
-                    f"An LGNTDF reference is not chapter.verse!word: {osis[:40]!r}"
+                    f"LGNTDF reference number {seen} is not chapter.verse!word"
                 )
             place = (int(match.group(1)), int(match.group(2)))
             if place not in _EXCLUDED:

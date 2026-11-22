@@ -17,12 +17,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from css_shared.error_record import OwnMessage
+
 CHUNK = 1 << 16
 # A named agent is already used by the preparation HTTP client; some public sources reject Python-urllib.
 USER_AGENT = "canonical-scripture-study-preparation"
 
 
-class TransferError(RuntimeError):
+class TransferError(OwnMessage, RuntimeError):
     """The transfer left its route, exceeded its bounds or did not match its expected bytes."""
 
 

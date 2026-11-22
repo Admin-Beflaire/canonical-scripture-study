@@ -76,8 +76,11 @@ export async function tidyReleases(db: D1Database): Promise<Tidied> {
     if (gone.length) {
       const removed = await db.batch(
         gone.map(({id}) =>
+          // The release is checked again here: it may have become kept since it was listed.
           db
-            .prepare('DELETE FROM release_outputs WHERE release_id = ?')
+            .prepare(
+              `DELETE FROM release_outputs WHERE release_id = ? AND release_id NOT IN (${KEPT_RELEASES})`,
+            )
             .bind(id),
         ),
       );

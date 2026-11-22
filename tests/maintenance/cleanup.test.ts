@@ -239,6 +239,34 @@ test('a task that ends clears what it left behind, and the selection is unchange
   assert.equal(selected.c, 'release-current');
 });
 
+test('a release that becomes kept after it was listed keeps its membership', async () => {
+  const w = world();
+  const member = w.output('member', 'member');
+  for (const id of ['release-task', 'release-selected', 'release-unused'])
+    w.release(id, [member]);
+  w.release('release-current', [member]);
+  w.select('release-current');
+  const batch = w.db.batch.bind(w.db);
+  // Between listing the releases and deleting, an open task and a selection start using two of them.
+  w.db.batch = async statements => {
+    w.task('open', 'running', 'release-task', null);
+    w.select('release-selected', 'release-current');
+    return batch(statements);
+  };
+  await tidyReleases(w.db);
+  const left = w.sql
+    .prepare(
+      `SELECT DISTINCT release_id FROM release_outputs ORDER BY release_id`,
+    )
+    .all()
+    .map(row => row.release_id);
+  assert.deepEqual(left, [
+    'release-current',
+    'release-selected',
+    'release-task',
+  ]);
+});
+
 test('a release whose membership was removed cannot be selected again', async () => {
   const w = world();
   const kept = w.output('kept', 'kept');

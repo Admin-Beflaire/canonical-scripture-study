@@ -80,4 +80,3 @@ tools/build.mjs
 tools/check-boundaries.mjs
 tools/cloudflare/study-fit-fixture.ts
 tools/cloudflare/study-fit.ts
-tools/run-python.mjs

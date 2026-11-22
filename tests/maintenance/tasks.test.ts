@@ -356,37 +356,33 @@ test('open and recent tasks are listed newest first in bounded pages', async () 
   await assert.rejects(listTasks(db, owner, '-1'));
 });
 
-test('task report shows safe diagnostics and never exposes arbitrary saved exception text', async () => {
+const record = (extra: object = {}) => ({
+  v: 1,
+  tool: 'prepare',
+  stage: 'building_output',
+  outcome: 'failed',
+  code: 'invalid_or_unavailable_output',
+  error: 'OSError',
+  ...extra,
+});
+
+test('task report shows the error record as stored and only a code for results from before records', async () => {
   const db = localD1();
   admitted(db);
   const created = await requestTask(db, owner, prepare());
   assert.ok(created.status === 'created');
+  const stored = record({
+    http: 503,
+    ids: {unit: 'u1'},
+    message: 'Gen.3 line 1204, field morph: expected a morphology code',
+  });
   const result = JSON.stringify({
     diagnostics: [
-      {
-        code: 'reader_boundary',
-        message:
-          'Reader marker 1Ch.12.5 crosses the requested native unit boundary',
-      },
-      {
-        code: 'provider_failure',
-        message: 'Provider request failed with HTTP 429',
-      },
-      {
-        code: 'provider_failure',
-        message: 'Provider request failed with HTTP 429; internal detail',
-      },
+      {code: 'invalid_or_unavailable_output', message: JSON.stringify(stored)},
+      {code: 'runner_error', message: 'OSError: private secret material'},
+      {code: 'reader_boundary', message: '{"v":2,"unknown":"shape"}'},
       {code: 'constructor', message: 'secret'},
-      {
-        code: 'quality_failed',
-        message: 'Quality failure during saving_receipt; detail unavailable',
-      },
-      {
-        code: 'transient_exhausted',
-        message: 'Transient failure during saving_output; retries exhausted',
-      },
-      {code: 'runner_error', message: 'private secret material'},
-      {code: 'reader_boundary', message: 'private secret material'},
+      {code: 'bad code with spaces', message: JSON.stringify(stored)},
     ],
   });
   db.sqlite
@@ -396,31 +392,12 @@ test('task report shows safe diagnostics and never exposes arbitrary saved excep
     )
     .run(created.task.id, 'a'.repeat(64), result);
   const report = await taskReport(db, owner, created.task.id);
+  const predates = 'This result predates error records; only its code is kept.';
   assert.deepEqual(report?.jobs[0].diagnostics, [
-    {
-      code: 'reader_boundary',
-      message:
-        'Reader marker 1Ch.12.5 crosses the requested native unit boundary',
-    },
-    {
-      code: 'provider_failure',
-      message: 'Provider request failed with HTTP 429',
-    },
-    {code: 'provider_failure', message: 'provider_failure'},
-    {code: 'constructor', message: 'constructor'},
-    {
-      code: 'quality_failed',
-      message: 'Quality failure during saving_receipt; detail unavailable',
-    },
-    {
-      code: 'transient_exhausted',
-      message: 'Transient failure during saving_output; retries exhausted',
-    },
-    {
-      code: 'runner_error',
-      message: 'The preparation runner encountered an unexpected error.',
-    },
-    {code: 'reader_boundary', message: 'reader_boundary'},
+    {code: 'invalid_or_unavailable_output', record: stored},
+    {code: 'runner_error', message: predates},
+    {code: 'reader_boundary', message: predates},
+    {code: 'constructor', message: predates},
   ]);
   assert.equal(
     JSON.stringify(report).includes('private secret material'),
@@ -432,24 +409,23 @@ test('task report shows safe diagnostics and never exposes arbitrary saved excep
   );
 });
 
-test('Python preparation diagnostics survive the Control report filter', async () => {
+test('Python preparation error records are shown by Control exactly as built', async () => {
   const script = `import json
-from css_preparation.provider import ProviderError, provider_diagnostic, quality_diagnostic, stage_diagnostic
+from css_preparation.diagnostics import diagnostic
 from css_preparation.executor.checkpoints import UnitProgress
-from css_preparation.prepare.records import ReaderBoundaryError
+from css_preparation.prepare.records import ReaderBoundaryError, RecordError
+from css_preparation.provider import ProviderError
 from css_preparation.runner.__main__ import _from_progress
 job = json.load(open('tests/conformance/dp04-control-wire.v1.json'))['job_input']
-stages = ['control_check','checkpoint_recovery','acquiring_input','building_output','validating_output','saving_output','verifying_output','saving_checkpoint']
+errors = [('invalid_or_unavailable_output', OSError('private secret material')),
+          ('invalid_or_unavailable_output', RecordError('Gen.3 line 1204, field morph: expected a morphology code')),
+          ('provider_failure', ProviderError('Provider request refused', status=503)),
+          ('reader_boundary', ReaderBoundaryError('1Ch.12.5')), ('stopped', None)]
 out = []
-for stage in stages:
-    for code, message in [('invalid_or_unavailable_output', stage_diagnostic(stage)), ('transient_exhausted', stage_diagnostic(stage, transient=True)), ('provider_failure', provider_diagnostic(ProviderError('secret', status=503), stage))]:
-        progress = UnitProgress('failed', {}, job['native_extent'], None, None, None, (code,), message)
+for stage in ['control_check', 'building_output', 'saving_checkpoint']:
+    for code, error in errors:
+        progress = UnitProgress('failed', {}, job['native_extent'], None, None, None, (code,), diagnostic(job, stage, code, error)['message'])
         out.extend(_from_progress(job, '123', progress)['diagnostics'])
-for stage in ['validating_candidate','saving_receipt','verifying_receipt','control_check']:
-    if stage != 'control_check':
-        out.append({'code': 'provider_failure', 'message': provider_diagnostic(ProviderError('secret', status=503), stage)})
-    out.append({'code': 'quality_failed', 'message': quality_diagnostic(stage)})
-out.append({'code': 'reader_boundary', 'message': str(ReaderBoundaryError('1Ch.12.5'))})
 print(json.dumps(out))`;
   const env = {
     ...process.env,
@@ -475,5 +451,13 @@ print(json.dumps(out))`;
     )
     .run(created.task.id, 'a'.repeat(64), JSON.stringify({diagnostics}));
   const report = await taskReport(db, owner, created.task.id);
-  assert.deepEqual(report?.jobs[0].diagnostics, diagnostics);
+  assert.equal(diagnostics.length, 15);
+  assert.deepEqual(
+    report?.jobs[0].diagnostics,
+    diagnostics.map(({code, message}) => ({code, record: JSON.parse(message)})),
+  );
+  assert.equal(
+    JSON.stringify(report).includes('private secret material'),
+    false,
+  );
 });

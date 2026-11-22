@@ -1,6 +1,25 @@
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {isIdentifier, isSafeCount, sha256Hex} from './bytes.ts';
 import type {ReadSession} from './session.ts';
 import {ReadError} from './states.ts';
+
+/** A failed object read: logged with its cause, reported to the caller as a temporary failure. */
+function readFailure(
+  error: unknown,
+  stage: string,
+  artifactId: string,
+): ReadError {
+  reportError(error, {
+    tool: 'study',
+    stage,
+    code: 'temporary_failure',
+    ids: {artifact: artifactId},
+  });
+  return new ReadError(
+    'temporary_failure',
+    `Object read failed for ${artifactId}`,
+  );
+}
 
 /** A registered artifact row selected by the current release. The object key is internal:
  *  it is used for the R2 read and never returned to a host. */
@@ -107,11 +126,8 @@ export async function readArtifact(
       artifact.registered_locator,
       range ? {range: {offset, length}} : undefined,
     );
-  } catch {
-    throw new ReadError(
-      'temporary_failure',
-      `Object read failed for ${artifact.id}`,
-    );
+  } catch (error) {
+    throw readFailure(error, 'object_read', artifact.id);
   }
   if (!object)
     throw new ReadError(
@@ -121,11 +137,8 @@ export async function readArtifact(
   let bytes;
   try {
     bytes = await object.arrayBuffer();
-  } catch {
-    throw new ReadError(
-      'temporary_failure',
-      `Object read failed for ${artifact.id}`,
-    );
+  } catch (error) {
+    throw readFailure(error, 'object_body', artifact.id);
   }
   if (bytes.byteLength !== length || (await sha256Hex(bytes)) !== digest)
     throw new ReadError(
@@ -176,11 +189,8 @@ export async function readVerifiedRange(
       object = await session.objects.get(artifact.registered_locator, {
         range: {offset: range.offset + offset, length},
       });
-    } catch {
-      throw new ReadError(
-        'temporary_failure',
-        `Object read failed for ${artifact.id}`,
-      );
+    } catch (error) {
+      throw readFailure(error, 'object_read', artifact.id);
     }
     if (!object)
       throw new ReadError(
@@ -190,11 +200,8 @@ export async function readVerifiedRange(
     let chunk: ArrayBuffer;
     try {
       chunk = await object.arrayBuffer();
-    } catch {
-      throw new ReadError(
-        'temporary_failure',
-        `Object read failed for ${artifact.id}`,
-      );
+    } catch (error) {
+      throw readFailure(error, 'object_body', artifact.id);
     }
     if (chunk.byteLength !== length)
       throw new ReadError('corrupt', `Length mismatch in ${artifact.id}`);
@@ -257,11 +264,8 @@ export async function readSlices(
     object = await session.objects.get(artifact.registered_locator, {
       range: {offset, length},
     });
-  } catch {
-    throw new ReadError(
-      'temporary_failure',
-      `Object read failed for ${artifact.id}`,
-    );
+  } catch (error) {
+    throw readFailure(error, 'object_read', artifact.id);
   }
   if (!object)
     throw new ReadError(
@@ -271,11 +275,8 @@ export async function readSlices(
   let bytes: Uint8Array;
   try {
     bytes = new Uint8Array(await object.arrayBuffer());
-  } catch {
-    throw new ReadError(
-      'temporary_failure',
-      `Object read failed for ${artifact.id}`,
-    );
+  } catch (error) {
+    throw readFailure(error, 'object_body', artifact.id);
   }
   if (bytes.byteLength !== length)
     throw new ReadError('corrupt', `Length mismatch in ${artifact.id}`);

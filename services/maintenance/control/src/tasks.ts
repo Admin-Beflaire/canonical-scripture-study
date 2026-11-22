@@ -509,6 +509,27 @@ export async function listTasks(
   };
 }
 
+/** The error record in a diagnostic message, or a note that the result predates records. */
+function recordOf(message: unknown): {record: unknown} | {message: string} {
+  try {
+    const record =
+      typeof message === 'string' && message.length <= 1000
+        ? JSON.parse(message)
+        : null;
+    if (
+      record &&
+      typeof record === 'object' &&
+      (record as {v?: unknown}).v === 1
+    )
+      return {record};
+  } catch {
+    /* free text from before records */
+  }
+  return {
+    message: 'This result predates error records; only its code is kept.',
+  };
+}
+
 /** Full report for one task: requested, completed and remaining scope, jobs, checks and selection. */
 export async function taskReport(
   db: D1Database,
@@ -533,9 +554,9 @@ export async function taskReport(
       result_ref: string | null;
       result_json: string | null;
     }>();
-  // Older results can contain arbitrary exception text. Expose only messages with
-  // a narrowly defined, safe format; retain codes for all other diagnostics.
-  const safeDiagnostics = (raw: unknown) => {
+  // A failed unit's diagnostic is the safe error record built where the error was caught, so it is
+  // shown as stored. Results from before the record only carry free text: keep their code.
+  const diagnostics = (raw: unknown) => {
     if (typeof raw !== 'string') return [];
     try {
       const value = JSON.parse(raw) as {diagnostics?: unknown};
@@ -545,53 +566,7 @@ export async function taskReport(
         const {code, message} = d as {code?: unknown; message?: unknown};
         if (typeof code !== 'string' || !/^[A-Za-z0-9._:/-]{1,200}$/.test(code))
           return [];
-        const safe =
-          typeof message === 'string' &&
-          ((code === 'reader_boundary' &&
-            /^Reader marker [1-3]?[A-Za-z]{2,8}\.[0-9]{1,3}\.[0-9]{1,3} crosses the requested native unit boundary$/.test(
-              message,
-            )) ||
-            (code === 'invalid_or_unavailable_output' &&
-              /^Failure during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint); detail unavailable$/.test(
-                message,
-              )) ||
-            (code === 'transient_exhausted' &&
-              /^Transient failure during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint); retries exhausted$/.test(
-                message,
-              )) ||
-            (code === 'quality_failed' &&
-              /^Quality failure during (control_check|validating_candidate|saving_receipt|verifying_receipt); detail unavailable$/.test(
-                message,
-              )) ||
-            (code === 'provider_failure' &&
-              /^Provider request failed( during (control_check|checkpoint_recovery|acquiring_input|building_output|validating_output|saving_output|verifying_output|saving_checkpoint|validating_candidate|saving_receipt|verifying_receipt))?( with HTTP [1-5][0-9]{2}|; HTTP status unavailable)$/.test(
-                message,
-              )));
-        const descriptions: Record<string, string> = {
-          quota: 'A provider quota stopped the unit.',
-          refused: 'The requested operation was refused.',
-          missing_dependency: 'A required dependency was unavailable.',
-          limit: 'A configured work limit was reached.',
-          stopped: 'The task stopped while retrying.',
-          transient_exhausted: 'A temporary failure exhausted the retry limit.',
-          invalid_or_unavailable_output: 'Output was invalid or unavailable.',
-          quality_failed: 'The candidate quality check failed.',
-          no_registered_recipe: 'The preparation recipe was not registered.',
-          not_runnable: 'The task or job was no longer runnable.',
-          runner_failed: 'The preparation runner failed.',
-          runner_error:
-            'The preparation runner encountered an unexpected error.',
-        };
-        return [
-          {
-            code,
-            message: safe
-              ? message
-              : Object.hasOwn(descriptions, code)
-                ? descriptions[code]
-                : code,
-          },
-        ];
+        return [{code, ...recordOf(message)}];
       });
     } catch {
       return [];
@@ -609,7 +584,7 @@ export async function taskReport(
     remaining_extent: outcome.remaining_extent,
     jobs: jobs.results.slice(0, 50).map(({result_json, ...job}) => ({
       ...job,
-      diagnostics: safeDiagnostics(result_json),
+      diagnostics: diagnostics(result_json),
     })),
     more_jobs: jobs.results.length > 50,
     checks: {

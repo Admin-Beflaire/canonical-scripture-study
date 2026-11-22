@@ -7,6 +7,7 @@ import {
   type JobInput,
   type JobResult,
 } from './contracts.ts';
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import type {Scope, TaskRow} from './tasks.ts';
 
 /** Dispatch intent and receipt matching (Maintenance Control To-Be §3). The transport
@@ -152,7 +153,15 @@ export async function dispatchUnit(
     runId = (await transport.dispatch(input)).run_id;
     if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(runId))
       throw new Error('Invalid run identity');
-  } catch {
+  } catch (error) {
+    reportError(error, {
+      tool: 'control',
+      stage: 'dispatch',
+      code: 'dispatch_unconfirmed',
+      outcome: 'uncertain',
+      ids: {task: task.id, unit: unit.unit_id},
+      counts: {attempt},
+    });
     return {
       status: 'uncertain',
       attempt,

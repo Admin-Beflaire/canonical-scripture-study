@@ -1,3 +1,4 @@
+import {OwnMessageError} from '../../../../packages/shared/src/error-record.ts';
 import {canonicalJson, sha256} from './d1.ts';
 import type {JobInput} from './contracts.ts';
 import type {WorkflowTransport} from './dispatch.ts';
@@ -34,9 +35,9 @@ export interface RunInfo {
 }
 
 /** A reviewed file exists but is not valid UTF-8: a recipe problem, not an outage. */
-export class FileEncodingError extends Error {}
+export class FileEncodingError extends OwnMessageError {}
 
-export class GitHubError extends Error {
+export class GitHubError extends OwnMessageError {
   readonly status?: number;
   constructor(message: string, status?: number) {
     super(message);

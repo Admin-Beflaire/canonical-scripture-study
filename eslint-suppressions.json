@@ -74,10 +74,10 @@
   },
   "services/maintenance/control/src/tasks.ts": {
     "complexity": {
-      "count": 3
+      "count": 2
     },
     "max-lines-per-function": {
-      "count": 3
+      "count": 2
     },
     "no-constant-condition": {
       "count": 1
@@ -120,9 +120,6 @@
   "services/study/src/read/objects.ts": {
     "complexity": {
       "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 1
     }
   },
   "services/study/src/read/queries.ts": {

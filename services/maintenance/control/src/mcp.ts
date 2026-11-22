@@ -1,4 +1,5 @@
 import {fromJsonSchema} from '@modelcontextprotocol/server';
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
 import type {GitHubActions} from './github.ts';
@@ -184,11 +185,11 @@ async function progressSafely<T>(
     return {value: await work()};
   } catch (error) {
     const failure = describeProgressFailure(operation, error);
-    console.error('Control task progression failed', {
-      task_id: taskId,
-      operation,
+    reportError(error, {
+      tool: 'control',
+      stage: operation,
       code: failure.code,
-      error,
+      ids: {task: taskId},
     });
     return {value: null, failure};
   }

@@ -1,3 +1,5 @@
+import {OwnMessageError} from '../../../../packages/shared/src/error-record.ts';
+
 /** Distinct read outcomes. A no-match is never reported as missing data, and a
  *  temporary failure or corruption is never reported as an empty result. */
 export type ReadState =
@@ -15,7 +17,7 @@ export type ReadState =
   | 'exceeds_limits' // one stored item is larger than any request may read; withheld
   | 'invalid_request'; // malformed input or continuation
 
-export class ReadError extends Error {
+export class ReadError extends OwnMessageError {
   readonly state: ReadState;
   constructor(state: ReadState, message: string) {
     super(message);

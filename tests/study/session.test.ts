@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {mock, test} from 'node:test';
 import {buildFixture, A, B} from './fixture.ts';
 import {buildPassageFixture, HEB} from './passage-fixture.ts';
 import {
@@ -491,6 +491,30 @@ test('a provider failure is a temporary failure, not an empty result', async () 
     session.query('packages', {subject: 'synthetic-subject'}),
     state('temporary_failure'),
   );
+});
+
+test('a provider failure is logged as a safe record that holds no provider text', async () => {
+  const fixture = buildFixture();
+  const session = await ReadSession.open(fixture.env, roomy);
+  fixture.db.sqlite.exec('DROP TABLE study_packages');
+  const logged = mock.method(console, 'error', () => {});
+  try {
+    await assert.rejects(
+      session.query('packages', {subject: 'synthetic-subject'}),
+      state('temporary_failure'),
+    );
+    const lines = logged.mock.calls.map(call => String(call.arguments[0]));
+    assert.equal(lines.length, 1);
+    const record = JSON.parse(lines[0]);
+    assert.deepEqual(
+      [record.tool, record.stage, record.code],
+      ['study', 'd1_read', 'temporary_failure'],
+    );
+    assert.equal(record.message, undefined);
+    assert.equal(lines[0].includes('study_packages'), false);
+  } finally {
+    logged.mock.restore();
+  }
 });
 
 test('R30-6: a release declaring index_manifest 2 opens; one declaring version 1 is incompatible', async () => {

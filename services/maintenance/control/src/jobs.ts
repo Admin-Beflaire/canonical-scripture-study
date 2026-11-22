@@ -2,6 +2,7 @@ import type {D1Database} from './d1.ts';
 import {acceptReceipt} from './dispatch.ts';
 import {runTitle, type GitHubActions} from './github.ts';
 import {advance} from './progress.ts';
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import type {ObjectStore} from './selection.ts';
 
 /** Control's internal job routes for the preparation runner (tests/conformance/internal-jobs.v1.json).
@@ -174,7 +175,13 @@ async function result(
   let workflowCommit: string;
   try {
     workflowCommit = (await github.run(runId)).head_sha;
-  } catch {
+  } catch (error) {
+    reportError(error, {
+      tool: 'control',
+      stage: 'run_lookup',
+      code: 'run_not_verifiable',
+      ids: {run: runId},
+    });
     return json(200, {status: 'rejected', reason: 'run is not verifiable'});
   }
   const receipt = await acceptReceipt(db, value, commit, workflowCommit);
@@ -182,10 +189,16 @@ async function result(
     // Advance the task now, so work continues without an open chat: after the last unit this
     // runs the scope check and selection.
     const taskId = (value as {task_id: string}).task_id;
+    // get_task or resume retries progression; the failure is logged so it can be read.
     try {
       await advance(db, github, taskId, objects);
-    } catch {
-      /* get_task or resume retries progression */
+    } catch (error) {
+      reportError(error, {
+        tool: 'control',
+        stage: 'advance',
+        code: 'progression_failed',
+        ids: {task: taskId},
+      });
     }
   }
   return json(200, receipt);

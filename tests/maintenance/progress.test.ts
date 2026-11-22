@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {localD1} from './d1.ts';
@@ -297,10 +297,24 @@ test('result route verifies the run commit through GitHub and is idempotent', as
     commit: 'b'.repeat(40),
   });
   assert.equal(wrong.body.status, 'rejected');
-  const forged = await post('/internal/jobs/result', {
-    result: resultFor(job, '999999'),
-    commit: gh.commit,
-  });
+  const logged = mock.method(console, 'error', () => {});
+  let forged;
+  try {
+    forged = await post('/internal/jobs/result', {
+      result: resultFor(job, '999999'),
+      commit: gh.commit,
+    });
+    // The run lookup failure is no longer swallowed: it is logged as one safe record.
+    const lines = logged.mock.calls.map(call =>
+      JSON.parse(String(call.arguments[0])),
+    );
+    assert.deepEqual(
+      lines.map(line => [line.stage, line.code, line.ids.run]),
+      [['run_lookup', 'run_not_verifiable', '999999']],
+    );
+  } finally {
+    logged.mock.restore();
+  }
   assert.deepEqual(forged.body, {
     status: 'rejected',
     reason: 'run is not verifiable',

@@ -1,3 +1,4 @@
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import type {
   D1ReadDatabase,
   R2ReadBucket,
@@ -94,7 +95,12 @@ async function run<T>(
       .prepare(sql)
       .bind(...values)
       .all<T>();
-  } catch {
+  } catch (error) {
+    reportError(error, {
+      tool: 'study',
+      stage: 'd1_read',
+      code: 'temporary_failure',
+    });
     throw new ReadError('temporary_failure', 'Data read failed');
   }
   budget.recordRows(result.meta?.rows_read ?? 0);

@@ -1,3 +1,4 @@
+import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {canonicalJson, type D1Database} from './d1.ts';
 import {
   recipeErrors,
@@ -178,12 +179,20 @@ export async function advance(
     loaded = await loadRecipe(github, scope.constraints.recipe);
   } catch (error) {
     // A temporary GitHub failure postpones progression; it never blocks the task.
-    if (error instanceof GitHubError)
+    if (error instanceof GitHubError) {
+      reportError(error, {
+        tool: 'control',
+        stage: 'load_recipe',
+        code: 'github_unavailable',
+        outcome: 'uncertain',
+        ids: {task: taskId},
+      });
       return {
         dispatched: [],
         state: row.state,
         limitation: 'github_unavailable',
       };
+    }
     throw error;
   }
   const {recipe, problem: invalid} = loaded;
@@ -664,7 +673,14 @@ export async function reconcile(
         notes.push(
           'The list of unfinished runs was incomplete; unconfirmed dispatches are checked again later',
         );
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        tool: 'control',
+        stage: 'active_runs',
+        code: 'github_unavailable',
+        outcome: 'uncertain',
+        ids: {task: taskId},
+      });
       notes.push(
         'GitHub was unavailable; unconfirmed dispatches are checked again later',
       );

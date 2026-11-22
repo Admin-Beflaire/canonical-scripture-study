@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {localD1} from './d1.ts';
 import {
@@ -124,6 +124,26 @@ test('intent is saved before dispatch and a repeated dispatch never creates a du
     (await dispatchUnit(db, wire, task.id, 1, unit)).status,
     'not_dispatchable',
   );
+});
+
+test('an unconfirmed dispatch is logged as one safe error record', async () => {
+  const {db, task} = await setup();
+  const logged = mock.method(console, 'error', () => {});
+  try {
+    await dispatchUnit(db, transport([]), task.id, 1, unit);
+    const lines = logged.mock.calls.map(call =>
+      JSON.parse(String(call.arguments[0])),
+    );
+    assert.equal(lines.length, 1);
+    assert.deepEqual(
+      [lines[0].tool, lines[0].stage, lines[0].code, lines[0].outcome],
+      ['control', 'dispatch', 'dispatch_unconfirmed', 'uncertain'],
+    );
+    assert.equal(lines[0].ids.task, task.id);
+    assert.equal(lines[0].message, undefined);
+  } finally {
+    logged.mock.restore();
+  }
 });
 
 test('an unconfirmed dispatch keeps its intent for reconciliation instead of re-sending', async () => {

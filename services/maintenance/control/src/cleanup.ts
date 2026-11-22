@@ -11,12 +11,13 @@ import {OPEN_STATES} from './tasks.ts';
  *  object that nothing refers to any more is removed separately, after the owner's recovery
  *  copy.
  *
- *  It never changes what is selected, only deletes rows nothing kept refers to, and each
- *  call does a bounded amount of work, so a large backlog is cleared over several calls. */
+ *  It never changes what is selected, only deletes rows nothing kept refers to. Each call
+ *  does a bounded amount of work, so a large backlog is cleared over several calls. A
+ *  release's membership is removed whole, in one transaction: a release is either complete
+ *  or empty, never partly cleaned, so validation cannot take a remainder for a release. */
 const OPEN = `('${OPEN_STATES.join("','")}')`;
 const UNFINISHED = `('intended','dispatched','running','checkpointed')`;
-const MEMBERSHIP_ROWS = 5000; // Membership rows removed by one statement.
-const MEMBERSHIP_ROUNDS = 4; // At most this many statements per call.
+const RELEASES_PER_CALL = 20; // Releases whose membership is removed by one call.
 const OUTPUTS_PER_CALL = 4; // Saved outputs removed by one call.
 
 const KEPT_RELEASES = `SELECT current_release_id AS id FROM release_selection WHERE current_release_id IS NOT NULL
@@ -63,16 +64,24 @@ export interface Tidied {
 export async function tidyReleases(db: D1Database): Promise<Tidied> {
   const done: Tidied = {memberships: 0, outputs: 0, skipped: 0};
   try {
-    for (let round = 0; round < MEMBERSHIP_ROUNDS; round++) {
-      const removed = await db
+    const gone = (
+      await db
         .prepare(
-          `DELETE FROM release_outputs WHERE rowid IN (
-            SELECT rowid FROM release_outputs WHERE release_id NOT IN (${KEPT_RELEASES}) LIMIT ?)`,
+          `SELECT r.id FROM releases r WHERE r.id NOT IN (${KEPT_RELEASES})
+            AND EXISTS (SELECT 1 FROM release_outputs ro WHERE ro.release_id = r.id) LIMIT ?`,
         )
-        .bind(MEMBERSHIP_ROWS)
-        .run();
-      done.memberships += removed.meta.changes ?? 0;
-      if ((removed.meta.changes ?? 0) < MEMBERSHIP_ROWS) break;
+        .bind(RELEASES_PER_CALL)
+        .all<{id: string}>()
+    ).results;
+    if (gone.length) {
+      const removed = await db.batch(
+        gone.map(({id}) =>
+          db
+            .prepare('DELETE FROM release_outputs WHERE release_id = ?')
+            .bind(id),
+        ),
+      );
+      done.memberships = removed.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
     }
     // A job that is still running may have saved outputs it has not reported yet.
     const running = await db

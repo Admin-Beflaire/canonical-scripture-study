@@ -198,16 +198,27 @@ test('a cleanup that fails is reported and never throws', async () => {
   assert.deepEqual(done, {memberships: 0, outputs: 0, skipped: 0});
 });
 
-test('one call removes a bounded amount of membership; the rest follows on the next call', async () => {
+test('a release is removed whole or not at all, also when a call reaches its limit', async () => {
   const w = world();
   w.sql.exec(`
-    INSERT INTO releases VALUES ('release-old', 'm', 'r', '{}', 'c', 'q', 's');
-    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20500)
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+    INSERT INTO releases SELECT 'release-' || i, 'm', 'r', '{}', 'c', 'q', 's' FROM n;
+    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500)
     INSERT INTO prepared_outputs SELECT 'out-' || i, 'text', '["rev"]', 'm1', '{}', '{}', '{}' FROM n;
-    INSERT INTO release_outputs SELECT 'release-old', id FROM prepared_outputs;`);
-  assert.equal((await tidyReleases(w.db)).memberships, 20000);
-  assert.equal(w.count('release_outputs'), 500);
-  assert.equal((await tidyReleases(w.db)).memberships, 500);
+    INSERT INTO release_outputs SELECT r.id, o.id FROM releases r CROSS JOIN prepared_outputs o;`);
+  const sizes = () =>
+    w.sql
+      .prepare(
+        `SELECT r.id, (SELECT COUNT(*) FROM release_outputs ro WHERE ro.release_id = r.id) AS n FROM releases r`,
+      )
+      .all()
+      .map(row => Number(row.n));
+  const first = await tidyReleases(w.db);
+  assert.ok(first.memberships > 0 && w.count('release_outputs') > 0); // The limit was reached.
+  assert.ok(sizes().every(size => size === 0 || size === 500)); // No release is partly cleaned.
+  while ((await tidyReleases(w.db)).memberships)
+    assert.ok(sizes().every(size => size === 0 || size === 500));
+  assert.equal(w.count('release_outputs'), 0);
 });
 
 test('a task that ends clears what it left behind, and the selection is unchanged', async () => {

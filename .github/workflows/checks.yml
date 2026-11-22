@@ -36,7 +36,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install locked Python development tools
         if: steps.route.outputs.standards == 'true'
-        run: python3 -m pip install --require-hashes --only-binary=:all: --no-deps --disable-pip-version-check -r requirements-dev.txt
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: --no-deps --disable-pip-version-check -r requirements-dev.txt
       - name: TypeScript and Worker checks
         if: steps.route.outputs.typescript == 'true'
         run: python3 tools/repository/run_test_profile.py typescript

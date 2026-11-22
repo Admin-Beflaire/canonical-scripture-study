@@ -48,6 +48,9 @@ multiple releases. The seeded `release_selection` singleton has null current/pre
 IDs before the first release. Maintenance selects a checked compatible release in
 one transaction, retaining the previous selection for operational rollback. Study
 resolves current once per request and restricts each evidence read to that membership.
+Control removes the membership of a release that is neither current, previous nor needed by
+an open task, and then the saved outputs nothing kept uses (`services/maintenance/control/src/cleanup.ts`);
+release records stay, and a release without members is not selected again.
 Membership inserts/deletes are rejected for both current and previous releases;
 Rows belonging to either selected output set also reject inserts/deletes, including
 relationship members through their parent relationship. Output-scoped evidence rows

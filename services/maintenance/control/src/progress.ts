@@ -7,6 +7,7 @@ import {
   type Recipe,
   type RecipeUnit,
 } from './contracts.ts';
+import {tidyReleases} from './cleanup.ts';
 import {dispatchUnit, type DispatchResult, type UnitPlan} from './dispatch.ts';
 import {
   FileEncodingError,
@@ -20,7 +21,13 @@ import {
   selectDirect,
   type ObjectStore,
 } from './selection.ts';
-import type {Outcome, Scope, TaskRow} from './tasks.ts';
+import {
+  OPEN_STATES,
+  TASK_STATES,
+  type Outcome,
+  type Scope,
+  type TaskRow,
+} from './tasks.ts';
 
 /** Task progression without an open chat (Maintenance Control To-Be §2–3, MC-02).
  *  The recipe's units are Data Preparation's partition; Control only reads them, dispatches
@@ -28,6 +35,8 @@ import type {Outcome, Scope, TaskRow} from './tasks.ts';
  *  and conditional selection follow (selection.ts, MC-03). */
 export const MAX_ATTEMPTS = 3;
 const ACTIVE = new Set(['intended', 'dispatched', 'running', 'checkpointed']);
+const OPEN = new Set<string>(OPEN_STATES);
+const ENDED = new Set<string>(TASK_STATES.filter(state => !OPEN.has(state)));
 const RETRYABLE = new Set(['failed', 'cancelled']);
 
 interface JobView {
@@ -124,11 +133,23 @@ function addLimitation(outcome: Outcome, text: string) {
 }
 
 /** Dispatch every unit whose dependencies have succeeded. Safe to call repeatedly. */
+/** Move a task on, then clear what its end left behind (release cleanup, see cleanup.ts). */
 export async function advance(
   db: D1Database,
   github: GitHubActions | null,
   taskId: string,
   objects: ObjectStore | null = null,
+): Promise<Progress> {
+  const progress = await advanceTask(db, github, taskId, objects);
+  if (ENDED.has(progress.state)) await tidyReleases(db);
+  return progress;
+}
+
+async function advanceTask(
+  db: D1Database,
+  github: GitHubActions | null,
+  taskId: string,
+  objects: ObjectStore | null,
 ): Promise<Progress> {
   let row = await task(db, taskId);
   if (!row) return {dispatched: [], state: 'unknown'};

@@ -3,6 +3,7 @@ import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
 import type {GitHubActions} from './github.ts';
+import {tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import type {ObjectStore} from './selection.ts';
 import {
@@ -224,6 +225,7 @@ export function controlServer(
         );
       if (result.status === 'conflict')
         return reply(result.message, result, true);
+      if (request.supersedes) await tidyReleases(db);
       const attempt = await progressSafely('advance', result.task.id, () =>
         advance(db, github, result.task.id, objects),
       );
@@ -331,6 +333,7 @@ export function controlServer(
       const failed: string[] = [];
       const failures: ProgressFailure[] = [];
       if (action === 'cancel') {
+        await tidyReleases(db);
         const runs =
           (JSON.parse(result.task.outcome_json) as Outcome)
             .cancel_requested_runs ?? [];

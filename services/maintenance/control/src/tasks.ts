@@ -170,10 +170,6 @@ export function normalizeScope(request: TaskRequest): {
       'extent: the finite native extent (for example which books or units)',
     );
   if (['prepare', 'correct', 'replace'].includes(request.kind)) {
-    if (false)
-      missing.push(
-        'extent: the finite native extent (for example which books or units)',
-      );
     if (scope.capabilities.length === 0)
       missing.push(
         'capabilities: which outputs are needed (for example source_text, word_index)',

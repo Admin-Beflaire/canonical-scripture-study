@@ -65,7 +65,7 @@ owner-managed Worker secrets and are not copied into rendered configuration.
 
 Tool output is captured in a private file on the runner and removed at the end; it
 is never stored or uploaded. A failed step prints `::error` annotations with the
-tool's error summary line, the exit code and any provider error code
+fixed message for the kind of failure (never the tool's own text), the exit code and any provider error code
 (`python3 -m css_shared.tool_log`). Only the private success receipt is uploaded, with digest verification,
 to the private `deployment-diagnostics` release using run/attempt-qualified names;
 it separates exact

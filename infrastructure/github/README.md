@@ -144,7 +144,7 @@ a verified current state; no migration/encryption mechanism is added.
 ### Failure handling and error records
 
 A failed initialization, validation, plan or apply prints `::error`
-annotations: the error summary line, the resource address, the exit code and
+annotations: a fixed message for the kind of failure (never the tool's own text), the resource address, the exit code and
 the key counts (`python3 -m css_shared.tool_log`). No raw Terraform output is
 stored anywhere. If apply has
 begun, it attempts to preserve whatever nonempty state file Terraform left,

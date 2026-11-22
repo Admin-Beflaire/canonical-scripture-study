@@ -56,8 +56,8 @@ Every workflow, script and Worker reports a failure as one **error record**, bui
   checks this for the preparation and shared code. Messages from libraries, providers and commands are never stored; the
   record keeps their class and status.
 - Terraform and Wrangler output stays in a private file on the runner. `python3 -m css_shared.tool_log` turns it into
-  records: the error summary line, the resource address, and for a plan each resource's action and the names (never the
-  values) of the attributes that change.
+  records: a fixed message for the kind of failure (the tool's own wording is only matched, never printed), the resource
+  address, and for a plan each resource's action and the names (never the values) of the attributes that change.
 - Workflows print the record as a `::error` annotation (`annotation(record)`); Workers write it as a log line
   (`reportError`). Nothing else is printed, stored or deleted afterwards.
 

@@ -1,10 +1,11 @@
 """Safe records for Terraform, Wrangler and other command output.
 
 A command's own output stays in a private file on the runner. This module reads
-that file and prints only error records (see `error_record`): the tool's error
-summary line, the resource address, the planned action for each resource and the
-names of the attributes that would change. It never keeps values, detail blocks,
-plan output or state.
+that file and prints only error records (see `error_record`): a fixed message for
+the kind of failure, the resource address, the planned action for each resource and
+the names of the attributes that would change. The tool's own wording is read only
+to choose that fixed message and is never printed. It never keeps values, detail
+blocks, plan output or state.
 
 Run as `python3 -m css_shared.tool_log <terraform|wrangler|none> --tool T --stage S
 [--exit N] [--log FILE] [--id key=value ...]`. It always exits 0, so it never hides
@@ -25,7 +26,6 @@ MAX_FAILURES = 3
 MAX_RESOURCES = 8
 
 _BOX = " \t│╷╵"
-_SECRET_SHAPE = re.compile(r"[A-Za-z0-9+/_-]{32,}")
 _ADDRESS = re.compile(
     r"((?:module\.[A-Za-z0-9_-]+\.)*[a-z][a-z0-9_]*\.[A-Za-z0-9_-]+)(?:\[.*)?\Z"
 )
@@ -45,13 +45,55 @@ _ACTIONS = (
     ("will be replaced", "replace"),
     ("will be read during apply", "read"),
 )
-# Only these kinds of lines can carry a summary; a line that looks like a key or
-# token is dropped instead of stored.
-_SUMMARY_LIMIT = 200
+# The tool's summary line may hold a value, a short credential or private data, so
+# it is only matched against these kinds. The record carries the fixed message of the
+# first kind that matches; a summary of no known kind gives no message.
+_KINDS = (
+    *(
+        (
+            re.compile(rf"(?:failed to|error) {verb}", re.IGNORECASE),
+            f"The provider could not {verb} a resource.",
+        )
+        for verb in ("create", "update", "delete", "read")
+    ),
+    (re.compile(r"state lock", re.IGNORECASE), "The state lock could not be acquired."),
+    (
+        re.compile(
+            r"unauthori[sz]ed|forbidden|authentication|permission|api token",
+            re.IGNORECASE,
+        ),
+        "The provider refused the credentials or the permission.",
+    ),
+    (
+        re.compile(r"already exists|conflict", re.IGNORECASE),
+        "A resource already exists or conflicts.",
+    ),
+    (
+        re.compile(r"not found|does not exist|could not find", re.IGNORECASE),
+        "A resource or file was not found.",
+    ),
+    (re.compile(r"time ?out|timed out", re.IGNORECASE), "The request timed out."),
+    (
+        re.compile(r"rate limit|too many requests", re.IGNORECASE),
+        "The provider rate limit was reached.",
+    ),
+    (
+        re.compile(r"could not resolve|cannot find module", re.IGNORECASE),
+        "A module could not be resolved.",
+    ),
+    (
+        re.compile(r"unexpected|syntax", re.IGNORECASE),
+        "A source file has a syntax error.",
+    ),
+    (
+        re.compile(r"invalid|unsupported|required|missing", re.IGNORECASE),
+        "A value or setting was rejected.",
+    ),
+)
 
 
 class ToolSummaryError(OwnMessage, Exception):
-    """The summary line a tool printed for its own error (never its detail)."""
+    """A fixed message for the kind of failure a tool reported (never its own text)."""
 
 
 _COLOUR = re.compile(r"\x1b\[[0-9;]*m")
@@ -62,11 +104,11 @@ def _plain(text: str) -> str:
     return _COLOUR.sub("", text)
 
 
-def _summary(text: str) -> str | None:
-    text = text.strip()
-    if not text or _SECRET_SHAPE.search(text):
-        return None
-    return text[:_SUMMARY_LIMIT]
+def _kind(summary: str) -> str | None:
+    """The fixed message for the kind of failure a tool summary describes, if known."""
+    return next(
+        (message for pattern, message in _KINDS if pattern.search(summary)), None
+    )
 
 
 def _address(token: str) -> str | None:
@@ -161,7 +203,7 @@ def failure_records(
         ]
     records = []
     for failure in failures:
-        summary = _summary(failure["summary"])
+        summary = _kind(failure["summary"])
         fields = {
             **(ids or {}),
             **({"resource": failure["address"]} if failure["address"] else {}),

@@ -142,7 +142,7 @@ class PlanRecordTests(unittest.TestCase):
 
 
 class FailureRecordTests(unittest.TestCase):
-    def test_terraform_failure_gives_summary_address_and_exit(self):
+    def test_terraform_failure_gives_kind_address_and_exit(self):
         _, lines = run_tool(
             "terraform",
             "--tool",
@@ -159,13 +159,50 @@ class FailureRecordTests(unittest.TestCase):
         self.assertTrue(lines[0].startswith("::error title=platform apply::"))
         self.assertEqual(first["code"], "terraform_failed")
         self.assertEqual(first["exit"], 1)
-        self.assertEqual(first["message"], "failed to create Workers KV namespace")
+        self.assertEqual(first["message"], "The provider could not create a resource.")
+        self.assertNotIn("Workers KV", lines[0])
         self.assertEqual(
             first["ids"]["resource"],
             "cloudflare_workers_kv_namespace.verified_word_cache",
         )
-        # A summary that looks like a key or token is dropped, not stored.
-        self.assertNotIn("message", second)
+        self.assertEqual(
+            second["message"], "The provider refused the credentials or the permission."
+        )
+        self.assertNotIn("0123456789abcdef", lines[1])
+
+    def test_a_short_value_in_the_tool_summary_is_never_printed(self):
+        for text in (
+            "Error: invalid value secret123\n",
+            "Error: could not create hunter2\n",
+            "Error: something about hunter2\n",
+        ):
+            with self.subTest(text=text):
+                _, lines = run_tool(
+                    "terraform",
+                    "--tool",
+                    "platform",
+                    "--stage",
+                    "apply",
+                    "--exit",
+                    "1",
+                    text=text,
+                )
+                self.assertEqual(len(lines), 1)
+                self.assertNotIn("secret123", lines[0])
+                self.assertNotIn("hunter2", lines[0])
+
+    def test_a_summary_of_no_known_kind_gives_no_message(self):
+        _, lines = run_tool(
+            "terraform",
+            "--tool",
+            "platform",
+            "--stage",
+            "apply",
+            "--exit",
+            "1",
+            text="Error: something about hunter2\n",
+        )
+        self.assertNotIn("message", parsed(lines[0]))
 
     def test_wrangler_failure_keeps_the_provider_code_not_the_message(self):
         _, lines = run_tool(
@@ -203,9 +240,9 @@ class FailureRecordTests(unittest.TestCase):
             text=wrangler,
         )
         self.assertEqual(
-            parsed(lines[0])["message"],
-            'The entry-point file at "missing.js" was not found.',
+            parsed(lines[0])["message"], "A resource or file was not found."
         )
+        self.assertNotIn("missing.js", lines[0])
         _, lines = run_tool(
             "wrangler",
             "--tool",
@@ -216,7 +253,9 @@ class FailureRecordTests(unittest.TestCase):
             "1",
             text=esbuild,
         )
-        self.assertEqual(parsed(lines[0])["message"], 'Unexpected ";"')
+        self.assertEqual(
+            parsed(lines[0])["message"], "A source file has a syntax error."
+        )
         self.assertNotIn("const x", lines[0])
 
     def test_a_command_without_a_known_format_gives_only_its_exit_code(self):

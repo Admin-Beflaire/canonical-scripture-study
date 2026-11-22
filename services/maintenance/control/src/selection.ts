@@ -1340,6 +1340,11 @@ export async function validateRelease(
     check.problems.unshift(
       `release ${releaseId} lists ${listed - items.length} output(s) that are not saved`,
     );
+  // Cleanup removes the membership of a release nothing needs; an empty release cannot be selected again.
+  if (!listed)
+    check.problems.unshift(
+      `release ${releaseId} has no members; its membership was removed`,
+    );
   check.problems.unshift(
     ...unreadable(
       releaseId,

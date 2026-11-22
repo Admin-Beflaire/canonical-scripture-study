@@ -4,6 +4,7 @@ Attempt-qualified begin/state/receipt assets are append-only under client checks
 An unfinished or failed attempt blocks future runs pending independent repair.
 State bytes and detailed diagnostics remain in the private release, never logs.
 """
+
 import argparse
 import hashlib
 import json
@@ -33,7 +34,10 @@ class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         if urlsplit(newurl).scheme != "https":
             raise StateError("Private state redirect must use HTTPS")
         redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if redirected and urlsplit(req.full_url).netloc.lower() != urlsplit(newurl).netloc.lower():
+        if (
+            redirected
+            and urlsplit(req.full_url).netloc.lower() != urlsplit(newurl).netloc.lower()
+        ):
             redirected.remove_header("Authorization")
         return redirected
 
@@ -43,21 +47,29 @@ def digest(data):
 
 
 def request(method, path, data=None, binary=False, upload=False):
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY) or REPOSITORY == os.environ.get("GITHUB_REPOSITORY"):
+    if not re.fullmatch(
+        r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", REPOSITORY
+    ) or REPOSITORY == os.environ.get("GITHUB_REPOSITORY"):
         raise StateError("Invalid private state repository boundary")
     token = os.environ["PLATFORM_STATE_TOKEN"]
     host = "https://uploads.github.com" if upload else ROOT
     headers = {
         "Authorization": "Bearer " + token,
-        "Accept": "application/octet-stream" if binary else "application/vnd.github+json",
+        "Accept": "application/octet-stream"
+        if binary
+        else "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "css-provisioning",
     }
     if data is not None:
-        headers["Content-Type"] = "application/octet-stream" if upload else "application/json"
+        headers["Content-Type"] = (
+            "application/octet-stream" if upload else "application/json"
+        )
     req = urllib.request.Request(host + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.build_opener(SafeRedirectHandler()).open(req, timeout=30) as response:
+        with urllib.request.build_opener(SafeRedirectHandler()).open(
+            req, timeout=30
+        ) as response:
             body = response.read()
             if binary:
                 return body
@@ -66,7 +78,9 @@ def request(method, path, data=None, binary=False, upload=False):
         if exc.code == 404:
             return None
         # Provider response bodies may contain private values; never disclose them.
-        raise StateError("Private state API request failed (HTTP " + str(exc.code) + ")") from None
+        raise StateError(
+            "Private state API request failed (HTTP " + str(exc.code) + ")"
+        ) from None
     except (OSError, ValueError) as exc:  # noqa: F841
         raise StateError("Private state API request failed") from None
 
@@ -75,8 +89,14 @@ def release(create=False):
     path = "/repos/" + REPOSITORY + "/releases/tags/" + TAG
     obj = request("GET", path)
     if obj is None and create:
-        payload = json.dumps({"tag_name": TAG, "name": "Operational Terraform state",
-                              "draft": False, "prerelease": True}).encode()
+        payload = json.dumps(
+            {
+                "tag_name": TAG,
+                "name": "Operational Terraform state",
+                "draft": False,
+                "prerelease": True,
+            }
+        ).encode()
         obj = request("POST", "/repos/" + REPOSITORY + "/releases", payload)
     return obj
 
@@ -85,8 +105,15 @@ def assets(rel):
     result = []
     page = 1
     while True:
-        chunk = request("GET", "/repos/" + REPOSITORY + "/releases/" +
-                        str(rel["id"]) + "/assets?per_page=100&page=" + str(page))
+        chunk = request(
+            "GET",
+            "/repos/"
+            + REPOSITORY
+            + "/releases/"
+            + str(rel["id"])
+            + "/assets?per_page=100&page="
+            + str(page),
+        )
         if chunk is None:
             raise StateError("Protected release assets unavailable")
         result.extend(chunk)
@@ -96,9 +123,11 @@ def assets(rel):
 
 
 def names(key, run):
-    return (key + "--" + run + "--begin.json",
-            key + "--" + run + "--state.tfstate",
-            key + "--" + run + "--receipt.json")
+    return (
+        key + "--" + run + "--begin.json",
+        key + "--" + run + "--state.tfstate",
+        key + "--" + run + "--receipt.json",
+    )
 
 
 def upload(rel, name, data):
@@ -107,7 +136,9 @@ def upload(rel, name, data):
     existing = {x["name"] for x in assets(rel)}
     if name in existing:
         raise StateError("Duplicate private state asset; reconcile before retry")
-    path = "/repos/" + REPOSITORY + "/releases/" + str(rel["id"]) + "/assets?name=" + name
+    path = (
+        "/repos/" + REPOSITORY + "/releases/" + str(rel["id"]) + "/assets?name=" + name
+    )
     result = request("POST", path, data, upload=True)
     if not isinstance(result, dict) or result.get("name") != name:
         raise StateError("State asset upload not confirmed")
@@ -115,7 +146,11 @@ def upload(rel, name, data):
 
 
 def download(asset):
-    data = request("GET", "/repos/" + REPOSITORY + "/releases/assets/" + str(asset["id"]), binary=True)
+    data = request(
+        "GET",
+        "/repos/" + REPOSITORY + "/releases/assets/" + str(asset["id"]),
+        binary=True,
+    )
     if not isinstance(data, bytes):
         raise StateError("State asset unavailable")
     return data
@@ -128,52 +163,90 @@ def inventory(key, allow_missing=False):  # noqa: C901
     if rel is None:
         if allow_missing:
             return None, None
-        raise StateError("Protected state release absent; adopt or initialize explicitly")
+        raise StateError(
+            "Protected state release absent; adopt or initialize explicitly"
+        )
     found = {asset["name"]: asset for asset in assets(rel)}
     prefix = key + "--"
     # Never silently reuse historical/unrecognized state in the same release.
-    unknown = [name for name in found if name.startswith(prefix)
-               and not re.fullmatch(re.escape(prefix) + r"[0-9]{1,20}-[0-9]{1,5}--(begin\.json|state\.tfstate|receipt\.json)", name)]
+    unknown = [
+        name
+        for name in found
+        if name.startswith(prefix)
+        and not re.fullmatch(
+            re.escape(prefix)
+            + r"[0-9]{1,20}-[0-9]{1,5}--(begin\.json|state\.tfstate|receipt\.json)",
+            name,
+        )
+    ]
     if unknown:
         raise StateError("Unrecognized state assets require explicit migration")
     attempts = {}
     for name, asset in found.items():
         if not name.startswith(prefix):
             continue
-        match = re.fullmatch(re.escape(prefix) + r"([0-9]{1,20}-[0-9]{1,5})--(begin\.json|state\.tfstate|receipt\.json)", name)
+        match = re.fullmatch(
+            re.escape(prefix)
+            + r"([0-9]{1,20}-[0-9]{1,5})--(begin\.json|state\.tfstate|receipt\.json)",
+            name,
+        )
         if match:
             attempts.setdefault(match[1], {})[match[2]] = asset
     # Every begin MUST have a successful terminal receipt to start any new run.
     completed = []
     uncertain = []
     for run, parts in attempts.items():
-        if "begin.json" not in parts or "receipt.json" not in parts or "state.tfstate" not in parts:
+        if (
+            "begin.json" not in parts
+            or "receipt.json" not in parts
+            or "state.tfstate" not in parts
+        ):
             raise StateError("Interrupted state attempt; reconcile before another run")
         receipt = json.loads(download(parts["receipt.json"]))
-        if not isinstance(receipt, dict) or receipt.get("run") != run or receipt.get("key") != key:
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("run") != run
+            or receipt.get("key") != key
+        ):
             raise StateError("State receipt identity mismatch")
         if receipt.get("outcome") == "uncertain":
             uncertain.append((run, parts, receipt))
             continue
         if receipt.get("outcome") != "success":
             raise StateError("Unknown state outcome")
-        completed.append((int(run.split("-")[0]), int(run.split("-")[1]), parts, receipt))
+        completed.append(
+            (int(run.split("-")[0]), int(run.split("-")[1]), parts, receipt)
+        )
     for run, parts, receipt in uncertain:
         if key != "cloudflare" or run != "44883634337-1":
-            raise StateError("Failed/uncertain apply requires independent reconciliation")
+            raise StateError(
+                "Failed/uncertain apply requires independent reconciliation"
+            )
         marker = found.get("reconciled--" + key + "--" + run + ".json")
         if marker is None:
-            raise StateError("Failed/uncertain apply requires independent reconciliation")
+            raise StateError(
+                "Failed/uncertain apply requires independent reconciliation"
+            )
         record = json.loads(download(marker))
         if not isinstance(record, dict):
             raise StateError("Invalid reconciliation record")
-        candidates = [x for x in completed if str(x[0]) + "-" + str(x[1]) == record.get("baseline_run")]
-        if (record.get("key") != key or record.get("failed_run") != run
-                or record.get("failed_sha256") != receipt.get("sha256")
-                or digest(download(parts["state.tfstate"])) != receipt.get("sha256")
-                or len(candidates) != 1 or tuple(map(int, record["baseline_run"].split("-"))) <= tuple(map(int, run.split("-")))
-                or record.get("baseline_sha256") != candidates[0][3].get("sha256")
-                or digest(download(candidates[0][2]["state.tfstate"])) != record.get("baseline_sha256")):
+        candidates = [
+            x
+            for x in completed
+            if str(x[0]) + "-" + str(x[1]) == record.get("baseline_run")
+        ]
+        if (
+            record.get("key") != key
+            or record.get("failed_run") != run
+            or record.get("failed_sha256") != receipt.get("sha256")
+            or digest(download(parts["state.tfstate"])) != receipt.get("sha256")
+            or len(candidates) != 1
+            or tuple(map(int, record["baseline_run"].split("-")))
+            <= tuple(map(int, run.split("-")))
+            or record.get("baseline_sha256") != candidates[0][3].get("sha256")
+            or digest(download(candidates[0][2]["state.tfstate"]))
+            != record.get("baseline_sha256")
+        ):
             raise StateError("Reconciliation evidence mismatch")
     completed.sort()
     if len(completed) + len(uncertain) != len(attempts):
@@ -185,7 +258,9 @@ def restore(key, output, allow_empty=False):
     rel, latest = inventory(key, allow_missing=allow_empty)
     if latest is None:
         if not allow_empty:
-            raise StateError("Missing verified state; explicitly approve an empty start")
+            raise StateError(
+                "Missing verified state; explicitly approve an empty start"
+            )
         # The owner must approve empty state and import existing resources first.
         return "empty"
     _, _, parts, receipt = latest
@@ -210,8 +285,11 @@ def begin(key, run):
     # Reserve begin, state, receipt and one private diagnostics asset.
     if len(assets(rel)) > 996:
         raise StateError("State release capacity exhausted; migrate before apply")
-    upload(rel, names(key, run)[0], json.dumps({"key": key, "run": run,
-                                                "stage": "begin"}, sort_keys=True).encode())
+    upload(
+        rel,
+        names(key, run)[0],
+        json.dumps({"key": key, "run": run, "stage": "begin"}, sort_keys=True).encode(),
+    )
 
 
 def finish(key, run, state_path, success):
@@ -230,13 +308,16 @@ def finish(key, run, state_path, success):
     saved = upload(rel, state_name, data)
     if digest(download(saved)) != digest(data):
         raise StateError("State upload integrity failed; reconciliation required")
-    record = {"key": key, "run": run, "sha256": digest(data),
-              "bytes": len(data), "outcome": "success" if success else "uncertain"}
+    record = {
+        "key": key,
+        "run": run,
+        "sha256": digest(data),
+        "bytes": len(data),
+        "outcome": "success" if success else "uncertain",
+    }
     upload(rel, done, json.dumps(record, sort_keys=True).encode())
     if not success:
         raise StateError("Apply failed: state saved but reconciliation is required")
-
-
 
 
 def diagnostic(key, run, path):
@@ -248,7 +329,9 @@ def diagnostic(key, run, path):
         raise StateError("Private diagnostics empty")
     rel = release(create=True)
     if len(assets(rel)) >= 1000:
-        raise StateError("State release capacity exhausted; private diagnostics unavailable")
+        raise StateError(
+            "State release capacity exhausted; private diagnostics unavailable"
+        )
     name = "log--" + key + "--" + run + "--diagnostics.txt"
     stored = upload(rel, name, data)
     if digest(download(stored)) != digest(data):
@@ -265,8 +348,11 @@ def main():
     p.add_argument("--success", action="store_true")
     a = p.parse_args()
     metadata = request("GET", "/repos/" + REPOSITORY)
-    if (not isinstance(metadata, dict) or metadata.get("private") is not True
-            or metadata.get("visibility") != "private"):
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("private") is not True
+        or metadata.get("visibility") != "private"
+    ):
         raise StateError("Protected state destination is not verified private")
     if a.command in ("begin", "finish") and (not a.run or not SAFE_ID.fullmatch(a.run)):
         raise StateError("Run must be the fixed GitHub run-id/attempt")
@@ -287,5 +373,8 @@ if __name__ == "__main__":
     try:
         main()
     except (StateError, KeyError, ValueError, OSError, json.JSONDecodeError):
-        print("Protected state operation blocked; inspect private state release and reconcile", file=sys.stderr)
+        print(
+            "Protected state operation blocked; inspect private state release and reconcile",
+            file=sys.stderr,
+        )
         sys.exit(1)

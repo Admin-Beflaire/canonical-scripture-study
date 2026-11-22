@@ -35,15 +35,24 @@
   "services/maintenance/control/src/dispatch.ts": {
     "complexity": {
       "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 2
     }
   },
   "services/maintenance/control/src/jobs.ts": {
     "complexity": {
       "count": 1
+    },
+    "max-lines-per-function": {
+      "count": 1
     }
   },
   "services/maintenance/control/src/mcp.ts": {
     "complexity": {
+      "count": 1
+    },
+    "max-lines-per-function": {
       "count": 1
     }
   },
@@ -52,7 +61,7 @@
       "count": 3
     },
     "max-lines-per-function": {
-      "count": 1
+      "count": 2
     },
     "no-useless-assignment": {
       "count": 1
@@ -65,6 +74,9 @@
   },
   "services/maintenance/control/src/tasks.ts": {
     "complexity": {
+      "count": 3
+    },
+    "max-lines-per-function": {
       "count": 3
     },
     "no-constant-condition": {
@@ -108,6 +120,9 @@
   "services/study/src/read/objects.ts": {
     "complexity": {
       "count": 3
+    },
+    "max-lines-per-function": {
+      "count": 1
     }
   },
   "services/study/src/read/queries.ts": {
@@ -131,6 +146,11 @@
   "tests/maintenance/github.ts": {
     "complexity": {
       "count": 1
+    }
+  },
+  "tests/maintenance/progress.test.ts": {
+    "max-lines-per-function": {
+      "count": 2
     }
   },
   "tests/study/aids.test.ts": {

@@ -1,4 +1,5 @@
 """Credential-free GH-02 state protocol and workflow tests."""
+
 import importlib.util
 import json
 from pathlib import Path
@@ -9,7 +10,9 @@ import urllib.request
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("platform_state", ROOT / "infrastructure/github/platform_state.py")
+spec = importlib.util.spec_from_file_location(
+    "platform_state", ROOT / "infrastructure/github/platform_state.py"
+)
 state = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(state)
 
@@ -28,12 +31,14 @@ class FakePrivateRelease:
             return self.release
         if method == "GET" and "/assets?" in path:
             from urllib.parse import parse_qs, urlparse
+
             query = parse_qs(urlparse(path).query)
             page = int(query.get("page", ["1"])[0])
             size = int(query.get("per_page", ["100"])[0])
-            return self.items[(page - 1) * size:page * size]
+            return self.items[(page - 1) * size : page * size]
         if method == "POST" and upload:
             from urllib.parse import parse_qs, urlparse
+
             name = parse_qs(urlparse(path).query)["name"][0]
             obj = {"name": name, "id": self.next_id, "payload": data}
             self.next_id += 1
@@ -81,7 +86,9 @@ class StateTests(unittest.TestCase):
             state.begin("github", "200-1")
             with self.assertRaises(state.StateError):
                 state.finish("github", "200-1", p, False)
-            self.assertTrue(any(x["name"].endswith("receipt.json") for x in self.fake.items))
+            self.assertTrue(
+                any(x["name"].endswith("receipt.json") for x in self.fake.items)
+            )
             with self.assertRaises(state.StateError):
                 state.begin("github", "201-1")
             with self.assertRaises(state.StateError):
@@ -97,15 +104,28 @@ class StateTests(unittest.TestCase):
             failed_hash = state.digest(p.read_bytes())
             p.write_bytes(b'{"version":4,"serial":2}')
             # Recovery creates an independent completed attempt before its marker.
-            state.upload(self.fake.release, state.names("cloudflare", "50000000000-1")[0], b'{}')
+            state.upload(
+                self.fake.release, state.names("cloudflare", "50000000000-1")[0], b"{}"
+            )
             state.finish("cloudflare", "50000000000-1", p, True)
-            marker = {"key": "cloudflare", "failed_run": "44883634337-1", "failed_sha256": failed_hash,
-                      "baseline_run": "50000000000-1", "baseline_sha256": state.digest(p.read_bytes())}
-            state.upload(self.fake.release, "reconciled--cloudflare--44883634337-1.json", json.dumps(marker).encode())
+            marker = {
+                "key": "cloudflare",
+                "failed_run": "44883634337-1",
+                "failed_sha256": failed_hash,
+                "baseline_run": "50000000000-1",
+                "baseline_sha256": state.digest(p.read_bytes()),
+            }
+            state.upload(
+                self.fake.release,
+                "reconciled--cloudflare--44883634337-1.json",
+                json.dumps(marker).encode(),
+            )
             out = Path(tmp) / "out"
             self.assertEqual(state.restore("cloudflare", out), "verified")
             self.assertEqual(out.read_bytes(), p.read_bytes())
-            self.fake.items[-1]["payload"] = json.dumps({**marker, "failed_sha256": "wrong"}).encode()
+            self.fake.items[-1]["payload"] = json.dumps(
+                {**marker, "failed_sha256": "wrong"}
+            ).encode()
             with self.assertRaisesRegex(state.StateError, "evidence mismatch"):
                 state.restore("cloudflare", out)
 
@@ -153,7 +173,9 @@ class StateTests(unittest.TestCase):
             path.write_bytes(b"plan or apply details: private")
             state.diagnostic("github", "600-1", path)
             self.assertEqual(len(self.fake.items), 1)
-            self.assertEqual(self.fake.items[0]["name"], "log--github--600-1--diagnostics.txt")
+            self.assertEqual(
+                self.fake.items[0]["name"], "log--github--600-1--diagnostics.txt"
+            )
             self.assertEqual(self.fake.items[0]["payload"], path.read_bytes())
             with self.assertRaisesRegex(state.StateError, "Duplicate"):
                 state.diagnostic("github", "600-1", path)
@@ -163,11 +185,13 @@ class StateTests(unittest.TestCase):
             path = Path(tmp) / "diagnostics"
             path.write_bytes(b"private")
             original = self.fake.request
+
             def tampered(method, name, data=None, binary=False, upload=False):
                 result = original(method, name, data, binary, upload)
                 if binary:
                     return b"tampered"
                 return result
+
             with patch.object(state, "request", side_effect=tampered):
                 with self.assertRaisesRegex(state.StateError, "verification failed"):
                     state.diagnostic("github", "601-1", path)
@@ -186,7 +210,9 @@ class StateTests(unittest.TestCase):
 
     def test_unknown_asset_in_new_protocol_blocks(self):
         state.begin("cloudflare", "800-1")
-        self.fake.items.append({"name": "cloudflare--legacy.tfstate", "id": 50, "payload": b"old"})
+        self.fake.items.append(
+            {"name": "cloudflare--legacy.tfstate", "id": 50, "payload": b"old"}
+        )
         with self.assertRaises(state.StateError):
             state.restore("cloudflare", "/unused", True)
 
@@ -196,7 +222,7 @@ class StateTests(unittest.TestCase):
             p.write_bytes(b'{"version":4}')
             state.begin("github", "810-1")
             state.finish("github", "810-1", p, True)
-            for content in (b'[]', b'invalid-json'):
+            for content in (b"[]", b"invalid-json"):
                 self.fake.items[-1]["payload"] = content
                 with self.assertRaises((state.StateError, ValueError)):
                     state.restore("github", Path(tmp) / "out")
@@ -209,15 +235,24 @@ class StateTests(unittest.TestCase):
             state.begin("cloudflare", "820-1")
 
     def test_private_visibility_required(self):
-        with patch.object(sys, "argv", ["state.py", "restore",
-                                        "--key", "github", "--path", "/unused"]):
-            with patch.object(state, "request",
-                              return_value={"private": True, "visibility": "internal"}):
+        with patch.object(
+            sys, "argv", ["state.py", "restore", "--key", "github", "--path", "/unused"]
+        ):
+            with patch.object(
+                state,
+                "request",
+                return_value={"private": True, "visibility": "internal"},
+            ):
                 with self.assertRaisesRegex(state.StateError, "not verified private"):
                     state.main()
-            with patch.object(state, "request",
-                              return_value={"private": True, "visibility": "private"}):
-                with patch.object(state, "restore", return_value="verified") as restored:
+            with patch.object(
+                state,
+                "request",
+                return_value={"private": True, "visibility": "private"},
+            ):
+                with patch.object(
+                    state, "restore", return_value="verified"
+                ) as restored:
                     state.main()
                     restored.assert_called_once()
 
@@ -225,39 +260,79 @@ class StateTests(unittest.TestCase):
         handler = state.SafeRedirectHandler()
         request = urllib.request.Request(
             "https://api.github.com/repos/x/y/releases/assets/1",
-            headers={"Authorization": "Bearer private"})
-        result = handler.redirect_request(request, None, 302, "Found", {},
-                                          "https://release-assets.githubusercontent.com/asset")
+            headers={"Authorization": "Bearer private"},
+        )
+        result = handler.redirect_request(
+            request,
+            None,
+            302,
+            "Found",
+            {},
+            "https://release-assets.githubusercontent.com/asset",
+        )
         self.assertIsNone(result.get_header("Authorization"))
-        same = handler.redirect_request(request, None, 302, "Found", {},
-                                        "https://api.github.com/next")
+        same = handler.redirect_request(
+            request, None, 302, "Found", {}, "https://api.github.com/next"
+        )
         self.assertEqual(same.get_header("Authorization"), "Bearer private")
         with self.assertRaises(state.StateError):
-            handler.redirect_request(request, None, 302, "Found", {},
-                                     "http://release-assets.githubusercontent.com/file")
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "http://release-assets.githubusercontent.com/file",
+            )
 
 
 class WorkflowTests(unittest.TestCase):
     def test_minimal_manual_trusted_workflow_with_step_scoped_secrets(self):
         workflow = (ROOT / ".github/workflows/platform.yml").read_text()
-        for item in ("workflow_dispatch:", "group: platform-state",
-                     "cancel-in-progress: false", "environment: provisioning",
-                     "git merge-base --is-ancestor", "git checkout --detach",
-                     "persist-credentials: false", "initialize_empty_state:",
-                     "terraform init -input=false", "terraform plan -input=false",
-                     "terraform apply -input=false", "begin --key", "finish --key",
-                     "diagnostic --key", "if: always()"):
+        for item in (
+            "workflow_dispatch:",
+            "group: platform-state",
+            "cancel-in-progress: false",
+            "environment: provisioning",
+            "git merge-base --is-ancestor",
+            "git checkout --detach",
+            "persist-credentials: false",
+            "initialize_empty_state:",
+            "terraform init -input=false",
+            "terraform plan -input=false",
+            "terraform apply -input=false",
+            "begin --key",
+            "finish --key",
+            "diagnostic --key",
+            "if: always()",
+        ):
             self.assertIn(item, workflow)
-        self.assertIn('cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"', workflow)
-        for removed in ("docker run", "terraform_isolated.sh", "plan-save", "plan-fetch",
-                        "plan_run:", "plan_sha256:", "rescue --key", "-backend=false",
-                        "upload-artifact", "pull_request:", "pull_request_target:",
-                        "workflow_run:"):
+        self.assertIn(
+            'cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"', workflow
+        )
+        for removed in (
+            "docker run",
+            "terraform_isolated.sh",
+            "plan-save",
+            "plan-fetch",
+            "plan_run:",
+            "plan_sha256:",
+            "rescue --key",
+            "-backend=false",
+            "upload-artifact",
+            "pull_request:",
+            "pull_request_target:",
+            "workflow_run:",
+        ):
             self.assertNotIn(removed, workflow)
         header = workflow.split("    steps:", 1)[0]
-        for secret in ("PLATFORM_GITHUB_TOKEN", "PLATFORM_CLOUDFLARE_TOKEN",
-                       "PLATFORM_GITHUB_TFVARS_JSON", "PLATFORM_CLOUDFLARE_TFVARS_JSON",
-                       "PLATFORM_STATE_TOKEN"):
+        for secret in (
+            "PLATFORM_GITHUB_TOKEN",
+            "PLATFORM_CLOUDFLARE_TOKEN",
+            "PLATFORM_GITHUB_TFVARS_JSON",
+            "PLATFORM_CLOUDFLARE_TFVARS_JSON",
+            "PLATFORM_STATE_TOKEN",
+        ):
             self.assertNotIn(secret, header)
         for line in workflow.splitlines():
             if "uses:" in line:

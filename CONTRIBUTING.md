@@ -82,8 +82,10 @@ existing piece is still judged in writing and review. The reports are input for
 that judgement.
 
 Existing findings are recorded as a baseline, so only new problems fail. The
-baseline only shrinks. New code adds nothing to it, and code you touch leaves it
-smaller:
+baseline gets smaller as a whole. New code adds nothing to it, and code you touch
+leaves it smaller. Formatting a file can reveal older findings that were hidden
+there; record those, as long as the change leaves the code cleaner overall (more
+files formatted, less duplication) and adds no new problems:
 
 - ESLint findings are in `eslint-suppressions.json`. After fixing one, run
   `npx eslint --prune-suppressions`.

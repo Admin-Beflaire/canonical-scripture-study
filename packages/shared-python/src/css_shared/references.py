@@ -2,22 +2,36 @@
 
 import json
 import math
+from functools import cache
 from pathlib import Path
 
-SCHEMA = json.loads(
-    (Path(__file__).resolve().parents[4] / "schemas/native-reference.v1.schema.json")
-    .read_text(encoding="utf-8")
-)
 
-READER_ALIASES = json.loads(
-    (Path(__file__).resolve().parents[4] / "schemas/reader-references/aliases.json")
-    .read_text(encoding="utf-8")
-)["aliases"]
+def _root():
+    return Path(__file__).resolve().parents[4]
+
+
+# The declarations are read when first used, so importing this package needs no repository files.
+@cache
+def _schema():
+    return json.loads(
+        (_root() / "schemas/native-reference.v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+
+@cache
+def _aliases():
+    return json.loads(
+        (_root() / "schemas/reader-references/aliases.json").read_text(encoding="utf-8")
+    )["aliases"]
 
 
 def reader_alias(reference):
     """Return a declared alternate reader number and its explanation, if any."""
-    return next((dict(alias) for alias in READER_ALIASES if alias["from"] == reference), None)
+    return next(
+        (dict(alias) for alias in _aliases() if alias["from"] == reference), None
+    )
 
 
 def _identifier(value):
@@ -32,7 +46,10 @@ def _safe_integer(value):
     # JSON Schema integers include 1.0, but never JSON booleans.
     return (
         type(value) in (int, float)
-        and abs(value) <= SCHEMA["properties"]["segments"]["items"]["properties"]["start"]["maximum"]
+        and abs(value)
+        <= _schema()["properties"]["segments"]["items"]["properties"]["start"][
+            "maximum"
+        ]
         and math.isfinite(value)
         and value == int(value)
     )
@@ -40,11 +57,11 @@ def _safe_integer(value):
 
 def assert_reference(value):
     """Check shape and endpoint order, not availability or source equivalence."""
-    declaration = SCHEMA["properties"]["segments"]
+    declaration = _schema()["properties"]["segments"]
     if (
         not isinstance(value, dict)
-        or set(value) != set(SCHEMA["required"])
-        or value["schema_version"] != SCHEMA["properties"]["schema_version"]["const"]
+        or set(value) != set(_schema()["required"])
+        or value["schema_version"] != _schema()["properties"]["schema_version"]["const"]
         or not _identifier(value["source_revision_id"])
         or not _identifier(value["coordinate_version"])
         or not isinstance(value["segments"], list)
@@ -104,5 +121,5 @@ def extract_scalar_segments(reference, text_basis):
             raise ValueError("Native scalar text unavailable")
         if segment["end"] > len(text):
             raise ValueError("Native coordinate out of bounds")
-        result.append(text[int(segment["start"]):int(segment["end"])])
+        result.append(text[int(segment["start"]) : int(segment["end"])])
     return result

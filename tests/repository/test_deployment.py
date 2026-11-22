@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -457,6 +458,26 @@ def upload(*args): raise AssertionError("unexpected partial upload")
                     d.DeploymentError, "receipt release is full"
                 ):
                     d.receipt(trusted, root)
+
+    def test_shared_package_loads_from_the_trusted_copy_without_repository_files(self):
+        # The workflow copies only css_shared next to the deploy scripts; importing it must not need schemas.
+        with tempfile.TemporaryDirectory() as directory:
+            shutil.copytree(
+                ROOT / "packages/shared-python/src/css_shared",
+                Path(directory) / "css_shared",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-P",
+                    "-c",
+                    "import css_shared.error_record, css_shared.tool_log",
+                ],
+                env={**os.environ, "PYTHONPATH": directory},
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_workflow_manual_main_only_step_scoped_and_no_artifact_reuse(self):
         workflow = (ROOT / ".github/workflows/deploy.yml").read_text()

@@ -353,6 +353,30 @@ test('a call that reaches its limit says that more may remain; one that does not
   assert.equal((await tidyReleases(w.db, bucket())).more, false);
 });
 
+test('outputs that are blocked do not hide the removable ones behind them', async () => {
+  const w = world();
+  const kept = w.output('kept', 'kept');
+  // The kept output's annotations refer to six unused outputs' spans, so those cannot go.
+  for (let n = 0; n < 6; n++) {
+    w.output(`blocked-${n}`, `blocked ${n}`);
+    w.sql
+      .prepare(
+        `INSERT INTO annotations VALUES ('note-${n}', 'kept', 'rev', 'span-blocked-${n}', 'k', 'p', '{}', '{}')`,
+      )
+      .run();
+  }
+  for (let n = 0; n < 3; n++) w.output(`free-${n}`, `free ${n}`);
+  w.release('release-current', [kept]);
+  w.select('release-current');
+  const done = await tidyReleases(w.db, bucket());
+  assert.deepEqual([done.outputs, done.skipped], [3, 6]);
+  // Blocked ones might be free after this, so the caller is told to come back once.
+  assert.equal(done.more, true);
+  const again = await tidyReleases(w.db, bucket());
+  assert.deepEqual([again.outputs, again.skipped, again.more], [0, 6, false]);
+  assert.equal(w.count('prepared_outputs'), 7);
+});
+
 test('a release that becomes kept after it was listed keeps its membership', async () => {
   const w = world();
   const member = w.output('member', 'member');

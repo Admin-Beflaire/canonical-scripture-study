@@ -25,7 +25,7 @@ Workflow:
 2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
-5. tidy_releases removes what no kept release and no open task needs (it also runs when a task ends). Each call does a bounded part: call it again while the result says more.
+5. tidy_releases removes what no kept release and no open task needs (it also runs when a task ends). Each call does a bounded part: call it again while the result says more; skipped outputs are blocked by another output and are left.
 
 Preparation runs by itself in GitHub Actions: a task that names a reviewed recipe in constraints.recipe dispatches its units in order, each unit's result starts the next, and failed units are retried up to three times. The task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
 
@@ -321,7 +321,7 @@ export function controlServer(
       owner();
       const done = await tidyReleases(db, objects);
       return reply(
-        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s)${done.more ? '; more may remain, call again' : ''}.`,
+        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s)${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
         done,
       );
     },

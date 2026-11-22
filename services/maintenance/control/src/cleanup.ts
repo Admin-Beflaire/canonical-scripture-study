@@ -24,6 +24,7 @@ const OPEN = `('${OPEN_STATES.join("','")}')`;
 const UNFINISHED = `('intended','dispatched','running','checkpointed')`;
 const RELEASES_PER_CALL = 20; // Releases whose membership is removed by one call.
 const OUTPUTS_PER_CALL = 4; // Saved outputs removed by one call.
+const OUTPUTS_LOOKED_AT = 12; // Saved outputs one call tries, so blocked ones do not hide the rest.
 const OBJECTS_PER_DELETE = 1000; // Keys one bucket delete accepts.
 
 /** Stored objects of one output that no other artifact record names. */
@@ -95,9 +96,9 @@ async function removeObjects(
 export interface Tidied {
   memberships: number;
   outputs: number;
-  /** Saved outputs that could not be removed in this call (they are tried again next time). */
+  /** Saved outputs tried in this call that could not be removed (another output refers to them). */
   skipped: number;
-  /** A limit was reached while work was still being done: another call may find more. */
+  /** More may be removable: something was removed and work was left, or a blocked output may now be free. */
   more: boolean;
 }
 
@@ -141,10 +142,15 @@ export async function tidyReleases(
     const unused = (
       await db
         .prepare(UNUSED_OUTPUTS)
-        .bind(OUTPUTS_PER_CALL)
+        .bind(OUTPUTS_LOOKED_AT)
         .all<{id: string}>()
     ).results;
+    let untried = 0;
     for (const {id} of unused) {
+      if (done.outputs >= OUTPUTS_PER_CALL) {
+        untried += 1;
+        continue;
+      }
       let keys: string[];
       try {
         keys = (
@@ -154,13 +160,16 @@ export async function tidyReleases(
         // nothing changes and its objects stay.
         await db.batch(OUTPUT_ROWS.map(sql => db.prepare(sql).bind(id)));
       } catch {
-        done.skipped += 1; // Tried again on the next call.
+        done.skipped += 1; // Blocked for now: tried again on a later call.
         continue;
       }
       done.outputs += 1;
       await removeObjects(objects, keys);
     }
-    done.more ||= done.outputs > 0 && unused.length === OUTPUTS_PER_CALL;
+    // Only after progress: an output that stays blocked must not make a caller repeat for ever.
+    done.more ||=
+      done.outputs > 0 &&
+      (untried > 0 || done.skipped > 0 || unused.length === OUTPUTS_LOOKED_AT);
     if (done.outputs)
       await db
         .prepare(

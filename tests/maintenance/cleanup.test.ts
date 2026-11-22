@@ -266,10 +266,16 @@ test('an output another unused output points at is skipped, then removed on the 
       `INSERT INTO annotations VALUES ('note', 'second', 'rev', 'span-first', 'k', 'p', '{}', '{}')`,
     )
     .run();
-  const one = await tidyReleases(w.db, bucket());
-  const two = await tidyReleases(w.db, bucket());
+  const store = bucket(['prepared/first.json', 'prepared/second.json']);
+  const one = await tidyReleases(w.db, store);
+  // The first output could not be removed, so its object is still there with its record.
+  assert.deepEqual([...store.held], ['prepared/first.json']);
+  assert.equal(w.count('prepared_outputs'), 1);
+  assert.equal(w.count('artifacts'), 1);
+  const two = await tidyReleases(w.db, store);
   assert.equal(one.outputs + two.outputs, 2);
   assert.equal(w.count('prepared_outputs'), 0);
+  assert.equal(store.held.size, 0);
 });
 
 test('a cleanup that fails is reported and never throws', async () => {

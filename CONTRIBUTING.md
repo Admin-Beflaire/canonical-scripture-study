@@ -43,6 +43,25 @@ The Python runner selects `python3` on Unix or `python` on Windows. Set
 `PYTHON` to an interpreter executable path when needed; no shell command is used.
 
 
+## Errors and logs
+
+Every workflow, script and Worker reports a failure as one **error record**, built where the error is caught:
+`css_shared.error_record` (Python) or `error-record.ts` in `packages/shared` (TypeScript). Both give the same JSON text.
+
+- The record has the tool, stage, outcome, error class, our own error code, the code location (file, line, function),
+  identifiers (unit, task, output, field), counts, HTTP status, provider error code and exit code.
+- Only our own messages are stored. Make an exception class an `OwnMessage` (Python) or `OwnMessageError`
+  (TypeScript) only when its message is fixed words and identifiers: it says what we were doing and which source, unit,
+  position and field were wrong, never a piece of the source text (no `!r`, no slice of input). `test_error_messages.py`
+  checks this for the preparation and shared code. Messages from libraries, providers and commands are never stored; the
+  record keeps their class and status.
+- Terraform and Wrangler output stays in a private file on the runner. `python3 -m css_shared.tool_log` turns it into
+  records: the error summary line, the resource address, and for a plan each resource's action and the names (never the
+  values) of the attributes that change.
+- Workflows print the record as a `::error` annotation (`annotation(record)`); Workers write it as a log line
+  (`reportError`). Nothing else is printed, stored or deleted afterwards.
+
+
 ## Code standards
 
 `npm run check:standards` checks the named standards as far as tools can: DRY,

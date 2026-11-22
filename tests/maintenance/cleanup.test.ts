@@ -6,7 +6,10 @@ import {
   tidyReleases,
 } from '../../services/maintenance/control/src/cleanup.ts';
 import {advance} from '../../services/maintenance/control/src/progress.ts';
-import {validateRelease} from '../../services/maintenance/control/src/selection.ts';
+import {
+  validateRelease,
+  type ObjectStore,
+} from '../../services/maintenance/control/src/selection.ts';
 import {localD1} from './d1.ts';
 
 /** Release cleanup (Proposal M2): what a release or open task needs stays, the rest goes.
@@ -14,6 +17,25 @@ import {localD1} from './d1.ts';
 const DIGEST = 'a'.repeat(64);
 const SCOPE = JSON.stringify({kind: 'prepare'});
 const OUTCOME = JSON.stringify({limitations: []});
+
+/** A bucket that remembers what it holds and what was removed; `failures` removals fail first. */
+function bucket(keys: string[] = [], failures = 0) {
+  const held = new Set(keys);
+  const calls: string[][] = [];
+  const store: ObjectStore & {held: Set<string>; calls: string[][]} = {
+    held,
+    calls,
+    async list() {
+      return {objects: [...held].map(key => ({key, size: 1}))};
+    },
+    async remove(removed) {
+      if (failures-- > 0) throw new Error('bucket unavailable');
+      calls.push(removed);
+      for (const key of removed) held.delete(key);
+    },
+  };
+  return store;
+}
 
 /** A saved output with a span, its text, coverage and one stored artifact. */
 function outputSaver(sql: ReturnType<typeof localD1>['sqlite']) {
@@ -120,7 +142,7 @@ test('membership of releases nothing needs is removed; kept releases and release
   w.select('release-current', 'release-previous');
   w.task('open', 'checked', 'release-base', 'release-candidate');
   w.task('done', 'completed', 'release-finished', 'release-finished');
-  const done = await tidyReleases(w.db);
+  const done = await tidyReleases(w.db, bucket());
   assert.equal(done.memberships, 2); // release-old and release-finished
   const kept = w.sql
     .prepare(
@@ -148,7 +170,7 @@ test('saved outputs nothing kept uses are removed with their rows; shared text s
   w.select('release-current');
   w.task('open', 'running', null, null);
   w.job('open', 'succeeded', [opened]);
-  const done = await tidyReleases(w.db);
+  const done = await tidyReleases(w.db, bucket());
   assert.equal(done.outputs, 2);
   const left = w.sql
     .prepare(`SELECT id FROM prepared_outputs ORDER BY id`)
@@ -165,12 +187,88 @@ test('saved outputs nothing kept uses are removed with their rows; shared text s
   assert.deepEqual(payloads, ['open task text', 'owner text', 'shared text']);
 });
 
+test('the stored objects of a removed output are removed; others stay', async () => {
+  const w = world();
+  const kept = w.output('kept', 'kept text');
+  w.output('gone', 'gone text');
+  w.output('shared', 'shared text');
+  // A kept output's record also names the removed output's object, so it must stay.
+  w.sql
+    .prepare(
+      `INSERT INTO artifacts VALUES ('extra', 'rev', 'kept', ?, 10, 'application/json', 'prepared/shared.json')`,
+    )
+    .run(DIGEST);
+  w.release('release-current', [kept]);
+  w.select('release-current');
+  // An acquisition record (no output) and a receipt are never removed.
+  w.sql
+    .prepare(
+      `INSERT INTO artifacts VALUES ('original', 'rev', NULL, ?, 10, 'text/plain', 'sources/original.txt')`,
+    )
+    .run(DIGEST);
+  w.sql
+    .prepare(
+      `INSERT INTO artifacts VALUES ('receipt', 'rev', 'gone', ?, 10, 'application/json', 'prepared/receipts/r.json')`,
+    )
+    .run(DIGEST);
+  const store = bucket([
+    'prepared/kept.json',
+    'prepared/gone.json',
+    'prepared/shared.json',
+    'sources/original.txt',
+    'prepared/receipts/r.json',
+  ]);
+  const done = await tidyReleases(w.db, store);
+  assert.equal(done.outputs, 2);
+  assert.deepEqual([...store.held].sort(), [
+    'prepared/kept.json',
+    'prepared/receipts/r.json',
+    'prepared/shared.json',
+    'sources/original.txt',
+  ]);
+  assert.deepEqual(store.calls.flat().sort(), ['prepared/gone.json']);
+});
+
+test('without a bucket no output is removed', async () => {
+  const w = world();
+  w.output('leftover', 'leftover');
+  assert.equal((await tidyReleases(w.db)).outputs, 0);
+  assert.equal(w.count('prepared_outputs'), 1);
+});
+
+test('a bucket that fails once is tried again; one that keeps failing leaves objects, never half an output', async () => {
+  const w = world();
+  w.output('retried', 'retried');
+  const once = bucket(['prepared/retried.json'], 1);
+  assert.equal((await tidyReleases(w.db, once)).outputs, 1);
+  assert.equal(once.held.size, 0);
+
+  w.output('left', 'left');
+  const failing = bucket(['prepared/left.json'], Infinity);
+  const done = await tidyReleases(w.db, failing);
+  assert.equal(done.outputs, 1);
+  // The objects stay, unreferenced. Nothing of the output stays in D1, in any table.
+  assert.deepEqual([...failing.held], ['prepared/left.json']);
+  for (const table of [
+    'prepared_outputs',
+    'artifacts',
+    'native_spans',
+    'coverage',
+  ])
+    assert.equal(w.count(table), 0, table);
+  // A later preparation of the same output writes it fresh, complete, without a clash.
+  w.output('left', 'left');
+  assert.equal(w.count('prepared_outputs'), 1);
+  assert.equal(w.count('native_spans'), 1);
+  assert.equal(w.count('coverage'), 1);
+});
+
 test('nothing is removed from saved outputs while a job is unfinished', async () => {
   const w = world();
   w.output('half-saved', 'not reported yet');
   w.task('open', 'running', null, null);
   w.job('open', 'running');
-  const done = await tidyReleases(w.db);
+  const done = await tidyReleases(w.db, bucket());
   assert.equal(done.outputs, 0);
   assert.equal(w.count('prepared_outputs'), 1);
 });
@@ -185,16 +283,22 @@ test('an output another unused output points at is skipped, then removed on the 
       `INSERT INTO annotations VALUES ('note', 'second', 'rev', 'span-first', 'k', 'p', '{}', '{}')`,
     )
     .run();
-  const one = await tidyReleases(w.db);
-  const two = await tidyReleases(w.db);
+  const store = bucket(['prepared/first.json', 'prepared/second.json']);
+  const one = await tidyReleases(w.db, store);
+  // The first output could not be removed, so its object is still there with its record.
+  assert.deepEqual([...store.held], ['prepared/first.json']);
+  assert.equal(w.count('prepared_outputs'), 1);
+  assert.equal(w.count('artifacts'), 1);
+  const two = await tidyReleases(w.db, store);
   assert.equal(one.outputs + two.outputs, 2);
   assert.equal(w.count('prepared_outputs'), 0);
+  assert.equal(store.held.size, 0);
 });
 
 test('a cleanup that fails is reported and never throws', async () => {
   const w = world();
   w.sql.exec('DROP TABLE release_outputs');
-  const done = await tidyReleases(w.db);
+  const done = await tidyReleases(w.db, bucket());
   assert.deepEqual(done, {memberships: 0, outputs: 0, skipped: 0});
 });
 
@@ -213,10 +317,10 @@ test('a release is removed whole or not at all, also when a call reaches its lim
       )
       .all()
       .map(row => Number(row.n));
-  const first = await tidyReleases(w.db);
+  const first = await tidyReleases(w.db, bucket());
   assert.ok(first.memberships > 0 && w.count('release_outputs') > 0); // The limit was reached.
   assert.ok(sizes().every(size => size === 0 || size === 500)); // No release is partly cleaned.
-  while ((await tidyReleases(w.db)).memberships)
+  while ((await tidyReleases(w.db, bucket())).memberships)
     assert.ok(sizes().every(size => size === 0 || size === 500));
   assert.equal(w.count('release_outputs'), 0);
 });
@@ -229,7 +333,7 @@ test('a task that ends clears what it left behind, and the selection is unchange
   w.release('release-current', [kept]);
   w.select('release-current');
   w.task('ended', 'cancelled', 'release-old', null);
-  const progress = await advance(w.db, null, 'ended');
+  const progress = await advance(w.db, null, 'ended', bucket());
   assert.equal(progress.state, 'cancelled');
   assert.equal(w.count('release_outputs'), 1);
   assert.equal(w.count('prepared_outputs'), 1);
@@ -253,7 +357,7 @@ test('a release that becomes kept after it was listed keeps its membership', asy
     w.select('release-selected', 'release-current');
     return batch(statements);
   };
-  await tidyReleases(w.db);
+  await tidyReleases(w.db, bucket());
   const left = w.sql
     .prepare(
       `SELECT DISTINCT release_id FROM release_outputs ORDER BY release_id`,
@@ -273,7 +377,7 @@ test('a release whose membership was removed cannot be selected again', async ()
   w.release('release-old', [kept]);
   w.release('release-current', [kept]);
   w.select('release-current');
-  await tidyReleases(w.db);
+  await tidyReleases(w.db, bucket());
   const check = await validateRelease(w.db, new Map(), 'release-old');
   assert.ok(check.problems.some(problem => problem.includes('has no members')));
 });

@@ -225,7 +225,7 @@ export function controlServer(
         );
       if (result.status === 'conflict')
         return reply(result.message, result, true);
-      if (request.supersedes) await tidyReleases(db);
+      if (request.supersedes) await tidyReleases(db, objects);
       const attempt = await progressSafely('advance', result.task.id, () =>
         advance(db, github, result.task.id, objects),
       );
@@ -333,7 +333,7 @@ export function controlServer(
       const failed: string[] = [];
       const failures: ProgressFailure[] = [];
       if (action === 'cancel') {
-        await tidyReleases(db);
+        await tidyReleases(db, objects);
         const runs =
           (JSON.parse(result.task.outcome_json) as Outcome)
             .cancel_requested_runs ?? [];

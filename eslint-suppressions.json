@@ -81,9 +81,6 @@
     },
     "max-lines-per-function": {
       "count": 2
-    },
-    "no-constant-condition": {
-      "count": 1
     }
   },
   "services/study/src/coordinator.ts": {

@@ -33,6 +33,7 @@ def check_candidate_quality(
     receipts: CheckpointStore,
     max_page_bytes: int = PAGE_CAP,
     read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
+    read_aid_entries: Callable[[Mapping[str, Any]], RecordSet] | None = None,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)
@@ -69,6 +70,7 @@ def check_candidate_quality(
                 read_source=read_source,
                 max_page_bytes=max_page_bytes,
                 read_reader_references=read_reader_references,
+                read_aid_entries=read_aid_entries,
             )
             if len(evidence.saved.artifact_refs) > 256 or len(evidence.coverage) > 256:
                 raise RecordError("Candidate exceeds result reference limits")
@@ -131,6 +133,7 @@ def check_candidate_quality(
                         if read_reader_references is not None
                         else []
                     ),
+                    *(["aid_entries"] if read_aid_entries is not None else []),
                 ],
                 "limitations": list(evidence.limitations),
                 "passed": True,

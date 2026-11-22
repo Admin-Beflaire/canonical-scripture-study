@@ -5,6 +5,7 @@ branches. The registry is built from the reviewed recipe files in `collection/re
 (the same files Control reads from main) and the declared adapters. An unknown recipe is
 refused; a recipe file that does not resolve stops the runner rather than being skipped.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ from ..prepare.evidence import NativeText
 from ..prepare.records import RecordSet
 from ..validation import SCHEMAS
 
-RECIPE_DIRECTORY = SCHEMAS.parent / 'collection' / 'recipes'
+RECIPE_DIRECTORY = SCHEMAS.parent / "collection" / "recipes"
 
 
 @dataclass(frozen=True)
@@ -35,31 +36,44 @@ class Recipe:
     read_source: Callable[[str, Any], NativeText] | None = None
     declares: Callable[[Mapping[str, Any], str], bool] | None = None
     read_reader_references: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
+    read_aid_entries: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
 
 
 def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
     recipes: dict[str, Recipe] = {}
-    for path in sorted(directory.glob('*.json')):
-        value = json.loads(path.read_text(encoding='utf-8'))
-        if not isinstance(value, dict) or path.stem != value.get('id'):
-            raise ValueError(f'Recipe file {path.name} does not hold recipe {path.stem}')
-        adapter = value.get('adapter', {})
-        identity = (adapter.get('name'), adapter.get('method_version'))
-        if value['revision'] in recipes:
+    for path in sorted(directory.glob("*.json")):
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict) or path.stem != value.get("id"):
+            raise ValueError(
+                f"Recipe file {path.name} does not hold recipe {path.stem}"
+            )
+        adapter = value.get("adapter", {})
+        identity = (adapter.get("name"), adapter.get("method_version"))
+        if value["revision"] in recipes:
             raise ValueError(f"Recipe revision {value['revision']} is declared twice")
         if identity == (STEPBIBLE.name, STEPBIBLE.method_version):
             book = BookRecipe.from_recipe(value)
-            recipes[value['revision']] = Recipe(
-                book.acquire, book.prepare, book.read_source, book.declares,
-                book.read_reader_references if book.maps_reader_references else None)
+            recipes[value["revision"]] = Recipe(
+                book.acquire,
+                book.prepare,
+                book.read_source,
+                book.declares,
+                book.read_reader_references if book.maps_reader_references else None,
+            )
         elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
             source = AcquireRecipe.from_recipe(value)
-            recipes[value['revision']] = Recipe(acquire=source.acquire, declares=source.declares)
+            recipes[value["revision"]] = Recipe(
+                acquire=source.acquire, declares=source.declares
+            )
         elif identity == (LANGUAGE_AIDS.name, LANGUAGE_AIDS.method_version):
             source = AidRecipe.from_recipe(value)
-            recipes[value['revision']] = Recipe(prepare=source.prepare, read_source=source.read_source)
+            recipes[value["revision"]] = Recipe(
+                prepare=source.prepare,
+                read_source=source.read_source,
+                read_aid_entries=source.read_aid_entries,
+            )
         else:
-            raise ValueError(f'Recipe {path.stem} names no registered adapter')
+            raise ValueError(f"Recipe {path.stem} names no registered adapter")
     return recipes
 
 

@@ -72,7 +72,8 @@ smaller:
   that no longer suppresses anything fails.
 - Files not yet formatted are listed in `.prettierignore` and in the `[format]`
   `exclude` list of `ruff.toml`. A change that modifies a listed file must
-  format it and remove it from the list; `check:baselines` fails otherwise.
+  format it and remove it from the list; `check:baselines` fails otherwise, for
+  committed and for uncommitted edits.
 - Copied code is recorded in `.jscpd-baseline.json`. After removing a copy, run
   `npx jscpd --update-baseline`.
 

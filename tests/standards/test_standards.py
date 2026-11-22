@@ -177,6 +177,18 @@ class ChangedBaselineChecks(unittest.TestCase):
                 [(".prettierignore", "old.ts"), ("ruff.toml", "old.py")],
             )
 
+    def test_an_uncommitted_edit_to_a_baselined_file_is_reported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = baselined_repository(root)
+            Path(root, "old.ts").write_text("b\n")
+            Path(root, "old.py").write_text("b\n")
+            git(root, "add", "old.py")
+            self.assertEqual(
+                baselines.touched_baseline_files(root, base),
+                [(".prettierignore", "old.ts"), ("ruff.toml", "old.py")],
+            )
+
     def test_a_changed_file_that_left_the_baseline_is_not_reported(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

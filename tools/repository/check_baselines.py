@@ -63,15 +63,28 @@ def committed_text(root, base, name):
     return result.stdout if result.returncode == 0 else ""
 
 
+def working_tree_paths(root):
+    """Paths with staged or unstaged edits, so a local run sees uncommitted work."""
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "-z", "HEAD"],
+        cwd=root,
+        capture_output=True,
+        check=True,
+    )
+    return [p for p in result.stdout.decode("utf-8").split("\0") if p]
+
+
 def touched_baseline_files(root, base):
     """Baselined files this change modified while keeping them in the baseline.
 
-    Only files that were already in a baseline at the base commit count, so the
-    change that introduces the baselines is not held to them.
+    Committed changes since the base and uncommitted edits both count. Only files
+    that were already in a baseline at the base commit count, so the change that
+    introduces the baselines is not held to them.
     """
     changed = changed_paths(base, root)
     if changed is None:
         raise RuntimeError("No base commit to compare with; set CHECK_BASE")
+    changed = set(changed) | set(working_tree_paths(root))
     touched = []
     for name in BASELINES:
         file = root / name

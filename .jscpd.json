@@ -1,0 +1,8 @@
+{
+  "path": ["infrastructure", "packages", "services", "tests", "tools"],
+  "format": ["typescript", "javascript", "python"],
+  "ignore": ["**/node_modules/**", "**/dist/**"],
+  "reporters": ["console"],
+  "baseline": ".jscpd-baseline.json",
+  "failOnNewClones": 0
+}

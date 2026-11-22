@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
 import {
+  formatBytes,
   OUTPUT_ROWS,
   tidyReleases,
 } from '../../services/maintenance/control/src/cleanup.ts';
@@ -448,4 +449,13 @@ test('every table that holds rows for a saved output is cleared with it', () => 
       OUTPUT_ROWS.some(sql => sql.startsWith(`DELETE FROM ${table} WHERE`)),
       `${table} has rows per saved output that cleanup does not remove; add it to OUTPUT_ROWS`,
     );
+});
+
+test('formatBytes shows small totals in B and KB, not as 0.0 MB', () => {
+  assert.deepEqual([0, 10, 1500, 2_500_000].map(formatBytes), [
+    '0 B',
+    '10 B',
+    '1.5 KB',
+    '2.5 MB',
+  ]);
 });

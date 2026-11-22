@@ -180,7 +180,7 @@ test("tidy_releases cleans up on the owner's call, reports when more remains, an
   });
   assert.match(
     done.text,
-    /Removed the membership of 0 row\(s\) and 0 saved output\(s\) with 0 stored object\(s\) \(0\.0 MB\)\./,
+    /Removed the membership of 0 row\(s\) and 0 saved output\(s\) and asked the bucket to delete 0 stored object\(s\) \(0 B as recorded, not measured\)\./,
   );
   const service = protocolHandler(
     () => controlServer(db, undefined, false),

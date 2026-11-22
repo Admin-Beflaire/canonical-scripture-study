@@ -104,12 +104,22 @@ export interface Tidied {
   outputs: number;
   /** Saved outputs tried in this call that could not be removed (another output refers to them). */
   skipped: number;
-  /** Stored objects removed, the bytes they held (as registered), and objects left after a bucket error. */
+  /**
+   * Stored objects the bucket accepted a delete for, the bytes recorded for them, and objects left after a
+   * bucket error. A missing key counts as deleted, so these are recorded totals, not measured space freed.
+   */
   objects: number;
   bytes: number;
   objectsLeft: number;
   /** More may be removable: something was removed and work was left, or a blocked output may now be free. */
   more: boolean;
+}
+
+/** A byte count for people: B, KB or MB. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1e6) return `${(bytes / 1e3).toFixed(1)} KB`;
+  return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 
 /** Remove unused saved outputs, whole from D1 first and then their stored objects. */

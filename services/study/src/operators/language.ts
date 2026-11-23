@@ -328,9 +328,7 @@ async function presentNameTags(
   return parsePresence(result.rows, tags);
 }
 
-/** Evidence attached by selected Strong/morphology keys, not by guessed word senses.
- * Each distinct key is fetched at most once per batch; a bounded, release-scoped cache
- * reuses verified small entries across continuations in the same Worker instance. */
+/** Evidence attached by selected Strong and morphology keys. */
 type AidKind = 'lexicon' | 'grammar_info' | 'proper_name';
 type AidItem = Extract<EvidenceItem, {kind: 'language_aid'}>;
 interface Key {
@@ -346,12 +344,6 @@ interface AnalysisKeys {
 const MAX_AID_KEYS = 4;
 const MAX_AID_ROWS = 12;
 const MAX_AID_ROWS_PER_KEY = 8;
-const MAX_CACHED_KEYS = 8;
-const CACHE_BYTE_CAP = 48 * 1024;
-const WORD_AID_CACHE = new WeakMap<
-  object,
-  {release: string; values: Map<string, AidItem[]>}
->();
 const cacheKey = (lookup: AidKind, key: string) => lookup + ':' + key;
 const isObject = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === 'object' && !Array.isArray(x);
@@ -451,16 +443,6 @@ export async function attachWordAids(
       'word_aids',
       'Additional word keys need separate lookups within the batch allowance',
     );
-  const existing = WORD_AID_CACHE.get(session.objects);
-  const cached =
-    existing?.release === session.release.id
-      ? existing.values
-      : new Map<string, AidItem[]>();
-  if (existing?.release !== session.release.id)
-    WORD_AID_CACHE.set(session.objects, {
-      release: session.release.id,
-      values: cached,
-    });
   const values = new Map<string, AidItem[]>();
   const fresh = new Map<
     string,
@@ -468,10 +450,6 @@ export async function attachWordAids(
   >();
   let rowCount = 0;
   for (const [identity, key] of choice) {
-    if (cached.has(identity)) {
-      values.set(identity, cached.get(identity)!);
-      continue;
-    }
     // Reserve a D1 call to resolve the selected bodies after the key queries.
     if (!session.budget.canQuery(2)) {
       note(
@@ -538,18 +516,8 @@ export async function attachWordAids(
       }
       values.set(identity, items);
       entry.complete = complete;
-      if (complete && utf8Length(JSON.stringify(items)) <= CACHE_BYTE_CAP) {
-        cached.delete(identity);
-        cached.set(identity, items);
-        if (cached.size > MAX_CACHED_KEYS)
-          cached.delete(cached.keys().next().value!);
-      }
     }
-  } else
-    for (const [identity, entry] of fresh) {
-      values.set(identity, []);
-      if (entry.complete) cached.set(identity, []);
-    }
+  }
   const delivered = new Map<string, string[]>();
   const seen = new Set<string>();
   for (const [identity] of choice) {
@@ -595,8 +563,7 @@ export async function attachWordAids(
   for (const [identity, key] of choice) {
     if (key.lookup !== 'proper_name' || !values.has(identity)) continue;
     const items = values.get(identity)!;
-    const complete =
-      cached.has(identity) || fresh.get(identity)?.complete === true;
+    const complete = fresh.get(identity)?.complete === true;
     if (complete && (delivered.get(identity)?.length ?? 0) === items.length)
       completedNames.add(key.key);
   }

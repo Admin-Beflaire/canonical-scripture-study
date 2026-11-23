@@ -2,14 +2,9 @@ import {
   canonicalJson,
   isIdentifier,
   isSafeCount,
-  sha256Hex,
   utf8Length,
 } from '../read/bytes.ts';
-import {
-  readAidEntries,
-  verifiedAidLine,
-  type AidEntry,
-} from '../read/aid-entries.ts';
+import {readAidEntries} from '../read/aid-entries.ts';
 import type {ReadSession} from '../read/session.ts';
 import {ReadError, limitation, type Limitation} from '../read/states.ts';
 import {
@@ -29,44 +24,6 @@ export const AID_LOOKUPS = [
   'grammar_info',
   'proper_name',
 ] as const;
-const MAX_PENDING_ENTRIES = 4;
-const MAX_PENDING_BODY_BYTES = 96 * 1024;
-const SHARED_CACHE_TTL_SECONDS = 600;
-/** Worker-local, bounded verified entries awaiting continuation.
- *  It never outlives a completed entry or crosses a selected-release change. */
-const PENDING_TEXT = new WeakMap<
-  object,
-  {releaseId: string; entries: Map<string, AidEntry>}
->();
-function pendingText(session: ReadSession): Map<string, AidEntry> {
-  const previous = PENDING_TEXT.get(session.objects);
-  if (previous?.releaseId === session.release.id) return previous.entries;
-  const entries = new Map<string, AidEntry>();
-  PENDING_TEXT.set(session.objects, {releaseId: session.release.id, entries});
-  return entries;
-}
-async function sharedKey(entryKey: string): Promise<string> {
-  // Output and entry identities are immutable and survive release promotions.
-  return 'verified-aid:v3:' + (await sha256Hex(entryKey));
-}
-
-/** Optional KV holds the entry's line only; its length and digest are rechecked against the
- * selected D1 row, and its metadata comes from that row, before it can become evidence. */
-async function sharedPending(
-  session: ReadSession,
-  entryKey: string,
-  row: Record<string, unknown>,
-): Promise<AidEntry | undefined> {
-  if (!session.verifiedWords) return undefined;
-  try {
-    const line = await session.verifiedWords.get(await sharedKey(entryKey));
-    if (!line || utf8Length(line) > MAX_PENDING_BODY_BYTES) return undefined;
-    return await verifiedAidLine(row, line);
-  } catch {
-    return undefined; // No KV errors escape into the Study result; read verified R2 instead.
-  }
-}
-
 /** Where a lookup stopped: the last output and entry delivered. */
 type Position = [string, number];
 export interface AidWorkload {
@@ -148,7 +105,6 @@ export async function aidBatch(
     }
   }
   const start = after;
-  const pending = pendingText(session);
   const query =
     input.lookup === 'lexicon'
       ? 'lexicon_strong'
@@ -181,23 +137,13 @@ export async function aidBatch(
       after = position;
       continue;
     }
-    const entryKey = JSON.stringify([row.output_id, row.entry]);
-    const cached =
-      anchor !== null && offset > 0
-        ? (pending.get(entryKey) ??
-          (await sharedPending(session, entryKey, row)))
-        : undefined;
-    if (cached) {
-      pending.delete(entryKey);
-      pending.set(entryKey, cached);
-    }
-    const read = cached ? null : await readAidEntries(session, [row], true);
-    if (read?.remaining.length) {
+    const read = await readAidEntries(session, [row], true);
+    if (read.remaining.length) {
       remaining = true;
       break;
     }
-    if (read) limitations.push(...read.limitations);
-    const found = cached ?? read?.entries[0];
+    limitations.push(...read.limitations);
+    const found = read.entries[0];
     if (!found && anchor !== null) {
       anchor = null;
       offset = 0;
@@ -295,30 +241,11 @@ export async function aidBatch(
         session.budget.spendResult(bytes);
         evidence.push(item);
         if (low < chars.length) {
-          // Keep only the verified, unfinished entry line, not assembled responses.
-          if (utf8Length(found.line) <= MAX_PENDING_BODY_BYTES) {
-            pending.delete(entryKey);
-            pending.set(entryKey, found);
-            if (pending.size > MAX_PENDING_ENTRIES)
-              pending.delete(pending.keys().next().value!);
-            if (!cached && session.verifiedWords) {
-              try {
-                await session.verifiedWords.put(
-                  await sharedKey(entryKey),
-                  found.line,
-                  {expirationTtl: SHARED_CACHE_TTL_SECONDS},
-                );
-              } catch {
-                /* Optional cache failure never changes verified evidence. */
-              }
-            }
-          }
           offset = low;
           anchor = Number(row.entry);
           remaining = true;
           break;
         }
-        pending.delete(entryKey);
         offset = 0;
         anchor = null;
       } else {

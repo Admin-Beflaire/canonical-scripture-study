@@ -100,7 +100,6 @@ exclude = [
   "tests/python/test_tvtms.py",
   "tests/python/test_unit_builder.py",
   "tests/python/test_word_index_builder.py",
-  "tests/repository/test_cloudflare_config.py",
   "tests/repository/test_reconcile_cloudflare_state.py",
   "tools/check_python_boundaries.py",
   "tools/compare_tvtms.py",

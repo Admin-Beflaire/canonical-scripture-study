@@ -1,4 +1,4 @@
-import {isIdentifier, isSafeCount, sha256Hex, utf8Length} from './bytes.ts';
+import {isIdentifier, isSafeCount} from './bytes.ts';
 import {
   isObject,
   isSegments,
@@ -20,7 +20,6 @@ export interface AidEntry {
   span: SpanEvidence;
   provider: string;
   details: Record<string, unknown>;
-  line: string;
 }
 export interface AidEntryRead {
   entries: AidEntry[];
@@ -109,25 +108,7 @@ export function parseAidLine(
     span,
     provider: entry.provider as string,
     details: withLinks({...(entry.details as Record<string, unknown>)}),
-    line,
   };
-}
-
-/** A line held outside D1 (a cache), accepted only if it is the exact line D1 recorded. */
-export async function verifiedAidLine(
-  row: Record<string, unknown>,
-  line: string,
-): Promise<AidEntry | undefined> {
-  try {
-    if (
-      utf8Length(line) !== row.byte_length ||
-      (await sha256Hex(line)) !== row.line_sha256
-    )
-      return undefined;
-    return parseAidLine(row, line);
-  } catch {
-    return undefined;
-  }
 }
 
 /** Reads and verifies the lines of selected entry rows (from the aid queries). Missing allowance

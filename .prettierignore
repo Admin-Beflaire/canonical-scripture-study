@@ -2,7 +2,6 @@
 # New files must be formatted. Remove a file from this list in the same change
 # that formats it; never add a file here.
 dist/
-infrastructure/cloudflare/render.mjs
 infrastructure/github/deployment/smoke.mjs
 packages/shared/src/book-names.ts
 packages/shared/src/platform.ts
@@ -14,7 +13,6 @@ services/study/src/guidance.ts
 services/study/src/index.ts
 services/study/src/mcp.ts
 services/study/src/operators/passage.ts
-services/study/src/read/bindings.ts
 services/study/src/read/index.ts
 services/study/src/read/manifest.ts
 services/study/src/read/search.ts
@@ -29,7 +27,6 @@ tests/maintenance/d1.ts
 tests/maintenance/github.test.ts
 tests/maintenance/github.ts
 tests/maintenance/migration.test.ts
-tests/platform/config.test.ts
 tests/platform/deployment.test.ts
 tests/platform/platform.test.ts
 tests/platform/study-fit.test.ts

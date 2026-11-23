@@ -33,7 +33,6 @@ tests/maintenance/d1.ts
 tests/maintenance/github.test.ts
 tests/maintenance/github.ts
 tests/maintenance/migration.test.ts
-tests/maintenance/selection.test.ts
 tests/platform/config.test.ts
 tests/platform/deployment.test.ts
 tests/platform/platform.test.ts

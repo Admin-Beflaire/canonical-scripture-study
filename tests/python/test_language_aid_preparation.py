@@ -297,6 +297,46 @@ class PreparationTest(unittest.TestCase):
         with self.assertRaises(RecordError):
             persist_candidate(records, target)
 
+    def test_quality_rebuilds_from_the_original_not_from_the_partition_cache(self):
+        from css_preparation.prepare.evidence import OutputBasis
+        from css_preparation.validate.saved import CandidateInventory
+
+        rev = "fixture-bdb/1"
+        store = Store({rev: BDB.encode()})
+        store.partitions = {}
+        store.read_partition_cache = lambda key: store.partitions.get(key)
+        store.write_partition_cache = lambda key, data: store.partitions.setdefault(
+            key, data
+        )
+        reader, unit = recipe("bdb", BDB_COMMIT, rev)
+        refs = [{"kind": "source_revision", "id": rev}]
+        job = {
+            "kind": "prepare",
+            "unit_id": unit["unit_id"],
+            "native_extent": unit["native_extent"],
+            "input_refs": refs,
+        }
+        reader.prepare(job, store)  # writes the cache from the original
+        for key, data in list(store.partitions.items()):
+            value = json.loads(data)
+            value["entries"][0]["body"] += " changed"
+            store.partitions[key] = json.dumps(value).encode()
+        records = reader.prepare(job, store)  # saves the changed cached wording
+        self.assertIn(b"changed", next(iter(records.blobs.values())))
+        basis = OutputBasis(
+            "aid_entries",
+            (rev,),
+            "language-aids/2",
+            {"component": "bdb", "commit": BDB_COMMIT, "entries": "r2"},
+            {"coordinate_version": "language-aids/bdb/1", "unit_ids": ["p000"]},
+        )
+        with self.assertRaises(RecordError):
+            self.check(reader, store, records, refs, CandidateInventory(added=(basis,)))
+        # The same output without the change passes against the original.
+        clean = Store({rev: BDB.encode()})
+        good = reader.prepare(job, clean)
+        self.check(reader, clean, good, refs, CandidateInventory(added=(basis,)))
+
     def test_quality_refuses_aid_outputs_without_a_verification_source(self):
         from css_preparation.validate.semantic import check_saved_semantics
 

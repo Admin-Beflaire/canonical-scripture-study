@@ -309,11 +309,14 @@ class AidRecipe:
         dependencies = [self.revision]
         if not set(dependencies) <= refs:
             raise RecordError("Task does not name all source revisions")
-        return self._records(storage, scope["unit_ids"][0])
-
-    def _records(self, storage: Any, unit: str) -> RecordSet:
-        """One partition's output: its entries file, one D1 row per entry and its coverage."""
+        unit = scope["unit_ids"][0]
         text, group = self._partition(storage, unit)
+        return self._records(storage, unit, text.coordinate_version, group)
+
+    def _records(
+        self, storage: Any, unit: str, coordinate_version: str, group: list[Any]
+    ) -> RecordSet:
+        """One partition's output: its entries file, one D1 row per entry and its coverage."""
         identity = self._identity(storage)
         lines, offset = [], 0
         for entry in group:
@@ -342,7 +345,7 @@ class AidRecipe:
             (self.revision,),
             METHOD_VERSION,
             {"component": self.component, "commit": self.commit, "entries": "r2"},
-            {"coordinate_version": text.coordinate_version, "unit_ids": [unit]},
+            {"coordinate_version": coordinate_version, "unit_ids": [unit]},
         )
         return build_aid_records(
             identity,
@@ -353,8 +356,22 @@ class AidRecipe:
         )
 
     def read_aid_entries(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
-        """What every unit of the job's extent should have saved, rebuilt from the pinned original."""
+        """What every unit of the job's extent should have saved, rebuilt from the pinned original.
+
+        The partition cache is not used: it is derived data that preparation itself reads, so
+        it cannot be what preparation is checked against. The original is parsed once.
+        """
+        full, groups = self._native(storage)
         records = RecordSet()
         for unit in job["native_extent"]["unit_ids"]:
-            records.merge(self._records(storage, unit))
+            match = re.fullmatch(r"p(\d{3})", unit)
+            if not match or int(match[1]) >= len(groups):
+                raise RecordError(
+                    "Language-aid unit is outside the source's partitions"
+                )
+            records.merge(
+                self._records(
+                    storage, unit, full.coordinate_version, groups[int(match[1])]
+                )
+            )
         return records

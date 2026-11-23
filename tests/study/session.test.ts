@@ -52,14 +52,30 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
 });
 
 test('one bounded allowance schedule serves passage, word and aid requests', () => {
-  assert.deepEqual(limitsForWorkload({}, 'passage'), STARTING_LIMITS);
-  assert.deepEqual(limitsForWorkload({}, 'word'), {...STARTING_LIMITS, d1Calls: 8, r2Reads: 6, r2Bytes: 98304});
-  assert.deepEqual(limitsForWorkload({}, 'aid'), {...STARTING_LIMITS, r2Reads: 6, r2Bytes: 98304});
-  const env = {MAX_D1_CALLS: 7, MAX_SUBREQUESTS: 10, REQUEST_BYTES: 80000};
-  assert.deepEqual(
-    [limitsForWorkload(env, 'word').d1Calls, limitsForWorkload(env, 'word').r2Reads, limitsForWorkload(env, 'word').r2Bytes],
-    [7, 3, 80000],
-  );
+  const passage = limitsForWorkload({}, 'passage');
+  const word = limitsForWorkload({}, 'word');
+  const aid = limitsForWorkload({}, 'aid');
+  assert.deepEqual(passage, STARTING_LIMITS);
+  assert.deepEqual(word, {
+    ...STARTING_LIMITS,
+    d1Calls: 8,
+    r2Reads: 6,
+    r2Bytes: 98304,
+  });
+  assert.deepEqual(aid, {
+    ...STARTING_LIMITS,
+    r2Reads: 6,
+    r2Bytes: 98304,
+  });
+  const env = {
+    MAX_D1_CALLS: 7,
+    MAX_SUBREQUESTS: 10,
+    REQUEST_BYTES: 80000,
+  };
+  const bounded = limitsForWorkload(env, 'word');
+  assert.equal(bounded.d1Calls, 7);
+  assert.equal(bounded.r2Reads, 3);
+  assert.equal(bounded.r2Bytes, 80000);
 });
 
 test('budget counts work before it happens', () => {

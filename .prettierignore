@@ -10,7 +10,6 @@ packages/shared/src/reader-catalogue.ts
 packages/shared/src/references.ts
 packages/shared/src/versification.ts
 services/maintenance/control/src/contracts.ts
-services/maintenance/control/src/d1.ts
 services/study/src/coordinator.ts
 services/study/src/guidance.ts
 services/study/src/index.ts
@@ -18,7 +17,6 @@ services/study/src/mcp.ts
 services/study/src/operators/passage.ts
 services/study/src/read/bindings.ts
 services/study/src/read/budget.ts
-services/study/src/read/bytes.ts
 services/study/src/read/index.ts
 services/study/src/read/manifest.ts
 services/study/src/read/search.ts

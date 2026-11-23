@@ -22,7 +22,6 @@ Terraform does not apply SQL or duplicate Worker/domain/DNS settings.
 | `ACCOUNT_ID`, `ZONE_ID`, `ZONE_NAME`, `INSTANCE` | Destination account, zone and suffix |
 | `STUDY_HOSTNAME`, `CONTROL_HOSTNAME` | Distinct custom hostnames inside the zone |
 | `DATABASE_ID` | Terraform-created database |
-| `VERIFIED_WORD_CACHE_NAMESPACE_ID` | Terraform-created optional shared verified-word cache namespace, bound only to Study |
 | `ACCESS_ISSUER` | HTTPS Access team issuer |
 | `STUDY_AUDIENCE`, `CONTROL_AUDIENCE`, `JOB_AUDIENCE` | Distinct Terraform-created application audiences |
 | `DEPLOYMENT_CLIENT_ID` | Non-secret Access deployment-check Client ID, shared by both Workers; not the resource ID or secret |
@@ -134,4 +133,4 @@ them in code only after measured Worker/host fit requires it.
 
 ## Verified language-aid KV plan switch
 
-`aid_kv_cache_enabled` is a Terraform plan variable (default `true` for Workers Paid). Its protected state output renders `AID_KV_CACHE_ENABLED` for Study. Set it `false` in the plan configuration for a move to Workers Free, apply the approved change and deploy Study. Disabled Study makes no `VERIFIED_WORD_CACHE` calls and uses selected D1 and verified R2 instead, silently. The namespace remains private and bound; disabling avoids its read/write quota. A cache miss or provider failure also falls back to R2. Only verified unfinished wording is cached, not host requests or source metadata.
+Study reads continued language-aid wording from R2 and verifies it against the selected D1 row. The current Worker has no KV binding. The older namespace remains provisioned for rollback to a version that used it.

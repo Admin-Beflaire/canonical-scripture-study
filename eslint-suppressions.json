@@ -96,14 +96,6 @@
       "count": 1
     }
   },
-  "services/study/src/operators/language.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
   "services/study/src/operators/passage.ts": {
     "complexity": {
       "count": 5
@@ -157,7 +149,7 @@
   },
   "tests/study/aids.test.ts": {
     "max-lines-per-function": {
-      "count": 6
+      "count": 2
     }
   },
   "tests/study/fixture.ts": {
@@ -168,6 +160,11 @@
   "tests/study/reader-mappings.test.ts": {
     "complexity": {
       "count": 1
+    }
+  },
+  "tests/study/results.test.ts": {
+    "max-lines-per-function": {
+      "count": 2
     }
   },
   "tests/study/study.test.ts": {

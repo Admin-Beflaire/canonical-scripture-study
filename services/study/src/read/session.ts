@@ -3,7 +3,6 @@ import type {
   D1ReadDatabase,
   R2ReadBucket,
   StudyReadEnvironment,
-  VerifiedWordCache,
 } from './bindings.ts';
 import {RequestBudget, limitsFor, type BudgetLimits} from './budget.ts';
 import {
@@ -113,7 +112,6 @@ export class ReadSession {
   readonly #db: D1ReadDatabase;
   readonly #cache: Map<string, string>;
   readonly objects: R2ReadBucket;
-  readonly verifiedWords?: VerifiedWordCache;
   readonly budget: RequestBudget;
   readonly release: CurrentRelease;
   private constructor(
@@ -121,13 +119,11 @@ export class ReadSession {
     objects: R2ReadBucket,
     budget: RequestBudget,
     release: CurrentRelease,
-    verifiedWords?: VerifiedWordCache,
   ) {
     this.#db = db;
     this.objects = objects;
     this.budget = budget;
     this.release = release;
-    this.verifiedWords = verifiedWords;
     const cached = READ_CACHES.get(db);
     this.#cache = cached?.releaseId === release.id ? cached.results : new Map();
     if (cached?.releaseId !== release.id)
@@ -155,18 +151,10 @@ export class ReadSession {
         'incompatible_release',
         'The selected release record is missing',
       );
-    return new ReadSession(
-      env.DATA_DB,
-      env.PRIVATE_OBJECTS,
-      budget,
-      {
-        id: row.release_id,
-        schema_versions: checkVersions(row.schema_versions_json),
-      },
-      env.AID_KV_CACHE_ENABLED === false || env.AID_KV_CACHE_ENABLED === 'false'
-        ? undefined
-        : env.VERIFIED_WORD_CACHE,
-    );
+    return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, {
+      id: row.release_id,
+      schema_versions: checkVersions(row.schema_versions_json),
+    });
   }
 
   /** Runs one allowlisted query for the current release. Returns at most `rowsPerQuery`

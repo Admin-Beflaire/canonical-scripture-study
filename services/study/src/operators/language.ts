@@ -1,5 +1,4 @@
 import {compareUtf8, isIdentifier, utf8Length} from '../read/bytes.ts';
-import {aidSpanId, readAidEntries} from '../read/aid-entries.ts';
 import {
   PagedIndexSearch,
   SUPPORTED_LOOKUPS,
@@ -9,18 +8,19 @@ import {
   type SearchHit,
 } from '../read/search.ts';
 import type {ReadSession} from '../read/session.ts';
-import {ReadError, limitation, type Limitation} from '../read/states.ts';
+import {ReadError, type Limitation} from '../read/states.ts';
 import type {Batch, EvidenceItem} from '../results/batch.ts';
 import {
   searchBatch,
   normalizeSearchWorkload,
   SEARCH_CHECKS,
+  type SearchWorkload,
 } from '../results/search-batch.ts';
 import {
   encodeContinuation,
   resumeContinuation,
 } from '../results/continuation.ts';
-import {aidBatch} from './aids.ts';
+import {aidBatch, type AidLookup} from './aids.ts';
 import {normalizeKey} from '../scope/keys.ts';
 
 /** Capability each lookup needs from a selected index. */
@@ -38,6 +38,67 @@ export interface LanguageWorkload {
   lookup: string;
   key: string;
   sources: string[] | null;
+  focus?: EvidenceFocus;
+}
+
+export const EVIDENCE_FOCUS = [
+  'lexicon',
+  'grammar',
+  'names',
+  'occurrences',
+] as const;
+export type EvidenceFocus = (typeof EVIDENCE_FOCUS)[number];
+type LinkedLookup = Exclude<AidLookup, 'lexicon_entry'>;
+type LinkedKey = [LinkedLookup, string];
+type LinkedState = {
+  keys: LinkedKey[];
+  aid: string | null;
+  search: string | null;
+  check: boolean;
+};
+const MAX_LINKED_STATE_BYTES = 560;
+const LINKED_KIND: Record<LinkedLookup, string> = {
+  lexicon: 'lexicon_entry',
+  grammar_info: 'grammar_expansion',
+  proper_name: 'proper_name',
+};
+const LINKED_FOCUS: Record<LinkedLookup, EvidenceFocus> = {
+  lexicon: 'lexicon',
+  grammar_info: 'grammar',
+  proper_name: 'names',
+};
+const isObject = (x: unknown): x is Record<string, unknown> =>
+  !!x && typeof x === 'object' && !Array.isArray(x);
+const identity = (lookup: LinkedLookup, key: string) => lookup + ':' + key;
+const tokenOrNull = (value: unknown) =>
+  value === null ||
+  (typeof value === 'string' && /^[\w-]{1,2048}$/.test(value));
+
+function fitsLinkedState(keys: LinkedKey[]) {
+  return utf8Length(JSON.stringify(keys)) <= MAX_LINKED_STATE_BYTES;
+}
+
+function linkedState(pos: unknown, key: unknown) {
+  if (
+    key !== null ||
+    !isObject(pos) ||
+    Object.keys(pos).sort().join(',') !== 'aid,check,keys,search' ||
+    !Array.isArray(pos.keys) ||
+    !pos.keys.length ||
+    !fitsLinkedState(pos.keys) ||
+    !tokenOrNull(pos.aid) ||
+    !tokenOrNull(pos.search) ||
+    typeof pos.check !== 'boolean' ||
+    (pos.check && pos.aid !== null)
+  )
+    return false;
+  return pos.keys.every(
+    item =>
+      Array.isArray(item) &&
+      item.length === 2 &&
+      Object.hasOwn(LINKED_KIND, item[0]) &&
+      isIdentifier(item[1], 200),
+  );
 }
 
 /** Most sources one search covers (the search interface's own limit). */
@@ -121,241 +182,218 @@ export async function languageBatch(
     lookup,
     key: normalizeKey(lookup, workload.key),
     sources,
+    focus: workload.focus,
   });
-  type NameState = {
-    tags: string[];
-    aid: string | null;
-    search: string | null;
-    scan: boolean;
-  };
-  const checks = {
-    ...SEARCH_CHECKS,
-    word_names: (pos: unknown, key: unknown) => {
-      if (
-        key !== null ||
-        !isObject(pos) ||
-        Object.keys(pos).sort().join(',') !== 'aid,scan,search,tags'
-      )
-        return false;
-      return (
-        typeof pos.scan === 'boolean' &&
-        (pos.scan === false || pos.aid === null) &&
-        Array.isArray(pos.tags) &&
-        pos.tags.length > 0 &&
-        pos.tags.length <= 16 &&
-        pos.tags.every(
-          (tag: unknown) =>
-            typeof tag === 'string' && /^[HG]\d{4,5}[A-Za-z]?$/.test(tag),
-        ) &&
-        (pos.aid === null ||
-          (typeof pos.aid === 'string' && pos.aid.length <= 2048)) &&
-        (pos.search === null ||
-          (typeof pos.search === 'string' && pos.search.length <= 2048))
-      );
-    },
-  };
-  const state = continuation
-    ? await resumeContinuation(continuation, normalized, checks)
-    : null;
-  if (state?.op === 'word_names') {
-    const pending = state.pos as NameState;
-    if (pending.scan) {
-      const found = await presentNameTags(session, pending.tags);
-      const next = {...pending, scan: false, tags: found};
-      const token = found.length
-        ? await encodeContinuation(normalized, {
-            op: 'word_names',
-            pos: next,
-            key: null,
-          })
-        : pending.search;
-      return {
-        release_id: session.release.id,
-        mode: normalized.mode,
-        depth: normalized.depth,
-        delivered_scope: {
-          lookup,
-          key: normalized.key,
-          sources,
-          name_presence_checked: true,
-        },
-        context_scope: null,
-        evidence: [],
-        citations: [],
-        searched_scope: [],
-        coverage: [],
-        limitations: [],
-        remaining: token
-          ? {word_names: found.length, search: !!pending.search}
-          : null,
-        continuation: token,
-        guidance_version: guidanceVersion,
-      };
-    }
-    const tag = pending.tags[0];
-    const result = await aidBatch(
+  if (!SUPPORTED_LOOKUPS.includes(lookup as LookupKind))
+    return searchBatch(
       session,
-      {...normalized, lookup: 'proper_name', key: tag, sources: null},
-      pending.aid,
+      adapter,
+      normalized,
+      continuation,
       guidanceVersion,
+      notes,
     );
-    // No matching identity is ordinary for non-name Strong tags.
-    result.limitations = result.limitations.filter(
-      item => !(item.state === 'missing_evidence' && item.scope === tag),
-    );
-    result.delivered_scope = {
-      lookup,
-      key: normalized.key,
-      word_sources: sources,
-      proper_name_for: tag,
-      sources: null,
-    };
-    const next = result.continuation
-      ? {...pending, aid: result.continuation}
-      : {...pending, tags: pending.tags.slice(1), aid: null};
-    result.continuation = next.tags.length
-      ? await encodeContinuation(normalized, {
-          op: 'word_names',
-          pos: next,
-          key: null,
-        })
-      : pending.search;
-    result.remaining = result.continuation
-      ? {word_names: next.tags.length, search: !!pending.search}
-      : null;
-    return result;
-  }
-  // Check candidate tags together, before bounding a page by actual names.
-  let present: Set<string> | null = null;
-  const batch = await searchBatch(
+  return linkedLanguageBatch(
     session,
     adapter,
     normalized,
     continuation,
     guidanceVersion,
     notes,
-    async hits => {
-      const all = [
-        ...new Set(
-          hits.flatMap(hit =>
-            wordKeys(hit).flatMap(a => (a.proper_name ? [a.proper_name] : [])),
-          ),
-        ),
-      ];
-      if (!all.length) {
-        present = new Set();
-        return hits.length;
-      }
-      // Preserve the existing room for lexicon, grammar and their span read.
-      // If the search already spent that room, screen in the next batch instead.
-      const checked = session.budget.canQuery(4)
-        ? await session.queryIfAvailable('proper_name_presence', {tags: all})
-        : null;
-      present = checked ? new Set(parsePresence(checked.rows, all)) : null;
-      const tags = new Set<string>();
-      for (let i = 0; i < hits.length; i++) {
-        const next = new Set([
-          ...tags,
-          ...wordKeys(hits[i]).flatMap(a =>
-            a.proper_name && (!present || present.has(a.proper_name))
-              ? [a.proper_name]
-              : [],
-          ),
-        ]);
-        if (next.size > 16) return i;
-        for (const tag of next) tags.add(tag);
-      }
-      return hits.length;
-    },
   );
-  if (SUPPORTED_LOOKUPS.includes(lookup as LookupKind)) {
-    const completed = await attachWordAids(session, batch);
-    const available = present as Set<string> | null;
-    const tags = [
-      ...new Set(
-        batch.evidence.flatMap(item =>
-          item.kind === 'search_hit'
-            ? wordKeys(item.hit).flatMap(a =>
-                a.proper_name &&
-                !completed.has(a.proper_name) &&
-                (!available || available.has(a.proper_name))
-                  ? [a.proper_name]
-                  : [],
-              )
-            : [],
-        ),
-      ),
-    ];
-    if (tags.length) {
-      batch.continuation = await encodeContinuation(normalized, {
-        op: 'word_names',
-        pos: {
-          tags,
-          aid: null,
-          search: batch.continuation,
-          scan: available === null,
-        },
-        key: null,
-      });
-      batch.remaining = {word_names: tags.length, search: !!batch.remaining};
+}
+
+async function linkedLanguageBatch(
+  session: ReadSession,
+  adapter: SearchAdapter,
+  workload: SearchWorkload,
+  continuation: string | null,
+  guidance: string,
+  notes: Limitation[],
+) {
+  let search = continuation;
+  if (continuation) {
+    const state = await resumeContinuation(continuation, workload, {
+      ...SEARCH_CHECKS,
+      linked_aids: linkedState,
+    });
+    if (state.op === 'linked_aids') {
+      const pending = state.pos as LinkedState;
+      if (pending.check) {
+        pending.keys =
+          (await selectedLinkedKeys(session, pending.keys)) ?? pending.keys;
+        pending.check = false;
+      }
+      if (pending.keys.length)
+        return continueLinkedAids(session, workload, pending, guidance);
+      if (!pending.search)
+        return exhaustedLinkedPage(session, workload, guidance);
+      search = pending.search;
     }
   }
+  return searchLinkedPage(session, adapter, workload, search, guidance, notes);
+}
+
+function exhaustedLinkedPage(
+  session: ReadSession,
+  workload: SearchWorkload,
+  guidance: string,
+): Batch {
+  return {
+    release_id: session.release.id,
+    mode: workload.mode,
+    depth: workload.depth,
+    delivered_scope: {
+      lookup: workload.lookup,
+      key: workload.key,
+      sources: workload.sources,
+    },
+    context_scope: null,
+    evidence: [],
+    citations: [],
+    searched_scope: [],
+    coverage: [],
+    limitations: [],
+    remaining: null,
+    continuation: null,
+    guidance_version: guidance,
+  };
+}
+
+async function selectedLinkedKeys(
+  session: ReadSession,
+  keys: LinkedKey[],
+): Promise<LinkedKey[] | null> {
+  if (!keys.length) return keys;
+  const result = await session.queryIfAvailable('linked_aid_presence', {
+    keys: keys.map(([lookup, key]) => [LINKED_KIND[lookup], key]),
+  });
+  if (!result) return null;
+  try {
+    const value: unknown = JSON.parse(String(result.rows[0]?.keys));
+    if (!Array.isArray(value)) throw new Error();
+    const found = new Set(value.map(key => JSON.stringify(key)));
+    return keys.filter(([lookup, key]) =>
+      found.has(JSON.stringify([LINKED_KIND[lookup], key])),
+    );
+  } catch {
+    throw new ReadError(
+      'corrupt',
+      'Unreadable linked-evidence presence result',
+    );
+  }
+}
+
+async function searchLinkedPage(
+  session: ReadSession,
+  adapter: SearchAdapter,
+  workload: SearchWorkload,
+  search: string | null,
+  guidance: string,
+  notes: Limitation[],
+) {
+  let available: Set<string> | null = null;
+  let pending: LinkedState | undefined;
+  // A cold occurrence lookup can spend the full R2 allowance. Leave two reads
+  // for its first lexical and grammar entries when evidence has priority.
+  const reserve =
+    !search &&
+    workload.focus !== 'occurrences' &&
+    session.budget.limits.r2Reads >= 8
+      ? 2
+      : 0;
+  const batch = await session.budget.reserveR2Reads(reserve, () =>
+    searchBatch(session, adapter, workload, search, guidance, notes, {
+      async countHits(hits) {
+        const candidates = collectKeys(hits);
+        const present = session.budget.canQuery(4)
+          ? await selectedLinkedKeys(session, candidates)
+          : null;
+        available = present && new Set(present.map(key => identity(...key)));
+        return boundedHits(hits, available);
+      },
+      async finalize(candidate) {
+        const keys = orderedKeys(pageHits(candidate), workload, available);
+        pending = keys.length
+          ? {keys, aid: null, search: candidate.continuation, check: !available}
+          : undefined;
+        if (pending) await setLinkedContinuation(candidate, workload, pending);
+      },
+    }),
+  );
+  if (!pending) return batch;
+  const hits = pageHits(batch);
+  const delivered = await attachLinkedAids(
+    session,
+    batch,
+    workload,
+    pending,
+    guidance,
+  );
+  linkAnalyses(batch, hits, delivered, session.budget.limits.resultBytes);
+  orderEvidence(batch, workload);
   return batch;
 }
 
-function parsePresence(
-  rows: Record<string, unknown>[],
-  requested: string[],
-): string[] {
-  try {
-    const value: unknown = JSON.parse(String(rows[0]?.tags));
-    if (
-      !Array.isArray(value) ||
-      !value.every(tag => typeof tag === 'string' && requested.includes(tag))
-    )
-      throw new Error();
-    return [...new Set(value)];
-  } catch {
-    throw new ReadError('corrupt', 'Unreadable proper-name presence result');
-  }
+async function setLinkedContinuation(
+  batch: Batch,
+  workload: SearchWorkload,
+  pending: LinkedState,
+) {
+  batch.continuation = pending.keys.length
+    ? await encodeContinuation(workload, {
+        op: 'linked_aids',
+        pos: pending,
+        key: null,
+      })
+    : pending.search;
+  batch.remaining = batch.continuation
+    ? {linked_aids: pending.keys.length, search: !!pending.search}
+    : null;
 }
 
-async function presentNameTags(
+async function continueLinkedAids(
   session: ReadSession,
-  tags: string[],
-): Promise<string[]> {
-  const result = await session.query('proper_name_presence', {tags});
-  return parsePresence(result.rows, tags);
+  workload: SearchWorkload,
+  pending: LinkedState,
+  guidance: string,
+) {
+  const [lookup, key] = pending.keys[0];
+  return aidBatch(
+    session,
+    {...workload, lookup, key, sources: null},
+    pending.aid,
+    guidance,
+    [],
+    {
+      async finalize(batch) {
+        batch.limitations = batch.limitations.filter(
+          item => !(item.state === 'missing_evidence' && item.scope === key),
+        );
+        batch.delivered_scope = {
+          lookup: workload.lookup,
+          key: workload.key,
+          word_sources: workload.sources,
+          linked_aid: {lookup, key},
+          sources: null,
+        };
+        const aid = batch.continuation;
+        await setLinkedContinuation(batch, workload, {
+          ...pending,
+          aid,
+          keys: aid ? pending.keys : pending.keys.slice(1),
+        });
+      },
+    },
+  );
 }
 
-/** Evidence attached by selected Strong/morphology keys, not by guessed word senses.
- * Each distinct key is fetched at most once per batch; a bounded, release-scoped cache
- * reuses verified small entries across continuations in the same Worker instance. */
-type AidKind = 'lexicon' | 'grammar_info' | 'proper_name';
-type AidItem = Extract<EvidenceItem, {kind: 'language_aid'}>;
-interface Key {
-  lookup: AidKind;
-  key: string;
-}
 interface AnalysisKeys {
   analysis_id: string;
   lexicon: string | null;
   grammar: string[];
   proper_name: string | null;
 }
-const MAX_AID_KEYS = 4;
-const MAX_AID_ROWS = 12;
-const MAX_AID_ROWS_PER_KEY = 8;
-const MAX_CACHED_KEYS = 8;
-const CACHE_BYTE_CAP = 48 * 1024;
-const WORD_AID_CACHE = new WeakMap<
-  object,
-  {release: string; values: Map<string, AidItem[]>}
->();
-const cacheKey = (lookup: AidKind, key: string) => lookup + ':' + key;
-const isObject = (x: unknown): x is Record<string, unknown> =>
-  !!x && typeof x === 'object' && !Array.isArray(x);
-
 function wordKeys(hit: SearchHit): AnalysisKeys[] {
   if (!Array.isArray(hit.analyses)) return [];
   return hit.analyses.filter(isObject).map(a => {
@@ -399,238 +437,154 @@ function wordKeys(hit: SearchHit): AnalysisKeys[] {
   });
 }
 
-/** Adds uniquely retrieved attributed entries as separate evidence and links each word analysis
- * to them. Missing, large and undisplayed entries remain available via independent lookups. */
-export async function attachWordAids(
+function pageHits(batch: Batch): SearchHit[] {
+  return batch.evidence.flatMap(item =>
+    item.kind === 'search_hit' ? [item.hit] : [],
+  );
+}
+
+function collectKeys(hits: SearchHit[]): LinkedKey[] {
+  const keys = new Map<string, LinkedKey>();
+  const add = (lookup: LinkedLookup, key: string) =>
+    keys.set(identity(lookup, key), [lookup, key]);
+  for (const hit of hits) {
+    for (const analysis of wordKeys(hit)) {
+      if (analysis.lexicon) add('lexicon', analysis.lexicon);
+      for (const code of analysis.grammar) add('grammar_info', code);
+      if (analysis.proper_name) add('proper_name', analysis.proper_name);
+    }
+  }
+  return [...keys.values()];
+}
+
+function boundedHits(hits: SearchHit[], available: Set<string> | null): number {
+  const keys = new Map<string, LinkedKey>();
+  for (const [index, hit] of hits.entries()) {
+    for (const key of collectKeys([hit])) {
+      const id = identity(...key);
+      if (!available || available.has(id)) keys.set(id, key);
+    }
+    if (!fitsLinkedState([...keys.values()])) return index;
+  }
+  return hits.length;
+}
+
+function priority(workload: SearchWorkload): EvidenceFocus[] {
+  const order: EvidenceFocus[] =
+    workload.mode === 'word_analysis'
+      ? ['grammar', 'lexicon', 'occurrences', 'names']
+      : ['lexicon', 'grammar', 'occurrences', 'names'];
+  const focus = workload.focus as EvidenceFocus | undefined;
+  return focus ? [focus, ...order.filter(kind => kind !== focus)] : order;
+}
+
+function orderedKeys(
+  hits: SearchHit[],
+  workload: SearchWorkload,
+  present: Set<string> | null,
+) {
+  const order = priority(workload);
+  return collectKeys(hits)
+    .filter(key => !present || present.has(identity(...key)))
+    .sort(
+      ([left], [right]) =>
+        order.indexOf(LINKED_FOCUS[left]) - order.indexOf(LINKED_FOCUS[right]),
+    );
+}
+
+function orderEvidence(batch: Batch, workload: SearchWorkload) {
+  const order = priority(workload);
+  const rank = (item: EvidenceItem) => {
+    if (item.kind !== 'language_aid') return order.indexOf('occurrences');
+    const lookup = (Object.keys(LINKED_KIND) as LinkedLookup[]).find(
+      key => LINKED_KIND[key] === item.span.kind,
+    );
+    return order.indexOf(lookup ? LINKED_FOCUS[lookup] : 'lexicon');
+  };
+  batch.evidence.sort((left, right) => rank(left) - rank(right));
+}
+
+/** Reuse the exact aid reader within a word page. An unfinished entry keeps
+ * the same position and moves to the next batch when the current one is full. */
+async function attachLinkedAids(
   session: ReadSession,
   batch: Batch,
-): Promise<Set<string>> {
-  const hits = batch.evidence
-    .filter(
-      (item): item is Extract<EvidenceItem, {kind: 'search_hit'}> =>
-        item.kind === 'search_hit',
-    )
-    .map(item => item.hit);
-  if (!hits.length) return new Set();
-  const wanted = new Map<SearchHit, AnalysisKeys[]>();
-  const keys = new Map<string, Key>();
-  const nameKeys = new Map<string, Key>();
-  for (const hit of hits) {
-    const analyses = wordKeys(hit);
-    wanted.set(hit, analyses);
-    for (const analysis of analyses) {
-      if (analysis.proper_name)
-        nameKeys.set(cacheKey('proper_name', analysis.proper_name), {
-          lookup: 'proper_name',
-          key: analysis.proper_name,
-        });
-      if (analysis.lexicon)
-        keys.set(cacheKey('lexicon', analysis.lexicon), {
-          lookup: 'lexicon',
-          key: analysis.lexicon,
-        });
-      for (const code of analysis.grammar)
-        keys.set(cacheKey('grammar_info', code), {
-          lookup: 'grammar_info',
-          key: code,
-        });
-    }
-  }
-  // Existing lexical and grammar evidence keeps priority across all analyses.
-  for (const [key, value] of nameKeys) keys.set(key, value);
-  const cap = session.budget.limits.resultBytes;
-  const note = (state: Limitation['state'], scope: string, detail: string) => {
-    const item = limitation(state, scope, detail);
-    batch.limitations.push(item);
-    if (utf8Length(JSON.stringify(batch)) > cap) batch.limitations.pop();
-  };
-  const choice = [...keys].slice(0, MAX_AID_KEYS);
-  if (keys.size > choice.length)
-    note(
-      'budget',
-      'word_aids',
-      'Additional word keys need separate lookups within the batch allowance',
-    );
-  const existing = WORD_AID_CACHE.get(session.objects);
-  const cached =
-    existing?.release === session.release.id
-      ? existing.values
-      : new Map<string, AidItem[]>();
-  if (existing?.release !== session.release.id)
-    WORD_AID_CACHE.set(session.objects, {
-      release: session.release.id,
-      values: cached,
-    });
-  const values = new Map<string, AidItem[]>();
-  const fresh = new Map<
-    string,
-    {rows: Record<string, unknown>[]; complete: boolean}
-  >();
-  let rowCount = 0;
-  for (const [identity, key] of choice) {
-    if (cached.has(identity)) {
-      values.set(identity, cached.get(identity)!);
-      continue;
-    }
-    // Reserve a D1 call to resolve the selected bodies after the key queries.
-    if (!session.budget.canQuery(2)) {
-      note(
-        'budget',
-        identity,
-        'No D1 allowance for attached evidence; independent lookup remains available',
-      );
-      continue;
-    }
-    const page = await session.queryIfAvailable(
-      key.lookup === 'lexicon'
-        ? 'lexicon_strong'
-        : key.lookup === 'proper_name'
-          ? 'proper_name'
-          : 'grammar_expansion',
-      {key: key.key, after: null},
-    );
-    if (page === null) {
-      note('budget', identity, 'No D1 allowance for the language-aid lookup');
-      continue;
-    }
-    const count = Math.min(
-      page.rows.length,
-      MAX_AID_ROWS_PER_KEY,
-      MAX_AID_ROWS - rowCount,
-    );
-    const rows = page.rows.slice(0, count);
-    rowCount += rows.length;
-    const complete = !page.more && count === page.rows.length;
-    if (!complete)
-      note(
-        'budget',
-        identity,
-        'Other attributed entries remain; use the independent lookup for all alternatives',
-      );
-    fresh.set(identity, {rows, complete});
-    if (rowCount >= MAX_AID_ROWS) break;
-  }
-  const rows = [...fresh.values()].flatMap(value => value.rows);
-  if (rows.length) {
-    const read = await readAidEntries(session, rows);
-    for (const issue of read.limitations)
-      note(issue.state, issue.scope, issue.detail);
-    if (read.remaining.length)
-      note('budget', 'word_aids', 'Some linked entries need another request');
-    const entries = new Map(
-      read.entries.map(entry => [entry.span.span_id, entry]),
-    );
-    for (const [identity, entry] of fresh) {
-      const items: AidItem[] = [];
-      let complete = entry.complete;
-      for (const row of entry.rows) {
-        const found = entries.get(aidSpanId(row));
-        if (!found || found.span.text === null) {
-          complete = false;
-          continue;
-        }
-        items.push({
-          kind: 'language_aid',
-          span: found.span,
-          provider: found.provider,
-          details: found.details,
-        });
-      }
-      values.set(identity, items);
-      entry.complete = complete;
-      if (complete && utf8Length(JSON.stringify(items)) <= CACHE_BYTE_CAP) {
-        cached.delete(identity);
-        cached.set(identity, items);
-        if (cached.size > MAX_CACHED_KEYS)
-          cached.delete(cached.keys().next().value!);
-      }
-    }
-  } else
-    for (const [identity, entry] of fresh) {
-      values.set(identity, []);
-      if (entry.complete) cached.set(identity, []);
-    }
+  workload: SearchWorkload,
+  pending: LinkedState,
+  guidance: string,
+) {
   const delivered = new Map<string, string[]>();
-  const seen = new Set<string>();
-  for (const [identity] of choice) {
-    for (const item of values.get(identity) ?? []) {
-      const sid = item.span.span_id;
-      if (!seen.has(sid)) {
-        const citation = {
-          source_revision_id: item.span.source_revision_id,
-          span_id: sid,
-          coordinate_version: item.span.coordinate_version,
-          segments: item.span.segments,
-        };
-        const bytes = utf8Length(JSON.stringify(item));
-        if (!session.budget.canReturn(bytes)) {
-          note(
-            'budget',
-            identity,
-            'Linked evidence exceeds this batch; use the separate lookup',
-          );
-          continue;
-        }
-        batch.evidence.push(item);
-        batch.citations.push(citation);
-        if (utf8Length(JSON.stringify(batch)) > cap) {
-          batch.evidence.pop();
-          batch.citations.pop();
-          note(
-            'budget',
-            identity,
-            'Linked evidence exceeds this batch; use the separate lookup',
-          );
-          continue;
-        }
-        session.budget.spendResult(bytes);
-        seen.add(sid);
-      }
-      const refs = delivered.get(identity) ?? [];
-      if (!refs.includes(sid)) refs.push(sid);
-      delivered.set(identity, refs);
-    }
+  while (pending.keys.length && session.budget.canQuery()) {
+    const [lookup, key] = pending.keys[0];
+    const aid = await aidBatch(
+      session,
+      {...workload, lookup, key, sources: null},
+      null,
+      guidance,
+      [],
+      {envelopeReserve: 0},
+    );
+    const candidate = {
+      ...batch,
+      evidence: [...batch.evidence, ...aid.evidence],
+      citations: [...batch.citations, ...aid.citations],
+      limitations: [
+        ...batch.limitations,
+        ...aid.limitations.filter(
+          item => !(item.state === 'missing_evidence' && item.scope === key),
+        ),
+      ],
+    };
+    const next = {
+      ...pending,
+      keys: aid.continuation ? pending.keys : pending.keys.slice(1),
+      aid: aid.continuation,
+      check: aid.continuation ? false : pending.check,
+    };
+    await setLinkedContinuation(candidate, workload, next);
+    if (
+      utf8Length(JSON.stringify(candidate)) > session.budget.limits.resultBytes
+    )
+      break;
+    Object.assign(batch, candidate);
+    Object.assign(pending, next);
+    delivered.set(
+      identity(lookup, key),
+      aid.citations.map(citation => citation.span_id),
+    );
+    if (pending.aid) break;
   }
-  const completedNames = new Set<string>();
-  for (const [identity, key] of choice) {
-    if (key.lookup !== 'proper_name' || !values.has(identity)) continue;
-    const items = values.get(identity)!;
-    const complete =
-      cached.has(identity) || fresh.get(identity)?.complete === true;
-    if (complete && (delivered.get(identity)?.length ?? 0) === items.length)
-      completedNames.add(key.key);
-  }
+  return delivered;
+}
+
+function linkAnalyses(
+  batch: Batch,
+  hits: SearchHit[],
+  delivered: Map<string, string[]>,
+  cap: number,
+) {
+  const spans = (lookup: LinkedLookup, key: string | null) =>
+    key ? (delivered.get(identity(lookup, key)) ?? []) : [];
   for (const hit of hits) {
-    const matches = (wanted.get(hit) ?? [])
-      .map(a => ({
-        analysis_id: a.analysis_id,
-        lexicon: a.lexicon
-          ? (delivered.get(cacheKey('lexicon', a.lexicon)) ?? [])
-          : [],
+    delete hit.aid_matches;
+    const matches = wordKeys(hit)
+      .map(analysis => ({
+        analysis_id: analysis.analysis_id,
+        lexicon: spans('lexicon', analysis.lexicon),
         grammar: [
           ...new Set(
-            a.grammar.flatMap(
-              code => delivered.get(cacheKey('grammar_info', code)) ?? [],
-            ),
+            analysis.grammar.flatMap(key => spans('grammar_info', key)),
           ),
         ],
-        proper_name: a.proper_name
-          ? (delivered.get(cacheKey('proper_name', a.proper_name)) ?? [])
-          : [],
+        proper_name: spans('proper_name', analysis.proper_name),
       }))
       .filter(
-        a => a.lexicon.length || a.grammar.length || a.proper_name.length,
+        item =>
+          item.lexicon.length || item.grammar.length || item.proper_name.length,
       );
-    if (!matches.length) continue;
-    hit.aid_matches = matches;
-    if (utf8Length(JSON.stringify(batch)) > cap) {
-      delete hit.aid_matches;
-      note(
-        'budget',
-        'word_aids',
-        'Not every occurrence can carry evidence links in this batch',
-      );
+    if (matches.length) {
+      hit.aid_matches = matches;
+      if (utf8Length(JSON.stringify(batch)) > cap) delete hit.aid_matches;
     }
   }
-  return completedNames;
 }

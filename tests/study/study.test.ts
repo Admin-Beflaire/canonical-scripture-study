@@ -761,7 +761,7 @@ test('a translating study carries the key translation rules in its first batch o
   ])
     assert.match(full, needed);
   assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/20');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/21');
   for (const needed of [
     /### Working translation — <reference>/,
     /#### <chapter heading: book and chapter, only when several chapters>/,
@@ -864,7 +864,10 @@ test('method and tools guidance state the context summary and the native candida
     /Only when exact native text is still needed, inspect native numbering with mode "inspect_source"/,
   );
   assert.match(tools, /compound Hebrew morphology code, split the components/);
-  assert.match(tools, /retrieve each distinct lemma and morphology code once/);
+  assert.match(
+    tools,
+    /Across batches match separately delivered entries by lookup and key/,
+  );
   assert.match(
     guidance('translation').text,
     /First retrieve the current project's relevant lexical entries and their continuations/,

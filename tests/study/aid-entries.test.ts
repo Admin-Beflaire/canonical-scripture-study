@@ -4,7 +4,7 @@ import {A, B, buildFixture} from './fixture.ts';
 import {addAids} from './aid-fixture.ts';
 import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {ReadSession} from '../../services/study/src/read/session.ts';
-import {AID_LIMITS} from '../../services/study/src/read/budget.ts';
+import {limitsFor} from '../../services/study/src/read/budget.ts';
 import {aidBatch} from '../../services/study/src/operators/aids.ts';
 import type {Batch} from '../../services/study/src/results/batch.ts';
 
@@ -41,7 +41,7 @@ function withEntries() {
 test('an entry comes back with its attribution, coordinates and details, a gap without wording', async () => {
   const f = withEntries();
   const result = await aidBatch(
-    await ReadSession.open(f.env, AID_LIMITS),
+    await ReadSession.open(f.env, limitsFor({}, 'aid')),
     workload,
     null,
     'test',
@@ -92,7 +92,7 @@ test('an entry comes back with its attribution, coordinates and details, a gap w
 
 test('a source filter keeps only entries of the named source revisions', async () => {
   const f = withEntries();
-  const session = await ReadSession.open(f.env, AID_LIMITS);
+  const session = await ReadSession.open(f.env, limitsFor({}, 'aid'));
   assert.equal(
     (await aidBatch(session, {...workload, sources: [B]}, null, 'test'))
       .evidence.length,
@@ -101,7 +101,7 @@ test('a source filter keeps only entries of the named source revisions', async (
   assert.equal(
     (
       await aidBatch(
-        await ReadSession.open(f.env, AID_LIMITS),
+        await ReadSession.open(f.env, limitsFor({}, 'aid')),
         {...workload, sources: [A]},
         null,
         'test',
@@ -136,7 +136,7 @@ async function readWith(edit?: (line: string) => string, format?: string) {
   );
   f.select('rel-2', 'rel-1');
   return aidBatch(
-    await ReadSession.open(f.env, AID_LIMITS),
+    await ReadSession.open(f.env, limitsFor({}, 'aid')),
     workload,
     null,
     'test',
@@ -212,7 +212,10 @@ test('every aid lookup runs from its index: no scan of the entry table and no so
     );
     assert.doesNotMatch(text, /SCAN e|TEMP B-TREE/, `${name}: ${text}`);
   }
-  const presence = plan('proper_name_presence', ['["G1234G"]', 51]);
+  const presence = plan('linked_aid_presence', [
+    '[["proper_name","G1234G"]]',
+    51,
+  ]);
   assert.match(
     presence,
     /SEARCH e USING (COVERING )?INDEX aid_entries_lookup/,

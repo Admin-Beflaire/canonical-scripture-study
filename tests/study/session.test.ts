@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {mock, test} from 'node:test';
-import {buildFixture, A, B} from './fixture.ts';
+import {buildFixture, A} from './fixture.ts';
 import {addAids} from './aid-fixture.ts';
 import {buildPassageFixture, HEB} from './passage-fixture.ts';
 import {
@@ -11,16 +11,27 @@ import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {
   limitsFor,
   RequestBudget,
-  STARTING_LIMITS,
 } from '../../services/study/src/read/budget.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
 
-const roomy = {...STARTING_LIMITS, d1Calls: 10, r2Reads: 20, r2Bytes: 65536};
+const roomy = {
+  ...limitsFor({}, 'passage'),
+  d1Calls: 10,
+  r2Reads: 20,
+  r2Bytes: 65536,
+};
 const state = (state: string) => (error: unknown) =>
   error instanceof ReadError && error.state === state;
 
 test('starting budgets come from CF-02 and never exceed configured Platform caps', () => {
-  assert.deepEqual(limitsFor({}), STARTING_LIMITS);
+  assert.deepEqual(limitsFor({}), {
+    d1Calls: 6,
+    r2Reads: 4,
+    pageBytes: 16384,
+    r2Bytes: 65536,
+    resultBytes: 16384,
+    rowsPerQuery: 50,
+  });
   assert.deepEqual(
     limitsFor({
       MAX_PAGE_BYTES: '65536',
@@ -28,7 +39,7 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
       MAX_D1_CALLS: '25',
       MAX_SUBREQUESTS: '40',
     }),
-    STARTING_LIMITS,
+    limitsFor({}, 'passage'),
   );
   const tight = limitsFor({
     MAX_PAGE_BYTES: 1024,
@@ -50,9 +61,37 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
   );
 });
 
+test('one bounded allowance schedule serves passage, word and aid requests', () => {
+  const passage = limitsFor({}, 'passage');
+  const word = limitsFor({}, 'word');
+  const aid = limitsFor({}, 'aid');
+  assert.deepEqual(passage, limitsFor({}, 'passage'));
+  assert.deepEqual(word, {
+    ...limitsFor({}, 'passage'),
+    d1Calls: 8,
+    r2Reads: 8,
+    r2Bytes: 98304,
+  });
+  assert.deepEqual(aid, {
+    ...limitsFor({}, 'passage'),
+    r2Reads: 6,
+    r2Bytes: 98304,
+  });
+  const env = {
+    MAX_D1_CALLS: 7,
+    MAX_SUBREQUESTS: 10,
+    REQUEST_BYTES: 80000,
+  };
+  const bounded = limitsFor(env, 'word');
+  assert.equal(bounded.d1Calls, 7);
+  assert.equal(bounded.r2Reads, 3);
+  assert.equal(bounded.r2Bytes, 80000);
+});
+
 test('budget counts work before it happens', () => {
-  const budget = new RequestBudget(STARTING_LIMITS);
-  for (let i = 0; i < STARTING_LIMITS.d1Calls; i++) budget.spendQuery();
+  const budget = new RequestBudget(limitsFor({}, 'passage'));
+  for (let i = 0; i < limitsFor({}, 'passage').d1Calls; i++)
+    budget.spendQuery();
   assert.throws(() => budget.spendQuery(), state('budget'));
   assert.equal(
     budget.canRead(16385),
@@ -340,53 +379,8 @@ test('invalid references return nothing rather than another source', async () =>
   );
 });
 
-test('relationship endpoints, counts, coverage, packages and statement go through membership', async () => {
+test('selected statement withholds the private approval reference', async () => {
   const session = await ReadSession.open(buildFixture().env, roomy);
-  const rel = await session.query('relationships', {span_id: 'a-u1'});
-  const members = rel.rows.map(r => [
-    r.role,
-    r.ordinal,
-    r.span_id,
-    r.endpoint_selected,
-    r.correspondence,
-  ]);
-  assert.deepEqual(members, [
-    ['from', 0, 'a-u1', 1, 'partial'],
-    ['to', 0, 'a-old', 0, 'partial'],
-    ['to', 1, null, null, 'missing'],
-  ]);
-  assert.equal(
-    rel.rows[1].endpoint_label,
-    null,
-    'unselected endpoint data is not returned',
-  );
-  assert.deepEqual(
-    (await session.query('relationship_counts', {span_id: 'a-u1'})).rows.map(
-      r => ({...r}),
-    ),
-    [{kind: 'parallel', count: 1}],
-  );
-  const coverage = await session.query('coverage', {
-    source_revision_ids: [A, B],
-  });
-  assert.ok(
-    coverage.rows.every(r =>
-      ['syn-src-1', 'syn-src-2', 'syn-src-b', 'syn-word-1'].includes(
-        String(r.output_id),
-      ),
-    ),
-  );
-  assert.ok(
-    coverage.rows.some(
-      r => r.state === 'partial' && r.limitation === 'synthetic partial extent',
-    ),
-  );
-  assert.deepEqual(
-    (await session.query('packages', {subject: 'synthetic-subject'})).rows.map(
-      r => r.id,
-    ),
-    ['pkg-1'],
-  );
   const statement = (await session.query('statement', {})).rows;
   assert.deepEqual(Object.keys(statement[0]).sort(), [
     'id',
@@ -476,9 +470,9 @@ test('raw SQL, unknown queries and mutations are rejected; budget stops further 
 test('a provider failure is a temporary failure, not an empty result', async () => {
   const fixture = buildFixture();
   const session = await ReadSession.open(fixture.env, roomy);
-  fixture.db.sqlite.exec('DROP TABLE study_packages');
+  fixture.db.sqlite.exec('DROP TABLE character_statements');
   await assert.rejects(
-    session.query('packages', {subject: 'synthetic-subject'}),
+    session.query('statement', {}),
     state('temporary_failure'),
   );
 });
@@ -486,11 +480,11 @@ test('a provider failure is a temporary failure, not an empty result', async () 
 test('a provider failure is logged as a safe record that holds no provider text', async () => {
   const fixture = buildFixture();
   const session = await ReadSession.open(fixture.env, roomy);
-  fixture.db.sqlite.exec('DROP TABLE study_packages');
+  fixture.db.sqlite.exec('DROP TABLE character_statements');
   const logged = mock.method(console, 'error', () => {});
   try {
     await assert.rejects(
-      session.query('packages', {subject: 'synthetic-subject'}),
+      session.query('statement', {}),
       state('temporary_failure'),
     );
     const lines = logged.mock.calls.map(call => String(call.arguments[0]));
@@ -501,7 +495,7 @@ test('a provider failure is logged as a safe record that holds no provider text'
       ['study', 'd1_read', 'temporary_failure'],
     );
     assert.equal(record.message, undefined);
-    assert.equal(lines[0].includes('study_packages'), false);
+    assert.equal(lines[0].includes('character_statements'), false);
   } finally {
     logged.mock.restore();
   }

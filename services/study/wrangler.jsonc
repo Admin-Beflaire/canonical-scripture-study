@@ -29,19 +29,12 @@
       "bucket_name": "css-private-{{INSTANCE}}"
     }
   ],
-  "kv_namespaces": [
-    {
-      "binding": "VERIFIED_WORD_CACHE",
-      "id": "{{VERIFIED_WORD_CACHE_NAMESPACE_ID}}"
-    }
-  ],
   "vars": {
     "ACCESS_ISSUER": "{{ACCESS_ISSUER}}",
     "HOSTNAME": "{{STUDY_HOSTNAME}}",
     "DEPLOYMENT_CLIENT_ID": "{{DEPLOYMENT_CLIENT_ID}}",
     "HOST_AUDIENCE": "{{STUDY_AUDIENCE}}",
     "ENHANCEMENTS": "{{ENHANCEMENTS}}",
-    "AID_KV_CACHE_ENABLED": "{{AID_KV_CACHE_ENABLED}}",
     "MAX_PAGE_BYTES": "{{MAX_PAGE_BYTES}}",
     "REQUEST_BYTES": "{{REQUEST_BYTES}}",
     "MAX_D1_CALLS": "{{MAX_D1_CALLS}}",

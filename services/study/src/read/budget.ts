@@ -32,15 +32,11 @@ const WORKLOAD_LIMITS: Readonly<Record<ReadWorkload, Readonly<BudgetLimits>>> =
     word: Object.freeze({
       ...BASE_LIMITS,
       d1Calls: 8,
-      r2Reads: 6,
+      // Six search reads plus two reads for the prioritized linked evidence.
+      r2Reads: 8,
       r2Bytes: 98304,
     }),
   });
-
-/** Legacy names kept only for existing direct-reader tests during the P4 refactor. */
-export const STARTING_LIMITS = WORKLOAD_LIMITS.passage;
-export const AID_LIMITS = WORKLOAD_LIMITS.aid;
-export const WORD_LIMITS = WORKLOAD_LIMITS.word;
 
 function configured(value: string | number | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
@@ -52,8 +48,9 @@ function configured(value: string | number | undefined): number | undefined {
  *  A malformed configured value fails closed. */
 export function limitsFor(
   env: Partial<StudyReadEnvironment>,
-  starting: BudgetLimits = STARTING_LIMITS,
+  kind: ReadWorkload = 'passage',
 ): BudgetLimits {
+  const starting = WORKLOAD_LIMITS[kind];
   const raw = [
     env.MAX_PAGE_BYTES,
     env.REQUEST_BYTES,
@@ -108,6 +105,7 @@ export class RequestBudget {
     r2Bytes: 0,
     resultBytes: 0,
   };
+  private reservedR2Reads = 0;
   readonly limits: BudgetLimits;
   constructor(limits: BudgetLimits) {
     this.limits = limits;
@@ -123,10 +121,20 @@ export class RequestBudget {
       Number.isSafeInteger(bytes) &&
       bytes >= 0 &&
       (kind === 'object' || bytes <= this.limits.pageBytes) &&
-      this.used.r2Reads + 1 <= this.limits.r2Reads &&
+      this.used.r2Reads + this.reservedR2Reads + 1 <= this.limits.r2Reads &&
       this.used.r2Bytes + bytes <= this.limits.r2Bytes
     );
   }
+  /** Leaves room for the next operator in the same request. */
+  async reserveR2Reads<T>(reads: number, run: () => Promise<T>): Promise<T> {
+    this.reservedR2Reads += reads;
+    try {
+      return await run();
+    } finally {
+      this.reservedR2Reads -= reads;
+    }
+  }
+
   canReturn(bytes: number) {
     return this.used.resultBytes + bytes <= this.limits.resultBytes;
   }
@@ -157,12 +165,4 @@ export class RequestBudget {
   usage(): BudgetUsage {
     return {...this.used};
   }
-}
-
-/** Selects one bounded allowance by request kind, without separate operator policies. */
-export function limitsForWorkload(
-  env: Partial<StudyReadEnvironment>,
-  kind: ReadWorkload,
-): BudgetLimits {
-  return limitsFor(env, WORKLOAD_LIMITS[kind]);
 }

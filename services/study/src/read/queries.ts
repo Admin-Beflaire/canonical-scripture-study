@@ -13,8 +13,6 @@ interface Declaration<I> {
 const MAX_LIST = 20;
 /** Candidate verse units for one passage read: three chapters of candidates. */
 export const MAX_UNITS = 540;
-/** The relationship query limits relationships in its inner statement and rows in the outer one. */
-export const RELATIONSHIPS_PER_QUERY = 10;
 const list = (value: unknown, max = MAX_LIST): string[] => {
   if (
     !Array.isArray(value) ||
@@ -66,27 +64,11 @@ export interface AnnotationsInput {
   span_ids: string[];
   after?: [string, string] | null;
 }
-export interface RelationshipsInput {
-  span_id: string;
-  kinds?: string[] | null;
-  after?: [string] | null;
-}
-export interface CountsInput {
-  span_id: string;
-}
-export interface CoverageInput {
-  source_revision_ids: string[];
-  after?: [string, string, string] | null;
-}
-export interface PackagesInput {
-  subject: string;
-  after?: [string] | null;
-}
 export interface StatementInput {
   [key: string]: never;
 }
-export interface NamePresenceInput {
-  tags: string[];
+interface LinkedAidInput {
+  keys: [string, string][];
 }
 export interface LanguageAidInput {
   key: string;
@@ -208,51 +190,6 @@ FROM note_targets t CROSS JOIN annotations a
 CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = a.output_id
 WHERE (t.mapped_span_id, a.id) > (?3, ?4)
 ORDER BY t.mapped_span_id, a.id LIMIT ?5`;
-
-/** Endpoints are returned only when their own span belongs to the current release;
- *  an unselected endpoint is reported, never filled from another release. */
-const RELATIONSHIPS = `WITH matched AS (
-  SELECT DISTINCT r.id FROM relation_members m
-  JOIN relationships r ON r.id = m.relationship_id
-  JOIN release_outputs ro ON ro.output_id = r.output_id AND ro.release_id = ?1
-  WHERE m.span_id = ?2 AND (?3 IS NULL OR r.kind IN (SELECT value FROM json_each(?3))) AND r.id > ?4
-  ORDER BY r.id LIMIT ?5)
-SELECT r.id AS relationship_id, r.kind, r.direction, r.status, r.basis_json,
-  m.role, m.ordinal, m.span_id, m.correspondence, m.gap_reason,
-  CASE WHEN m.span_id IS NULL THEN NULL WHEN es.id IS NULL THEN 0 ELSE 1 END AS endpoint_selected,
-  es.source_revision_id AS endpoint_source_revision_id, es.label AS endpoint_label,
-  es.native_order AS endpoint_native_order, es.coordinate_version AS endpoint_coordinate_version
-FROM matched x
-JOIN relationships r ON r.id = x.id
-JOIN relation_members m ON m.relationship_id = r.id
-LEFT JOIN native_spans es ON es.id = m.span_id
-  AND EXISTS (SELECT 1 FROM release_outputs eo WHERE eo.output_id = es.output_id AND eo.release_id = ?1)
-ORDER BY r.id, m.role, m.ordinal
-LIMIT ?6`;
-
-const COUNTS = `SELECT r.kind, COUNT(DISTINCT r.id) AS count
-FROM relation_members m
-JOIN relationships r ON r.id = m.relationship_id
-JOIN release_outputs ro ON ro.output_id = r.output_id AND ro.release_id = ?1
-WHERE m.span_id = ?2
-GROUP BY r.kind ORDER BY r.kind
-LIMIT ?3`;
-
-const COVERAGE = `SELECT c.output_id, c.source_revision_id, c.native_extent_json, c.capability, c.state,
-  c.method_version, c.index_artifact_id, c.limitation
-FROM coverage c
-JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-WHERE c.source_revision_id IN (SELECT value FROM json_each(?2))
-  AND (c.source_revision_id, c.capability, c.output_id) > (?3, ?4, ?5)
-ORDER BY c.source_revision_id, c.capability, c.output_id
-LIMIT ?6`;
-
-const PACKAGES = `SELECT p.id, p.subject, p.source_refs_json
-FROM release_outputs ro
-JOIN study_packages p ON p.output_id = ro.output_id
-WHERE ro.release_id = ?1 AND p.subject = ?2 AND p.id > ?3
-ORDER BY p.id
-LIMIT ?4`;
 
 /** Only an approved statement selected by this release; the approval reference stays private. */
 const STATEMENT = `SELECT cs.id, cs.name, cs.version, cs.scripture_basis_json
@@ -459,14 +396,18 @@ const aidParams = (i: LanguageAidInput) => [
 ];
 
 export const QUERIES = {
-  proper_name_presence: {
-    sql: `SELECT COALESCE(json_group_array(tag.value), '[]') AS tags
-FROM json_each(?2) tag WHERE EXISTS (
-  SELECT 1 FROM aid_entries e
-  JOIN release_outputs ro ON ro.output_id = e.output_id AND ro.release_id = ?1
-  WHERE e.kind = 'proper_name' AND e.lookup_key = tag.value
+  linked_aid_presence: {
+    sql: `SELECT COALESCE(json_group_array(json(wanted.value)), '[]') AS keys
+FROM json_each(?2) wanted WHERE EXISTS (
+  SELECT 1 FROM aid_entry_rows e INDEXED BY aid_entries_lookup
+  CROSS JOIN aid_output_keys k ON k.key = e.output_key
+  CROSS JOIN release_outputs ro ON ro.output_id = k.output_id AND ro.release_id = ?1
+  WHERE e.kind = json_extract(wanted.value, '$[0]')
+    AND e.lookup_key = json_extract(wanted.value, '$[1]')
 ) LIMIT ?3`,
-    params: (i: NamePresenceInput) => [JSON.stringify(list(i.tags, 1000))],
+    params: (i: LinkedAidInput) => [
+      JSON.stringify(i.keys.map(([kind, key]) => [id(kind), id(key)])),
+    ],
   },
   proper_name: {
     sql: languageAidQuery('proper_name', 'lookup_key'),
@@ -514,33 +455,6 @@ FROM json_each(?2) tag WHERE EXISTS (
     params: (i: AnnotationsInput) => [
       JSON.stringify(list(i.span_ids)),
       ...(optionalAfter(i.after, 2) ?? ['', '']),
-    ],
-  },
-  relationships: {
-    sql: RELATIONSHIPS,
-    params: (i: RelationshipsInput) => [
-      id(i.span_id),
-      i.kinds == null ? null : JSON.stringify(list(i.kinds, 8)),
-      ...(optionalAfter(i.after, 1) ?? ['']),
-      RELATIONSHIPS_PER_QUERY + 1,
-    ],
-  },
-  relationship_counts: {
-    sql: COUNTS,
-    params: (i: CountsInput) => [id(i.span_id)],
-  },
-  coverage: {
-    sql: COVERAGE,
-    params: (i: CoverageInput) => [
-      JSON.stringify(list(i.source_revision_ids)),
-      ...(optionalAfter(i.after, 3) ?? ['', '', '']),
-    ],
-  },
-  packages: {
-    sql: PACKAGES,
-    params: (i: PackagesInput) => [
-      id(i.subject),
-      ...(optionalAfter(i.after, 1) ?? ['']),
     ],
   },
   statement: {sql: STATEMENT, params: (_: StatementInput) => []},

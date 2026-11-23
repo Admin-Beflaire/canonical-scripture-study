@@ -1,10 +1,15 @@
 import type {StudyReadEnvironment} from './read/bindings.ts';
 import {ReadSession} from './read/session.ts';
-import {limitsForWorkload, type BudgetUsage} from './read/budget.ts';
+import {limitsFor, type BudgetUsage} from './read/budget.ts';
 import {ReadError, limitation, type Limitation} from './read/states.ts';
 import type {Batch} from './results/batch.ts';
 import {GUIDANCE_VERSION, TRANSLATION_RULES} from './guidance.ts';
-import {languageBatch} from './operators/language.ts';
+import {
+  EVIDENCE_FOCUS,
+  languageBatch,
+  type EvidenceFocus,
+} from './operators/language.ts';
+import {nameStudyBatch} from './operators/name-study.ts';
 import {aidBatch, AID_LOOKUPS} from './operators/aids.ts';
 import {passageBatch} from './operators/passage.ts';
 
@@ -38,6 +43,7 @@ export interface StudyRequest {
   requested_result?: string;
   interactive?: boolean;
   continuation?: string;
+  focus?: EvidenceFocus;
 }
 
 /** Modes whose answer includes a translation: their first batch carries the key translation rules. */
@@ -96,6 +102,11 @@ function checkRequest(request: StudyRequest) {
       'invalid_request',
       `Unknown depth; use ${DEPTHS.join(', ')}`,
     );
+  if (request.focus !== undefined && !EVIDENCE_FOCUS.includes(request.focus))
+    throw new ReadError(
+      'invalid_request',
+      `Unknown focus; use ${EVIDENCE_FOCUS.join(', ')}`,
+    );
 }
 
 /** Error batch: the request could not be served. The state says why (never an empty success). */
@@ -148,10 +159,7 @@ export async function study(
       ['word', 'form', 'lemma', 'grammar'].includes(leads[0]?.lookup);
     session = await ReadSession.open(
       env,
-      limitsForWorkload(
-        env,
-        wordRequest ? 'word' : aidRequest ? 'aid' : 'passage',
-      ),
+      limitsFor(env, wordRequest ? 'word' : aidRequest ? 'aid' : 'passage'),
     );
     if (mode === 'conclusion_check')
       return await conclusionCheck(session, base);
@@ -216,7 +224,20 @@ function searchLead(
     lookup: lead.lookup,
     key: lead.key,
     sources: request.sources ?? null,
+    focus: request.focus,
   };
+  if (
+    lead.lookup === 'proper_name' &&
+    !request.sources &&
+    (base.mode === 'word_study' || base.mode === 'word_analysis')
+  )
+    return nameStudyBatch(
+      session,
+      workload,
+      continuation,
+      GUIDANCE_VERSION,
+      notes,
+    );
   const batch = AID_LOOKUPS.includes(
     lead.lookup as (typeof AID_LOOKUPS)[number],
   )

@@ -1,11 +1,10 @@
-import {isIdentifier, sha256Hex, utf8Length} from './bytes.ts';
+import {isIdentifier, sha256Hex} from './bytes.ts';
 import {
   artifactFrom,
   readArtifact,
   readVerifiedRange,
   type RegisteredArtifact,
 } from './objects.ts';
-import {RELATIONSHIPS_PER_QUERY} from './queries.ts';
 import type {ReadSession} from './session.ts';
 import {ReadError, limitation, type Limitation} from './states.ts';
 
@@ -87,34 +86,6 @@ function spanMetadata(row: Record<string, unknown>, id: string): SpanEvidence {
     reading_kind: String(row.reading_kind),
     text: null,
   };
-}
-
-/** Reconstruct a selected span from D1 fields and a cached *wording only* value.
- * No cached labels, coordinates or other metadata are trusted. */
-export async function selectedCachedSpan(
-  session: ReadSession,
-  id: string,
-  wording: string,
-): Promise<SpanEvidence | null> {
-  const selected = await session.queryIfAvailable('spans', {ids: [id]});
-  const row = selected?.rows.find(item => item.id === id);
-  if (!row || row.reading_kind !== 'extracted' || row.content_id !== null)
-    return null;
-  const span = spanMetadata(row, id);
-  const ranges = json<BodyRange[]>(row.body_ranges_json, Array.isArray);
-  if (
-    span.segments.length !== 1 ||
-    ranges.length !== 1 ||
-    ranges[0].segment_ordinal !== 0 ||
-    typeof ranges[0].sha256 !== 'string' ||
-    !Number.isSafeInteger(ranges[0].byte_length) ||
-    utf8Length(wording) !== ranges[0].byte_length ||
-    (await sha256Hex(wording)) !== ranges[0].sha256 ||
-    span.segments[0].end - span.segments[0].start !== Array.from(wording).length
-  )
-    return null;
-  span.text = [wording];
-  return span;
 }
 
 /** Resolves span IDs to exact wording in the current release. Missing, corrupt and
@@ -256,98 +227,4 @@ async function bodyText(
     );
   }
   return text;
-}
-
-export interface RelationshipMember {
-  role: string;
-  ordinal: number;
-  correspondence: string;
-  gap_reason: string | null;
-  /** `selected`: the endpoint span is in the current release; `unavailable`: it exists but is
-   *  not selected now (never filled from another release); `none`: a recorded gap. */
-  endpoint:
-    | {
-        state: 'selected';
-        span_id: string;
-        source_revision_id: string;
-        label: string;
-        native_order: number;
-        coordinate_version: string;
-      }
-    | {state: 'unavailable'; span_id: string}
-    | {state: 'none'};
-}
-export interface RelationshipEvidence {
-  id: string;
-  kind: string;
-  direction: string;
-  status: string;
-  basis: Record<string, unknown>;
-  members: RelationshipMember[];
-}
-
-/** Typed, directed, ordered relationships touching one span, one bounded page at a time.
- *  `after` continues from the last complete relationship. */
-export async function readRelationships(
-  session: ReadSession,
-  spanId: string,
-  kinds: string[] | null = null,
-  after: string | null = null,
-): Promise<{
-  relationships: RelationshipEvidence[];
-  more: boolean;
-  after: string | null;
-}> {
-  const {rows, more: truncated} = await session.query('relationships', {
-    span_id: spanId,
-    kinds,
-    after: after === null ? null : [after],
-  });
-  const groups: RelationshipEvidence[] = [];
-  for (const row of rows) {
-    let group = groups.at(-1);
-    if (!group || group.id !== row.relationship_id) {
-      group = {
-        id: String(row.relationship_id),
-        kind: String(row.kind),
-        direction: String(row.direction),
-        status: String(row.status),
-        basis: json(row.basis_json, isObject),
-        members: [],
-      };
-      groups.push(group);
-    }
-    group.members.push({
-      role: String(row.role),
-      ordinal: Number(row.ordinal),
-      correspondence: String(row.correspondence),
-      gap_reason: typeof row.gap_reason === 'string' ? row.gap_reason : null,
-      endpoint:
-        row.span_id === null
-          ? {state: 'none'}
-          : row.endpoint_selected === 1
-            ? {
-                state: 'selected',
-                span_id: String(row.span_id),
-                source_revision_id: String(row.endpoint_source_revision_id),
-                label: String(row.endpoint_label),
-                native_order: Number(row.endpoint_native_order),
-                coordinate_version: String(row.endpoint_coordinate_version),
-              }
-            : {state: 'unavailable', span_id: String(row.span_id)},
-    });
-  }
-  // The inner statement fetches one extra relationship and the outer one may cut members:
-  // drop the last group whenever more may follow, so no relationship is returned partially.
-  let more = false;
-  if (groups.length > RELATIONSHIPS_PER_QUERY || truncated) {
-    groups.pop();
-    more = true;
-  }
-  if (more && groups.length === 0)
-    throw new ReadError(
-      'exceeds_limits',
-      'One relationship has more members than a query may return',
-    );
-  return {relationships: groups, more, after: more ? groups.at(-1)!.id : null};
 }

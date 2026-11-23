@@ -114,17 +114,24 @@ function posting(
   };
 }
 
-export function wordPostings(source: string, base: Posting[]): Posting[] {
+export function wordPostings(
+  source: string,
+  base: Posting[],
+  strongLemmas: Record<string, string> = {},
+): Posting[] {
   const out: Posting[] = [];
   for (const p of base.filter(
     row => row.native_order < 1000 || row.native_order >= 10000,
   )) {
+    const strong = strongLemmas[p.search_key];
     const analyses = [
       {
         analysis_id: `prov-a:${p.occurrence_id}`,
         analysis_revision_id: 'syn:prov-a:source_revision',
-        lemma_id: `prov-a:lemma-${p.search_key}`,
-        grammar: {part_of_speech: 'noun'},
+        lemma_id: strong ?? `prov-a:lemma-${p.search_key}`,
+        grammar: strong
+          ? {language: 'greek', morphology: 'N-NSN'}
+          : {part_of_speech: 'noun'},
         provider: 'syn-provider-a',
         basis: 'syn-receipt-a',
       },
@@ -139,7 +146,7 @@ export function wordPostings(source: string, base: Posting[]): Posting[] {
     ];
     const keys: [string, string][] = [
       ['form', `form:${p.search_key}`],
-      ['lemma', `lemma:prov-a:lemma-${p.search_key}`],
+      ['lemma', `lemma:${analyses[0].lemma_id}`],
       ['lemma', `lemma:prov-b:lemma-${p.search_key}`],
       ['grammar', 'grammar:noun'],
       ['grammar', 'grammar:verb'],
@@ -358,6 +365,7 @@ export function buildFixture({
   pageCap = 2048,
   commonCount = 24,
   wordPageCap = 2048,
+  strongLemmas = {} as Record<string, string>,
 } = {}): Fixture {
   const db = localD1();
   const bucket = new MemoryBucket();
@@ -702,7 +710,7 @@ export function buildFixture({
     ['u1'],
     pOld,
   );
-  const pw = wordPostings(A, [...p1, ...p2]);
+  const pw = wordPostings(A, [...p1, ...p2], strongLemmas);
   addIndex(
     buildIndex(
       'syn-word-1',

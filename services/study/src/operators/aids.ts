@@ -18,12 +18,15 @@ import {
   resumeContinuation,
 } from '../results/continuation.ts';
 
-export const AID_LOOKUPS = [
-  'lexicon',
-  'lexicon_entry',
-  'grammar_info',
-  'proper_name',
-] as const;
+export const AID_QUERIES = {
+  lexicon: 'lexicon_strong',
+  lexicon_entry: 'lexicon_entry',
+  grammar_info: 'grammar_expansion',
+  proper_name: 'proper_name',
+} as const;
+export type AidLookup = keyof typeof AID_QUERIES;
+export const AID_LOOKUPS = Object.keys(AID_QUERIES) as AidLookup[];
+
 /** Where a lookup stopped: the last output and entry delivered. */
 type Position = [string, number];
 export interface AidWorkload {
@@ -35,6 +38,31 @@ export interface AidWorkload {
   sources: string[] | null;
 }
 
+export function normalizeAidKey(lookup: string, rawKey: string): string {
+  if (!isIdentifier(rawKey, 256))
+    throw new ReadError('invalid_request', 'Invalid language-aid lookup key');
+  let key = rawKey.trim();
+  if (lookup === 'lexicon') {
+    const match = key.match(/^([HG])(\d{1,5})$/i);
+    if (!match)
+      throw new ReadError(
+        'invalid_request',
+        'Use a Strong number such as H7307 or G3686',
+      );
+    key = match[1].toUpperCase() + match[2].padStart(4, '0');
+  }
+  if (lookup === 'proper_name') {
+    const match = key.match(/^([HG])(\d{1,5})([A-Z]?)$/i);
+    if (!match)
+      throw new ReadError(
+        'invalid_request',
+        'Use a disambiguated Strong tag, such as G2264G',
+      );
+    key = match[1].toUpperCase() + match[2].padStart(4, '0') + match[3];
+  }
+  return key;
+}
+
 /** A bounded, selected-release lookup. Alternatives remain separate and source-attributed. */
 export async function aidBatch(
   session: ReadSession,
@@ -42,6 +70,7 @@ export async function aidBatch(
   token: string | null,
   guidance: string,
   notes: Limitation[] = [],
+  envelopeReserve = ENVELOPE_RESERVE,
 ): Promise<Batch> {
   if (
     !AID_LOOKUPS.includes(input.lookup as (typeof AID_LOOKUPS)[number]) ||
@@ -55,25 +84,7 @@ export async function aidBatch(
       !input.sources.every(s => isIdentifier(s, 200)))
   )
     throw new ReadError('invalid_request', 'Invalid source revisions');
-  let key = input.key.trim();
-  if (input.lookup === 'lexicon') {
-    const match = key.match(/^([HG])(\d{1,5})$/i);
-    if (!match)
-      throw new ReadError(
-        'invalid_request',
-        'Use a Strong number such as H7307 or G3686',
-      );
-    key = match[1].toUpperCase() + match[2].padStart(4, '0');
-  }
-  if (input.lookup === 'proper_name') {
-    const match = key.match(/^([HG])(\d{1,5})([A-Z]?)$/i);
-    if (!match)
-      throw new ReadError(
-        'invalid_request',
-        'Use a disambiguated Strong tag, such as G2264G',
-      );
-    key = match[1].toUpperCase() + match[2].padStart(4, '0') + match[3];
-  }
+  const key = normalizeAidKey(input.lookup, input.key);
   const workload = {
     ...input,
     key,
@@ -105,14 +116,7 @@ export async function aidBatch(
     }
   }
   const start = after;
-  const query =
-    input.lookup === 'lexicon'
-      ? 'lexicon_strong'
-      : input.lookup === 'lexicon_entry'
-        ? 'lexicon_entry'
-        : input.lookup === 'proper_name'
-          ? 'proper_name'
-          : 'grammar_expansion';
+  const query = AID_QUERIES[input.lookup as AidLookup];
   const page = await session.query(query, {key, after});
   if (anchor !== null && !page.rows.length)
     throw new ReadError(
@@ -122,7 +126,7 @@ export async function aidBatch(
   const evidence: EvidenceItem[] = [];
   const limitations = [...notes];
   let remaining = false;
-  session.budget.spendResult(ENVELOPE_RESERVE);
+  session.budget.spendResult(envelopeReserve);
   for (const row of page.rows) {
     const position: Position = [String(row.output_id), Number(row.entry)];
     if (anchor !== null && Number(row.entry) !== anchor)
@@ -171,7 +175,7 @@ export async function aidBatch(
               'invalid_request',
               'Continuation does not match the entry',
             );
-          if (evidence.length) {
+          if (evidence.length || envelopeReserve === 0) {
             remaining = true;
             break;
           }
@@ -227,7 +231,7 @@ export async function aidBatch(
           else high = middle - 1;
         }
         if (low === offset) {
-          if (evidence.length) {
+          if (evidence.length || envelopeReserve === 0) {
             remaining = true;
             break;
           }

@@ -12,21 +12,24 @@ export interface BudgetLimits {
   rowsPerQuery: number; // LIMIT on any one D1 query
 }
 
-/** Starting budgets. D1 calls and R2 reads follow the CF-02 measurement on Workers Free (at most
- *  2 D1 calls and 3–4 R2 reads per request). Pages follow Data Indexes 0.6: one 16 KB cap for the
- *  manifest, directory pages and postings pages, so a request can read the manifest, one directory
- *  page and two postings pages (`r2Bytes`, four pages). The 16 KB cap, `resultBytes` and
- *  `rowsPerQuery` await the Workers fit measurement before production limits are fixed. */
-export const STARTING_LIMITS: Readonly<BudgetLimits> = Object.freeze({
+/** The one allowance schedule for each request kind. Values initially retain existing
+ *  measured limits; platform caps apply to every kind in limitsFor. */
+export type ReadWorkload = 'passage' | 'word' | 'aid';
+
+const BASE_LIMITS: Readonly<BudgetLimits> = Object.freeze({
   d1Calls: 6, r2Reads: 4, pageBytes: 16384, r2Bytes: 65536, resultBytes: 16384, rowsPerQuery: 50,
 });
 
-/** Language-aid entries can exceed a search page. Six bounded reads cover the
- *  observed source entries; configured platform limits still apply. */
-export const AID_LIMITS: Readonly<BudgetLimits> = Object.freeze({ ...STARTING_LIMITS, r2Reads: 6, r2Bytes: 98304 });
+const WORKLOAD_LIMITS: Readonly<Record<ReadWorkload, Readonly<BudgetLimits>>> = Object.freeze({
+  passage: BASE_LIMITS,
+  aid: Object.freeze({...BASE_LIMITS, r2Reads: 6, r2Bytes: 98304}),
+  word: Object.freeze({...BASE_LIMITS, d1Calls: 8, r2Reads: 6, r2Bytes: 98304}),
+});
 
-/** Word searches can check name candidates without displacing lexical evidence. */
-export const WORD_LIMITS: Readonly<BudgetLimits> = Object.freeze({ ...AID_LIMITS, d1Calls: 8 });
+/** Legacy names kept only for existing direct-reader tests during the P4 refactor. */
+export const STARTING_LIMITS = WORKLOAD_LIMITS.passage;
+export const AID_LIMITS = WORKLOAD_LIMITS.aid;
+export const WORD_LIMITS = WORKLOAD_LIMITS.word;
 
 function configured(value: string | number | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
@@ -86,4 +89,9 @@ export class RequestBudget {
     this.used.resultBytes += bytes;
   }
   usage(): BudgetUsage { return { ...this.used }; }
+}
+
+/** Selects one bounded allowance by request kind, without separate operator policies. */
+export function limitsForWorkload(env: Partial<StudyReadEnvironment>, kind: ReadWorkload): BudgetLimits {
+  return limitsFor(env, WORKLOAD_LIMITS[kind]);
 }

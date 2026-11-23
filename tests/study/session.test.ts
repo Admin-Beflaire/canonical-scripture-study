@@ -10,6 +10,7 @@ import {
 import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {
   limitsFor,
+  limitsForWorkload,
   RequestBudget,
   STARTING_LIMITS,
 } from '../../services/study/src/read/budget.ts';
@@ -47,6 +48,17 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
   assert.throws(
     () => limitsFor({REQUEST_BYTES: -1}),
     state('temporary_failure'),
+  );
+});
+
+test('one bounded allowance schedule serves passage, word and aid requests', () => {
+  assert.deepEqual(limitsForWorkload({}, 'passage'), STARTING_LIMITS);
+  assert.deepEqual(limitsForWorkload({}, 'word'), {...STARTING_LIMITS, d1Calls: 8, r2Reads: 6, r2Bytes: 98304});
+  assert.deepEqual(limitsForWorkload({}, 'aid'), {...STARTING_LIMITS, r2Reads: 6, r2Bytes: 98304});
+  const env = {MAX_D1_CALLS: 7, MAX_SUBREQUESTS: 10, REQUEST_BYTES: 80000};
+  assert.deepEqual(
+    [limitsForWorkload(env, 'word').d1Calls, limitsForWorkload(env, 'word').r2Reads, limitsForWorkload(env, 'word').r2Bytes],
+    [7, 3, 80000],
   );
 });
 

@@ -1,10 +1,10 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "language-aids-tbesh",
-  "revision": "language-aids-tbesh/1",
+  "revision": "language-aids-tbesh/2",
   "adapter": {
     "name": "language-aids",
-    "method_version": "language-aids/1"
+    "method_version": "language-aids/2"
   },
   "input_format": "language-aids/original",
   "parameters": {

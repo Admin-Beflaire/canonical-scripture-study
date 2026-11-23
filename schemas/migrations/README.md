@@ -34,3 +34,9 @@ mapping output requires its exact catalogue version in the release metadata.
 Existing releases without reader-reference outputs remain compatible with the
 previous schema. Preparation verifies semantic mapping and complete selected
 membership before use.
+
+`0010_aid_entries.sql` adds `aid_entries`, one lookup row per language-aid entry: its
+kind, entry key, lookup key and the byte position and digest of its line in the output's
+entries file. Rows are immutable and, like other output rows, cannot change while the
+output is selected. The wording and details are not in D1. Older annotation-based aid
+rows stay until their outputs are replaced and removed.

@@ -1,160 +1,326 @@
-import { canonicalJson, isIdentifier, isSafeCount, sha256Hex, utf8Length } from '../read/bytes.ts';
-import { readSpans, selectedCachedSpan, type SpanEvidence } from '../read/evidence.ts';
-import type { ReadSession } from '../read/session.ts';
-import { ReadError, limitation, type Limitation } from '../read/states.ts';
-import { assembleBatch, ENVELOPE_RESERVE, type Batch, type EvidenceItem } from '../results/batch.ts';
-import { encodeContinuation, resumeContinuation } from '../results/continuation.ts';
+import {
+  canonicalJson,
+  isIdentifier,
+  isSafeCount,
+  sha256Hex,
+  utf8Length,
+} from '../read/bytes.ts';
+import {
+  readAidEntries,
+  verifiedAidLine,
+  type AidEntry,
+} from '../read/aid-entries.ts';
+import type {ReadSession} from '../read/session.ts';
+import {ReadError, limitation, type Limitation} from '../read/states.ts';
+import {
+  assembleBatch,
+  ENVELOPE_RESERVE,
+  type Batch,
+  type EvidenceItem,
+} from '../results/batch.ts';
+import {
+  encodeContinuation,
+  resumeContinuation,
+} from '../results/continuation.ts';
 
-export const AID_LOOKUPS = ['lexicon', 'lexicon_entry', 'grammar_info', 'proper_name'] as const;
+export const AID_LOOKUPS = [
+  'lexicon',
+  'lexicon_entry',
+  'grammar_info',
+  'proper_name',
+] as const;
 const MAX_PENDING_ENTRIES = 4;
 const MAX_PENDING_BODY_BYTES = 96 * 1024;
 const SHARED_CACHE_TTL_SECONDS = 600;
-/** Worker-local, bounded verified wording for entries awaiting continuation.
+/** Worker-local, bounded verified entries awaiting continuation.
  *  It never outlives a completed entry or crosses a selected-release change. */
-const PENDING_TEXT = new WeakMap<object, { releaseId: string; entries: Map<string, SpanEvidence> }>();
-function pendingText(session: ReadSession): Map<string, SpanEvidence> {
+const PENDING_TEXT = new WeakMap<
+  object,
+  {releaseId: string; entries: Map<string, AidEntry>}
+>();
+function pendingText(session: ReadSession): Map<string, AidEntry> {
   const previous = PENDING_TEXT.get(session.objects);
   if (previous?.releaseId === session.release.id) return previous.entries;
-  const entries = new Map<string, SpanEvidence>();
-  PENDING_TEXT.set(session.objects, { releaseId: session.release.id, entries });
+  const entries = new Map<string, AidEntry>();
+  PENDING_TEXT.set(session.objects, {releaseId: session.release.id, entries});
   return entries;
 }
 async function sharedKey(entryKey: string): Promise<string> {
-  // Immutable source/output/span/annotation identities survive release promotions.
-  return 'verified-aid:v2:' + await sha256Hex(entryKey);
+  // Output and entry identities are immutable and survive release promotions.
+  return 'verified-aid:v3:' + (await sha256Hex(entryKey));
 }
 
-/** Optional KV holds wording only; selected D1 span metadata and its digest
- * are rechecked before any KV text can become evidence. */
-async function sharedPending(session: ReadSession, entryKey: string, row: Record<string, unknown>):
-  Promise<SpanEvidence | undefined> {
+/** Optional KV holds the entry's line only; its length and digest are rechecked against the
+ * selected D1 row, and its metadata comes from that row, before it can become evidence. */
+async function sharedPending(
+  session: ReadSession,
+  entryKey: string,
+  row: Record<string, unknown>,
+): Promise<AidEntry | undefined> {
   if (!session.verifiedWords) return undefined;
   try {
-    const wording = await session.verifiedWords.get(await sharedKey(entryKey));
-    if (!wording || utf8Length(wording) > MAX_PENDING_BODY_BYTES) return undefined;
-    const span = await selectedCachedSpan(session, String(row.span_id), wording);
-    return span && span.source_revision_id === row.source_revision_id ? span : undefined;
+    const line = await session.verifiedWords.get(await sharedKey(entryKey));
+    if (!line || utf8Length(line) > MAX_PENDING_BODY_BYTES) return undefined;
+    return await verifiedAidLine(row, line);
   } catch {
     return undefined; // No KV errors escape into the Study result; read verified R2 instead.
   }
 }
 
-type Position = [string, string, string];
-export interface AidWorkload { mode: string; depth: string; language: string; lookup: string; key: string; sources: string[] | null }
+/** Where a lookup stopped: the last output and entry delivered. */
+type Position = [string, number];
+export interface AidWorkload {
+  mode: string;
+  depth: string;
+  language: string;
+  lookup: string;
+  key: string;
+  sources: string[] | null;
+}
 
 /** A bounded, selected-release lookup. Alternatives remain separate and source-attributed. */
-export async function aidBatch(session: ReadSession, input: AidWorkload, token: string | null,
-  guidance: string, notes: Limitation[] = []): Promise<Batch> {
-  if (!AID_LOOKUPS.includes(input.lookup as typeof AID_LOOKUPS[number]) || !isIdentifier(input.key, 256))
+export async function aidBatch(
+  session: ReadSession,
+  input: AidWorkload,
+  token: string | null,
+  guidance: string,
+  notes: Limitation[] = [],
+): Promise<Batch> {
+  if (
+    !AID_LOOKUPS.includes(input.lookup as (typeof AID_LOOKUPS)[number]) ||
+    !isIdentifier(input.key, 256)
+  )
     throw new ReadError('invalid_request', 'Invalid language-aid lookup');
-  if (input.sources && (!input.sources.length || input.sources.length > 20 || !input.sources.every(s => isIdentifier(s, 200))))
+  if (
+    input.sources &&
+    (!input.sources.length ||
+      input.sources.length > 20 ||
+      !input.sources.every(s => isIdentifier(s, 200)))
+  )
     throw new ReadError('invalid_request', 'Invalid source revisions');
   let key = input.key.trim();
   if (input.lookup === 'lexicon') {
     const match = key.match(/^([HG])(\d{1,5})$/i);
-    if (!match) throw new ReadError('invalid_request', 'Use a Strong number such as H7307 or G3686');
+    if (!match)
+      throw new ReadError(
+        'invalid_request',
+        'Use a Strong number such as H7307 or G3686',
+      );
     key = match[1].toUpperCase() + match[2].padStart(4, '0');
   }
   if (input.lookup === 'proper_name') {
     const match = key.match(/^([HG])(\d{1,5})([A-Z]?)$/i);
-    if (!match) throw new ReadError('invalid_request', 'Use a disambiguated Strong tag, such as G2264G');
+    if (!match)
+      throw new ReadError(
+        'invalid_request',
+        'Use a disambiguated Strong tag, such as G2264G',
+      );
     key = match[1].toUpperCase() + match[2].padStart(4, '0') + match[3];
   }
-  const workload = { ...input, key, sources: input.sources ? [...new Set(input.sources)].sort() : null };
-  let after: Position = ['', '', ''];
+  const workload = {
+    ...input,
+    key,
+    sources: input.sources ? [...new Set(input.sources)].sort() : null,
+  };
+  let after: Position = ['', -1];
   let offset = 0;
-  let anchor: string | null = null;
+  let anchor: number | null = null;
   if (token) {
-    const state = await resumeContinuation(token, workload, { aid: (pos, k) =>
-      (pos === null || (!!pos && typeof pos === 'object' && !Array.isArray(pos)
-        && Object.keys(pos).sort().join(',') === 'entry,offset'
-        && isSafeCount((pos as {offset: unknown}).offset) && isIdentifier((pos as {entry: unknown}).entry)))
-      && Array.isArray(k) && k.length === 3 && k.every(value => value === '' || isIdentifier(value)) });
+    const state = await resumeContinuation(token, workload, {
+      aid: (pos, k) =>
+        (pos === null ||
+          (!!pos &&
+            typeof pos === 'object' &&
+            !Array.isArray(pos) &&
+            Object.keys(pos).sort().join(',') === 'entry,offset' &&
+            isSafeCount((pos as {offset: unknown}).offset) &&
+            isSafeCount((pos as {entry: unknown}).entry))) &&
+        Array.isArray(k) &&
+        k.length === 2 &&
+        (k[0] === '' || isIdentifier(k[0])) &&
+        (k[1] === -1 || isSafeCount(k[1])),
+    });
     after = state.key as Position;
-    if (state.pos) { const pos = state.pos as {offset: number; entry: string}; offset = pos.offset; anchor = pos.entry; }
+    if (state.pos) {
+      const pos = state.pos as {offset: number; entry: number};
+      offset = pos.offset;
+      anchor = pos.entry;
+    }
   }
   const start = after;
   const pending = pendingText(session);
-  const query = input.lookup === 'lexicon' ? 'lexicon_strong' : input.lookup === 'lexicon_entry' ? 'lexicon_entry' : input.lookup === 'proper_name' ? 'proper_name' : 'grammar_expansion';
-  const page = await session.query(query, { key, after });
-  if (anchor !== null && !page.rows.length) throw new ReadError('invalid_request', 'Continuation entry is no longer selected');
+  const query =
+    input.lookup === 'lexicon'
+      ? 'lexicon_strong'
+      : input.lookup === 'lexicon_entry'
+        ? 'lexicon_entry'
+        : input.lookup === 'proper_name'
+          ? 'proper_name'
+          : 'grammar_expansion';
+  const page = await session.query(query, {key, after});
+  if (anchor !== null && !page.rows.length)
+    throw new ReadError(
+      'invalid_request',
+      'Continuation entry is no longer selected',
+    );
   const evidence: EvidenceItem[] = [];
   const limitations = [...notes];
   let remaining = false;
   session.budget.spendResult(ENVELOPE_RESERVE);
   for (const row of page.rows) {
-    const position: Position = [String(row.output_id), String(row.span_id), String(row.id)];
-    if (anchor !== null && String(row.id) !== anchor) throw new ReadError('invalid_request', 'Continuation no longer matches the selected entry');
-    if (workload.sources && !workload.sources.includes(String(row.source_revision_id))) { after = position; continue; }
-    let details: Record<string, unknown>;
-    try { details = JSON.parse(String(row.details_json)); if (!details || Array.isArray(details) || typeof details !== 'object') throw new Error(); }
-    catch { limitations.push(limitation('corrupt', String(row.span_id), 'Unreadable language-aid metadata')); after = position; continue; }
-    // The Open Scriptures index records native BDB IDs. Construct only explicit links from
-    // that index, using the same pinned edition; never equate entries by spelling.
-    const indexId = typeof details.entry_id === 'string' ? details.entry_id.match(/^oshb-lexical-index:([0-9a-f]{40}):/) : null;
-    if (indexId && Array.isArray(details.references)) {
-      details.linked_entry_keys = [...new Set(details.references.flatMap(ref => Array.isArray(ref) && isIdentifier(ref[0], 200)
-        ? [`oshb-bdb:${indexId[1]}:${ref[0]}`] : []))];
+    const position: Position = [String(row.output_id), Number(row.entry)];
+    if (anchor !== null && Number(row.entry) !== anchor)
+      throw new ReadError(
+        'invalid_request',
+        'Continuation no longer matches the selected entry',
+      );
+    if (
+      workload.sources &&
+      !workload.sources.includes(String(row.source_revision_id))
+    ) {
+      after = position;
+      continue;
     }
-    const entryKey = JSON.stringify([row.output_id, row.span_id, row.id, row.source_revision_id]);
-    const cached = anchor !== null && offset > 0
-      ? pending.get(entryKey) ?? await sharedPending(session, entryKey, row)
-      : undefined;
-    if (cached) { pending.delete(entryKey); pending.set(entryKey, cached); }
-    const read = cached ? null : await readSpans(session, [String(row.span_id)], true);
-    if (read?.remaining.length) { remaining = true; break; }
+    const entryKey = JSON.stringify([row.output_id, row.entry]);
+    const cached =
+      anchor !== null && offset > 0
+        ? (pending.get(entryKey) ??
+          (await sharedPending(session, entryKey, row)))
+        : undefined;
+    if (cached) {
+      pending.delete(entryKey);
+      pending.set(entryKey, cached);
+    }
+    const read = cached ? null : await readAidEntries(session, [row], true);
+    if (read?.remaining.length) {
+      remaining = true;
+      break;
+    }
     if (read) limitations.push(...read.limitations);
-    const span = cached ?? read?.spans[0];
-    if (!span && anchor !== null) { anchor = null; offset = 0; }
-    if (span) {
-      if (span.text === null) limitations.push(limitation('missing_evidence', span.span_id, 'The source has no entry body here'));
-      let item: EvidenceItem = { kind: 'language_aid', span, provider: String(row.provider), details };
+    const found = cached ?? read?.entries[0];
+    if (!found && anchor !== null) {
+      anchor = null;
+      offset = 0;
+    }
+    if (found) {
+      const {span, details, provider} = found;
+      if (span.text === null)
+        limitations.push(
+          limitation(
+            'missing_evidence',
+            span.span_id,
+            'The source has no entry body here',
+          ),
+        );
+      let item: EvidenceItem = {kind: 'language_aid', span, provider, details};
       let bytes = utf8Length(canonicalJson(item));
       if (offset || !session.budget.canReturn(bytes)) {
-        if (!span.text || span.text.length !== 1 || span.segments.length !== 1) {
-          if (offset) throw new ReadError('invalid_request', 'Continuation does not match the entry');
-          if (evidence.length) { remaining = true; break; }
-          limitations.push(limitation('exceeds_limits', span.span_id, 'Entry cannot be divided within this request')); after = position; continue;
+        if (
+          !span.text ||
+          span.text.length !== 1 ||
+          span.segments.length !== 1
+        ) {
+          if (offset)
+            throw new ReadError(
+              'invalid_request',
+              'Continuation does not match the entry',
+            );
+          if (evidence.length) {
+            remaining = true;
+            break;
+          }
+          limitations.push(
+            limitation(
+              'exceeds_limits',
+              span.span_id,
+              'Entry cannot be divided within this request',
+            ),
+          );
+          after = position;
+          continue;
         }
         const chars = Array.from(span.text[0]);
         const segment = span.segments[0];
-        if (segment.end - segment.start !== chars.length || offset >= chars.length)
-          throw new ReadError('invalid_request', 'Continuation does not match entry coordinates');
-        const fragment = (end: number): EvidenceItem => ({ kind: 'language_aid', provider: String(row.provider),
-          details: { ...details, delivery_part: { start: offset, end, total: chars.length } },
-          span: { ...span, text: [chars.slice(offset, end).join('')],
-            segments: [{ ...segment, start: segment.start + offset, end: segment.start + end }] } });
-        let low = offset, high = chars.length;
+        if (
+          segment.end - segment.start !== chars.length ||
+          offset >= chars.length
+        )
+          throw new ReadError(
+            'invalid_request',
+            'Continuation does not match entry coordinates',
+          );
+        const fragment = (end: number): EvidenceItem => ({
+          kind: 'language_aid',
+          provider,
+          details: {
+            ...details,
+            delivery_part: {start: offset, end, total: chars.length},
+          },
+          span: {
+            ...span,
+            text: [chars.slice(offset, end).join('')],
+            segments: [
+              {
+                ...segment,
+                start: segment.start + offset,
+                end: segment.start + end,
+              },
+            ],
+          },
+        });
+        let low = offset,
+          high = chars.length;
         while (low < high) {
           const middle = Math.ceil((low + high) / 2);
-          if (session.budget.canReturn(utf8Length(canonicalJson(fragment(middle))))) low = middle;
+          if (
+            session.budget.canReturn(
+              utf8Length(canonicalJson(fragment(middle))),
+            )
+          )
+            low = middle;
           else high = middle - 1;
         }
         if (low === offset) {
-          if (evidence.length) { remaining = true; break; }
-          throw new ReadError('exceeds_limits', 'Entry metadata does not fit in one result');
+          if (evidence.length) {
+            remaining = true;
+            break;
+          }
+          throw new ReadError(
+            'exceeds_limits',
+            'Entry metadata does not fit in one result',
+          );
         }
         item = fragment(low);
         bytes = utf8Length(canonicalJson(item));
         session.budget.spendResult(bytes);
         evidence.push(item);
         if (low < chars.length) {
-          // Keep only verified, unfinished source wording, not assembled responses.
-          if (utf8Length(span.text[0]) <= MAX_PENDING_BODY_BYTES) {
+          // Keep only the verified, unfinished entry line, not assembled responses.
+          if (utf8Length(found.line) <= MAX_PENDING_BODY_BYTES) {
             pending.delete(entryKey);
-            pending.set(entryKey, span);
-            if (pending.size > MAX_PENDING_ENTRIES) pending.delete(pending.keys().next().value!);
+            pending.set(entryKey, found);
+            if (pending.size > MAX_PENDING_ENTRIES)
+              pending.delete(pending.keys().next().value!);
             if (!cached && session.verifiedWords) {
               try {
-                await session.verifiedWords.put(await sharedKey(entryKey), span.text[0],
-                  { expirationTtl: SHARED_CACHE_TTL_SECONDS });
-              } catch { /* Optional cache failure never changes verified evidence. */ }
+                await session.verifiedWords.put(
+                  await sharedKey(entryKey),
+                  found.line,
+                  {expirationTtl: SHARED_CACHE_TTL_SECONDS},
+                );
+              } catch {
+                /* Optional cache failure never changes verified evidence. */
+              }
             }
           }
-          offset = low; anchor = String(row.id); remaining = true; break;
+          offset = low;
+          anchor = Number(row.entry);
+          remaining = true;
+          break;
         }
         pending.delete(entryKey);
-        offset = 0; anchor = null;
+        offset = 0;
+        anchor = null;
       } else {
         session.budget.spendResult(bytes);
         evidence.push(item);
@@ -163,16 +329,55 @@ export async function aidBatch(session: ReadSession, input: AidWorkload, token: 
     after = position;
   }
   remaining ||= page.more;
-  const continuation = remaining ? await encodeContinuation(workload, { op: 'aid', pos: anchor === null ? null : { offset, entry: anchor }, key: after }) : null;
+  const continuation = remaining
+    ? await encodeContinuation(workload, {
+        op: 'aid',
+        pos: anchor === null ? null : {offset, entry: anchor},
+        key: after,
+      })
+    : null;
   if (!token && !evidence.length && !remaining && !limitations.length)
-    limitations.push(limitation('missing_evidence', key, 'No matching language aid is available in the selected release'));
-  const assembled = assembleBatch({ release_id: session.release.id, mode: input.mode, depth: input.depth,
-    delivered_scope: { lookup: input.lookup, key, sources: workload.sources, resumed_after: token ? start : null },
-    context_scope: null, evidence, citations: evidence.flatMap(item => item.kind === 'language_aid'
-      ? [{ source_revision_id: item.span.source_revision_id, span_id: item.span.span_id,
-        coordinate_version: item.span.coordinate_version, segments: item.span.segments }] : []),
-    searched_scope: [], coverage: [], limitations,
-    remaining: remaining ? { lookup: input.lookup, key } : null, continuation, guidance_version: guidance,
-    charged: new Set(evidence) }, session.budget);
+    limitations.push(
+      limitation(
+        'missing_evidence',
+        key,
+        'No matching language aid is available in the selected release',
+      ),
+    );
+  const assembled = assembleBatch(
+    {
+      release_id: session.release.id,
+      mode: input.mode,
+      depth: input.depth,
+      delivered_scope: {
+        lookup: input.lookup,
+        key,
+        sources: workload.sources,
+        resumed_after: token ? start : null,
+      },
+      context_scope: null,
+      evidence,
+      citations: evidence.flatMap(item =>
+        item.kind === 'language_aid'
+          ? [
+              {
+                source_revision_id: item.span.source_revision_id,
+                span_id: item.span.span_id,
+                coordinate_version: item.span.coordinate_version,
+                segments: item.span.segments,
+              },
+            ]
+          : [],
+      ),
+      searched_scope: [],
+      coverage: [],
+      limitations,
+      remaining: remaining ? {lookup: input.lookup, key} : null,
+      continuation,
+      guidance_version: guidance,
+      charged: new Set(evidence),
+    },
+    session.budget,
+  );
   return assembled.batch;
 }

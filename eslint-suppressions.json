@@ -101,7 +101,7 @@
       "count": 3
     },
     "max-lines-per-function": {
-      "count": 1
+      "count": 2
     }
   },
   "services/study/src/operators/passage.ts": {
@@ -150,14 +150,19 @@
       "count": 2
     }
   },
+  "tests/maintenance/selection.test.ts": {
+    "max-lines-per-function": {
+      "count": 3
+    }
+  },
   "tests/study/aids.test.ts": {
     "max-lines-per-function": {
-      "count": 1
+      "count": 6
     }
   },
   "tests/study/fixture.ts": {
     "max-lines-per-function": {
-      "count": 1
+      "count": 2
     }
   },
   "tests/study/reader-mappings.test.ts": {

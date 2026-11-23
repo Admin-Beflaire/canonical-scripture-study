@@ -15,16 +15,12 @@ services/study/src/coordinator.ts
 services/study/src/guidance.ts
 services/study/src/index.ts
 services/study/src/mcp.ts
-services/study/src/operators/aids.ts
-services/study/src/operators/language.ts
 services/study/src/operators/passage.ts
 services/study/src/read/bindings.ts
 services/study/src/read/budget.ts
 services/study/src/read/bytes.ts
-services/study/src/read/evidence.ts
 services/study/src/read/index.ts
 services/study/src/read/manifest.ts
-services/study/src/read/queries.ts
 services/study/src/read/search.ts
 services/study/src/results/batch.ts
 services/study/src/results/continuation.ts
@@ -37,7 +33,6 @@ tests/maintenance/d1.ts
 tests/maintenance/github.test.ts
 tests/maintenance/github.ts
 tests/maintenance/migration.test.ts
-tests/maintenance/selection.test.ts
 tests/platform/config.test.ts
 tests/platform/deployment.test.ts
 tests/platform/platform.test.ts
@@ -50,9 +45,7 @@ tests/shared/index-contracts.test.ts
 tests/shared/maintenance-contracts.test.ts
 tests/shared/reader-catalogue.test.ts
 tests/shared/reader-references.test.ts
-tests/study/aids.test.ts
 tests/study/evidence.test.ts
-tests/study/fixture.ts
 tests/study/passage-fixture.ts
 tests/study/read-only.test.ts
 tests/study/reader-mappings.test.ts

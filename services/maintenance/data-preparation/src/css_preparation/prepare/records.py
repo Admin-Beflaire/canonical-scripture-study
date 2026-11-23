@@ -19,13 +19,16 @@ from ..validation import SCHEMAS, SchemaSubset
 _RECORDS = SchemaSubset("evidence-records.v1.schema.json")
 _SEGMENTS = SchemaSubset("indexes/span-segment.v1.schema.json")
 _READER_REFERENCES = SchemaSubset("reader-references/records.v1.schema.json")
+_AID_ENTRIES = SchemaSubset("aid-entries/records.v1.schema.json")
 _MANIFEST = json.loads(
     (SCHEMAS / "evidence.v1.manifest.json").read_text(encoding="utf-8")
 )
 _READER_TABLES = _MANIFEST["reader_references"]["record_tables"]
+_AID_TABLES = _MANIFEST["aid_entries"]["record_tables"]
 TABLES: dict[str, str] = {
     **_MANIFEST["record_tables"],
     **_READER_TABLES,
+    **_AID_TABLES,
     "span_segment": "span_segments",
 }
 # Place reader links after the native spans they reference.
@@ -35,6 +38,7 @@ ORDER = (
     "prepared_output",
     "text_payload",
     "artifact",
+    "aid_entry",
     "native_span",
     "span_segment",
     "annotation",
@@ -56,6 +60,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "annotation": ("id",),
     "relationship": ("id",),
     "relation_member": ("relationship_id", "role", "ordinal"),
+    "aid_entry": ("output_id", "entry"),
     "coverage": ("output_id", "source_revision_id", "capability"),
     "study_package": ("id",),
     "character_statement": ("id",),
@@ -107,7 +112,13 @@ class RecordSet:
         if kind == "span_segment":
             errors = _SEGMENTS.document_errors(row)
         else:
-            schema = _READER_REFERENCES if kind in _READER_TABLES else _RECORDS
+            schema = (
+                _READER_REFERENCES
+                if kind in _READER_TABLES
+                else _AID_ENTRIES
+                if kind in _AID_TABLES
+                else _RECORDS
+            )
             errors = schema.errors(kind, row)
         if errors:
             raise RecordError(f"Invalid {kind}: " + "; ".join(errors[:5]))
@@ -218,6 +229,7 @@ _BY_OUTPUT = (
     "study_package",
     "character_statement",
     *_READER_TABLES,
+    *_AID_TABLES,
 )
 
 

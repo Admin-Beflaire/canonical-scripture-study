@@ -30,6 +30,14 @@
       "reader_reference_link": "reader_reference_links"
     }
   },
+  "aid_entries": {
+    "record_schema": "aid-entries/records.v1.schema.json",
+    "migration": "migrations/0010_aid_entries.sql",
+    "entries_format": "application/x-ndjson; profile=aid-entries",
+    "record_tables": {
+      "aid_entry": "aid_entries"
+    }
+  },
   "json_columns": "Fields ending in _json contain decoded JSON in contracts and UTF-8 JSON text in SQL.",
   "booleans": "Contracts use JSON booleans; SQL stores 0 or 1.",
   "release_selection": "singleton_id=1; both release IDs null before the first selected release."

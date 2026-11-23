@@ -201,6 +201,7 @@ def run_job(
                     diagnostics=[diagnostic(job, "recipe", "no_registered_recipe")],
                 )
             read_mappings = recipe.read_reader_references
+            read_aids = recipe.read_aid_entries
             return check_candidate_quality(
                 job_json,
                 **gate,
@@ -211,6 +212,9 @@ def run_job(
                 receipts=storage.record_store("receipts"),
                 read_reader_references=(lambda job: read_mappings(job, storage))
                 if read_mappings
+                else None,
+                read_aid_entries=(lambda job: read_aids(job, storage))
+                if read_aids
                 else None,
             )
         module = getattr(recipe, kind)

@@ -90,6 +90,15 @@ the same keyword subset at runtime and reject unknown fields; artifact reference
 carry registered identity, SHA-256 digest and size. Envelopes pass task IDs and
 registered references, never scripts, branches, URLs or object paths.
 
+## Language-aid entries
+
+`aid-entries/records.v1.schema.json` defines the `aid_entry` record: one small row per
+language-aid entry (lexicon entry, grammar expansion or proper name) with its lookup key
+and the position and SHA-256 digest of the entry's line in the output's entries file.
+The entries file (`application/x-ndjson; profile=aid-entries`) holds one line per entry
+with its wording, coordinates and details. Study finds an entry in D1 by its key and
+reads and verifies its line in R2. Method `language-aids/2` produces this shape.
+
 ## Reader navigation
 
 `reader-references/nrsva-1.json` contains the versioned NRSVA reader numbering

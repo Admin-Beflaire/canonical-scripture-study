@@ -27,6 +27,7 @@ export const FORMATS = new Set([
   'application/x-ndjson',
   'application/json',
   'application/x-ndjson; profile=index-directory',
+  'application/x-ndjson; profile=aid-entries',
 ]);
 /** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
  *  lists them: deployment refuses code that does not support the selected release's versions. */
@@ -466,9 +467,16 @@ async function candidateOf(
   };
 }
 
+/** Same kind, except that an `aid_entries` output replaces the `evidence` output that held the
+ *  same language aids before they moved to an entries file (same source revision, coordinate
+ *  version and units). An `evidence` candidate never replaces an `aid_entries` output. */
+const sameKind = (base: Output, next: Output) =>
+  base.kind === next.kind ||
+  (base.kind === 'evidence' && next.kind === 'aid_entries');
+
 const overlaps = (a: Output, b: Output) => {
   if (
-    a.kind !== b.kind ||
+    !sameKind(a, b) ||
     a.revisions[0] !== b.revisions[0] ||
     a.extent.coordinate_version !== b.extent.coordinate_version
   )

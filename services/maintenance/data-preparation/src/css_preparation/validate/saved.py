@@ -4,24 +4,37 @@ New and reused outputs receive the same checks. Omitted outputs may still exist
 in storage, but are never inspected as included output or chosen for a release.
 Source fidelity and semantic relationships are checked by semantic quality.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import json
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
 from ..indexes.saved import verify_saved_index
+from ..prepare.aid_entries import FORMAT as AID_FORMAT, lookup_key
 from ..prepare.evidence import OutputBasis, reusable
 from ..prepare.records import ORDER, RecordError
 from ..validation import SchemaSubset
 
-_RECORDS = SchemaSubset('evidence-records.v1.schema.json')
-_SEGMENTS = SchemaSubset('indexes/span-segment.v1.schema.json')
-_READER_REFERENCES = SchemaSubset('reader-references/records.v1.schema.json')
-_READER_KINDS = ('reader_reference_base', 'reader_reference_link')
-_SCOPED = ('artifact', 'native_span', 'annotation', 'relationship', 'coverage',
-           'study_package', 'character_statement', *_READER_KINDS)
+_RECORDS = SchemaSubset("evidence-records.v1.schema.json")
+_SEGMENTS = SchemaSubset("indexes/span-segment.v1.schema.json")
+_READER_REFERENCES = SchemaSubset("reader-references/records.v1.schema.json")
+_AID_ENTRIES = SchemaSubset("aid-entries/records.v1.schema.json")
+_READER_KINDS = ("reader_reference_base", "reader_reference_link")
+_SCOPED = (
+    "artifact",
+    "aid_entry",
+    "native_span",
+    "annotation",
+    "relationship",
+    "coverage",
+    "study_package",
+    "character_statement",
+    *_READER_KINDS,
+)
 
 
 @dataclass(frozen=True)
@@ -46,23 +59,81 @@ def _unique(rows: Iterable[Mapping], key: str, kind: str) -> dict[str, dict]:
         row = dict(item)
         identity = row.get(key)
         if not isinstance(identity, str) or identity in indexed:
-            raise RecordError(f'Duplicate or invalid saved {kind} identity')
+            raise RecordError(f"Duplicate or invalid saved {kind} identity")
         indexed[identity] = row
     return indexed
 
 
 def _schema(kind: str, row: dict) -> None:
-    if kind == 'span_segment':
+    if kind == "span_segment":
         errors = _SEGMENTS.document_errors(row)
     else:
-        schema = _READER_REFERENCES if kind in _READER_KINDS else _RECORDS
+        schema = (
+            _READER_REFERENCES
+            if kind in _READER_KINDS
+            else _AID_ENTRIES
+            if kind == "aid_entry"
+            else _RECORDS
+        )
         errors = schema.errors(kind, row)
     if errors:
-        raise RecordError(f'Invalid saved {kind}: ' + '; '.join(errors[:3]))
+        raise RecordError(f"Invalid saved {kind}: " + "; ".join(errors[:3]))
+
+
+def _check_aid_entries(
+    basis: OutputBasis, scoped: Mapping[str, Sequence[dict]], blobs: Mapping[str, bytes]
+) -> None:
+    """One entries file, and a D1 row for every line that points at its exact bytes and keys."""
+    files = [a for a in scoped["artifact"] if a["output_id"] == basis.output_id]
+    cover = [c for c in scoped["coverage"] if c["output_id"] == basis.output_id]
+    if (
+        len(files) != 1
+        or files[0]["format"] != AID_FORMAT
+        or [c["index_artifact_id"] for c in cover] != [files[0]["id"]]
+    ):
+        raise RecordError(
+            "Language-aid output needs exactly one registered entries file"
+        )
+    data = blobs[files[0]["id"]]
+    kind = cover[0]["capability"]
+    rows = sorted(
+        (r for r in scoped["aid_entry"] if r["output_id"] == basis.output_id),
+        key=lambda r: r["entry"],
+    )
+    position = 0
+    for ordinal, row in enumerate(rows):
+        start, end = row["byte_offset"], row["byte_offset"] + row["byte_length"]
+        raw = data[start:end]
+        if (
+            row["entry"] != ordinal
+            or start != position
+            or end > len(data)
+            or row["kind"] != kind
+            or hashlib.sha256(raw).hexdigest() != row["sha256"]
+            or not raw.endswith(b"\n")
+        ):
+            raise RecordError("Saved aid entry does not match its entries file")
+        try:
+            line = json.loads(raw)
+        except ValueError:
+            raise RecordError("Saved aid entry line is not JSON") from None
+        details = line.get("details") if isinstance(line, dict) else None
+        if (
+            not isinstance(details, dict)
+            or line.get("entry") != ordinal
+            or line.get("span_id") != f"{basis.output_id}#entry{ordinal:04d}"
+            or details.get("entry_key") != row["entry_key"]
+            or lookup_key(kind, details) != row["lookup_key"]
+        ):
+            raise RecordError("Saved aid entry line disagrees with its lookup keys")
+        position = end
+    if not rows or position != len(data):
+        raise RecordError("Saved entries file has lines without lookup rows")
 
 
 def verify_candidate_inventory(  # noqa: C901, PLR0915
-    inventory: CandidateInventory, *,
+    inventory: CandidateInventory,
+    *,
     read_rows: Callable[[str, Sequence[str]], Iterable[Mapping[str, Any]]],
     read_blob: Callable[[str], bytes],
     max_page_bytes: int = PAGE_CAP,
@@ -75,150 +146,235 @@ def verify_candidate_inventory(  # noqa: C901, PLR0915
     """
     bases = (*inventory.added, *inventory.reused)
     if any(type(b) is not OutputBasis for b in bases):
-        raise RecordError('Candidate needs exact output bases')
+        raise RecordError("Candidate needs exact output bases")
     output_ids = tuple(b.output_id for b in bases)
     included = set(output_ids)
     omitted = set(inventory.omitted)
-    if (not bases or len(included) != len(bases)
-            or len(omitted) != len(inventory.omitted) or included & omitted):
-        raise RecordError('Candidate has duplicate, empty or contradictory membership')
+    if (
+        not bases
+        or len(included) != len(bases)
+        or len(omitted) != len(inventory.omitted)
+        or included & omitted
+    ):
+        raise RecordError("Candidate has duplicate, empty or contradictory membership")
     for basis in bases:
         if not set(basis.dependencies).issubset(included):
-            raise RecordError('Included output has a missing or omitted dependency')
+            raise RecordError("Included output has a missing or omitted dependency")
 
     # Load the saved records once. Old, unselected candidate rows may coexist;
     # only rows attached to the explicit included output IDs are authoritative.
-    data = {kind: tuple(dict(row) for row in read_rows(kind, output_ids)) for kind in ORDER}
-    prepared = _unique((r for r in data['prepared_output'] if r.get('id') in included),
-                       'id', 'prepared_output')
+    data = {
+        kind: tuple(dict(row) for row in read_rows(kind, output_ids)) for kind in ORDER
+    }
+    prepared = _unique(
+        (r for r in data["prepared_output"] if r.get("id") in included),
+        "id",
+        "prepared_output",
+    )
     if set(prepared) != included:
-        raise RecordError('Missing saved candidate output')
+        raise RecordError("Missing saved candidate output")
     for basis in bases:
         row = prepared[basis.output_id]
-        _schema('prepared_output', row)
+        _schema("prepared_output", row)
         if not reusable(row, basis):
-            raise RecordError('Saved candidate has an incompatible input or method basis')
+            raise RecordError(
+                "Saved candidate has an incompatible input or method basis"
+            )
 
-    scoped = {kind: [r for r in data[kind] if r.get('output_id') in included]
-              for kind in _SCOPED}
+    scoped = {
+        kind: [r for r in data[kind] if r.get("output_id") in included]
+        for kind in _SCOPED
+    }
     for kind, rows in scoped.items():
         for row in rows:
             _schema(kind, row)
 
-    artifacts = _unique(scoped['artifact'], 'id', 'artifact')
+    artifacts = _unique(scoped["artifact"], "id", "artifact")
     blobs: dict[str, bytes] = {}
     for artifact_id, row in artifacts.items():
         try:
-            content = read_blob(row['registered_locator'])
+            content = read_blob(row["registered_locator"])
         except (KeyError, OSError) as exc:
-            raise RecordError(f'Missing saved R2 object: {artifact_id}') from exc
-        if (not isinstance(content, bytes) or len(content) != row['byte_count']
-                or hashlib.sha256(content).hexdigest() != row['sha256']):
-            raise RecordError(f'Corrupt or incomplete saved R2 object: {artifact_id}')
+            raise RecordError(f"Missing saved R2 object: {artifact_id}") from exc
+        if (
+            not isinstance(content, bytes)
+            or len(content) != row["byte_count"]
+            or hashlib.sha256(content).hexdigest() != row["sha256"]
+        ):
+            raise RecordError(f"Corrupt or incomplete saved R2 object: {artifact_id}")
         blobs[artifact_id] = content
 
-    coverage = scoped['coverage']
+    coverage = scoped["coverage"]
     for basis in bases:
-        own = [r for r in coverage if r['output_id'] == basis.output_id]
-        if basis.kind in ('evidence', 'source_search', 'word_index', 'reader_reference') and not own:
-            raise RecordError('Missing saved output coverage')
+        own = [r for r in coverage if r["output_id"] == basis.output_id]
+        if (
+            basis.kind
+            in (
+                "evidence",
+                "source_search",
+                "word_index",
+                "reader_reference",
+                "aid_entries",
+            )
+            and not own
+        ):
+            raise RecordError("Missing saved output coverage")
         for row in own:
-            if (row['source_revision_id'] != basis.input_revisions[0]
-                    or row['method_version'] != basis.method_version
-                    or row['dependencies_json'] != sorted(basis.dependencies)):
-                raise RecordError('Saved output coverage is incompatible with its basis')
-            ref = row['index_artifact_id']
-            if ref is not None and (ref not in artifacts or
-                                    artifacts[ref]['output_id'] != basis.output_id):
-                raise RecordError('Coverage references an absent or foreign artifact')
+            if (
+                row["source_revision_id"] != basis.input_revisions[0]
+                or row["method_version"] != basis.method_version
+                or row["dependencies_json"] != sorted(basis.dependencies)
+            ):
+                raise RecordError(
+                    "Saved output coverage is incompatible with its basis"
+                )
+            ref = row["index_artifact_id"]
+            if ref is not None and (
+                ref not in artifacts or artifacts[ref]["output_id"] != basis.output_id
+            ):
+                raise RecordError("Coverage references an absent or foreign artifact")
 
-    spans = _unique(scoped['native_span'], 'id', 'native_span')
+    spans = _unique(scoped["native_span"], "id", "native_span")
     selected_spans = tuple(spans.values())
     for basis in bases:
-        if basis.kind == 'evidence' and not any(
-                r['output_id'] == basis.output_id for r in selected_spans):
-            raise RecordError('Missing saved native span records')
+        if basis.kind == "evidence" and not any(
+            r["output_id"] == basis.output_id for r in selected_spans
+        ):
+            raise RecordError("Missing saved native span records")
 
-    payload_ids = {s['content_id'] for s in selected_spans if s['content_id'] is not None}
-    payloads = _unique((r for r in data['text_payload'] if r.get('content_id') in payload_ids),
-                       'content_id', 'text_payload')
+    payload_ids = {
+        s["content_id"] for s in selected_spans if s["content_id"] is not None
+    }
+    payloads = _unique(
+        (r for r in data["text_payload"] if r.get("content_id") in payload_ids),
+        "content_id",
+        "text_payload",
+    )
     if set(payloads) != payload_ids:
-        raise RecordError('Missing saved D1 text payload')
+        raise RecordError("Missing saved D1 text payload")
     for row in payloads.values():
-        _schema('text_payload', row)
-        if hashlib.sha256(row['exact_text'].encode('utf-8')).hexdigest() != row['content_id']:
-            raise RecordError('Saved text payload digest mismatch')
+        _schema("text_payload", row)
+        if (
+            hashlib.sha256(row["exact_text"].encode("utf-8")).hexdigest()
+            != row["content_id"]
+        ):
+            raise RecordError("Saved text payload digest mismatch")
 
-    segments = [r for r in data['span_segment'] if r.get('span_id') in spans]
+    segments = [r for r in data["span_segment"] if r.get("span_id") in spans]
     for row in segments:
-        _schema('span_segment', row)
+        _schema("span_segment", row)
     segments_by_span: dict[str, list[dict]] = {}
     for row in segments:
-        segments_by_span.setdefault(row['span_id'], []).append(row)
+        segments_by_span.setdefault(row["span_id"], []).append(row)
     for span in selected_spans:
-        own = segments_by_span.get(span['id'], [])
-        if len(own) != len(span['segments_json']) or sorted(
-                r['segment_ordinal'] for r in own) != list(range(len(own))):
-            raise RecordError('Missing or duplicate saved navigation segment')
-        for br in span['body_ranges_json']:
-            ref = artifacts.get(br['artifact_id'])
-            if ref is None or ref['output_id'] != span['output_id']:
-                raise RecordError('Native span references a missing stored artifact')
-            content = blobs[br['artifact_id']]
-            start, length = br['byte_offset'], br['byte_length']
-            if (start + length > len(content)
-                    or hashlib.sha256(content[start:start + length]).hexdigest() != br['sha256']):
-                raise RecordError('Saved native body range has incorrect bytes or digest')
-            if 'chunks' in br:
+        own = segments_by_span.get(span["id"], [])
+        if len(own) != len(span["segments_json"]) or sorted(
+            r["segment_ordinal"] for r in own
+        ) != list(range(len(own))):
+            raise RecordError("Missing or duplicate saved navigation segment")
+        for br in span["body_ranges_json"]:
+            ref = artifacts.get(br["artifact_id"])
+            if ref is None or ref["output_id"] != span["output_id"]:
+                raise RecordError("Native span references a missing stored artifact")
+            content = blobs[br["artifact_id"]]
+            start, length = br["byte_offset"], br["byte_length"]
+            if (
+                start + length > len(content)
+                or hashlib.sha256(content[start : start + length]).hexdigest()
+                != br["sha256"]
+            ):
+                raise RecordError(
+                    "Saved native body range has incorrect bytes or digest"
+                )
+            if "chunks" in br:
                 byte_pos, scalar_pos = start, 0
-                for chunk in br['chunks']:
-                    raw = content[chunk['byte_offset']:chunk['byte_offset'] + chunk['byte_length']]
+                for chunk in br["chunks"]:
+                    raw = content[
+                        chunk["byte_offset"] : chunk["byte_offset"]
+                        + chunk["byte_length"]
+                    ]
                     try:
-                        text = raw.decode('utf-8', errors='strict')
+                        text = raw.decode("utf-8", errors="strict")
                     except UnicodeDecodeError:
-                        raise RecordError('Saved body chunk has invalid UTF-8') from None
-                    if (chunk['byte_offset'] != byte_pos or chunk['start'] != scalar_pos
-                            or chunk['end'] != scalar_pos + len(text) or len(raw) != chunk['byte_length']
-                            or hashlib.sha256(raw).hexdigest() != chunk['sha256']):
-                        raise RecordError('Saved body chunks are inconsistent')
-                    byte_pos += len(raw); scalar_pos += len(text)  # noqa: E702
-                segment = span['segments_json'][br['segment_ordinal']]
-                if byte_pos != start + length or scalar_pos != segment['end'] - segment['start']:
-                    raise RecordError('Saved body chunks do not cover the segment')
+                        raise RecordError(
+                            "Saved body chunk has invalid UTF-8"
+                        ) from None
+                    if (
+                        chunk["byte_offset"] != byte_pos
+                        or chunk["start"] != scalar_pos
+                        or chunk["end"] != scalar_pos + len(text)
+                        or len(raw) != chunk["byte_length"]
+                        or hashlib.sha256(raw).hexdigest() != chunk["sha256"]
+                    ):
+                        raise RecordError("Saved body chunks are inconsistent")
+                    byte_pos += len(raw)
+                    scalar_pos += len(text)
+                segment = span["segments_json"][br["segment_ordinal"]]
+                if (
+                    byte_pos != start + length
+                    or scalar_pos != segment["end"] - segment["start"]
+                ):
+                    raise RecordError("Saved body chunks do not cover the segment")
 
     # Validate saved source-revision identities through their required ancestry.
-    nodes = _unique(data['source_node'], 'id', 'source_node')
+    nodes = _unique(data["source_node"], "id", "source_node")
     for basis in bases:
-        if basis.kind not in ('evidence', 'source_search', 'word_index', 'reader_reference'):
+        if basis.kind not in (
+            "evidence",
+            "source_search",
+            "word_index",
+            "reader_reference",
+            "aid_entries",
+        ):
             continue
         next_id = basis.input_revisions[0]
-        for kind in ('source_revision', 'representation', 'edition', 'work'):
+        for kind in ("source_revision", "representation", "edition", "work"):
             node = nodes.get(next_id)
             if node is None:
-                raise RecordError('Missing saved source identity')
-            _schema('source_node', node)
-            if node['kind'] != kind:
-                raise RecordError('Saved source ancestry is incompatible')
-            next_id = node['parent_id']
+                raise RecordError("Missing saved source identity")
+            _schema("source_node", node)
+            if node["kind"] != kind:
+                raise RecordError("Saved source ancestry is incompatible")
+            next_id = node["parent_id"]
 
-    relations = _unique(scoped['relationship'], 'id', 'relationship')
-    members = [r for r in data['relation_member'] if r.get('relationship_id') in relations]
+    relations = _unique(scoped["relationship"], "id", "relationship")
+    members = [
+        r for r in data["relation_member"] if r.get("relationship_id") in relations
+    ]
     for row in members:
-        _schema('relation_member', row)
-    member_relationship_ids = {m['relationship_id'] for m in members}
+        _schema("relation_member", row)
+    member_relationship_ids = {m["relationship_id"] for m in members}
     for row in relations.values():
-        if row['id'] not in member_relationship_ids:
-            raise RecordError('Missing saved relationship members')
-    for row in scoped['annotation']:
-        if row['span_id'] not in spans:
-            raise RecordError('Saved annotation names absent native span')
+        if row["id"] not in member_relationship_ids:
+            raise RecordError("Missing saved relationship members")
+    for row in scoped["annotation"]:
+        if row["span_id"] not in spans:
+            raise RecordError("Saved annotation names absent native span")
 
+    for basis in bases:
+        if basis.kind == "aid_entries":
+            _check_aid_entries(basis, scoped, blobs)
     checked_indexes = []
     for basis in bases:
-        if basis.kind in ('source_search', 'word_index'):
-            verify_saved_index(basis, prepared[basis.output_id], scoped['artifact'],
-                               coverage, blobs, max_page_bytes=max_page_bytes)
+        if basis.kind in ("source_search", "word_index"):
+            verify_saved_index(
+                basis,
+                prepared[basis.output_id],
+                scoped["artifact"],
+                coverage,
+                blobs,
+                max_page_bytes=max_page_bytes,
+            )
             checked_indexes.append(basis.output_id)
-    return SavedInventory(output_ids, tuple({
-        'artifact_id': r['id'], 'sha256': r['sha256'], 'byte_count': r['byte_count']
-    } for r in sorted(artifacts.values(), key=lambda row: row['id'])), tuple(checked_indexes))
+    return SavedInventory(
+        output_ids,
+        tuple(
+            {
+                "artifact_id": r["id"],
+                "sha256": r["sha256"],
+                "byte_count": r["byte_count"],
+            }
+            for r in sorted(artifacts.values(), key=lambda row: row["id"])
+        ),
+        tuple(checked_indexes),
+    )

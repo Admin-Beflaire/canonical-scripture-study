@@ -267,21 +267,44 @@ test('a bucket that fails once is tried again; one that keeps failing leaves obj
   assert.equal(w.count('coverage'), 1);
 });
 
-test('a language-aid output leaves D1 whole with its entry rows, and its entries file goes too', async () => {
+test('cleanup removes an unused aid output, its compact keys and file, and keeps selected aids', async () => {
   const w = world();
-  w.output('aid', 'entries', 'aid_entries');
-  for (const entry of [0, 1])
-    w.sql
-      .prepare(
-        `INSERT INTO aid_entries VALUES ('aid', ?, 'lexicon_entry', ?, 'H0001', ?, 10, ?)`,
-      )
-      .run(entry, `key-${entry}`, entry * 10, DIGEST);
-  const store = bucket(['prepared/aid.json']);
+  for (const output of ['unused-aid', 'selected-aid']) {
+    w.output(output, 'entries', 'aid_entries');
+    for (const entry of [0, 1])
+      w.sql
+        .prepare(
+          `INSERT INTO aid_entries VALUES (?, ?, 'lexicon_entry', ?, 'H0001', ?, 10, ?)`,
+        )
+        .run(output, entry, `key-${entry}`, entry * 10, DIGEST);
+  }
+  w.release('current-aids', ['selected-aid']);
+  w.select('current-aids');
+  const store = bucket([
+    'prepared/unused-aid.json',
+    'prepared/selected-aid.json',
+  ]);
   const done = await tidyReleases(w.db, store);
   assert.deepEqual([done.outputs, done.objects, done.objectsLeft], [1, 1, 0]);
-  assert.equal(store.held.size, 0);
-  for (const table of ['aid_entries', 'artifacts', 'prepared_outputs'])
-    assert.equal(w.count(table), 0, table);
+  assert.deepEqual([...store.held], ['prepared/selected-aid.json']);
+  assert.deepEqual(
+    w.sql
+      .prepare('SELECT output_id FROM aid_output_keys')
+      .all()
+      .map(row => row.output_id),
+    ['selected-aid'],
+  );
+  assert.equal(w.count('aid_entry_rows'), 2);
+  for (const table of ['artifacts', 'prepared_outputs'])
+    assert.equal(w.count(table), 1, table);
+  const removeAidRows = OUTPUT_ROWS.find(sql =>
+    sql.startsWith('DELETE FROM aid_entry_rows WHERE'),
+  )!;
+  assert.throws(
+    () => w.sql.prepare(removeAidRows).run('selected-aid'),
+    /Selected output rows are immutable/,
+  );
+  assert.equal(w.count('aid_entry_rows'), 2);
 });
 
 test('nothing is removed from saved outputs while a job is unfinished', async () => {

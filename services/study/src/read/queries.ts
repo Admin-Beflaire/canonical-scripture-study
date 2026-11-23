@@ -169,18 +169,19 @@ const languageAidQuery = (
   kind: 'lexicon_entry' | 'grammar_expansion' | 'proper_name',
   field: 'lookup_key' | 'entry_key',
 ) => `
-SELECT e.output_id, e.entry, e.kind, e.entry_key, e.byte_offset, e.byte_length, e.sha256 AS line_sha256,
+SELECT k.output_id, e.entry, e.kind, e.entry_key, e.byte_offset, e.byte_length, e.sha256 AS line_sha256,
   a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator, a.source_revision_id,
   s.name AS source_name, s.attribution AS source_attribution,
   json_extract(o.native_extent_json, '$.coordinate_version') AS coordinate_version
-FROM aid_entries e
-CROSS JOIN release_outputs ro ON ro.output_id = e.output_id AND ro.release_id = ?1
-CROSS JOIN prepared_outputs o ON o.id = e.output_id
-CROSS JOIN coverage c ON c.output_id = e.output_id AND c.capability = e.kind
+FROM aid_output_keys k
+CROSS JOIN aid_entry_rows e INDEXED BY aid_entries_${field === 'entry_key' ? 'entry_key' : 'lookup'} ON e.output_key = k.key
+CROSS JOIN release_outputs ro ON ro.output_id = k.output_id AND ro.release_id = ?1
+CROSS JOIN prepared_outputs o ON o.id = k.output_id
+CROSS JOIN coverage c ON c.output_id = k.output_id AND c.capability = e.kind
 CROSS JOIN artifacts a ON a.id = c.index_artifact_id
 CROSS JOIN source_nodes s ON s.id = a.source_revision_id
-WHERE e.kind = '${kind}' AND e.${field} = ?2 AND (e.output_id, e.entry) > (?3, ?4)
-ORDER BY e.output_id, e.entry LIMIT ?5`;
+WHERE e.kind = '${kind}' AND e.${field} = ?2 AND (k.output_id, e.entry) > (?3, ?4)
+ORDER BY k.output_id, e.entry LIMIT ?5`;
 
 /** A mapping may point to an extracted slice while source-authored notes are attached to the
  * original native verse. Return notes on either selected span, scoped to that source. */
@@ -202,7 +203,7 @@ const MAPPED_ANNOTATIONS = `WITH selected AS (
     AND EXISTS (SELECT 1 FROM json_each(c.native_extent_json, '$.unit_ids') u WHERE u.value = json_extract(seg.value, '$.unit_id'))
 )
 SELECT DISTINCT t.mapped_span_id, a.id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
-FROM note_targets t CROSS JOIN annotations a INDEXED BY annotations_span
+FROM note_targets t CROSS JOIN annotations a
   ON a.span_id = t.native_span_id AND a.source_revision_id = t.source_revision_id
 CROSS JOIN release_outputs ro ON ro.release_id = ?1 AND ro.output_id = a.output_id
 WHERE (t.mapped_span_id, a.id) > (?3, ?4)

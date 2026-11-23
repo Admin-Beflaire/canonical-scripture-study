@@ -293,6 +293,7 @@ async function searchLinkedPage(
   notes: Limitation[],
 ) {
   let available: Set<string> | null = null;
+  let pending: LinkedState | undefined;
   // A cold occurrence lookup can spend the full R2 allowance. Leave two reads
   // for its first lexical and grammar entries when evidence has priority.
   const reserve =
@@ -302,14 +303,8 @@ async function searchLinkedPage(
       ? 2
       : 0;
   const batch = await session.budget.reserveR2Reads(reserve, () =>
-    searchBatch(
-      session,
-      adapter,
-      workload,
-      search,
-      guidance,
-      notes,
-      async hits => {
+    searchBatch(session, adapter, workload, search, guidance, notes, {
+      async countHits(hits) {
         const candidates = collectKeys(hits);
         const present = session.budget.canQuery(4)
           ? await selectedLinkedKeys(session, candidates)
@@ -317,19 +312,17 @@ async function searchLinkedPage(
         available = present && new Set(present.map(key => identity(...key)));
         return boundedHits(hits, available);
       },
-    ),
+      async finalize(candidate) {
+        const keys = orderedKeys(pageHits(candidate), workload, available);
+        pending = keys.length
+          ? {keys, aid: null, search: candidate.continuation, check: !available}
+          : undefined;
+        if (pending) await setLinkedContinuation(candidate, workload, pending);
+      },
+    }),
   );
+  if (!pending) return batch;
   const hits = pageHits(batch);
-  const keys = orderedKeys(hits, workload, available);
-  if (keys.length === 0) return batch;
-  const pending: LinkedState = {
-    keys,
-    aid: null,
-    search: batch.continuation,
-    check: !available,
-  };
-  // Reserve room for the outer continuation before adding evidence to a word batch.
-  await setLinkedContinuation(batch, workload, pending);
   const delivered = await attachLinkedAids(
     session,
     batch,
@@ -337,7 +330,6 @@ async function searchLinkedPage(
     pending,
     guidance,
   );
-  await setLinkedContinuation(batch, workload, pending);
   linkAnalyses(batch, hits, delivered, session.budget.limits.resultBytes);
   orderEvidence(batch, workload);
   return batch;
@@ -367,28 +359,33 @@ async function continueLinkedAids(
   guidance: string,
 ) {
   const [lookup, key] = pending.keys[0];
-  const batch = await aidBatch(
+  return aidBatch(
     session,
     {...workload, lookup, key, sources: null},
     pending.aid,
     guidance,
+    [],
+    {
+      async finalize(batch) {
+        batch.limitations = batch.limitations.filter(
+          item => !(item.state === 'missing_evidence' && item.scope === key),
+        );
+        batch.delivered_scope = {
+          lookup: workload.lookup,
+          key: workload.key,
+          word_sources: workload.sources,
+          linked_aid: {lookup, key},
+          sources: null,
+        };
+        const aid = batch.continuation;
+        await setLinkedContinuation(batch, workload, {
+          ...pending,
+          aid,
+          keys: aid ? pending.keys : pending.keys.slice(1),
+        });
+      },
+    },
   );
-  batch.limitations = batch.limitations.filter(
-    item => !(item.state === 'missing_evidence' && item.scope === key),
-  );
-  batch.delivered_scope = {
-    lookup: workload.lookup,
-    key: workload.key,
-    word_sources: workload.sources,
-    linked_aid: {lookup, key},
-    sources: null,
-  };
-  pending.aid = batch.continuation;
-  if (!pending.aid) pending.keys.shift();
-  await setLinkedContinuation(batch, workload, pending);
-  if (utf8Length(JSON.stringify(batch)) > session.budget.limits.resultBytes)
-    throw new ReadError('exceeds_limits', 'Linked-evidence batch does not fit');
-  return batch;
 }
 
 interface AnalysisKeys {
@@ -525,7 +522,7 @@ async function attachLinkedAids(
       null,
       guidance,
       [],
-      0,
+      {envelopeReserve: 0},
     );
     const candidate = {
       ...batch,

@@ -6,6 +6,7 @@ import {
   encodeContinuation,
   resumeContinuation,
 } from '../results/continuation.ts';
+import type {Batch} from '../results/batch.ts';
 import {searchBatch} from '../results/search-batch.ts';
 import {aidBatch, normalizeAidKey} from './aids.ts';
 import {sourcesWith, type LanguageWorkload} from './language.ts';
@@ -41,10 +42,19 @@ export async function nameStudyBatch(
     workload.focus === 'occurrences' ? 'occurrences' : 'names';
   const stage = (state?.op ?? first) as Stage;
   const token = (state?.pos as string | null) ?? null;
-  const batch =
-    stage === 'names'
-      ? await aidBatch(session, workload, token, guidance, notes)
-      : await nameOccurrences(session, workload, token, guidance, notes);
+  const finalize = (batch: Batch) =>
+    wrapNameBatch(batch, workload, first, stage);
+  if (stage === 'occurrences')
+    return nameOccurrences(session, workload, token, guidance, notes, finalize);
+  return aidBatch(session, workload, token, guidance, notes, {finalize});
+}
+
+async function wrapNameBatch(
+  batch: Batch,
+  workload: LanguageWorkload,
+  first: Stage,
+  stage: Stage,
+) {
   const remainingStage = batch.continuation
     ? stage
     : stage === first
@@ -60,9 +70,6 @@ export async function nameStudyBatch(
     });
     batch.remaining = {stage: remainingStage};
   }
-  if (utf8Length(JSON.stringify(batch)) > session.budget.limits.resultBytes)
-    throw new ReadError('exceeds_limits', 'Name study batch does not fit');
-  return batch;
 }
 
 async function nameOccurrences(
@@ -71,10 +78,11 @@ async function nameOccurrences(
   token: string | null,
   guidance: string,
   notes: Limitation[],
+  finalize: (batch: Batch) => Promise<void>,
 ) {
   const sources = await sourcesWith(session, 'lemma_exact');
   if (!sources.length) {
-    return {
+    const batch: Batch = {
       release_id: session.release.id,
       mode: workload.mode,
       depth: workload.depth,
@@ -96,6 +104,10 @@ async function nameOccurrences(
       continuation: null,
       guidance_version: guidance,
     };
+    await finalize(batch);
+    if (utf8Length(JSON.stringify(batch)) > session.budget.limits.resultBytes)
+      throw new ReadError('exceeds_limits', 'Name study batch does not fit');
+    return batch;
   }
   return searchBatch(
     session,
@@ -104,5 +116,6 @@ async function nameOccurrences(
     token,
     guidance,
     notes,
+    {finalize},
   );
 }

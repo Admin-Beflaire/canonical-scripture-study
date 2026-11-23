@@ -3,6 +3,7 @@ import {
   checkRequest,
   type SearchAdapter,
   type SearchPosition,
+  type SearchHit,
 } from '../read/search.ts';
 import type {ReadSession} from '../read/session.ts';
 import {ReadError, limitation, type Limitation} from '../read/states.ts';
@@ -79,6 +80,12 @@ export const SEARCH_CHECKS: Readonly<Record<string, PositionCheck>> =
     },
   });
 
+interface SearchBatchOptions {
+  countHits?: (hits: SearchHit[]) => number | Promise<number>;
+  /** Wraps each candidate before its serialized size is checked. */
+  finalize?: (batch: Batch) => void | Promise<void>;
+}
+
 /** One bounded search batch. Works with any adapter that honours the search contract. */
 export async function searchBatch(
   session: ReadSession,
@@ -87,9 +94,7 @@ export async function searchBatch(
   continuation: string | null,
   guidanceVersion: string,
   notes: Limitation[] = [],
-  countHits?: (
-    hits: import('../read/search.ts').SearchHit[],
-  ) => number | Promise<number>,
+  {countHits, finalize}: SearchBatchOptions = {},
 ): Promise<Batch> {
   const normalized = normalizeSearchWorkload(workload);
   let position: SearchPosition | null = null;
@@ -114,8 +119,18 @@ export async function searchBatch(
   });
   if (result.resume_after.length !== result.hits.length)
     throw new ReadError('corrupt', 'Search adapter broke its result contract');
-  const build = (count: number) =>
-    makeBatch(session, normalized, result, count, notes, guidanceVersion);
+  const build = async (count: number) => {
+    const batch = await makeBatch(
+      session,
+      normalized,
+      result,
+      count,
+      notes,
+      guidanceVersion,
+    );
+    await finalize?.(batch);
+    return batch;
+  };
   // The envelope (scopes, limitations, continuation) can outgrow its reserve; then deliver fewer
   // hits and continue after the last one delivered, rather than failing the whole batch.
   let count = countHits

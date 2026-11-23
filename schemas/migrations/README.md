@@ -40,3 +40,8 @@ kind, entry key, lookup key and the byte position and digest of its line in the 
 entries file. Rows are immutable and, like other output rows, cannot change while the
 output is selected. The wording and details are not in D1. Older annotation-based aid
 rows stay until their outputs are replaced and removed.
+
+`0011_drop_aid_json_indexes.sql` drops the four partial indexes on JSON expressions over
+`annotations.details_json` that `0008` and `0009` added for language aids. Study reads
+aids through `aid_entries` only, so nothing uses them; dropping them also makes the
+removal of old aid rows cheaper.

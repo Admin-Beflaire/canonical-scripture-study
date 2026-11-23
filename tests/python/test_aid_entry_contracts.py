@@ -49,6 +49,23 @@ class AidEntryContractsTests(unittest.TestCase):
         self.db.execute("INSERT INTO release_outputs VALUES ('r1', ?)", (output_id,))
         self.db.execute("UPDATE release_selection SET current_release_id = 'r1'")
 
+    def test_the_json_expression_indexes_of_the_old_aid_rows_are_gone(self):
+        names = {
+            row[0]
+            for row in self.db.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )
+        }
+        for gone in (
+            "annotations_lexicon_entry_key",
+            "annotations_lexicon_strong_base",
+            "annotations_grammar_code",
+            "annotations_proper_name_tag",
+        ):
+            self.assertNotIn(gone, names)
+        for kept in ("annotations_span", "aid_entries_lookup", "aid_entries_entry_key"):
+            self.assertIn(kept, names)
+
     def test_record_schema_accepts_a_row_and_refuses_bad_ones(self):
         records = RecordSet()
         records.add("aid_entry", ROW)

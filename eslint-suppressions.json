@@ -169,5 +169,10 @@
     "complexity": {
       "count": 1
     }
+  },
+  "tests/study/study.test.ts": {
+    "max-lines-per-function": {
+      "count": 1
+    }
   }
 }

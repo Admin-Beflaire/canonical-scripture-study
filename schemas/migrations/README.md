@@ -45,3 +45,19 @@ rows stay until their outputs are replaced and removed.
 `annotations.details_json` that `0008` and `0009` added for language aids. Study reads
 aids through `aid_entries` only, so nothing uses them; dropping them also makes the
 removal of old aid rows cheaper.
+
+`0012_compact_aid_keys.sql` stores one integer key per language-aid output and
+uses it in the entry table and its lookup indexes. The `aid_entries` view keeps
+the existing preparation record shape. Study uses indexed lookups with the same
+text output IDs and cursor order.
+
+`0013_annotation_source_metadata.sql` stores identical provider and basis
+values for textual-variant notes once per source revision. The `annotations`
+view reconstructs the existing records. Migration preserves existing notes and
+leaves other annotation kinds inline.
+
+Apply both migrations with the Control deployment and follow with the matching
+Study deployment. The previous Study build uses an index hint against
+`annotations` that SQLite cannot apply to a view. Keep these steps together in
+a maintenance window. A code-only rollback must use a Study build compatible
+with the migrated schema.

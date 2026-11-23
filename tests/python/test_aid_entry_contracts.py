@@ -110,14 +110,16 @@ class AidEntryContractsTests(unittest.TestCase):
     def test_lookups_use_their_indexes_and_come_back_in_a_fixed_order(self):
         self.insert()
         self.insert(output_id="aid_entries:two", entry=3, entry_key="tbesh:3")
-        by_key = (
-            f"SELECT output_id, entry FROM {TABLE} WHERE kind = 'lexicon_entry' AND lookup_key = ? "
-            "ORDER BY output_id, entry"
-        )
-        by_entry = (
-            f"SELECT output_id, entry FROM {TABLE} WHERE kind = 'lexicon_entry' AND entry_key = ? "
-            "ORDER BY output_id, entry"
-        )
+
+        def lookup(index, field):
+            return (
+                f"SELECT k.output_id, e.entry FROM aid_output_keys k "
+                f"CROSS JOIN aid_entry_rows e INDEXED BY {index} ON e.output_key = k.key "
+                f"WHERE e.kind = 'lexicon_entry' AND e.{field} = ? ORDER BY k.output_id, e.entry"
+            )
+
+        by_key = lookup("aid_entries_lookup", "lookup_key")
+        by_entry = lookup("aid_entries_entry_key", "entry_key")
         for sql, value in ((by_key, "H0001"), (by_entry, "tbesh:3")):
             plan = " ".join(
                 row[3] for row in self.db.execute("EXPLAIN QUERY PLAN " + sql, (value,))
@@ -128,6 +130,72 @@ class AidEntryContractsTests(unittest.TestCase):
             self.db.execute(by_key, ("H0001",)).fetchall(),
             [("aid_entries:one", 0), ("aid_entries:two", 3)],
         )
+
+
+class CompactEvidenceMigrationTests(unittest.TestCase):
+    def test_existing_selected_evidence_round_trips_and_stays_immutable(self):
+        fixture = json.loads(
+            (ROOT / "tests/conformance/evidence-records.v1.json").read_text()
+        )
+        db = sqlite3.connect(":memory:")
+        self.addCleanup(db.close)
+        db.execute("PRAGMA foreign_keys=ON")
+        migrations = sorted((ROOT / "schemas/migrations").glob("*.sql"))
+        for path in migrations[:11]:
+            db.executescript(path.read_text())
+        records = RecordSet()
+        for kind, rows in fixture["records"].items():
+            if kind not in MANIFEST["record_tables"] or kind.startswith("release"):
+                continue
+            for row in rows:
+                records.add(kind, row)
+        for sql, params in records.statements():
+            db.execute(sql, params)
+        db.execute(
+            """INSERT INTO annotations SELECT 'variant-a',output_id,source_revision_id,span_id,
+            'textual_variants',provider,basis_json,details_json FROM annotations WHERE id='annotation-a'"""
+        )
+        db.execute(
+            "INSERT INTO annotations SELECT 'variant-b',output_id,source_revision_id,span_id,kind,provider,basis_json,details_json FROM annotations WHERE id='variant-a'"
+        )
+        output = db.execute(
+            "SELECT output_id FROM annotations WHERE id='variant-a'"
+        ).fetchone()[0]
+        db.execute(
+            "INSERT INTO aid_entries VALUES (?, 0, 'lexicon_entry', 'key', 'H0001', 0, 10, ?)",
+            (output, SHA),
+        )
+        db.execute(
+            """INSERT INTO releases VALUES ('selected', 'm', 'r', '{"evidence_records":"1"}', 'c', 'q', 's')"""
+        )
+        db.execute("INSERT INTO release_outputs VALUES ('selected', ?)", (output,))
+        db.execute("UPDATE release_selection SET current_release_id='selected'")
+        before = {
+            table: db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()
+            for table in ("aid_entries", "annotations")
+        }
+        for path in migrations[11:13]:
+            db.executescript("BEGIN;\n" + path.read_text() + "\nCOMMIT;")
+        for table, rows in before.items():
+            self.assertEqual(
+                db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall(), rows
+            )
+        self.assertEqual(db.execute("PRAGMA foreign_key_check").fetchall(), [])
+        self.assertEqual(
+            db.execute("SELECT COUNT(*) FROM annotation_source_metadata").fetchone(),
+            (1,),
+        )
+        self.assertEqual(
+            db.execute(
+                "SELECT COUNT(*) FROM annotation_rows WHERE provider IS NULL AND basis_json IS NULL"
+            ).fetchone(),
+            (2,),
+        )
+        for table in before:
+            with self.assertRaisesRegex(
+                sqlite3.IntegrityError, "Selected output rows are immutable"
+            ):
+                db.execute(f"DELETE FROM {table} WHERE output_id=?", (output,))
 
 
 if __name__ == "__main__":

@@ -49,7 +49,6 @@ tests/study/read-only.test.ts
 tests/study/reader-mappings.test.ts
 tests/study/results.test.ts
 tests/study/search.test.ts
-tests/study/study.test.ts
 tools/build.mjs
 tools/check-boundaries.mjs
 tools/cloudflare/study-fit-fixture.ts

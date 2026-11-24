@@ -122,9 +122,6 @@
   "services/study/src/read/search.ts": {
     "complexity": {
       "count": 4
-    },
-    "max-lines-per-function": {
-      "count": 1
     }
   },
   "services/study/src/scope/references.ts": {

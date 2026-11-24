@@ -283,6 +283,59 @@ function coverageSummary(
   };
 }
 
+interface ScanState {
+  fresh: SearchPosition;
+  last: [number, string] | null;
+  lastPage: PageRef | null;
+  skipThrough: [number, string] | null;
+  resumeEntry: number;
+}
+type ScanOutcome = SearchPosition | 'withheld' | null;
+
+const invalidContinuation = () =>
+  new ReadError('invalid_request', 'Continuation does not match the selected index; start the search again');
+
+function stopAt(state: ScanState, dir: number, entry: number): SearchPosition {
+  return state.last && state.lastPage
+    ? {...state.fresh, dir, entry, after: state.last, anchor: state.lastPage}
+    : state.fresh;
+}
+
+function withholdIndex(
+  result: SearchResult, group: Group, state: ReadError['state'], detail: string,
+): 'withheld' {
+  result.limitations.push(limitation(
+    state, group.source, `${detail}; the rest of this index output was not searched`,
+  ));
+  return 'withheld';
+}
+
+async function readPostingsPage(
+  session: ReadSession, manifest: IndexManifest, ref: PageRef,
+): Promise<string> {
+  const text = await readArtifact(session, manifest.postings.get(ref.file)!, {
+    offset: ref.offset, length: ref.length, sha256: ref.sha256,
+  });
+  if (!text.endsWith('\n')) throw new ReadError('corrupt', 'Index page is not line-aligned');
+  return text;
+}
+
+function groupScope(
+  group: Group, manifest: IndexManifest, capability: string,
+  resume: SearchPosition | null,
+): SearchedScope {
+  return {
+    source_revision_id: group.source, capability,
+    coverage_state: manifest.coverage_state,
+    unit_count: manifest.unit_ids.length,
+    first_unit: manifest.unit_ids[0], last_unit: manifest.unit_ids.at(-1)!,
+    order_range: manifest.order_range,
+    normalization_rule: manifest.normalization_rule,
+    complete: false,
+    resumed_after: resume?.after ?? null,
+  };
+}
+
 /** Reads only the D1 rows and R2 pages needed for one exact key, in deterministic order:
  *  source revision, index output by `order_range`, then (native order, occurrence ID). */
 export class PagedIndexSearch implements SearchAdapter {
@@ -398,137 +451,83 @@ export class PagedIndexSearch implements SearchAdapter {
     return null;
   }
 
-  // eslint-disable-next-line max-lines-per-function -- Existing paged reader exceeds size limit after formatting.
   private async searchGroup(
-    session: ReadSession,
-    group: Group,
-    capability: string,
-    key: string,
-    resume: SearchPosition | null,
-    result: SearchResult,
+    session: ReadSession, group: Group, capability: string, key: string,
+    resume: SearchPosition | null, result: SearchResult,
   ): Promise<SearchPosition | null> {
-    const order = group.order?.[0] ?? 0;
-    if (
-      group.state === 'missing' ||
-      group.state === 'unresolved' ||
-      !group.manifestId
-    ) {
-      result.limitations.push(
-        limitation(
-          'missing_index',
-          group.source,
-          group.limitation ?? `Index coverage is ${group.state}`,
-        ),
-      );
-      return null;
+    const opened = await this.openGroup(session, group, capability, resume, result);
+    if ('stop' in opened) return opened.stop;
+    const {manifest, fresh} = opened;
+    const scope = groupScope(group, manifest, capability, resume);
+    result.searched.push(scope);
+    if (manifest.coverage_state !== 'available')
+      result.limitations.push(limitation(
+        'missing_index', group.source,
+        manifest.coverage_limitation ?? `Index coverage is ${manifest.coverage_state}`,
+      ));
+    const state: ScanState = {
+      fresh, last: resume?.after ?? null, lastPage: resume?.anchor ?? null,
+      skipThrough: null, resumeEntry: 0,
+    };
+    const stop = await this.scanDirectories(
+      session, group, manifest, key, resume, state, result,
+    );
+    if (stop === 'withheld') return null;
+    if (stop) return stop;
+    scope.complete = true;
+    return null;
+  }
+
+  private async openGroup(
+    session: ReadSession, group: Group, capability: string,
+    resume: SearchPosition | null, result: SearchResult,
+  ): Promise<{manifest: IndexManifest; fresh: SearchPosition} | {stop: SearchPosition | null}> {
+    if (group.state === 'missing' || group.state === 'unresolved' || !group.manifestId) {
+      result.limitations.push(limitation(
+        'missing_index', group.source,
+        group.limitation ?? `Index coverage is ${group.state}`,
+      ));
+      return {stop: null};
     }
     if (!group.order) {
-      result.limitations.push(
-        limitation(
-          'incompatible_index',
-          group.source,
-          'Index has no native order range; it must be rebuilt',
-        ),
-      );
-      return null;
+      result.limitations.push(limitation(
+        'incompatible_index', group.source,
+        'Index has no native order range; it must be rebuilt',
+      ));
+      return {stop: null};
     }
     const fresh: SearchPosition = {
-      source: group.source,
-      output: group.output,
-      order,
-      dir: 0,
-      entry: 0,
-      after: null,
-      anchor: null,
+      source: group.source, output: group.output, order: group.order[0],
+      dir: 0, entry: 0, after: null, anchor: null,
     };
     let manifest: IndexManifest;
     try {
       const loaded = await this.manifest(session, group, capability);
-      if (!loaded) return resume ?? fresh;
+      if (!loaded) return {stop: resume ?? fresh};
       manifest = loaded;
     } catch (error) {
       if (!(error instanceof ReadError)) throw error;
-      result.limitations.push(
-        limitation(error.state, group.source, error.message),
-      );
-      return null;
+      result.limitations.push(limitation(error.state, group.source, error.message));
+      return {stop: null};
     }
-    if (
-      manifest.order_range[0] !== group.order[0] ||
-      manifest.order_range[1] !== group.order[1]
-    ) {
-      result.limitations.push(
-        limitation(
-          'corrupt',
-          group.source,
-          'Index manifest: order range disagrees with the D1 record',
-        ),
-      );
-      return null;
+    if (manifest.order_range[0] !== group.order[0] ||
+        manifest.order_range[1] !== group.order[1]) {
+      result.limitations.push(limitation(
+        'corrupt', group.source,
+        'Index manifest: order range disagrees with the D1 record',
+      ));
+      return {stop: null};
     }
-    const invalid = () =>
-      new ReadError(
-        'invalid_request',
-        'Continuation does not match the selected index; start the search again',
-      );
+    return {manifest, fresh};
+  }
+
+  private async scanDirectories(
+    session: ReadSession, group: Group, manifest: IndexManifest, key: string,
+    resume: SearchPosition | null, state: ScanState, result: SearchResult,
+  ): Promise<ScanOutcome> {
     const directories = candidateDirectoryPages(manifest, key);
-    const files = [...manifest.postings.keys()];
-    // `last`/`lastPage`: the last delivered occurrence and the postings page holding it.
-    let last = resume?.after ?? null;
-    let lastPage: PageRef | null = resume?.anchor ?? null;
-    const stopAt = (dir: number, entry: number): SearchPosition =>
-      last && lastPage
-        ? {...fresh, dir, entry, after: last, anchor: lastPage}
-        : fresh;
-    let d = 0;
-    let e0 = 0;
-    let skipThrough: [number, string] | null = null; // resume inside the anchor page
-    if (resume?.after) {
-      d = directories.indexOf(resume.dir);
-      if (d < 0) throw invalid();
-    }
-    const scope: SearchedScope = {
-      source_revision_id: group.source,
-      capability,
-      coverage_state: manifest.coverage_state,
-      unit_count: manifest.unit_ids.length,
-      first_unit: manifest.unit_ids[0],
-      last_unit: manifest.unit_ids.at(-1)!,
-      order_range: manifest.order_range,
-      normalization_rule: manifest.normalization_rule,
-      complete: false,
-      resumed_after: resume?.after ?? null,
-    };
-    result.searched.push(scope);
-    if (manifest.coverage_state !== 'available')
-      result.limitations.push(
-        limitation(
-          'missing_index',
-          group.source,
-          manifest.coverage_limitation ??
-            `Index coverage is ${manifest.coverage_state}`,
-        ),
-      );
-    const withhold = (state: ReadError['state'], detail: string) => {
-      result.limitations.push(
-        limitation(
-          state,
-          group.source,
-          `${detail}; the rest of this index output was not searched`,
-        ),
-      );
-      return null;
-    };
-    const readPage = async (ref: PageRef) => {
-      const text = await readArtifact(
-        session,
-        manifest.postings.get(ref.file)!,
-        {offset: ref.offset, length: ref.length, sha256: ref.sha256},
-      );
-      if (!text.endsWith('\n'))
-        throw new ReadError('corrupt', 'Index page is not line-aligned');
-      return text;
-    };
+    let d = resume?.after ? directories.indexOf(resume.dir) : 0;
+    if (d < 0) throw invalidContinuation();
     for (; d < directories.length; d++) {
       const dir = directories[d];
       let entries: DirectoryEntry[] | null;
@@ -536,136 +535,143 @@ export class PagedIndexSearch implements SearchAdapter {
         entries = await this.directoryPage(session, manifest, dir);
       } catch (error) {
         if (!(error instanceof ReadError)) throw error;
-        return withhold(error.state, error.message);
+        return withholdIndex(result, group, error.state, error.message);
       }
-      if (!entries) return stopAt(dir, 0);
+      if (!entries) return stopAt(state, dir, 0);
       let e = 0;
       if (resume?.after && dir === resume.dir) {
-        // The next page must follow the anchor page byte for byte (or be the anchor page itself),
-        // and the anchor page must hold the exact last delivered occurrence.
-        const anchor = resume.anchor!;
-        const next = entries[resume.entry];
-        if (!next || !manifest.postings.has(anchor.file)) throw invalid();
-        const anchorFile = manifest.postings.get(anchor.file)!;
-        const inside =
-          next.postings_artifact_id === anchor.file &&
-          next.byte_offset === anchor.offset &&
-          next.byte_length === anchor.length &&
-          next.sha256 === anchor.sha256;
-        const follows =
-          next.postings_artifact_id === anchor.file
-            ? next.byte_offset === anchor.offset + anchor.length
-            : anchor.offset + anchor.length === anchorFile.byte_count &&
-              next.byte_offset === 0 &&
-              files.indexOf(next.postings_artifact_id) ===
-                files.indexOf(anchor.file) + 1;
-        if (
-          (!inside && !follows) ||
-          anchor.offset + anchor.length > anchorFile.byte_count ||
-          anchor.length > manifest.page_cap
-        )
-          throw invalid();
-        if (inside) skipThrough = resume.after;
-        else {
-          if (!session.budget.canRead(anchor.length))
-            return stopAt(dir, resume.entry);
-          let text: string;
-          try {
-            text = await readPage(anchor);
-          } catch (error) {
-            if (!(error instanceof ReadError)) throw error;
-            throw error.state === 'corrupt' ? invalid() : error;
-          }
-          const holds = text
-            .slice(0, -1)
-            .split('\n')
-            .some(line => {
-              try {
-                const p = JSON.parse(line);
-                return (
-                  p.search_key === key &&
-                  p.native_order === resume.after![0] &&
-                  p.occurrence_id === resume.after![1]
-                );
-              } catch {
-                return false;
-              }
-            });
-          if (!holds) throw invalid();
-        }
+        const pending = await this.verifyAnchor(
+          session, manifest, key, entries, resume, state, dir,
+        );
+        if (pending) return pending;
         e = resume.entry;
-        e0 = e;
       }
-      for (; e < entries.length; e++) {
-        const entry = entries[e];
-        if (!entryOverlaps(entry, key)) continue;
-        if (!session.budget.canRead(entry.byte_length)) return stopAt(dir, e);
-        const ref: PageRef = {
-          file: entry.postings_artifact_id,
-          offset: entry.byte_offset,
-          length: entry.byte_length,
-          sha256: entry.sha256,
-        };
-        let text: string;
-        try {
-          text = await readPage(ref);
-        } catch (error) {
-          if (!(error instanceof ReadError)) throw error;
-          return withhold(error.state, error.message);
-        }
-        let anchorSeen = false;
-        const anchorPage =
-          skipThrough !== null && dir === resume?.dir && e === e0;
-        for (const line of text.slice(0, -1).split('\n')) {
-          let posting: Record<string, unknown>;
-          try {
-            posting = JSON.parse(line);
-          } catch {
-            return withhold('corrupt', 'Unreadable posting');
-          }
-          if (posting.search_key !== key) continue;
-          const hit = checkPosting(posting, group.source, manifest);
-          if (!hit) return withhold('corrupt', 'Inconsistent posting');
-          const position: [number, string] = [
-            hit.native_order,
-            hit.occurrence_id,
-          ];
-          if (anchorPage && skipThrough) {
-            if (
-              position[0] === skipThrough[0] &&
-              position[1] === skipThrough[1]
-            ) {
-              anchorSeen = true;
-              continue;
-            }
-            if (notAfter(position, skipThrough)) continue;
-            if (!anchorSeen) throw invalid();
-            skipThrough = null;
-          }
-          if (last && notAfter(position, last))
-            return withhold('corrupt', 'Postings out of order');
-          const bytes = hitBytes(hit);
-          if (!session.budget.canReturn(bytes)) return stopAt(dir, e);
-          session.budget.spendResult(bytes);
-          result.hits.push(hit);
-          last = position;
-          lastPage = ref;
-          result.resume_after.push({
-            ...fresh,
-            dir,
-            entry: e,
-            after: position,
-            anchor: ref,
-          });
-        }
-        if (anchorPage && skipThrough) {
-          // the whole anchor page was delivered before
-          if (!anchorSeen) throw invalid();
-          skipThrough = null;
-        }
-      }
+      const stop = await this.scanEntries(
+        session, group, manifest, key, entries, dir, e, resume, state, result,
+      );
+      if (stop) return stop;
     }
-    scope.complete = true;
+    return null;
+  }
+
+  private async verifyAnchor(
+    session: ReadSession, manifest: IndexManifest, key: string,
+    entries: DirectoryEntry[], resume: SearchPosition, state: ScanState, dir: number,
+  ): Promise<SearchPosition | null> {
+    const anchor = resume.anchor!;
+    const next = entries[resume.entry];
+    if (!next || !manifest.postings.has(anchor.file)) throw invalidContinuation();
+    const anchorFile = manifest.postings.get(anchor.file)!;
+    const inside = next.postings_artifact_id === anchor.file &&
+      next.byte_offset === anchor.offset && next.byte_length === anchor.length &&
+      next.sha256 === anchor.sha256;
+    const files = [...manifest.postings.keys()];
+    const follows = next.postings_artifact_id === anchor.file
+      ? next.byte_offset === anchor.offset + anchor.length
+      : anchor.offset + anchor.length === anchorFile.byte_count &&
+        next.byte_offset === 0 &&
+        files.indexOf(next.postings_artifact_id) === files.indexOf(anchor.file) + 1;
+    if ((!inside && !follows) || anchor.offset + anchor.length > anchorFile.byte_count ||
+        anchor.length > manifest.page_cap) throw invalidContinuation();
+    if (inside) state.skipThrough = resume.after;
+    else {
+      if (!session.budget.canRead(anchor.length)) return stopAt(state, dir, resume.entry);
+      let text: string;
+      try {
+        text = await readPostingsPage(session, manifest, anchor);
+      } catch (error) {
+        if (!(error instanceof ReadError)) throw error;
+        throw error.state === 'corrupt' ? invalidContinuation() : error;
+      }
+      const holds = text.slice(0, -1).split('\n').some(line => {
+        try {
+          const p = JSON.parse(line);
+          return p.search_key === key && p.native_order === resume.after![0] &&
+            p.occurrence_id === resume.after![1];
+        } catch {
+          return false;
+        }
+      });
+      if (!holds) throw invalidContinuation();
+    }
+    state.resumeEntry = resume.entry;
+    return null;
+  }
+
+  private async scanEntries(
+    session: ReadSession, group: Group, manifest: IndexManifest, key: string,
+    entries: DirectoryEntry[], dir: number, from: number,
+    resume: SearchPosition | null, state: ScanState, result: SearchResult,
+  ): Promise<ScanOutcome> {
+    for (let e = from; e < entries.length; e++) {
+      const entry = entries[e];
+      if (!entryOverlaps(entry, key)) continue;
+      if (!session.budget.canRead(entry.byte_length)) return stopAt(state, dir, e);
+      const ref: PageRef = {
+        file: entry.postings_artifact_id, offset: entry.byte_offset,
+        length: entry.byte_length, sha256: entry.sha256,
+      };
+      let text: string;
+      try {
+        text = await readPostingsPage(session, manifest, ref);
+      } catch (error) {
+        if (!(error instanceof ReadError)) throw error;
+        return withholdIndex(result, group, error.state, error.message);
+      }
+      const stop = this.scanPostings(
+        session, group, manifest, key, text, ref, dir, e, resume, state, result,
+      );
+      if (stop === 'budget') return stopAt(state, dir, e);
+      if (stop === 'withheld') return stop;
+    }
+    return null;
+  }
+
+  private scanPostings(
+    session: ReadSession, group: Group, manifest: IndexManifest, key: string,
+    text: string, ref: PageRef, dir: number, entry: number,
+    resume: SearchPosition | null, state: ScanState, result: SearchResult,
+  ): 'budget' | 'withheld' | null {
+    let anchorSeen = false;
+    const anchorPage = state.skipThrough !== null &&
+      dir === resume?.dir && entry === state.resumeEntry;
+    for (const line of text.slice(0, -1).split('\n')) {
+      let posting: Record<string, unknown>;
+      try {
+        posting = JSON.parse(line);
+      } catch {
+        return withholdIndex(result, group, 'corrupt', 'Unreadable posting');
+      }
+      if (posting.search_key !== key) continue;
+      const hit = checkPosting(posting, group.source, manifest);
+      if (!hit) return withholdIndex(result, group, 'corrupt', 'Inconsistent posting');
+      const position: [number, string] = [hit.native_order, hit.occurrence_id];
+      if (anchorPage && state.skipThrough) {
+        if (position[0] === state.skipThrough[0] &&
+            position[1] === state.skipThrough[1]) {
+          anchorSeen = true;
+          continue;
+        }
+        if (notAfter(position, state.skipThrough)) continue;
+        if (!anchorSeen) throw invalidContinuation();
+        state.skipThrough = null;
+      }
+      if (state.last && notAfter(position, state.last))
+        return withholdIndex(result, group, 'corrupt', 'Postings out of order');
+      const bytes = hitBytes(hit);
+      if (!session.budget.canReturn(bytes)) return 'budget';
+      session.budget.spendResult(bytes);
+      result.hits.push(hit);
+      state.last = position;
+      state.lastPage = ref;
+      result.resume_after.push({
+        ...state.fresh, dir, entry, after: position, anchor: ref,
+      });
+    }
+    if (anchorPage && state.skipThrough) {
+      if (!anchorSeen) throw invalidContinuation();
+      state.skipThrough = null;
+    }
     return null;
   }
 

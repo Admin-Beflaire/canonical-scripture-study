@@ -473,6 +473,20 @@ function groupScope(
   };
 }
 
+function emptySearchResult(request: SearchRequest): SearchResult {
+  return {
+    state: 'complete',
+    lookup: request.lookup,
+    key: request.key,
+    hits: [],
+    searched: [],
+    limitations: [],
+    remaining: null,
+    ranked: false,
+    resume_after: [],
+  };
+}
+
 /** Reads only the D1 rows and R2 pages needed for one exact key, in deterministic order:
  *  source revision, index output by `order_range`, then (native order, occurrence ID). */
 export class PagedIndexSearch implements SearchAdapter {
@@ -481,17 +495,7 @@ export class PagedIndexSearch implements SearchAdapter {
     input: SearchRequest,
   ): Promise<SearchResult> {
     const request = checkRequest(input);
-    const result: SearchResult = {
-      state: 'complete',
-      lookup: request.lookup,
-      key: request.key,
-      hits: [],
-      searched: [],
-      limitations: [],
-      remaining: null,
-      ranked: false,
-      resume_after: [],
-    };
+    const result = emptySearchResult(request);
     if (UNSUPPORTED_LOOKUPS.includes(request.lookup as LookupKind)) {
       result.state = 'unsupported_capability';
       result.limitations.push(

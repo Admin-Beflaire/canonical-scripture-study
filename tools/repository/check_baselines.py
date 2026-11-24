@@ -1,11 +1,16 @@
-"""Fail when a baseline keeps an entry that no longer belongs in it.
+"""Fail when a baseline keeps an entry that no longer belongs in it, or grows.
 
 The baselines are the Prettier ignore list (.prettierignore), the Ruff format
-exclude list (ruff.toml) and the jscpd copied-code baseline
-(.jscpd-baseline.json). An entry must be removed in the change that formats
-its file or removes its copy, so the baselines only shrink. A change that
-modifies a file listed in a formatting baseline must format it and remove it
-from the list, so new code in such a file is never exempt.
+exclude list (ruff.toml), the ESLint suppressions (eslint-suppressions.json) and
+the jscpd copied-code baseline (.jscpd-baseline.json). An entry must be removed
+in the change that formats its file or removes its copy, so the baselines only
+shrink. A change that modifies a file listed in a formatting baseline must format
+it and remove it from the list, so new code in such a file is never exempt.
+
+No exception list may grow, whatever the size of the change: no new list entry,
+no higher suppression or copy count, and no more inline exception comments
+(eslint-disable, noqa, prettier-ignore, fmt: off, jscpd:ignore) in any file than
+at the base commit.
 """
 
 import importlib.util
@@ -95,6 +100,105 @@ def touched_baseline_files(root, base):
             (name, path) for path in changed if path in before and path in after
         ]
     return touched
+
+
+# Inline exceptions are lists too: a comment that switches a check off for code.
+INLINE_EXCEPTION = (
+    r"(//|/\*|#)[[:space:]]*"
+    r"(eslint-disable|noqa\b|ruff:[[:space:]]*noqa|prettier-ignore"
+    r"|fmt:[[:space:]]*(off|skip)|jscpd:ignore)"
+)
+CODE_FILES = ("*.ts", "*.mjs", "*.js", "*.py")
+# The checks and their tests name the comments they look for.
+NOT_COUNTED = (
+    ":(exclude)tests/standards",
+    ":(exclude)tools/repository/check_baselines.py",
+)
+
+
+def eslint_counts(text):
+    """Suppressed violations by "file: rule"; no file means no suppressions."""
+    if not text:
+        return {}
+    return {
+        f"{path}: {rule}": entry["count"]
+        for path, rules in json.loads(text).items()
+        for rule, entry in rules.items()
+    }
+
+
+def jscpd_counts(text):
+    return json.loads(text)["fingerprints"] if text else {}
+
+
+def risen(before, after):
+    """Keys whose count is higher than at the base, as (key, base, now)."""
+    return [
+        (key, before.get(key, 0), count)
+        for key, count in sorted(after.items())
+        if count > before.get(key, 0)
+    ]
+
+
+def inline_counts(root, base=None):
+    """Inline exception comments by file, at the base commit or in the working tree."""
+    command = ["git", "grep", "-c", "-I", "-E", "-e", INLINE_EXCEPTION]
+    command += [base] if base else ["--untracked"]
+    result = subprocess.run(
+        [*command, "--", *CODE_FILES, *NOT_COUNTED],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise RuntimeError("git grep could not count the inline exceptions")
+    prefix = f"{base}:" if base else ""
+    counts = {}
+    for line in result.stdout.splitlines():
+        path, number = line.removeprefix(prefix).rsplit(":", 1)
+        counts[path] = int(number)
+    return counts
+
+
+def read(root, name):
+    file = root / name
+    return file.read_text(encoding="utf-8") if file.is_file() else ""
+
+
+def growth_problems(root, base):
+    """What this change added to an exception list, compared with the base commit.
+
+    A list that did not exist at the base is being introduced and is not held to
+    it. Every other list may only shrink, whatever the size of the change.
+    """
+    if not base:
+        raise RuntimeError("No base commit to compare with; set CHECK_BASE")
+    problems = []
+    for name in BASELINES:
+        committed = committed_text(root, base, name)
+        if committed:
+            old = set(entries_of(name, committed))
+            problems += [
+                f"{name}: {entry} was added; lists only shrink, format the file instead"
+                for entry in entries_of(name, read(root, name))
+                if entry not in old
+            ]
+    for name, counts, advice in (
+        ("eslint-suppressions.json", eslint_counts, "fix the code, do not suppress it"),
+        (".jscpd-baseline.json", jscpd_counts, "remove the copy, do not record it"),
+    ):
+        committed = committed_text(root, base, name)
+        if committed:
+            problems += [
+                f"{name}: {key} rose from {was} to {now}; {advice}"
+                for key, was, now in risen(counts(committed), counts(read(root, name)))
+            ]
+    problems += [
+        f"{path}: {now} inline exception comment(s), {was} at the base; fix the code instead"
+        for path, was, now in risen(inline_counts(root, base), inline_counts(root))
+    ]
+    return problems
 
 
 def base_revision():
@@ -196,11 +300,16 @@ def main():
         f"{copy}: remove from .jscpd-baseline.json (npx jscpd --update-baseline); the copy is gone"
         for copy in jscpd_stale()
     ]
+    base = base_revision()
     problems += [
         f"{path}: changed while listed in {name}; format it and remove it from {name}"
-        for name, path in touched_baseline_files(ROOT, base_revision())
+        for name, path in touched_baseline_files(ROOT, base)
     ]
-    print("\n".join(problems) or "Baselines list only what still needs fixing.")
+    problems += growth_problems(ROOT, base)
+    print(
+        "\n".join(problems)
+        or "Baselines list only what still needs fixing and have not grown."
+    )
     return 1 if problems else 0
 
 

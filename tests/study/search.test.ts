@@ -117,6 +117,17 @@ test('exact word search returns attributed native references across partitions i
   );
 });
 
+function routeFixture(fixture: Fixture, outputs: string[]) {
+  // Fixtures select a release first, whereas Preparation creates routes before selection.
+  fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
+  for (const output of outputs) {
+    const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
+    fixture.db.sqlite
+      .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+      .run(output, JSON.stringify(keys));
+  }
+}
+
 /** Routes are derived from the postings; old outputs without routes remain searchable. */
 test('indexed output routing skips empty partitions without losing occurrences', async () => {
   clearSearchCache();
@@ -125,14 +136,7 @@ test('indexed output routing skips empty partitions without losing occurrences',
   const baseline = await once(fixture, request);
   assert.equal(baseline.result.state, 'complete');
   assert.equal(baseline.result.searched.length, 2);
-  // The fixture creates a selected release first; route rows normally precede selection.
-  fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
-  for (const output of ['syn-src-1', 'syn-src-2']) {
-    const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
-    fixture.db.sqlite
-      .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
-      .run(output, JSON.stringify(keys));
-  }
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
   // A new binding observes the newly prepared immutable routing; the per-binding
   // D1 result cache must not reuse a pre-route query from the same fixture.
   fixture.env.DATA_DB = {...fixture.db};
@@ -153,14 +157,7 @@ test('indexed output routing skips empty partitions without losing occurrences',
 test('a key absent from complete routed indexes is no_match, not missing coverage', async () => {
   clearSearchCache();
   const fixture = buildFixture();
-  // The fixture models routing applied at build time, before this release was selected.
-  fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
-  for (const output of ['syn-src-1', 'syn-src-2']) {
-    const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
-    fixture.db.sqlite
-      .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
-      .run(output, JSON.stringify(keys));
-  }
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
   const {result, usage} = await once(fixture, {
     lookup: 'word',
     key: 'unlisted',

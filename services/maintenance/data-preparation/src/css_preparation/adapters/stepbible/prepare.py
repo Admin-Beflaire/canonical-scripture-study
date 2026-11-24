@@ -92,7 +92,11 @@ def book_verses(
     for unit_id, rows in grouped.items():
         base = [_in_base(row, component) for row in rows]
         text, joined = join_forms(
-            (native_form(row, language) for row, keep in zip(rows, base, strict=False) if keep),
+            (
+                native_form(row, language)
+                for row, keep in zip(rows, base, strict=False)
+                if keep
+            ),
             language,
         )
         ranges, taken = [], iter(joined)

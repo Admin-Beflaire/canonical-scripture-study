@@ -215,12 +215,12 @@ test('routed coverage is retained when matching outputs span two D1 pages', asyn
   const fixture = buildFixture();
   routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
   const db = fixture.db.sqlite;
+  // Extend only this synthetic fixture, as if built before selection.
+  db.exec('DROP TRIGGER release_membership_insert_selected');
   db.exec(`INSERT INTO prepared_outputs
     SELECT 'syn-src-skipped', kind, input_revisions_json, method_version,
       parameters_json, native_extent_json, validation_basis_json
     FROM prepared_outputs WHERE id = 'syn-src-1'`);
-  db.exec(`INSERT INTO release_outputs (release_id, output_id)
-    VALUES ('rel-2', 'syn-src-skipped')`);
   db.exec(`INSERT INTO coverage
     (output_id, source_revision_id, native_extent_json, capability, state,
      method_version, index_artifact_id, dependencies_json, limitation)
@@ -228,8 +228,12 @@ test('routed coverage is retained when matching outputs span two D1 pages', asyn
       '{"unit_ids":["u3"],"order_range":[20000,29999]}', capability,
       state, method_version, NULL, dependencies_json, limitation
     FROM coverage WHERE output_id = 'syn-src-1'`);
-  db.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
-    .run('syn-src-skipped', '["not-alpha"]');
+  db.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)').run(
+    'syn-src-skipped',
+    '["not-alpha"]',
+  );
+  db.exec(`INSERT INTO release_outputs (release_id, output_id)
+    VALUES ('rel-2', 'syn-src-skipped')`);
   const run = await all(
     fixture,
     {lookup: 'word', key: 'alpha', sources: [A]},
@@ -252,6 +256,7 @@ test('routing keeps incompatible matching outputs as limitations', async () => {
   clearSearchCache();
   const fixture = buildFixture();
   routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  fixture.db.sqlite.exec('DROP TRIGGER coverage_immutable');
   fixture.db.sqlite.exec(`UPDATE coverage
     SET native_extent_json = json_remove(native_extent_json, '$.order_range')
     WHERE output_id = 'syn-src-2'`);

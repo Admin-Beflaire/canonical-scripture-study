@@ -228,10 +228,10 @@ test('routed coverage is retained when matching outputs span two D1 pages', asyn
       '{"unit_ids":["u3"],"order_range":[20000,29999]}', capability,
       state, method_version, NULL, dependencies_json, limitation
     FROM coverage WHERE output_id = 'syn-src-1'`);
-  db.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)').run(
-    'syn-src-skipped',
-    '["not-alpha"]',
+  const insertRoute = db.prepare(
+    'INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)',
   );
+  insertRoute.run('syn-src-skipped', '["not-alpha"]');
   db.exec(`INSERT INTO release_outputs (release_id, output_id)
     VALUES ('rel-2', 'syn-src-skipped')`);
   const run = await all(

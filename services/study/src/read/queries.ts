@@ -230,7 +230,7 @@ LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
 WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
   AND (routed.output_id IS NULL OR idx.state != 'available'
     OR EXISTS (SELECT 1 FROM index_route_keys rk
-      WHERE rk.search_key = ?4 AND rk.output_id = routed.output_id))
+      WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key))
 ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
 LIMIT ?8`;
 

@@ -33,6 +33,7 @@ TABLES: dict[str, str] = {
     **_AID_TABLES,
     **_INDEX_ROUTE_TABLES,
     "span_segment": "span_segments",
+    "index_route_key": "index_route_key_records",
 }
 # Place reader links after the native spans they reference.
 ORDER = (
@@ -60,6 +61,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "text_payload": ("content_id",),
     "artifact": ("id",),
     "index_route": ("output_id",),
+    "index_route_key": ("output_id", "search_key"),
     "native_span": ("id",),
     "span_segment": ("span_id", "segment_ordinal"),
     "annotation": ("id",),
@@ -230,6 +232,7 @@ class RecordSet:
 _BY_OUTPUT = (
     "artifact",
     "index_route",
+    "index_route_key",
     "native_span",
     "annotation",
     "relationship",

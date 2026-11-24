@@ -68,7 +68,9 @@ export const OUTPUT_ROWS = [
   `DELETE FROM coverage WHERE output_id = ?`,
   `DELETE FROM study_packages WHERE output_id = ?`,
   `DELETE FROM native_spans WHERE output_id = ?`,
-  `DELETE FROM index_route_keys WHERE output_id = ?`,
+  `DELETE FROM index_route_keys WHERE (search_key, output_key) IN (
+    SELECT j.value, r.output_key FROM index_routes r, json_each(r.keys_json) j
+    WHERE r.output_id = ?)`,
   `DELETE FROM index_routes WHERE output_id = ?`,
   `DELETE FROM artifacts WHERE output_id = ?`,
   `DELETE FROM prepared_outputs WHERE id = ?`,

@@ -229,6 +229,7 @@ def check_saved_semantics(  # noqa: C901, PLR0915
     ):
         text = source(index.input_revisions[0])
         bases = text.scalar_bases()
+        posting_keys: set[str] = set()
         for artifact in (
             r
             for r in artifacts.values()
@@ -242,6 +243,9 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                     raise RecordError("Saved native posting is malformed") from error
                 if not isinstance(posting, dict):
                     raise RecordError("Saved native posting is not an object")
+                if not isinstance(posting.get("search_key"), str):
+                    raise RecordError("Saved native posting has no search key")
+                posting_keys.add(posting["search_key"])
                 ref = posting.get("native_reference")
                 if (
                     not isinstance(ref, dict)
@@ -292,6 +296,17 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                     pieces
                 ):
                     raise RecordError("Saved word form disagrees with source wording")
+
+        route_rows = [r for r in rows["index_route"] if r["output_id"] == index.output_id]
+        if index.parameters.get("index_routing") == "key-output/1":
+            if len(route_rows) != 1 or set(route_rows[0]["keys_json"]) != posting_keys:
+                raise RecordError("Saved index routing differs from posting keys")
+            expanded = read_rows("index_route_key", [index.output_id])
+            if (len(expanded) != len(posting_keys)
+                    or {r["search_key"] for r in expanded} != posting_keys):
+                raise RecordError("Saved indexed routing pairs differ from posting keys")
+        elif route_rows:
+            raise RecordError("Unrouted index unexpectedly has routing metadata")
 
     coverage = tuple(
         sorted(

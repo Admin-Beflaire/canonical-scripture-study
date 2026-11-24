@@ -164,7 +164,7 @@ class CandidateStageTwo(unittest.TestCase):
 
     def test_index_routing_basis_can_coexist_with_legacy_saved_index(self):
         original = self.candidate()
-        first = self.invoke('prepare', lambda _: original)
+        self.invoke('prepare', lambda _: original)
         text = text_a()
         evidence = evidence_a()
         parts = build_source_postings(

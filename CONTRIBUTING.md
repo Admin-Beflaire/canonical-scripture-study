@@ -85,10 +85,14 @@ that judgement.
 Existing findings are recorded as a baseline, so only new problems fail. The
 baseline only gets smaller, and the goal is that every list ends empty. No list
 grows, whatever the size of the change: new code adds nothing to a list, and
-`check:baselines` fails on a new list entry, a higher suppression or copy count,
-and on more inline exception comments (`eslint-disable`, `noqa`,
-`prettier-ignore`, `fmt: off`, `jscpd:ignore`) in a file than at the base
-commit. A finding that formatting or a change reveals is fixed in that change,
+`check:baselines` fails on a new list entry or ignore pattern (a folder or glob
+in `.prettierignore`, `ruff.toml`, `.jscpd.json` or the ESLint ignores), a higher
+suppression or copy count, and on a directive that switches a check off
+(`eslint-disable`, `noqa`, `prettier-ignore`, `fmt: off`, `jscpd:ignore`) that
+the file did not have at the base commit, counted per rule: adding a rule to a
+`noqa`, a `noqa` without codes, or widening a next-line `eslint-disable` to the
+whole file is growth. A list or config that is new compared with the base starts
+from empty. A finding that formatting or a change reveals is fixed in that change,
 never recorded. Code you touch leaves the lists smaller; a small fix (a few lines
 in existing functions, no new function or file) need not empty its file, but
 still adds nothing:

@@ -349,9 +349,78 @@ class ListGrowthChecks(unittest.TestCase):
 
         problems = growth_after(add)
         self.assertEqual(len(problems), 1)
-        self.assertIn(
-            "old.py: 2 inline exception comment(s), 1 at the base", problems[0]
-        )
+        self.assertIn("old.py: noqa F401: 1 directive(s), 0 at the base", problems[0])
+
+    def test_a_broader_directive_on_the_same_line_fails(self):
+        def broaden(root):
+            Path(root, "old.py").write_text("a  # noqa: C901, PLR0915\n")
+
+        problems = growth_after(broaden)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("old.py: noqa PLR0915", problems[0])
+
+    def test_a_directive_that_names_no_rule_fails(self):
+        def bare(root):
+            Path(root, "old.py").write_text("a  # noqa\n")
+            Path(root, "old.ts").write_text("// eslint-disable-next-line\na\n")
+
+        problems = growth_after(bare)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("old.py: noqa *", problems[0])
+        self.assertIn("old.ts: eslint-disable-next-line *", problems[1])
+
+    def test_a_next_line_directive_made_file_wide_fails(self):
+        def widen(root):
+            Path(root, "old.ts").write_text("/* eslint-disable complexity */\na\n")
+
+        problems = growth_after(widen)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("old.ts: eslint-disable complexity", problems[0])
+
+    def test_a_directive_that_switches_off_no_more_passes(self):
+        def reword(root):
+            Path(root, "old.py").write_text("x = 1\na  # noqa: C901 -- reason\n")
+            Path(root, "old.ts").write_text(
+                "a\n// eslint-disable-next-line complexity -- reason\nb\n"
+            )
+
+        self.assertEqual(growth_after(reword), [])
+
+    def test_a_new_ignore_pattern_fails_even_for_a_folder(self):
+        def add(root):
+            Path(root, ".prettierignore").write_text(
+                "# baseline\ndist/\nold.ts\nservices/\n*.generated.ts\n"
+            )
+
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("services/ was added", problems[0])
+        self.assertIn("*.generated.ts was added", problems[1])
+
+    def test_new_ruff_jscpd_and_eslint_ignores_fail(self):
+        def add(root):
+            Path(root, "ruff.toml").write_text(
+                '[format]\nexclude = ["old.py"]\n'
+                '[lint]\nignore = ["E501"]\n'
+                '[lint.per-file-ignores]\n"x.py" = ["F401"]\n'
+            )
+            Path(root, ".jscpd.json").write_text(json.dumps({"ignore": ["a/**"]}))
+            Path(root, "eslint.config.mjs").write_text(
+                "export default defineConfig(globalIgnores(['dist/', 'gen/']), "
+                "{ignores: ['x.ts']});\n"
+            )
+
+        # The base has no eslint.config.mjs, so its "dist/" is new as well.
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 6)
+        for entry in (
+            "lint.ignore: E501",
+            "x.py F401",
+            "a/**",
+            "gen/",
+            "x.ts",
+        ):
+            self.assertTrue(any(entry in problem for problem in problems), entry)
 
     def test_an_exception_moved_to_another_file_fails(self):
         def move(root):
@@ -379,7 +448,7 @@ class ListGrowthChecks(unittest.TestCase):
             Path(root, "new.ts").write_text("// eslint-disable\n")
             self.assertEqual(len(baselines.growth_problems(root, base)), 1)
 
-    def test_a_list_that_is_introduced_is_not_held_to_the_base(self):
+    def test_a_list_that_is_introduced_starts_from_empty(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             base = repository_before_lists(root)
@@ -389,7 +458,10 @@ class ListGrowthChecks(unittest.TestCase):
             )
             git(root, "add", "-A")
             git(root, "commit", "-q", "-m", "introduce")
-            self.assertEqual(baselines.growth_problems(root, base), [])
+            problems = baselines.growth_problems(root, base)
+            self.assertEqual(len(problems), 2)
+            self.assertIn(".prettierignore: old.ts was added", problems[0])
+            self.assertIn("old.ts: complexity rose from 0 to 1", problems[1])
 
     def test_an_unknown_base_is_an_error(self):
         with tempfile.TemporaryDirectory() as folder:

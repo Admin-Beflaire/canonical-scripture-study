@@ -52,6 +52,13 @@ def _same_as_expected(
             raise RecordError(f"Saved {kind} differs from the checked {what}")
 
 
+def _posting_key(posting: dict[str, Any]) -> str:
+    key = posting.get("search_key")
+    if not isinstance(key, str):
+        raise RecordError("Saved native posting has no search key")
+    return key
+
+
 def _check_index_routes(
     index: OutputBasis,
     posting_keys: set[str],
@@ -265,9 +272,7 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                     raise RecordError("Saved native posting is malformed") from error
                 if not isinstance(posting, dict):
                     raise RecordError("Saved native posting is not an object")
-                if not isinstance(posting.get("search_key"), str):
-                    raise RecordError("Saved native posting has no search key")
-                posting_keys.add(posting["search_key"])
+                posting_keys.add(_posting_key(posting))
                 ref = posting.get("native_reference")
                 if (
                     not isinstance(ref, dict)

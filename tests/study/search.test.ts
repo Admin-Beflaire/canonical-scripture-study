@@ -144,6 +144,17 @@ test('index route access path uses the search-key primary index', () => {
     detail,
     /SEARCH rk USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/,
   );
+  const verifyPlan = fixture.db.sqlite
+    .prepare(
+      'EXPLAIN QUERY PLAN SELECT * FROM index_route_key_records WHERE output_id = ? LIMIT 500',
+    )
+    .all('syn-src-1');
+  const verifyDetail = verifyPlan.map(row => String(row.detail)).join('\n');
+  assert.match(
+    verifyDetail,
+    /SEARCH k USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/,
+  );
+  assert.doesNotMatch(verifyDetail, /SCAN k\b/);
 });
 
 /** Routes are derived from the postings; old outputs without routes remain searchable. */
@@ -172,8 +183,10 @@ test('indexed output routing skips empty partitions without losing occurrences',
     routed.result.searched.filter(s => !s.routing_summary).length,
     1,
   );
-  assert.ok(
-    routed.result.searched.some(s => s.routing_summary && s.unit_count > 0),
+  const skipped = routed.result.searched.filter(s => s.routing_summary);
+  assert.deepEqual(
+    skipped.map(s => [s.first_unit, s.last_unit, s.order_range]),
+    [['u1', 'u1', [0, 9999]]],
   );
   assert.ok(
     routed.usage.r2Reads < baseline.usage.r2Reads,
@@ -195,6 +208,61 @@ test('a key absent from complete routed indexes is no_match, not missing coverag
   assert.equal(result.hits.length, 0);
   assert.ok(result.searched.some(s => s.routing_summary && s.unit_count > 0));
   assert.equal(usage.r2Reads, 0);
+});
+
+test('routed coverage is retained when matching outputs span two D1 pages', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  const db = fixture.db.sqlite;
+  db.exec(`INSERT INTO prepared_outputs
+    SELECT 'syn-src-skipped', kind, input_revisions_json, method_version,
+      parameters_json, native_extent_json, validation_basis_json
+    FROM prepared_outputs WHERE id = 'syn-src-1'`);
+  db.exec(`INSERT INTO release_outputs (release_id, output_id)
+    VALUES ('rel-2', 'syn-src-skipped')`);
+  db.exec(`INSERT INTO coverage
+    (output_id, source_revision_id, native_extent_json, capability, state,
+     method_version, index_artifact_id, dependencies_json, limitation)
+    SELECT 'syn-src-skipped', source_revision_id,
+      '{"unit_ids":["u3"],"order_range":[20000,29999]}', capability,
+      state, method_version, NULL, dependencies_json, limitation
+    FROM coverage WHERE output_id = 'syn-src-1'`);
+  db.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+    .run('syn-src-skipped', '["not-alpha"]');
+  const run = await all(
+    fixture,
+    {lookup: 'word', key: 'alpha', sources: [A]},
+    {...roomy, rowsPerQuery: 4},
+  );
+  assert.ok(run.results.length > 1);
+  assert.deepEqual(
+    run.hits.map(h => h.occurrence_id),
+    expected(fixture, ['syn-src-1', 'syn-src-2'], 'alpha'),
+  );
+  assert.deepEqual(
+    run.results.flatMap(r =>
+      r.searched.filter(s => s.routing_summary).map(s => s.order_range),
+    ),
+    [[20000, 29999]],
+  );
+});
+
+test('routing keeps incompatible matching outputs as limitations', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  fixture.db.sqlite.exec(`UPDATE coverage
+    SET native_extent_json = json_remove(native_extent_json, '$.order_range')
+    WHERE output_id = 'syn-src-2'`);
+  const {result} = await once(fixture, {
+    lookup: 'word',
+    key: 'epsilon',
+    sources: [A],
+  });
+  assert.equal(result.state, 'incomplete');
+  assert.ok(result.limitations.some(l => l.state === 'incompatible_index'));
+  assert.ok(result.searched.some(s => s.routing_summary));
 });
 
 test('exact search can use cached index metadata after its D1 allowance is spent', async () => {

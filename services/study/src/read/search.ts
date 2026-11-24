@@ -270,20 +270,14 @@ interface SourceExtent {
   last_unit: string;
   units: number;
   rule: string | null;
-  skipped: number;
 }
 
 /** The selected index can prove a key absent without opening any R2 page. */
 function coverageSummary(
   row: Record<string, unknown>,
   capability: string,
+  extents: SourceExtent[],
 ): SearchedScope {
-  let extents: SourceExtent[];
-  try {
-    extents = JSON.parse(String(row.extents)) as SourceExtent[];
-  } catch {
-    throw new ReadError('corrupt', 'Invalid selected index coverage');
-  }
   if (
     !Array.isArray(extents) ||
     !extents.length ||
@@ -629,7 +623,7 @@ export class PagedIndexSearch implements SearchAdapter {
         !(
           compareUtf8(source, start.source) < 0 ||
           (source === start.source && start.output !== '')
-        ) && !(next && compareUtf8(source, next.source) >= 0),
+        ) && !(next && compareUtf8(source, next.source) > 0),
     );
     if (!sources.length) return true;
     const seen = new Set(groups.map(group => group.source));
@@ -653,8 +647,8 @@ export class PagedIndexSearch implements SearchAdapter {
       } catch {
         throw new ReadError('corrupt', 'Invalid selected index coverage');
       }
-      if (Array.isArray(extents) && extents.some(e => e.skipped === 1))
-        result.searched.push(coverageSummary(row, capability));
+      if (Array.isArray(extents) && extents.length)
+        result.searched.push(coverageSummary(row, capability, extents));
     }
     for (const source of sources)
       if (!found.has(source))

@@ -246,12 +246,11 @@ const INDEX_SOURCES = `SELECT c.source_revision_id,
     'first_unit', json_extract(c.native_extent_json, '$.unit_ids[0]'),
     'last_unit', json_extract(c.native_extent_json, '$.unit_ids[#-1]'),
     'units', json_array_length(c.native_extent_json, '$.unit_ids'),
-    'rule', json_extract(p.parameters_json, '$.normalization_rule'),
-    'skipped', CASE WHEN c.state = 'available' AND routed.output_key IS NOT NULL
+    'rule', json_extract(p.parameters_json, '$.normalization_rule')
+  )) FILTER (WHERE c.state = 'available' AND routed.output_key IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM index_route_keys rk
         WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key)
-      THEN 1 ELSE 0 END
-  )) AS extents
+  ) AS extents
 FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
 JOIN prepared_outputs p ON p.id = c.output_id
 LEFT JOIN index_routes routed ON routed.output_id = c.output_id

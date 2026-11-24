@@ -13,7 +13,9 @@ CREATE TABLE index_route_keys (
 -- Expose saved pairs for semantic verification without a second write path.
 CREATE VIEW index_route_key_records AS
 SELECT r.output_id, k.search_key
-FROM index_route_keys k JOIN index_routes r ON r.output_key = k.output_key;
+FROM index_routes r
+CROSS JOIN json_each(r.keys_json) j
+JOIN index_route_keys k ON k.search_key = j.value AND k.output_key = r.output_key;
 CREATE TRIGGER index_routes_keys_insert AFTER INSERT ON index_routes BEGIN
   INSERT INTO index_route_keys(search_key, output_key)
   SELECT DISTINCT value, NEW.output_key FROM json_each(NEW.keys_json)

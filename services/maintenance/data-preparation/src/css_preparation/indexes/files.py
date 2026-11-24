@@ -95,6 +95,23 @@ def _object_key(output_id: str, sha256: str, filename: str) -> str:
     return f"prepared/{identity[1]}/{identity[2]}/indexes/{sha256}/{filename}"
 
 
+def _add_index_route(
+    records: RecordSet, partition: SourcePartition | WordPartition
+) -> None:
+    """Derive the route from the complete immutable postings."""
+    if partition.basis.parameters.get("index_routing") == "key-output/1":
+        records.add(
+            "index_route",
+            {
+                "output_id": partition.basis.output_id,
+                "keys_json": sorted(
+                    {row["search_key"] for row in partition.postings},
+                    key=lambda key: key.encode("utf-8"),
+                ),
+            },
+        )
+
+
 def build_index_files(  # noqa: C901, PLR0915
     partition: SourcePartition | WordPartition,
     *,
@@ -266,19 +283,7 @@ def build_index_files(  # noqa: C901, PLR0915
     manifest_id = f"{output_id}:manifest:{manifest_digest[:20]}"
     records = RecordSet()
     records.add("prepared_output", basis.row())
-    # Derived from the same complete postings, not from external reference lists.
-    # D1 expands this single row into indexed key/output pairs in the same transaction.
-    if basis.parameters.get("index_routing") == "key-output/1":
-        records.add(
-            "index_route",
-            {
-                "output_id": output_id,
-                "keys_json": sorted(
-                    {row["search_key"] for row in partition.postings},
-                    key=lambda key: key.encode("utf-8"),
-                ),
-            },
-        )
+    _add_index_route(records, partition)
     for artifact_id, data, sha, filename, kind in (
         (posting_id, content, digest, "postings.ndjson", POSTINGS_FORMAT),
         (

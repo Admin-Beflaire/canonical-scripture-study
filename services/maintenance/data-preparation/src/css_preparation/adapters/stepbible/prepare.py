@@ -147,7 +147,9 @@ def _label(unit_id: str) -> str:
 
 def _variant_entries(verse: Verse, component: Component) -> list[dict[str, Any]]:
     entries = []
-    for position, (word, span) in enumerate(zip(verse.words, verse.ranges), start=1):  # noqa: B905
+    for position, (word, span) in enumerate(
+        zip(verse.words, verse.ranges, strict=False), start=1
+    ):
         meaning, spelling = word.cells[5], word.cells[6]
         entry: dict[str, Any] = {"row": position, "type": word.text_type}
         if component.source.language == "greek":
@@ -261,7 +263,7 @@ def _observations(
         verse = rows[unit]
         owner = [
             (word, span)
-            for word, span in zip(verse.words, verse.ranges)  # noqa: B905
+            for word, span in zip(verse.words, verse.ranges, strict=False)
             if span is not None and span[0] <= start and end <= span[1]
         ]
         if len(owner) != 1:

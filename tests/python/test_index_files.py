@@ -205,7 +205,7 @@ class IndexFilesStageThree(unittest.TestCase):
         legacy = replace(base.basis)
         _check_index_routes(legacy, keys, [], read_pairs)
         with self.assertRaisesRegex(RecordError, "Unrouted"):
-            _check_index_routes(legacy, keys, [route], read_pairs)
+            _check_index_routes(legacy, keys, [{**route, "output_id": legacy.output_id}], read_pairs)
 
     def test_common_utf8_key_spans_postings_and_directory_pages_without_lost_rows(self):
         base = self.parts[0]

@@ -13,7 +13,7 @@ import json
 from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
-from ..prepare.evidence import NativeText, span_wording
+from ..prepare.evidence import NativeText, OutputBasis, span_wording
 from ..prepare.records import KEYS, ORDER, SHARED, RecordError, RecordSet, comparable
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
 
@@ -50,6 +50,27 @@ def _same_as_expected(
         wanted = [comparable(kind, row) for row in expected.rows(kind)]
         if sorted(rows[kind], key=key) != sorted(wanted, key=key):
             raise RecordError(f"Saved {kind} differs from the checked {what}")
+
+
+def _check_index_routes(
+    index: OutputBasis,
+    posting_keys: set[str],
+    route_rows: Sequence[dict[str, Any]],
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
+) -> None:
+    """A route may exclude a key only after both stored forms match the saved postings."""
+    owned = [row for row in route_rows if row["output_id"] == index.output_id]
+    if index.parameters.get("index_routing") != "key-output/1":
+        if owned:
+            raise RecordError("Unrouted index unexpectedly has routing metadata")
+        return
+    if len(owned) != 1 or set(owned[0]["keys_json"]) != posting_keys:
+        raise RecordError("Saved index routing differs from posting keys")
+    expanded = read_rows("index_route_key", [index.output_id])
+    if len(expanded) != len(posting_keys) or {
+        row["search_key"] for row in expanded
+    } != posting_keys:
+        raise RecordError("Saved indexed routing pairs differ from posting keys")
 
 
 def check_saved_semantics(  # noqa: C901, PLR0915
@@ -297,16 +318,7 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                 ):
                     raise RecordError("Saved word form disagrees with source wording")
 
-        route_rows = [r for r in rows["index_route"] if r["output_id"] == index.output_id]
-        if index.parameters.get("index_routing") == "key-output/1":
-            if len(route_rows) != 1 or set(route_rows[0]["keys_json"]) != posting_keys:
-                raise RecordError("Saved index routing differs from posting keys")
-            expanded = read_rows("index_route_key", [index.output_id])
-            if (len(expanded) != len(posting_keys)
-                    or {r["search_key"] for r in expanded} != posting_keys):
-                raise RecordError("Saved indexed routing pairs differ from posting keys")
-        elif route_rows:
-            raise RecordError("Unrouted index unexpectedly has routing metadata")
+        _check_index_routes(index, posting_keys, rows["index_route"], read_rows)
 
     coverage = tuple(
         sorted(

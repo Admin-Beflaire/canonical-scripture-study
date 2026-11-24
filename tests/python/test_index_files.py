@@ -8,6 +8,7 @@ import unittest
 from css_preparation.indexes.files import build_index_files
 from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.records import RecordError
+from css_preparation.validate.semantic import _check_index_routes
 from css_preparation.validation import SchemaSubset
 from preparation_fixture import evidence_a, text_a
 from test_source_index_builder import RULES, configured_basis
@@ -173,6 +174,38 @@ class IndexFilesStageThree(unittest.TestCase):
         self.assertEqual(
             sum("INSERT INTO index_routes" in sql for sql, _ in records.statements()), 1
         )
+
+    def test_saved_route_rejects_missing_summary_and_expanded_pairs(self):
+        base = self.parts[0]
+        basis = replace(
+            base.basis,
+            parameters={**base.basis.parameters, "index_routing": "key-output/1"},
+        )
+        built = build_index_files(replace(base, basis=basis))
+        [route] = built.records.rows("index_route")
+        keys = set(route["keys_json"])
+        pairs = [
+            {"output_id": basis.output_id, "search_key": key} for key in sorted(keys)
+        ]
+        def read_pairs(kind, outputs):
+            self.assertEqual((kind, outputs), ("index_route_key", [basis.output_id]))
+            return pairs
+
+        _check_index_routes(basis, keys, [route], read_pairs)
+        with self.assertRaisesRegex(RecordError, "routing differs"):
+            _check_index_routes(
+                basis, keys, [{**route, "keys_json": route["keys_json"][1:]}], read_pairs,
+            )
+        with self.assertRaisesRegex(RecordError, "pairs differ"):
+            _check_index_routes(basis, keys, [route], lambda *_: pairs[:-1])
+        with self.assertRaisesRegex(RecordError, "pairs differ"):
+            _check_index_routes(basis, keys, [route], lambda *_: pairs + pairs[:1])
+        with self.assertRaisesRegex(RecordError, "routing differs"):
+            _check_index_routes(basis, keys, [], read_pairs)
+        legacy = replace(base.basis)
+        _check_index_routes(legacy, keys, [], read_pairs)
+        with self.assertRaisesRegex(RecordError, "Unrouted"):
+            _check_index_routes(legacy, keys, [route], read_pairs)
 
     def test_common_utf8_key_spans_postings_and_directory_pages_without_lost_rows(self):
         base = self.parts[0]

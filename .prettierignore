@@ -12,7 +12,6 @@ services/maintenance/control/src/contracts.ts
 services/study/src/index.ts
 services/study/src/operators/passage.ts
 services/study/src/read/manifest.ts
-services/study/src/read/search.ts
 services/study/src/results/batch.ts
 services/study/src/results/continuation.ts
 services/study/src/results/index.ts

@@ -234,9 +234,20 @@ WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= 
 ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
 LIMIT ?8`;
 
-/** Distinguish a key absent in a selected index from a missing selected index. */
-const INDEX_SOURCES = `SELECT c.source_revision_id
+/** Report the selected index coverage independently of the keys routed to R2 files.
+ *  One bounded summary per source, including outputs skipped by the exact-key route. */
+const INDEX_SOURCES = `SELECT c.source_revision_id,
+  json_group_array(json_object(
+    'state', c.state,
+    'first', json_extract(c.native_extent_json, '$.order_range[0]'),
+    'last', json_extract(c.native_extent_json, '$.order_range[1]'),
+    'first_unit', json_extract(c.native_extent_json, '$.unit_ids[0]'),
+    'last_unit', json_extract(c.native_extent_json, '$.unit_ids[#-1]'),
+    'units', json_array_length(c.native_extent_json, '$.unit_ids'),
+    'rule', json_extract(p.parameters_json, '$.normalization_rule')
+  )) AS extents
 FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+JOIN prepared_outputs p ON p.id = c.output_id
 WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
 GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?4`;
 

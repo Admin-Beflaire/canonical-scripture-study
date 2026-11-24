@@ -102,6 +102,8 @@ export interface SearchedScope {
   normalization_rule: string;
   complete: boolean;
   resumed_after: [number, string] | null;
+  /** Source-wide selected-index coverage; not a claim that R2 pages were opened. */
+  routing_summary?: true;
 }
 
 /** `complete`: every selected candidate page was read and no gaps were found.
@@ -239,10 +241,51 @@ function remember<T>(cache: Map<string, T>, key: string, value: T) {
   cache.set(key, value);
 }
 
+interface SourceExtent {
+  state: string;
+  first: number;
+  last: number;
+  first_unit: string;
+  last_unit: string;
+  units: number;
+  rule: string;
+}
+
+/** The selected index can prove a key absent without opening any R2 page. */
+function coverageSummary(
+  row: Record<string, unknown>,
+  capability: string,
+): SearchedScope {
+  let extents: SourceExtent[];
+  try {
+    extents = JSON.parse(String(row.extents)) as SourceExtent[];
+  } catch {
+    throw new ReadError('corrupt', 'Invalid selected index coverage');
+  }
+  if (!Array.isArray(extents) || !extents.length || extents.some(e =>
+    !isSafeCount(e.first) || !isSafeCount(e.last) ||
+    typeof e.first_unit !== 'string' || typeof e.last_unit !== 'string' ||
+    !isSafeCount(e.units) || typeof e.rule !== 'string'))
+    throw new ReadError('corrupt', 'Invalid selected index coverage');
+  extents.sort((a, b) => a.first - b.first);
+  return {
+    source_revision_id: String(row.source_revision_id),
+    capability,
+    coverage_state: extents.every(e => e.state === 'available') ? 'available' : 'partial',
+    unit_count: extents.reduce((n, e) => n + e.units, 0),
+    first_unit: extents[0].first_unit,
+    last_unit: extents.at(-1)!.last_unit,
+    order_range: [extents[0].first, Math.max(...extents.map(e => e.last))],
+    normalization_rule: extents[0].rule,
+    complete: true,
+    resumed_after: null,
+    routing_summary: true,
+  };
+}
+
 /** Reads only the D1 rows and R2 pages needed for one exact key, in deterministic order:
  *  source revision, index output by `order_range`, then (native order, occurrence ID). */
 export class PagedIndexSearch implements SearchAdapter {
-  // eslint-disable-next-line max-lines-per-function -- Existing routine exceeds size limit after formatting.
   async search(
     session: ReadSession,
     input: SearchRequest,
@@ -261,142 +304,98 @@ export class PagedIndexSearch implements SearchAdapter {
     };
     if (UNSUPPORTED_LOOKUPS.includes(request.lookup as LookupKind)) {
       result.state = 'unsupported_capability';
-      result.limitations.push(
-        limitation(
-          'unsupported_capability',
-          request.lookup,
-          `${request.lookup} search is not offered by the current indexes; nothing was searched`,
-        ),
-      );
+      result.limitations.push(limitation(
+        'unsupported_capability', request.lookup,
+        `${request.lookup} search is not offered by the current indexes; nothing was searched`,
+      ));
       return result;
     }
     const resumed = request.position !== null;
     const capability = CAPABILITY[request.lookup];
-    const searchKey =
-      request.lookup === 'word'
-        ? request.key
-        : `${request.lookup}:${request.key}`;
+    const searchKey = request.lookup === 'word' ? request.key : `${request.lookup}:${request.key}`;
     const start: SearchPosition = request.position ?? {
-      source: request.sources[0],
-      output: '',
-      order: 0,
-      dir: 0,
-      entry: 0,
-      after: null,
-      anchor: null,
+      source: request.sources[0], output: '', order: 0,
+      dir: 0, entry: 0, after: null, anchor: null,
     };
+    const selected = await this.selectGroups(session, request, start, capability, searchKey);
+    if (!selected) return finish(result, start, resumed);
+    if (!await this.recordCoverage(session, request, capability, result))
+      return finish(result, start, resumed);
+    const stop = await this.scanGroups(
+      session, selected.groups, start, capability, searchKey, result,
+    );
+    if (stop) return finish(result, stop, resumed);
+    const next = selected.next;
+    return finish(result, next ? {
+      source: next.source, output: next.output, order: next.order?.[0] ?? 0,
+      dir: 0, entry: 0, after: null, anchor: null,
+    } : null, resumed);
+  }
+
+  private async selectGroups(
+    session: ReadSession, request: SearchRequest, start: SearchPosition,
+    capability: string, key: string,
+  ): Promise<{groups: Group[]; next?: Group} | null> {
     const indexInput: IndexFilesInput = {
-      source_revision_ids: request.sources,
-      capability,
-      key: searchKey,
-      after: [
-        start.source,
-        start.output === '' ? -1 : start.order,
-        start.output,
-      ],
+      source_revision_ids: request.sources, capability, key,
+      after: [start.source, start.output === '' ? -1 : start.order, start.output],
     };
     const indexRows = await session.queryIfAvailable('index_files', indexInput);
-    if (indexRows === null) return finish(result, start, resumed);
-    const {rows, more} = indexRows;
-    const groups = groupRows(rows);
+    if (!indexRows) return null;
+    const groups = groupRows(indexRows.rows);
     let next: Group | undefined;
-    if (more) {
-      // One output filling the whole window would return the same position for ever.
+    if (indexRows.more) {
       if (groups.length < 2)
-        throw new ReadError(
-          'exceeds_limits',
-          'One index output has more registered files than a query may return',
-        );
+        throw new ReadError('exceeds_limits', 'One index output has more registered files than a query may return');
       next = groups.pop();
     }
-    // A resume anchor must name an index output selected now, at the same order position.
     const anchor = groups[0] ?? next;
-    if (
-      start.output !== '' &&
-      (!anchor ||
-        anchor.source !== start.source ||
-        anchor.output !== start.output ||
-        anchor.order?.[0] !== start.order)
-    )
-      throw new ReadError(
-        'invalid_request',
-        'Continuation does not match the selected index; start the search again',
-      );
-    const seen = new Set(groups.map(g => g.source));
-    const candidates = request.sources.filter(
-      source =>
-        !(
-          compareUtf8(source, start.source) < 0 ||
-          (source === start.source && start.output !== '')
-        ) &&
-        !(next && compareUtf8(source, next.source) >= 0) &&
-        !seen.has(source),
-    );
-    if (candidates.length) {
-      // A selected source can have zero matches without having missing coverage.
-      const covered = await session.queryIfAvailable('index_sources', {
-        source_revision_ids: candidates,
-        capability,
-      });
-      if (covered === null) return finish(result, start, resumed);
-      const present = new Set(covered.rows.map(row => row.source_revision_id));
-      for (const source of candidates)
-        if (!present.has(source))
-          result.limitations.push(
-            limitation(
-              'missing_index',
-              source,
-              `No selected ${capability} index for this source`,
-            ),
-          );
+    if (start.output !== '' && (!anchor || anchor.source !== start.source ||
+      anchor.output !== start.output || anchor.order?.[0] !== start.order))
+      throw new ReadError('invalid_request', 'Continuation does not match the selected index; start the search again');
+    return {groups, next};
+  }
+
+  private async recordCoverage(
+    session: ReadSession, request: SearchRequest,
+    capability: string, result: SearchResult,
+  ): Promise<boolean> {
+    const covered = await session.queryIfAvailable('index_sources', {
+      source_revision_ids: request.sources, capability,
+    });
+    if (!covered) return false;
+    const found = new Set<string>();
+    for (const row of covered.rows) {
+      found.add(String(row.source_revision_id));
+      result.searched.push(coverageSummary(row, capability));
     }
+    for (const source of request.sources)
+      if (!found.has(source))
+        result.limitations.push(limitation(
+          'missing_index', source, `No selected ${capability} index for this source`,
+        ));
+    return true;
+  }
+
+  private async scanGroups(
+    session: ReadSession, groups: Group[], start: SearchPosition,
+    capability: string, key: string, result: SearchResult,
+  ): Promise<SearchPosition | null> {
     let previous: Group | undefined;
     for (const group of groups) {
-      if (
-        previous?.source === group.source &&
-        previous.order &&
-        group.order &&
-        group.order[0] <= previous.order[1]
-      ) {
-        result.limitations.push(
-          limitation(
-            'corrupt',
-            group.source,
-            'Index outputs overlap in native order; later output withheld',
-          ),
-        );
+      if (previous?.source === group.source && previous.order && group.order &&
+          group.order[0] <= previous.order[1]) {
+        result.limitations.push(limitation(
+          'corrupt', group.source, 'Index outputs overlap in native order; later output withheld',
+        ));
         continue;
       }
       previous = group;
-      const resume =
-        group.source === start.source && group.output === start.output
-          ? start
-          : null;
-      const stop = await this.searchGroup(
-        session,
-        group,
-        capability,
-        searchKey,
-        resume,
-        result,
-      );
-      if (stop) return finish(result, stop, resumed);
+      const resume = group.source === start.source && group.output === start.output ? start : null;
+      const stop = await this.searchGroup(session, group, capability, key, resume, result);
+      if (stop) return stop;
     }
-    return finish(
-      result,
-      next
-        ? {
-            source: next.source,
-            output: next.output,
-            order: next.order?.[0] ?? 0,
-            dir: 0,
-            entry: 0,
-            after: null,
-            anchor: null,
-          }
-        : null,
-      resumed,
-    );
+    return null;
   }
 
   // eslint-disable-next-line max-lines-per-function -- Existing paged reader exceeds size limit after formatting.

@@ -92,9 +92,9 @@ def book_verses(
     for unit_id, rows in grouped.items():
         base = [_in_base(row, component) for row in rows]
         text, joined = join_forms(
-            (native_form(row, language) for row, keep in zip(rows, base) if keep),
+            (native_form(row, language) for row, keep in zip(rows, base, strict=False) if keep),
             language,
-        )  # noqa: B905
+        )
         ranges, taken = [], iter(joined)
         for keep in base:
             ranges.append(next(taken) if keep else None)
@@ -205,8 +205,8 @@ def evidence_specs(
             )
         if component.source.language == "hebrew":
             for position, (word, span) in enumerate(
-                zip(verse.words, verse.ranges), start=1
-            ):  # noqa: B905
+                zip(verse.words, verse.ranges, strict=False), start=1
+            ):
                 letters = outer_type_letters(word.text_type)
                 if span is None or span[0] == span[1] or letters.startswith("L"):
                     continue

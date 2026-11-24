@@ -95,9 +95,9 @@ def _object_key(output_id: str, sha256: str, filename: str) -> str:
     return f"prepared/{identity[1]}/{identity[2]}/indexes/{sha256}/{filename}"
 
 
-def build_index_files(
+def build_index_files(  # noqa: C901, PLR0915
     partition: SourcePartition | WordPartition,
-    *,  # noqa: C901, PLR0915
+    *,
     encoded_page_cap_bytes: int = PAGE_CAP,
 ) -> IndexFiles:
     """Turn one bounded source/word partition into postings, a paged directory and a manifest.

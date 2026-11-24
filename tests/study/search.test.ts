@@ -140,7 +140,10 @@ test('index route access path uses the search-key primary index', () => {
     .prepare(`EXPLAIN QUERY PLAN ${QUERIES.index_files.sql}`)
     .all('rel-2', ...(params as Array<string | number | null>), 41);
   const detail = plan.map(row => String(row.detail)).join('\n');
-  assert.match(detail, /SEARCH rk USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/);
+  assert.match(
+    detail,
+    /SEARCH rk USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/,
+  );
 });
 
 /** Routes are derived from the postings; old outputs without routes remain searchable. */
@@ -150,7 +153,10 @@ test('indexed output routing skips empty partitions without losing occurrences',
   const request: SearchRequest = {lookup: 'word', key: 'epsilon', sources: [A]};
   const baseline = await once(fixture, request);
   assert.equal(baseline.result.state, 'complete');
-  assert.equal(baseline.result.searched.filter(s => !s.routing_summary).length, 2);
+  assert.equal(
+    baseline.result.searched.filter(s => !s.routing_summary).length,
+    2,
+  );
   routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
   // A new binding observes the newly prepared immutable routing; the per-binding
   // D1 result cache must not reuse a pre-route query from the same fixture.
@@ -162,8 +168,13 @@ test('indexed output routing skips empty partitions without losing occurrences',
     routed.result.hits.map(h => h.occurrence_id),
     baseline.result.hits.map(h => h.occurrence_id),
   );
-  assert.equal(routed.result.searched.filter(s => !s.routing_summary).length, 1);
-  assert.ok(routed.result.searched.some(s => s.routing_summary && s.unit_count > 0));
+  assert.equal(
+    routed.result.searched.filter(s => !s.routing_summary).length,
+    1,
+  );
+  assert.ok(
+    routed.result.searched.some(s => s.routing_summary && s.unit_count > 0),
+  );
   assert.ok(
     routed.usage.r2Reads < baseline.usage.r2Reads,
     'the irrelevant partition is never opened',

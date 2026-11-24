@@ -500,7 +500,7 @@ FROM json_each(?2) wanted WHERE EXISTS (
       ...(optionalAfter(i.after, 2) ?? ['', '']),
     ],
   },
-  statement: {sql: STATEMENT, params: (_: StatementInput) => []},
+  statement: {sql: STATEMENT, params: () => []},
   release_sources: {
     sql: RELEASE_SOURCES,
     params: (i: ReleaseSourcesInput) => [

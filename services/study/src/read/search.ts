@@ -143,73 +143,55 @@ const CAPABILITY: Record<string, string> = {
   grammar: 'grammar_exact',
 };
 
+/** An anchor is verified against its actual posting page before any resume. */
+function validPageAnchor(raw: unknown): raw is PageRef {
+  if (!raw || typeof raw !== 'object') return false;
+  const anchor = raw as PageRef;
+  return isIdentifier(anchor.file) && isSafeCount(anchor.offset) &&
+    isSafeCount(anchor.length) && anchor.length > 0 &&
+    typeof anchor.sha256 === 'string' && /^[0-9a-f]{64}$/.test(anchor.sha256);
+}
+
+function validSearchAfter(pos: SearchPosition): boolean {
+  if (pos.after === null)
+    return pos.dir === 0 && pos.entry === 0 && pos.anchor === null;
+  return validPageAnchor(pos.anchor) && Array.isArray(pos.after) &&
+    pos.after.length === 2 && isSafeCount(pos.after[0]) &&
+    isIdentifier(pos.after[1]);
+}
+
+function validPosition(pos: SearchPosition, sources: string[]): boolean {
+  if (!pos || typeof pos !== 'object' || !sources.includes(pos.source))
+    return false;
+  const root = pos.output === ''
+    ? pos.order === 0 && pos.dir === 0 && pos.entry === 0 && pos.after === null
+    : isIdentifier(pos.output);
+  return root && isSafeCount(pos.order) && isSafeCount(pos.dir) &&
+    isSafeCount(pos.entry) && validSearchAfter(pos);
+}
+
+function checkedSources(sources: unknown): string[] {
+  if (!Array.isArray(sources) || sources.length < 1 || sources.length > 20 ||
+      !sources.every(s => isIdentifier(s)) ||
+      new Set(sources).size !== sources.length)
+    throw new ReadError('invalid_request', 'Expected a short list of distinct source revisions');
+  return sources as string[];
+}
+
 /** Normalises and checks a request. Unknown kinds are invalid; known unsupported kinds are explicit. */
 export function checkRequest(request: SearchRequest): SearchRequest {
   if (!request || typeof request !== 'object')
     throw new ReadError('invalid_request', 'Missing search request');
-  if (
-    ![...SUPPORTED_LOOKUPS, ...UNSUPPORTED_LOOKUPS].includes(
-      request.lookup as LookupKind,
-    )
-  )
+  if (![...SUPPORTED_LOOKUPS, ...UNSUPPORTED_LOOKUPS].includes(request.lookup as LookupKind))
     throw new ReadError('invalid_request', 'Unknown lookup kind');
-  if (
-    typeof request.key !== 'string' ||
-    request.key.length < 1 ||
-    request.key.length > 256 ||
-    /[\uD800-\uDFFF]/u.test(request.key)
-  )
+  if (typeof request.key !== 'string' || request.key.length < 1 ||
+      request.key.length > 256 || /[\uD800-\uDFFF]/u.test(request.key))
     throw new ReadError('invalid_request', 'Invalid search key');
-  const sources = request.sources;
-  if (
-    !Array.isArray(sources) ||
-    sources.length < 1 ||
-    sources.length > 20 ||
-    !sources.every(s => isIdentifier(s)) ||
-    new Set(sources).size !== sources.length
-  )
-    throw new ReadError(
-      'invalid_request',
-      'Expected a short list of distinct source revisions',
-    );
+  const sources = checkedSources(request.sources);
   const position = request.position ?? null;
-  if (position !== null) {
-    const ok =
-      position &&
-      typeof position === 'object' &&
-      sources.includes(position.source) &&
-      (position.output === ''
-        ? position.order === 0 &&
-          position.dir === 0 &&
-          position.entry === 0 &&
-          position.after === null
-        : isIdentifier(position.output)) &&
-      isSafeCount(position.order) &&
-      isSafeCount(position.dir) &&
-      isSafeCount(position.entry) &&
-      (position.after === null
-        ? position.dir === 0 && position.entry === 0 && position.anchor === null
-        : !!position.anchor &&
-          typeof position.anchor === 'object' &&
-          isIdentifier(position.anchor.file) &&
-          isSafeCount(position.anchor.offset) &&
-          isSafeCount(position.anchor.length) &&
-          position.anchor.length > 0 &&
-          typeof position.anchor.sha256 === 'string' &&
-          /^[0-9a-f]{64}$/.test(position.anchor.sha256)) &&
-      (position.after === null ||
-        (Array.isArray(position.after) &&
-          position.after.length === 2 &&
-          isSafeCount(position.after[0]) &&
-          isIdentifier(position.after[1])));
-    if (!ok) throw new ReadError('invalid_request', 'Invalid search position');
-  }
-  return {
-    lookup: request.lookup,
-    key: request.key,
-    sources: [...sources].sort(compareUtf8),
-    position,
-  };
+  if (position !== null && !validPosition(position, sources))
+    throw new ReadError('invalid_request', 'Invalid search position');
+  return {lookup: request.lookup, key: request.key, sources: [...sources].sort(compareUtf8), position};
 }
 
 interface Group {
@@ -320,6 +302,53 @@ async function readPostingsPage(
   });
   if (!text.endsWith('\n')) throw new ReadError('corrupt', 'Index page is not line-aligned');
   return text;
+}
+
+function anchorFollows(
+  entries: DirectoryEntry[], resume: SearchPosition, manifest: IndexManifest,
+): boolean {
+  const anchor = resume.anchor!;
+  const next = entries[resume.entry];
+  if (!next || !manifest.postings.has(anchor.file)) return false;
+  const file = manifest.postings.get(anchor.file)!;
+  const inside = next.postings_artifact_id === anchor.file &&
+    next.byte_offset === anchor.offset && next.byte_length === anchor.length &&
+    next.sha256 === anchor.sha256;
+  const files = [...manifest.postings.keys()];
+  const follows = next.postings_artifact_id === anchor.file
+    ? next.byte_offset === anchor.offset + anchor.length
+    : anchor.offset + anchor.length === file.byte_count && next.byte_offset === 0 &&
+      files.indexOf(next.postings_artifact_id) === files.indexOf(anchor.file) + 1;
+  return (inside || follows) && anchor.offset + anchor.length <= file.byte_count &&
+    anchor.length <= manifest.page_cap;
+}
+
+function anchorIsInside(
+  next: DirectoryEntry, anchor: PageRef,
+): boolean {
+  return next.postings_artifact_id === anchor.file && next.byte_offset === anchor.offset &&
+    next.byte_length === anchor.length && next.sha256 === anchor.sha256;
+}
+
+function containsLastDelivered(text: string, key: string, after: [number, string]): boolean {
+  return text.slice(0, -1).split('\n').some(line => {
+    try {
+      const p = JSON.parse(line);
+      return p.search_key === key && p.native_order === after[0] &&
+        p.occurrence_id === after[1];
+    } catch {
+      return false;
+    }
+  });
+}
+
+function anchorPosition(
+  position: [number, string], through: [number, string], anchorSeen: boolean,
+): 'anchor' | 'before' | 'after' {
+  if (position[0] === through[0] && position[1] === through[1]) return 'anchor';
+  if (notAfter(position, through)) return 'before';
+  if (!anchorSeen) throw invalidContinuation();
+  return 'after';
 }
 
 function groupScope(
@@ -579,21 +608,9 @@ export class PagedIndexSearch implements SearchAdapter {
     entries: DirectoryEntry[], resume: SearchPosition, state: ScanState, dir: number,
   ): Promise<SearchPosition | null> {
     const anchor = resume.anchor!;
-    const next = entries[resume.entry];
-    if (!next || !manifest.postings.has(anchor.file)) throw invalidContinuation();
-    const anchorFile = manifest.postings.get(anchor.file)!;
-    const inside = next.postings_artifact_id === anchor.file &&
-      next.byte_offset === anchor.offset && next.byte_length === anchor.length &&
-      next.sha256 === anchor.sha256;
-    const files = [...manifest.postings.keys()];
-    const follows = next.postings_artifact_id === anchor.file
-      ? next.byte_offset === anchor.offset + anchor.length
-      : anchor.offset + anchor.length === anchorFile.byte_count &&
-        next.byte_offset === 0 &&
-        files.indexOf(next.postings_artifact_id) === files.indexOf(anchor.file) + 1;
-    if ((!inside && !follows) || anchor.offset + anchor.length > anchorFile.byte_count ||
-        anchor.length > manifest.page_cap) throw invalidContinuation();
-    if (inside) state.skipThrough = resume.after;
+    if (!anchorFollows(entries, resume, manifest)) throw invalidContinuation();
+    if (anchorIsInside(entries[resume.entry], anchor))
+      state.skipThrough = resume.after;
     else {
       if (!session.budget.canRead(anchor.length)) return stopAt(state, dir, resume.entry);
       let text: string;
@@ -603,16 +620,7 @@ export class PagedIndexSearch implements SearchAdapter {
         if (!(error instanceof ReadError)) throw error;
         throw error.state === 'corrupt' ? invalidContinuation() : error;
       }
-      const holds = text.slice(0, -1).split('\n').some(line => {
-        try {
-          const p = JSON.parse(line);
-          return p.search_key === key && p.native_order === resume.after![0] &&
-            p.occurrence_id === resume.after![1];
-        } catch {
-          return false;
-        }
-      });
-      if (!holds) throw invalidContinuation();
+      if (!containsLastDelivered(text, key, resume.after!)) throw invalidContinuation();
     }
     state.resumeEntry = resume.entry;
     return null;
@@ -667,13 +675,12 @@ export class PagedIndexSearch implements SearchAdapter {
       if (!hit) return withholdIndex(result, group, 'corrupt', 'Inconsistent posting');
       const position: [number, string] = [hit.native_order, hit.occurrence_id];
       if (anchorPage && state.skipThrough) {
-        if (position[0] === state.skipThrough[0] &&
-            position[1] === state.skipThrough[1]) {
+        const step = anchorPosition(position, state.skipThrough, anchorSeen);
+        if (step === 'anchor') {
           anchorSeen = true;
           continue;
         }
-        if (notAfter(position, state.skipThrough)) continue;
-        if (!anchorSeen) throw invalidContinuation();
+        if (step === 'before') continue;
         state.skipThrough = null;
       }
       if (state.last && notAfter(position, state.last))
@@ -823,6 +830,20 @@ function groupRows(rows: Record<string, unknown>[]): Group[] {
   return groups;
 }
 
+function validPostingRef(
+  p: Record<string, unknown>, source: string,
+  manifest: IndexManifest, ref: SearchHit['native_reference'] | undefined,
+  expectedKind: string,
+): ref is SearchHit['native_reference'] {
+  return p.posting_kind === expectedKind && p.source_revision_id === source &&
+    isIdentifier(p.span_id) && isIdentifier(p.occurrence_id) &&
+    isSafeCount(p.native_order) && p.coordinate_version === manifest.coordinate_version &&
+    !!ref && ref.schema_version === 'native-reference/1' &&
+    ref.source_revision_id === p.source_revision_id &&
+    ref.coordinate_version === p.coordinate_version &&
+    Array.isArray(ref.segments) && ref.segments.length > 0;
+}
+
 function checkPosting(
   p: Record<string, unknown>,
   source: string,
@@ -831,21 +852,7 @@ function checkPosting(
   const ref = p.native_reference as SearchHit['native_reference'] | undefined;
   const expectedKind =
     manifest.index_kind === 'source_text' ? 'source' : 'word';
-  if (
-    p.posting_kind !== expectedKind ||
-    p.source_revision_id !== source ||
-    !isIdentifier(p.span_id) ||
-    !isIdentifier(p.occurrence_id) ||
-    !isSafeCount(p.native_order) ||
-    p.coordinate_version !== manifest.coordinate_version ||
-    !ref ||
-    ref.schema_version !== 'native-reference/1' ||
-    ref.source_revision_id !== p.source_revision_id ||
-    ref.coordinate_version !== p.coordinate_version ||
-    !Array.isArray(ref.segments) ||
-    ref.segments.length < 1
-  )
-    return null;
+  if (!validPostingRef(p, source, manifest, ref, expectedKind)) return null;
   const hit: SearchHit = {
     source_revision_id: source,
     span_id: p.span_id,

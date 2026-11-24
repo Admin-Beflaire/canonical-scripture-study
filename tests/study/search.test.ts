@@ -13,6 +13,7 @@ import {
   type SearchResult,
 } from '../../services/study/src/read/search.ts';
 import {compareUtf8} from '../../services/study/src/read/bytes.ts';
+import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
 
 const roomy = {
@@ -127,6 +128,20 @@ function routeFixture(fixture: Fixture, outputs: string[]) {
       .run(output, JSON.stringify(keys));
   }
 }
+
+test('index route access path uses the search-key primary index', () => {
+  const fixture = buildFixture();
+  const params = QUERIES.index_files.params({
+    source_revision_ids: [A],
+    capability: 'word_exact',
+    key: 'lemma:prov-a:lemma-alpha',
+  });
+  const plan = fixture.db.sqlite
+    .prepare(`EXPLAIN QUERY PLAN ${QUERIES.index_files.sql}`)
+    .all('rel-2', ...params, 41);
+  const detail = plan.map(row => String(row.detail)).join('\n');
+  assert.match(detail, /SEARCH rk USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/);
+});
 
 /** Routes are derived from the postings; old outputs without routes remain searchable. */
 test('indexed output routing skips empty partitions without losing occurrences', async () => {

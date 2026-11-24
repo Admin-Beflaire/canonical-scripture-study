@@ -162,6 +162,38 @@ class CandidateStageTwo(unittest.TestCase):
         self.assertEqual(writes, [])
         self.assertEqual(list(self.db.execute('SELECT * FROM release_selection')), self.saved_selection)
 
+    def test_index_routing_basis_can_coexist_with_legacy_saved_index(self):
+        original = self.candidate()
+        first = self.invoke('prepare', lambda _: original)
+        text = text_a()
+        evidence = evidence_a()
+        parts = build_source_postings(
+            text, evidence, configured_basis(evidence, text), RULES,
+            max_units=2, max_scalars=64, max_occurrences=20,
+        )
+        old_index = parts[0].basis.output_id
+        routed_basis = replace(
+            parts[0].basis,
+            parameters={**parts[0].basis.parameters, 'index_routing': 'key-output/1'},
+        )
+        self.assertNotEqual(old_index, routed_basis.output_id)
+        routed = build_index_files(replace(parts[0], basis=routed_basis))
+        self.assertEqual(original.rows('index_route'), [])
+        self.assertEqual(len(routed.records.rows('index_route')), 1)
+        saved = self.invoke('prepare', lambda _: RecordSet().merge(evidence).merge(routed.records))
+        self.assertIn(routed_basis.output_id, saved.output_ids)
+        self.assertIn(evidence.output_ids()[0], saved.output_ids)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM prepared_outputs').fetchone()[0], 3)
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM index_routes').fetchone()[0], 1)
+        self.assertEqual(
+            self.db.execute('SELECT COUNT(*) FROM index_route_keys').fetchone()[0],
+            len(routed.records.rows('index_route')[0]['keys_json']),
+        )
+        self.assertEqual(self.db.execute('SELECT COUNT(*) FROM native_spans').fetchone()[0],
+                         len(original.rows('native_span')))
+        self.assertEqual(self.invoke('prepare', lambda _: RecordSet().merge(evidence).merge(routed.records)), saved)
+        self.assertEqual(list(self.db.execute('SELECT * FROM release_selection')), self.saved_selection)
+
     def test_saved_output_that_differs_or_lacks_artifacts_is_refused(self):
         records = self.candidate()
         [index] = [row for row in records.rows('prepared_output') if row['kind'] == 'source_search']

@@ -351,6 +351,18 @@ function anchorPosition(
   return 'after';
 }
 
+function skipResumedPosting(
+  position: [number, string], anchorPage: boolean,
+  state: ScanState, marker: {seen: boolean},
+): boolean {
+  if (!anchorPage || !state.skipThrough) return false;
+  const step = anchorPosition(position, state.skipThrough, marker.seen);
+  if (step === 'anchor') marker.seen = true;
+  if (step !== 'after') return true;
+  state.skipThrough = null;
+  return false;
+}
+
 function groupScope(
   group: Group, manifest: IndexManifest, capability: string,
   resume: SearchPosition | null,
@@ -660,7 +672,7 @@ export class PagedIndexSearch implements SearchAdapter {
     text: string, ref: PageRef, dir: number, entry: number,
     resume: SearchPosition | null, state: ScanState, result: SearchResult,
   ): 'budget' | 'withheld' | null {
-    let anchorSeen = false;
+    const marker = {seen: false};
     const anchorPage = state.skipThrough !== null &&
       dir === resume?.dir && entry === state.resumeEntry;
     for (const line of text.slice(0, -1).split('\n')) {
@@ -674,15 +686,7 @@ export class PagedIndexSearch implements SearchAdapter {
       const hit = checkPosting(posting, group.source, manifest);
       if (!hit) return withholdIndex(result, group, 'corrupt', 'Inconsistent posting');
       const position: [number, string] = [hit.native_order, hit.occurrence_id];
-      if (anchorPage && state.skipThrough) {
-        const step = anchorPosition(position, state.skipThrough, anchorSeen);
-        if (step === 'anchor') {
-          anchorSeen = true;
-          continue;
-        }
-        if (step === 'before') continue;
-        state.skipThrough = null;
-      }
+      if (skipResumedPosting(position, anchorPage, state, marker)) continue;
       if (state.last && notAfter(position, state.last))
         return withholdIndex(result, group, 'corrupt', 'Postings out of order');
       const bytes = hitBytes(hit);
@@ -696,7 +700,7 @@ export class PagedIndexSearch implements SearchAdapter {
       });
     }
     if (anchorPage && state.skipThrough) {
-      if (!anchorSeen) throw invalidContinuation();
+      if (!marker.seen) throw invalidContinuation();
       state.skipThrough = null;
     }
     return null;

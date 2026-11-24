@@ -112,17 +112,23 @@ def _add_index_route(
         )
 
 
-def build_index_files(  # noqa: C901, PLR0915
-    partition: SourcePartition | WordPartition,
-    *,
-    encoded_page_cap_bytes: int = PAGE_CAP,
-) -> IndexFiles:
-    """Turn one bounded source/word partition into postings, a paged directory and a manifest.
+@dataclass(frozen=True)
+class _Stored:
+    """One immutable artifact of an index: bytes, digest, name and format (a directory also its pages)."""
 
-    A common search key may continue across pages. The manifest lists only directory pages
-    and must itself fit the page cap; a larger partition must be split by its recipe. The
-    returned RecordSet contains candidate records and blobs, but does not persist or promote them.
-    """
+    id: str
+    data: bytes
+    sha256: str
+    filename: str
+    format: str
+    pages: tuple = ()
+
+
+_CAPABILITY = {"form": "form_exact", "lemma": "lemma_exact", "grammar": "grammar_exact"}
+
+
+def _checked_partition(partition, encoded_page_cap_bytes):
+    """Validate the partition and its immutable basis; return what the build needs."""
     if (
         type(encoded_page_cap_bytes) is not int
         or not 1 <= encoded_page_cap_bytes <= _SAFE_MAX
@@ -171,30 +177,47 @@ def build_index_files(  # noqa: C901, PLR0915
         partition.coverage_state == "partial"
     ) != bool(partition.limitation):
         raise RecordError("Inconsistent coverage state or limitation")
+    return word, basis, units, coord, order_range
 
+
+def _check_posting(row, word, basis, coord, units, order_range):
+    """One posting must be schema-valid and belong to this output's source and extent."""
+    errors = _POSTING.document_errors(row)
+    if errors:
+        raise RecordError("Invalid index posting: " + "; ".join(errors[:3]))
+    if (
+        row["posting_kind"] != ("word" if word else "source")
+        or row["source_revision_id"] != basis.input_revisions[0]
+        or row["coordinate_version"] != coord
+        or row["native_reference"]["source_revision_id"] != row["source_revision_id"]
+        or row["native_reference"]["coordinate_version"] != coord
+        or any(
+            segment["unit_id"] not in units
+            for segment in row["native_reference"]["segments"]
+        )
+        or not order_range[0] <= row["native_order"] <= order_range[1]
+    ):
+        raise RecordError("Index posting identity or native extent mismatch")
+
+
+def _word_capability(row, basis):
+    """The capability a word posting provides; its analyses must be recorded revisions."""
+    if any(
+        a["analysis_revision_id"] not in basis.input_revisions[1:]
+        for a in row["analyses"]
+    ):
+        raise RecordError("Unrecorded analysis revision")
+    return _CAPABILITY[row["lookup_kind"]]
+
+
+def _posting_lines(partition, word, basis, coord, units, order_range):
+    """Check every posting and return its lines with the capabilities it provides."""
     lines: list[tuple[str, str, bytes]] = []
     prior: tuple[bytes, int, bytes] | None = None
     seen: set[tuple[str, str]] = set()
     capabilities: set[str] = set()
-
     for row in partition.postings:
-        errors = _POSTING.document_errors(row)
-        if errors:
-            raise RecordError("Invalid index posting: " + "; ".join(errors[:3]))
-        if (
-            row["posting_kind"] != ("word" if word else "source")
-            or row["source_revision_id"] != basis.input_revisions[0]
-            or row["coordinate_version"] != coord
-            or row["native_reference"]["source_revision_id"]
-            != row["source_revision_id"]
-            or row["native_reference"]["coordinate_version"] != coord
-            or any(
-                segment["unit_id"] not in units
-                for segment in row["native_reference"]["segments"]
-            )
-            or not order_range[0] <= row["native_order"] <= order_range[1]
-        ):
-            raise RecordError("Index posting identity or native extent mismatch")
+        _check_posting(row, word, basis, coord, units, order_range)
         order = (
             row["search_key"].encode("utf-8"),
             row["native_order"],
@@ -208,23 +231,16 @@ def build_index_files(  # noqa: C901, PLR0915
             raise RecordError("Duplicate index key/occurrence")
         seen.add(pair)
         if word:
-            if any(
-                a["analysis_revision_id"] not in basis.input_revisions[1:]
-                for a in row["analyses"]
-            ):
-                raise RecordError("Unrecorded analysis revision")
-            capabilities.add(
-                {
-                    "form": "form_exact",
-                    "lemma": "lemma_exact",
-                    "grammar": "grammar_exact",
-                }[row["lookup_kind"]]
-            )
+            capabilities.add(_word_capability(row, basis))
         lines.append((row["search_key"], row["search_key"], _bytes(row, lf=True)))
     if not lines:
         raise RecordError("Cannot register index with no postings")
-    content, pages = page_lines(lines, encoded_page_cap_bytes)
-    output_id = basis.output_id
+    return lines, capabilities
+
+
+def _stored_pages(output_id, lines, cap):
+    """Page the postings and the directory that lists their pages."""
+    content, pages = page_lines(lines, cap)
     digest = _sha(content)
     posting_id = f"{output_id}:postings:{digest[:20]}"
     entries = [{"postings_artifact_id": posting_id, **page} for page in pages]
@@ -238,14 +254,32 @@ def build_index_files(  # noqa: C901, PLR0915
             (entry["first_key"], entry["last_key"], _bytes(entry, lf=True))
             for entry in entries
         ],
-        encoded_page_cap_bytes,
+        cap,
     )
     directory_digest = _sha(directory)
     directory_id = f"{output_id}:directory:{directory_digest[:20]}"
+    return (
+        _Stored(posting_id, content, digest, "postings.ndjson", POSTINGS_FORMAT),
+        _Stored(
+            directory_id,
+            directory,
+            directory_digest,
+            "directory.ndjson",
+            DIRECTORY_FORMAT,
+            tuple(directory_pages),
+        ),
+    )
+
+
+def _manifest_file(
+    partition, word, basis, coord, units, order_range, capabilities, stored, cap
+):
+    """Build, check and encode the manifest that names the postings and directory."""
+    postings, directory = stored
     manifest = {
         "format_version": MANIFEST_VERSION,
         "index_kind": "word_language" if word else "source_text",
-        "prepared_output_id": output_id,
+        "prepared_output_id": basis.output_id,
         "source_revision_ids": [basis.input_revisions[0]],
         "native_extent": {"unit_ids": list(units), "order_range": list(order_range)},
         "coordinate_version": coord,
@@ -255,15 +289,19 @@ def build_index_files(  # noqa: C901, PLR0915
         "parameters": dict(basis.parameters),
         "ordering": ["search_key", "native_order", "occurrence_id"],
         "key_collation": "utf8-bytewise",
-        "encoded_page_cap_bytes": encoded_page_cap_bytes,
+        "encoded_page_cap_bytes": cap,
         "files": [
-            {"artifact_id": posting_id, "byte_length": len(content), "sha256": digest}
+            {
+                "artifact_id": postings.id,
+                "byte_length": len(postings.data),
+                "sha256": postings.sha256,
+            }
         ],
         "directory": {
-            "artifact_id": directory_id,
-            "byte_length": len(directory),
-            "sha256": directory_digest,
-            "pages": directory_pages,
+            "artifact_id": directory.id,
+            "byte_length": len(directory.data),
+            "sha256": directory.sha256,
+            "pages": list(directory.pages),
         },
         "coverage": {
             "capabilities": sorted(capabilities) if word else ["word_exact"],
@@ -274,46 +312,40 @@ def build_index_files(  # noqa: C901, PLR0915
     errors = _MANIFEST.document_errors(manifest)
     if errors:
         raise RecordError("Invalid index manifest: " + "; ".join(errors[:4]))
-    manifest_content = _bytes(manifest)
-    if len(manifest_content) > encoded_page_cap_bytes:
+    content = _bytes(manifest)
+    if len(content) > cap:
         raise RecordError(
             "Index manifest exceeds the page cap; the recipe must use smaller partitions"
         )
-    manifest_digest = _sha(manifest_content)
-    manifest_id = f"{output_id}:manifest:{manifest_digest[:20]}"
+    digest = _sha(content)
+    manifest_id = f"{basis.output_id}:manifest:{digest[:20]}"
+    return manifest, _Stored(
+        manifest_id, content, digest, "manifest.json", "application/json"
+    )
+
+
+def _index_records(partition, basis, units, order_range, manifest, stored):
+    """The candidate records and blobs for one index; nothing is persisted."""
+    output_id = basis.output_id
     records = RecordSet()
     records.add("prepared_output", basis.row())
     _add_index_route(records, partition)
-    for artifact_id, data, sha, filename, kind in (
-        (posting_id, content, digest, "postings.ndjson", POSTINGS_FORMAT),
-        (
-            directory_id,
-            directory,
-            directory_digest,
-            "directory.ndjson",
-            DIRECTORY_FORMAT,
-        ),
-        (
-            manifest_id,
-            manifest_content,
-            manifest_digest,
-            "manifest.json",
-            "application/json",
-        ),
-    ):
+    for item in stored:
         records.add(
             "artifact",
             {
-                "id": artifact_id,
+                "id": item.id,
                 "source_revision_id": basis.input_revisions[0],
                 "output_id": output_id,
-                "sha256": sha,
-                "byte_count": len(data),
-                "format": kind,
-                "registered_locator": _object_key(output_id, sha, filename),
+                "sha256": item.sha256,
+                "byte_count": len(item.data),
+                "format": item.format,
+                "registered_locator": _object_key(
+                    output_id, item.sha256, item.filename
+                ),
             },
         )
-        records.add_blob(artifact_id, data)
+        records.add_blob(item.id, item.data)
     for capability in manifest["coverage"]["capabilities"]:
         records.add(
             "coverage",
@@ -327,9 +359,36 @@ def build_index_files(  # noqa: C901, PLR0915
                 "capability": capability,
                 "state": partition.coverage_state,
                 "method_version": basis.method_version,
-                "index_artifact_id": manifest_id,
+                "index_artifact_id": stored[-1].id,
                 "dependencies_json": sorted(basis.dependencies),
                 "limitation": partition.limitation,
             },
         )
-    return IndexFiles(manifest, records, posting_id, manifest_id, directory_id)
+    return records
+
+
+def build_index_files(
+    partition: SourcePartition | WordPartition,
+    *,
+    encoded_page_cap_bytes: int = PAGE_CAP,
+) -> IndexFiles:
+    """Turn one bounded source/word partition into postings, a paged directory and a manifest.
+
+    A common search key may continue across pages. The manifest lists only directory pages
+    and must itself fit the page cap; a larger partition must be split by its recipe. The
+    returned RecordSet contains candidate records and blobs, but does not persist or promote them.
+    """
+    cap = encoded_page_cap_bytes
+    word, basis, units, coord, order_range = _checked_partition(partition, cap)
+    lines, capabilities = _posting_lines(
+        partition, word, basis, coord, units, order_range
+    )
+    stored = _stored_pages(basis.output_id, lines, cap)
+    manifest, manifest_file = _manifest_file(
+        partition, word, basis, coord, units, order_range, capabilities, stored, cap
+    )
+    records = _index_records(
+        partition, basis, units, order_range, manifest, (*stored, manifest_file)
+    )
+    postings, directory = stored
+    return IndexFiles(manifest, records, postings.id, manifest_file.id, directory.id)

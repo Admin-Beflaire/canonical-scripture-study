@@ -74,18 +74,28 @@ Guide and PEP 8. Each check also runs on its own:
 - `format:ts` (Prettier, Google style options) and `format:py` (Ruff format).
 - `check:duplicates` (jscpd) reports copied code in both languages.
 - `check:baselines` fails when a baseline keeps a file that is missing or
-  already formatted, or a copy that is gone. `test:standards` tests that each
-  check fails on a new problem.
+  already formatted, or a copy that is gone, and when any exception list grew
+  since the base commit (see below). `test:standards` tests that each check
+  fails on a new problem.
 
 Whether a function has one responsibility, is simple enough, or reuses the right
 existing piece is still judged in writing and review. The reports are input for
 that judgement.
 
 Existing findings are recorded as a baseline, so only new problems fail. The
-baseline gets smaller as a whole. New code adds nothing to it, and code you touch
-leaves it smaller. Formatting a file can reveal older findings that were hidden
-there; record those, as long as the change leaves the code cleaner overall (more
-files formatted, less duplication) and adds no new problems:
+baseline only gets smaller, and the goal is that every list ends empty. No list
+grows, whatever the size of the change: new code adds nothing to a list, and
+`check:baselines` fails on a new list entry or ignore pattern (a folder or glob
+in `.prettierignore`, `ruff.toml`, `.jscpd.json` or the ESLint ignores), a higher
+suppression or copy count, and on a directive that switches a check off
+(`eslint-disable`, `noqa`, `prettier-ignore`, `fmt: off`, `jscpd:ignore`) that
+the file did not have at the base commit, counted per rule: adding a rule to a
+`noqa`, a `noqa` without codes, or widening a next-line `eslint-disable` to the
+whole file is growth. A list or config that is new compared with the base starts
+from empty. A finding that formatting or a change reveals is fixed in that change,
+never recorded. Code you touch leaves the lists smaller; a small fix (a few lines
+in existing functions, no new function or file) need not empty its file, but
+still adds nothing:
 
 - ESLint findings are in `eslint-suppressions.json`. After fixing one, run
   `npx eslint --prune-suppressions`.

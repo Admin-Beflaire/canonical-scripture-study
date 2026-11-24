@@ -6,6 +6,7 @@ are not what these tests cover.
 """
 
 import importlib.util
+import json
 import shutil
 import subprocess
 import sys
@@ -152,6 +153,15 @@ def git(root, *arguments):
     return result.stdout.strip()
 
 
+def repository_before_lists(root):
+    """A repository with one file and no exception list yet."""
+    git(root, "init", "-q")
+    Path(root, "old.ts").write_text("a\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "before the lists")
+    return git(root, "rev-parse", "HEAD")
+
+
 def baselined_repository(root):
     """A repository with an old.ts and an old.py in the formatting baselines."""
     git(root, "init", "-q")
@@ -209,11 +219,7 @@ class ChangedBaselineChecks(unittest.TestCase):
     def test_the_change_that_introduces_the_baselines_is_not_held_to_them(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            git(root, "init", "-q")
-            Path(root, "old.ts").write_text("a\n")
-            git(root, "add", "-A")
-            git(root, "commit", "-q", "-m", "before the baselines")
-            base = git(root, "rev-parse", "HEAD")
+            base = repository_before_lists(root)
             Path(root, "old.ts").write_text("b\n")
             Path(root, ".prettierignore").write_text("old.ts\n")
             git(root, "add", "-A")
@@ -225,6 +231,243 @@ class ChangedBaselineChecks(unittest.TestCase):
             baselined_repository(Path(folder))
             with self.assertRaises(RuntimeError):
                 baselines.touched_baseline_files(Path(folder), None)
+
+
+def list_repository(root):
+    """A repository whose four exception lists and one inline exception are the base."""
+    git(root, "init", "-q")
+    files = {
+        "old.ts": "// eslint-disable-next-line complexity\na\n",
+        "old.py": "a  # noqa: C901\n",
+        "other.ts": "a\n",
+        ".prettierignore": "# baseline\ndist/\nold.ts\n",
+        "ruff.toml": '[format]\nexclude = ["old.py"]\n',
+        "eslint-suppressions.json": json.dumps(
+            {"old.ts": {"complexity": {"count": 2}}}
+        ),
+        ".jscpd-baseline.json": json.dumps({"version": 1, "fingerprints": {"a": 2}}),
+    }
+    for file, text in files.items():
+        Path(root, file).write_text(text)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "baseline")
+    return git(root, "rev-parse", "HEAD")
+
+
+def growth_after(change):
+    """What the growth check reports after `change(root)` on the list repository."""
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        base = list_repository(root)
+        change(root)
+        git(root, "add", "-A")
+        return baselines.growth_problems(root, base)
+
+
+class ListGrowthChecks(unittest.TestCase):
+    def test_a_change_that_adds_nothing_passes(self):
+        self.assertEqual(growth_after(lambda root: None), [])
+
+    def test_lists_that_shrink_pass(self):
+        def shrink(root):
+            Path(root, ".prettierignore").write_text("# baseline\ndist/\n")
+            Path(root, "ruff.toml").write_text("[format]\nexclude = []\n")
+            Path(root, "eslint-suppressions.json").write_text("{}")
+            Path(root, ".jscpd-baseline.json").write_text(
+                json.dumps({"version": 1, "fingerprints": {}})
+            )
+            Path(root, "old.ts").write_text("a\n")
+            Path(root, "old.py").write_text("a\n")
+
+        self.assertEqual(growth_after(shrink), [])
+
+    def test_a_new_formatter_exclusion_fails(self):
+        def add(root):
+            Path(root, ".prettierignore").write_text("dist/\nold.ts\nother.ts\n")
+            Path(root, "ruff.toml").write_text(
+                '[format]\nexclude = ["old.py", "x.py"]\n'
+            )
+
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("other.ts was added", problems[0])
+        self.assertIn("x.py was added", problems[1])
+
+    def test_a_higher_or_new_eslint_suppression_fails(self):
+        def raise_it(root):
+            Path(root, "eslint-suppressions.json").write_text(
+                json.dumps(
+                    {
+                        "old.ts": {"complexity": {"count": 3}},
+                        "other.ts": {"max-lines-per-function": {"count": 1}},
+                    }
+                )
+            )
+
+        problems = growth_after(raise_it)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("old.ts: complexity rose from 2 to 3", problems[0])
+        self.assertIn("other.ts: max-lines-per-function rose from 0 to 1", problems[1])
+
+    def test_a_lower_eslint_suppression_passes(self):
+        def lower(root):
+            Path(root, "eslint-suppressions.json").write_text(
+                json.dumps({"old.ts": {"complexity": {"count": 1}}})
+            )
+
+        self.assertEqual(growth_after(lower), [])
+
+    def test_a_new_or_repeated_copy_fails(self):
+        def copy(root):
+            Path(root, ".jscpd-baseline.json").write_text(
+                json.dumps({"version": 1, "fingerprints": {"a": 3, "b": 1}})
+            )
+
+        problems = growth_after(copy)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("a rose from 2 to 3", problems[0])
+        self.assertIn("b rose from 0 to 1", problems[1])
+
+    def test_a_new_inline_exception_fails(self):
+        def add(root):
+            Path(root, "other.ts").write_text(
+                "// eslint-disable max-lines-per-function\n"
+            )
+            Path(root, "new.py").write_text("def f():  # noqa: C901\n    pass\n")
+            Path(root, "format.ts").write_text("// prettier-ignore\n")
+            Path(root, "off.py").write_text("# fmt: off\n")
+
+        problems = growth_after(add)
+        self.assertEqual(
+            sorted(problem.split(":")[0] for problem in problems),
+            ["format.ts", "new.py", "off.py", "other.ts"],
+        )
+
+    def test_a_second_inline_exception_in_a_file_fails(self):
+        def add(root):
+            Path(root, "old.py").write_text("a  # noqa: C901\nb  # noqa: F401\n")
+
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("old.py: noqa F401: 1 directive(s), 0 at the base", problems[0])
+
+    def test_a_broader_directive_on_the_same_line_fails(self):
+        def broaden(root):
+            Path(root, "old.py").write_text("a  # noqa: C901, PLR0915\n")
+
+        problems = growth_after(broaden)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("old.py: noqa PLR0915", problems[0])
+
+    def test_a_directive_that_names_no_rule_fails(self):
+        def bare(root):
+            Path(root, "old.py").write_text("a  # noqa\n")
+            Path(root, "old.ts").write_text("// eslint-disable-next-line\na\n")
+
+        problems = growth_after(bare)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("old.py: noqa *", problems[0])
+        self.assertIn("old.ts: eslint-disable-next-line *", problems[1])
+
+    def test_a_next_line_directive_made_file_wide_fails(self):
+        def widen(root):
+            Path(root, "old.ts").write_text("/* eslint-disable complexity */\na\n")
+
+        problems = growth_after(widen)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("old.ts: eslint-disable complexity", problems[0])
+
+    def test_a_directive_that_switches_off_no_more_passes(self):
+        def reword(root):
+            Path(root, "old.py").write_text("x = 1\na  # noqa: C901 -- reason\n")
+            Path(root, "old.ts").write_text(
+                "a\n// eslint-disable-next-line complexity -- reason\nb\n"
+            )
+
+        self.assertEqual(growth_after(reword), [])
+
+    def test_a_new_ignore_pattern_fails_even_for_a_folder(self):
+        def add(root):
+            Path(root, ".prettierignore").write_text(
+                "# baseline\ndist/\nold.ts\nservices/\n*.generated.ts\n"
+            )
+
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("services/ was added", problems[0])
+        self.assertIn("*.generated.ts was added", problems[1])
+
+    def test_new_ruff_jscpd_and_eslint_ignores_fail(self):
+        def add(root):
+            Path(root, "ruff.toml").write_text(
+                '[format]\nexclude = ["old.py"]\n'
+                '[lint]\nignore = ["E501"]\n'
+                '[lint.per-file-ignores]\n"x.py" = ["F401"]\n'
+            )
+            Path(root, ".jscpd.json").write_text(json.dumps({"ignore": ["a/**"]}))
+            Path(root, "eslint.config.mjs").write_text(
+                "export default defineConfig(globalIgnores(['dist/', 'gen/']), "
+                "{ignores: ['x.ts']});\n"
+            )
+
+        # The base has no eslint.config.mjs, so its "dist/" is new as well.
+        problems = growth_after(add)
+        self.assertEqual(len(problems), 6)
+        for entry in (
+            "lint.ignore: E501",
+            "x.py F401",
+            "a/**",
+            "gen/",
+            "x.ts",
+        ):
+            self.assertTrue(any(entry in problem for problem in problems), entry)
+
+    def test_an_exception_moved_to_another_file_fails(self):
+        def move(root):
+            Path(root, "old.py").write_text("a\n")
+            Path(root, "other.py").write_text("a  # noqa: C901\n")
+
+        self.assertEqual(len(growth_after(move)), 1)
+
+    def test_a_removed_inline_exception_passes(self):
+        def remove(root):
+            Path(root, "old.ts").write_text("a\n")
+
+        self.assertEqual(growth_after(remove), [])
+
+    def test_text_that_only_mentions_a_tool_is_not_an_exception(self):
+        def mention(root):
+            Path(root, "other.py").write_text('note = "no noqa here, eslint-disable"\n')
+
+        self.assertEqual(growth_after(mention), [])
+
+    def test_an_exception_in_a_file_that_is_not_added_yet_still_counts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = list_repository(root)
+            Path(root, "new.ts").write_text("// eslint-disable\n")
+            self.assertEqual(len(baselines.growth_problems(root, base)), 1)
+
+    def test_a_list_that_is_introduced_starts_from_empty(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            base = repository_before_lists(root)
+            Path(root, ".prettierignore").write_text("old.ts\n")
+            Path(root, "eslint-suppressions.json").write_text(
+                json.dumps({"old.ts": {"complexity": {"count": 1}}})
+            )
+            git(root, "add", "-A")
+            git(root, "commit", "-q", "-m", "introduce")
+            problems = baselines.growth_problems(root, base)
+            self.assertEqual(len(problems), 2)
+            self.assertIn(".prettierignore: old.ts was added", problems[0])
+            self.assertIn("old.ts: complexity rose from 0 to 1", problems[1])
+
+    def test_an_unknown_base_is_an_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            list_repository(Path(folder))
+            with self.assertRaises(RuntimeError):
+                baselines.growth_problems(Path(folder), None)
 
 
 class BaselineChecks(unittest.TestCase):

@@ -45,7 +45,12 @@ const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
   return value;
 };
 const key = (value: unknown): string => {
-  if (typeof value !== 'string' || value.length < 1 || value.length > 300 || /[\uD800-\uDFFF]/u.test(value))
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 300 ||
+    /[\uD800-\uDFFF]/u.test(value)
+  )
     throw new ReadError('invalid_request', 'Invalid search key');
   return value;
 };

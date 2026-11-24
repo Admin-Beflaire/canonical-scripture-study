@@ -129,7 +129,8 @@ test('indexed output routing skips empty partitions without losing occurrences',
   fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
   for (const output of ['syn-src-1', 'syn-src-2']) {
     const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
-    fixture.db.sqlite.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+    fixture.db.sqlite
+      .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
       .run(output, JSON.stringify(keys));
   }
   // A new binding observes the newly prepared immutable routing; the per-binding
@@ -138,11 +139,15 @@ test('indexed output routing skips empty partitions without losing occurrences',
   clearSearchCache();
   const routed = await once(fixture, request);
   assert.equal(routed.result.state, 'complete');
-  assert.deepEqual(routed.result.hits.map(h => h.occurrence_id),
-    baseline.result.hits.map(h => h.occurrence_id));
+  assert.deepEqual(
+    routed.result.hits.map(h => h.occurrence_id),
+    baseline.result.hits.map(h => h.occurrence_id),
+  );
   assert.equal(routed.result.searched.length, 1);
-  assert.ok(routed.usage.r2Reads < baseline.usage.r2Reads,
-    'the irrelevant partition is never opened');
+  assert.ok(
+    routed.usage.r2Reads < baseline.usage.r2Reads,
+    'the irrelevant partition is never opened',
+  );
 });
 
 test('a key absent from complete routed indexes is no_match, not missing coverage', async () => {
@@ -152,10 +157,15 @@ test('a key absent from complete routed indexes is no_match, not missing coverag
   fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
   for (const output of ['syn-src-1', 'syn-src-2']) {
     const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
-    fixture.db.sqlite.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+    fixture.db.sqlite
+      .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
       .run(output, JSON.stringify(keys));
   }
-  const {result, usage} = await once(fixture, {lookup: 'word', key: 'unlisted', sources: [A]});
+  const {result, usage} = await once(fixture, {
+    lookup: 'word',
+    key: 'unlisted',
+    sources: [A],
+  });
   assert.equal(result.state, 'no_match');
   assert.equal(result.limitations.length, 0);
   assert.equal(result.hits.length, 0);

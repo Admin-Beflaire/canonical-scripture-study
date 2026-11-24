@@ -188,9 +188,7 @@ class IndexFilesStageThree(unittest.TestCase):
         built = build_index_files(replace(base, basis=basis))
         [route] = built.records.rows("index_route")
         keys = set(route["keys_json"])
-        pairs = [
-            {"output_id": basis.output_id, "search_key": key} for key in sorted(keys)
-        ]
+        pairs = [{"output_id": basis.output_id, "matched_keys": len(keys)}]
 
         def read_pairs(kind, outputs):
             self.assertEqual((kind, outputs), ("index_route_key", [basis.output_id]))
@@ -205,9 +203,18 @@ class IndexFilesStageThree(unittest.TestCase):
                 read_pairs,
             )
         with self.assertRaisesRegex(RecordError, "pairs differ"):
-            _check_index_routes(basis, keys, [route], lambda *_: pairs[:-1])
+            _check_index_routes(basis, keys, [route], lambda *_: [])
         with self.assertRaisesRegex(RecordError, "pairs differ"):
-            _check_index_routes(basis, keys, [route], lambda *_: pairs + pairs[:1])
+            _check_index_routes(
+                basis,
+                keys,
+                [route],
+                lambda *_: [{**pairs[0], "matched_keys": len(keys) - 1}],
+            )
+        with self.assertRaisesRegex(RecordError, "routing differs"):
+            _check_index_routes(
+                basis, keys, [{**route, "keys_json": route["keys_json"] * 2}], read_pairs
+            )
         with self.assertRaisesRegex(RecordError, "routing differs"):
             _check_index_routes(basis, keys, [], read_pairs)
         legacy = replace(base.basis)

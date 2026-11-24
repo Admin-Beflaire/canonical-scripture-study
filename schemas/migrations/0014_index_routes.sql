@@ -10,12 +10,14 @@ CREATE TABLE index_route_keys (
   output_key INTEGER NOT NULL REFERENCES index_routes(output_key),
   PRIMARY KEY (search_key, output_key)
 ) STRICT, WITHOUT ROWID;
--- Expose saved pairs for semantic verification without a second write path.
+-- One aggregate per output: verify stored pairs by primary-key seeks, without
+-- paginating or returning the individual keys.
 CREATE VIEW index_route_key_records AS
-SELECT r.output_id, k.search_key
+SELECT r.output_id, COUNT(*) AS matched_keys
 FROM index_routes r
 CROSS JOIN json_each(r.keys_json) j
-JOIN index_route_keys k ON k.search_key = j.value AND k.output_key = r.output_key;
+JOIN index_route_keys k ON k.search_key = j.value AND k.output_key = r.output_key
+GROUP BY r.output_id;
 CREATE TRIGGER index_routes_keys_insert AFTER INSERT ON index_routes BEGIN
   INSERT INTO index_route_keys(search_key, output_key)
   SELECT DISTINCT value, NEW.output_key FROM json_each(NEW.keys_json)

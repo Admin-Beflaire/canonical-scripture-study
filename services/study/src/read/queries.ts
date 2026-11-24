@@ -215,13 +215,21 @@ WHERE ro.release_id = ?1 AND cs.status = 'approved'
 ORDER BY cs.id
 LIMIT ?2`;
 
+/** Only compatible native-order extents may be skipped by exact-key routing. */
+const ROUTABLE_EXTENT = `typeof(json_extract(c.native_extent_json, '$.order_range[0]')) = 'integer'
+  AND typeof(json_extract(c.native_extent_json, '$.order_range[1]')) = 'integer'
+  AND json_extract(c.native_extent_json, '$.order_range[0]') >= 0
+  AND json_extract(c.native_extent_json, '$.order_range[1]') >= json_extract(c.native_extent_json, '$.order_range[0]')
+  AND json_extract(c.native_extent_json, '$.order_range[1]') <= 9007199254740991`;
+
 /** Search adapter only: index outputs for a capability in native order (their `order_range`
  *  start), with every artifact of each output. The unit list is not returned. An output without
  *  an order range sorts first and is reported as an incompatible index. */
 const INDEX_FILES = `WITH idx AS (
   SELECT c.output_id, c.source_revision_id, c.capability, c.state, c.method_version, c.limitation, c.index_artifact_id,
     json_extract(c.native_extent_json, '$.order_range[0]') AS order_first,
-    json_extract(c.native_extent_json, '$.order_range[1]') AS order_last
+    json_extract(c.native_extent_json, '$.order_range[1]') AS order_last,
+    (${ROUTABLE_EXTENT}) AS routable_extent
   FROM coverage c
   JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
   WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
@@ -230,7 +238,7 @@ SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registere
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
 LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
 WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
-  AND (routed.output_id IS NULL OR idx.state != 'available'
+  AND (routed.output_id IS NULL OR idx.state != 'available' OR NOT idx.routable_extent
     OR EXISTS (SELECT 1 FROM index_route_keys rk
       WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key))
 ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
@@ -248,6 +256,7 @@ const INDEX_SOURCES = `SELECT c.source_revision_id,
     'units', json_array_length(c.native_extent_json, '$.unit_ids'),
     'rule', json_extract(p.parameters_json, '$.normalization_rule')
   )) FILTER (WHERE c.state = 'available' AND routed.output_key IS NOT NULL
+      AND (${ROUTABLE_EXTENT})
       AND NOT EXISTS (SELECT 1 FROM index_route_keys rk
         WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key)
   ) AS extents

@@ -61,7 +61,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "text_payload": ("content_id",),
     "artifact": ("id",),
     "index_route": ("output_id",),
-    "index_route_key": ("output_id", "search_key"),
+    "index_route_key": ("output_id",),
     "native_span": ("id",),
     "span_segment": ("span_id", "segment_ordinal"),
     "annotation": ("id",),

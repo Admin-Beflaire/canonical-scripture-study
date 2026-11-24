@@ -146,7 +146,7 @@ test('index route access path uses the search-key primary index', () => {
   );
   const verifyPlan = fixture.db.sqlite
     .prepare(
-      'EXPLAIN QUERY PLAN SELECT * FROM index_route_key_records WHERE output_id = ? LIMIT 500',
+      'EXPLAIN QUERY PLAN SELECT * FROM index_route_key_records WHERE output_id = ? ORDER BY output_id LIMIT 500 OFFSET 0',
     )
     .all('syn-src-1');
   const verifyDetail = verifyPlan.map(row => String(row.detail)).join('\n');
@@ -252,22 +252,49 @@ test('routed coverage is retained when matching outputs span two D1 pages', asyn
   );
 });
 
-test('routing keeps incompatible matching outputs as limitations', async () => {
-  clearSearchCache();
-  const fixture = buildFixture();
-  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
-  fixture.db.sqlite.exec('DROP TRIGGER coverage_immutable');
-  fixture.db.sqlite.exec(`UPDATE coverage
-    SET native_extent_json = json_remove(native_extent_json, '$.order_range')
-    WHERE output_id = 'syn-src-2'`);
-  const {result} = await once(fixture, {
-    lookup: 'word',
-    key: 'epsilon',
-    sources: [A],
-  });
-  assert.equal(result.state, 'incomplete');
-  assert.ok(result.limitations.some(l => l.state === 'incompatible_index'));
-  assert.ok(result.searched.some(s => s.routing_summary));
+test('routing keeps incompatible matching and nonmatching outputs as limitations', async () => {
+  for (const output of ['syn-src-1', 'syn-src-2']) {
+    clearSearchCache();
+    const fixture = buildFixture();
+    routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+    fixture.db.sqlite.exec('DROP TRIGGER coverage_immutable');
+    fixture.db.sqlite
+      .prepare(
+        `UPDATE coverage
+        SET native_extent_json = json_remove(native_extent_json, '$.order_range')
+        WHERE output_id = ?`,
+      )
+      .run(output);
+    const {result} = await once(fixture, {
+      lookup: 'word',
+      key: 'epsilon',
+      sources: [A],
+    });
+    assert.equal(result.state, 'incomplete');
+    assert.ok(result.limitations.some(l => l.state === 'incompatible_index'));
+    assert.equal(
+      result.searched.some(s => s.routing_summary),
+      output === 'syn-src-2',
+    );
+  }
+});
+
+test('cold ordinary and absent-key search measure the cost of routed coverage', async () => {
+  for (const key of ['alpha', 'unlisted']) {
+    clearSearchCache();
+    const fixture = buildFixture();
+    const request: SearchRequest = {lookup: 'word', key, sources: [A]};
+    const before = await once(fixture, request);
+    routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+    fixture.env.DATA_DB = {...fixture.db};
+    clearSearchCache();
+    const after = await once(fixture, request);
+    assert.equal(before.usage.d1Calls, 2);
+    assert.equal(after.usage.d1Calls, 3);
+    assert.deepEqual(after.result.hits, before.result.hits);
+    assert.equal(after.result.state, before.result.state);
+    if (key === 'unlisted') assert.equal(after.usage.r2Reads, 0);
+  }
 });
 
 test('exact search can use cached index metadata after its D1 allowance is spent', async () => {

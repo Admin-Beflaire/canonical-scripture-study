@@ -71,13 +71,13 @@ def _check_index_routes(
         if owned:
             raise RecordError("Unrouted index unexpectedly has routing metadata")
         return
-    if len(owned) != 1 or set(owned[0]["keys_json"]) != posting_keys:
+    if len(owned) != 1:
+        raise RecordError("Saved index routing differs from posting keys")
+    keys = owned[0]["keys_json"]
+    if len(keys) != len(posting_keys) or set(keys) != posting_keys:
         raise RecordError("Saved index routing differs from posting keys")
     expanded = read_rows("index_route_key", [index.output_id])
-    if (
-        len(expanded) != len(posting_keys)
-        or {row["search_key"] for row in expanded} != posting_keys
-    ):
+    if expanded != [{"output_id": index.output_id, "matched_keys": len(posting_keys)}]:
         raise RecordError("Saved indexed routing pairs differ from posting keys")
 
 

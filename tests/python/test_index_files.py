@@ -86,9 +86,13 @@ class IndexFilesStageThree(unittest.TestCase):
             ),
             2048,
         )
-        part = replace(part, basis=replace(
-            part.basis, parameters={**part.basis.parameters, "index_routing": "key-output/1"}
-        ))
+        part = replace(
+            part,
+            basis=replace(
+                part.basis,
+                parameters={**part.basis.parameters, "index_routing": "key-output/1"},
+            ),
+        )
         result = build_index_files(part, encoded_page_cap_bytes=2048)
         self.assertEqual(_MANIFEST.document_errors(result.manifest), [])
         records = result.records
@@ -187,6 +191,7 @@ class IndexFilesStageThree(unittest.TestCase):
         pairs = [
             {"output_id": basis.output_id, "search_key": key} for key in sorted(keys)
         ]
+
         def read_pairs(kind, outputs):
             self.assertEqual((kind, outputs), ("index_route_key", [basis.output_id]))
             return pairs
@@ -194,7 +199,10 @@ class IndexFilesStageThree(unittest.TestCase):
         _check_index_routes(basis, keys, [route], read_pairs)
         with self.assertRaisesRegex(RecordError, "routing differs"):
             _check_index_routes(
-                basis, keys, [{**route, "keys_json": route["keys_json"][1:]}], read_pairs,
+                basis,
+                keys,
+                [{**route, "keys_json": route["keys_json"][1:]}],
+                read_pairs,
             )
         with self.assertRaisesRegex(RecordError, "pairs differ"):
             _check_index_routes(basis, keys, [route], lambda *_: pairs[:-1])
@@ -205,7 +213,9 @@ class IndexFilesStageThree(unittest.TestCase):
         legacy = replace(base.basis)
         _check_index_routes(legacy, keys, [], read_pairs)
         with self.assertRaisesRegex(RecordError, "Unrouted"):
-            _check_index_routes(legacy, keys, [{**route, "output_id": legacy.output_id}], read_pairs)
+            _check_index_routes(
+                legacy, keys, [{**route, "output_id": legacy.output_id}], read_pairs
+            )
 
     def test_common_utf8_key_spans_postings_and_directory_pages_without_lost_rows(self):
         base = self.parts[0]

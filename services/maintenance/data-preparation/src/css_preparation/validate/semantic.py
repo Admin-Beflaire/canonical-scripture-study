@@ -67,9 +67,10 @@ def _check_index_routes(
     if len(owned) != 1 or set(owned[0]["keys_json"]) != posting_keys:
         raise RecordError("Saved index routing differs from posting keys")
     expanded = read_rows("index_route_key", [index.output_id])
-    if len(expanded) != len(posting_keys) or {
-        row["search_key"] for row in expanded
-    } != posting_keys:
+    if (
+        len(expanded) != len(posting_keys)
+        or {row["search_key"] for row in expanded} != posting_keys
+    ):
         raise RecordError("Saved indexed routing pairs differ from posting keys")
 
 

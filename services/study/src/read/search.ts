@@ -248,7 +248,7 @@ interface SourceExtent {
   first_unit: string;
   last_unit: string;
   units: number;
-  rule: string;
+  rule: string | null;
 }
 
 /** The selected index can prove a key absent without opening any R2 page. */
@@ -265,7 +265,7 @@ function coverageSummary(
   if (!Array.isArray(extents) || !extents.length || extents.some(e =>
     !isSafeCount(e.first) || !isSafeCount(e.last) ||
     typeof e.first_unit !== 'string' || typeof e.last_unit !== 'string' ||
-    !isSafeCount(e.units) || typeof e.rule !== 'string'))
+    !isSafeCount(e.units) || (e.rule !== null && typeof e.rule !== 'string')))
     throw new ReadError('corrupt', 'Invalid selected index coverage');
   extents.sort((a, b) => a.first - b.first);
   return {
@@ -276,7 +276,7 @@ function coverageSummary(
     first_unit: extents[0].first_unit,
     last_unit: extents.at(-1)!.last_unit,
     order_range: [extents[0].first, Math.max(...extents.map(e => e.last))],
-    normalization_rule: extents[0].rule,
+    normalization_rule: extents[0].rule ?? 'not recorded',
     complete: true,
     resumed_after: null,
     routing_summary: true,

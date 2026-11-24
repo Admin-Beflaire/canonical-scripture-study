@@ -135,7 +135,7 @@ test('indexed output routing skips empty partitions without losing occurrences',
   const request: SearchRequest = {lookup: 'word', key: 'epsilon', sources: [A]};
   const baseline = await once(fixture, request);
   assert.equal(baseline.result.state, 'complete');
-  assert.equal(baseline.result.searched.length, 2);
+  assert.equal(baseline.result.searched.filter(s => !s.routing_summary).length, 2);
   routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
   // A new binding observes the newly prepared immutable routing; the per-binding
   // D1 result cache must not reuse a pre-route query from the same fixture.
@@ -147,7 +147,8 @@ test('indexed output routing skips empty partitions without losing occurrences',
     routed.result.hits.map(h => h.occurrence_id),
     baseline.result.hits.map(h => h.occurrence_id),
   );
-  assert.equal(routed.result.searched.length, 1);
+  assert.equal(routed.result.searched.filter(s => !s.routing_summary).length, 1);
+  assert.ok(routed.result.searched.some(s => s.routing_summary && s.unit_count > 0));
   assert.ok(
     routed.usage.r2Reads < baseline.usage.r2Reads,
     'the irrelevant partition is never opened',
@@ -166,6 +167,7 @@ test('a key absent from complete routed indexes is no_match, not missing coverag
   assert.equal(result.state, 'no_match');
   assert.equal(result.limitations.length, 0);
   assert.equal(result.hits.length, 0);
+  assert.ok(result.searched.some(s => s.routing_summary && s.unit_count > 0));
   assert.equal(usage.r2Reads, 0);
 });
 

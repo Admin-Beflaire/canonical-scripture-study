@@ -85,6 +85,9 @@ class IndexFilesStageThree(unittest.TestCase):
             ),
             2048,
         )
+        part = replace(part, basis=replace(
+            part.basis, parameters={**part.basis.parameters, "index_routing": "key-output/1"}
+        ))
         result = build_index_files(part, encoded_page_cap_bytes=2048)
         self.assertEqual(_MANIFEST.document_errors(result.manifest), [])
         records = result.records

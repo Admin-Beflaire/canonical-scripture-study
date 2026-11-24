@@ -220,6 +220,7 @@ interface Group {
   method: string;
   manifestId: string | null;
   order: [number, number] | null;
+  routed: boolean;
   artifacts: Map<string, RegisteredArtifact>;
 }
 
@@ -249,6 +250,7 @@ interface SourceExtent {
   last_unit: string;
   units: number;
   rule: string | null;
+  skipped: number;
 }
 
 /** The selected index can prove a key absent without opening any R2 page. */
@@ -372,8 +374,9 @@ export class PagedIndexSearch implements SearchAdapter {
     };
     const selected = await this.selectGroups(session, request, start, capability, searchKey);
     if (!selected) return finish(result, start, resumed);
-    if (!await this.recordCoverage(session, request, capability, result))
-      return finish(result, start, resumed);
+    if (!await this.recordCoverage(
+      session, request, start, selected.groups, selected.next, capability, searchKey, result,
+    )) return finish(result, start, resumed);
     const stop = await this.scanGroups(
       session, selected.groups, start, capability, searchKey, result,
     );
@@ -410,19 +413,36 @@ export class PagedIndexSearch implements SearchAdapter {
   }
 
   private async recordCoverage(
-    session: ReadSession, request: SearchRequest,
-    capability: string, result: SearchResult,
+    session: ReadSession, request: SearchRequest, start: SearchPosition,
+    groups: Group[], next: Group | undefined, capability: string,
+    key: string, result: SearchResult,
   ): Promise<boolean> {
+    const sources = request.sources.filter(source =>
+      !(compareUtf8(source, start.source) < 0 ||
+        (source === start.source && start.output !== '')) &&
+      !(next && compareUtf8(source, next.source) >= 0),
+    );
+    if (!sources.length) return true;
+    const seen = new Set(groups.map(group => group.source));
+    if (sources.every(source => seen.has(source)) && !groups.some(group => group.routed))
+      return true;
     const covered = await session.queryIfAvailable('index_sources', {
-      source_revision_ids: request.sources, capability,
+      source_revision_ids: sources, capability, key,
     });
     if (!covered) return false;
     const found = new Set<string>();
     for (const row of covered.rows) {
       found.add(String(row.source_revision_id));
-      result.searched.push(coverageSummary(row, capability));
+      let extents: SourceExtent[];
+      try {
+        extents = JSON.parse(String(row.extents)) as SourceExtent[];
+      } catch {
+        throw new ReadError('corrupt', 'Invalid selected index coverage');
+      }
+      if (Array.isArray(extents) && extents.some(e => e.skipped === 1))
+        result.searched.push(coverageSummary(row, capability));
     }
-    for (const source of request.sources)
+    for (const source of sources)
       if (!found.has(source))
         result.limitations.push(limitation(
           'missing_index', source, `No selected ${capability} index for this source`,
@@ -784,6 +804,7 @@ function groupRows(rows: Record<string, unknown>[]): Group[] {
           isSafeCount(first) && isSafeCount(lastOrder) && first <= lastOrder
             ? [first, lastOrder]
             : null,
+        routed: Boolean(row.routing_available),
         artifacts: new Map(),
       };
       groups.push(group);

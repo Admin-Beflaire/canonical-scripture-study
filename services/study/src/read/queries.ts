@@ -106,6 +106,7 @@ export interface IndexFilesInput {
 export interface IndexSourcesInput {
   source_revision_ids: string[];
   capability: string;
+  key: string;
 }
 export interface ReaderMappingInput {
   references: {
@@ -224,7 +225,8 @@ const INDEX_FILES = `WITH idx AS (
   FROM coverage c
   JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
   WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
-SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator
+SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator,
+  routed.output_key IS NOT NULL AS routing_available
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
 LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
 WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
@@ -244,10 +246,15 @@ const INDEX_SOURCES = `SELECT c.source_revision_id,
     'first_unit', json_extract(c.native_extent_json, '$.unit_ids[0]'),
     'last_unit', json_extract(c.native_extent_json, '$.unit_ids[#-1]'),
     'units', json_array_length(c.native_extent_json, '$.unit_ids'),
-    'rule', json_extract(p.parameters_json, '$.normalization_rule')
+    'rule', json_extract(p.parameters_json, '$.normalization_rule'),
+    'skipped', CASE WHEN c.state = 'available' AND routed.output_key IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM index_route_keys rk
+        WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key)
+      THEN 1 ELSE 0 END
   )) AS extents
 FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
 JOIN prepared_outputs p ON p.id = c.output_id
+LEFT JOIN index_routes routed ON routed.output_id = c.output_id
 WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
 GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?4`;
 
@@ -539,6 +546,7 @@ FROM json_each(?2) wanted WHERE EXISTS (
     params: (i: IndexSourcesInput) => [
       JSON.stringify(list(i.source_revision_ids)),
       id(i.capability),
+      key(i.key),
     ],
   },
 } satisfies Record<string, Declaration<never>>;

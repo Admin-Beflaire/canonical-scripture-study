@@ -231,11 +231,11 @@ const INDEX_FILES = `WITH idx AS (
     json_extract(c.native_extent_json, '$.order_range[1]') AS order_last,
     (${ROUTABLE_EXTENT}) AS routable_extent
   FROM coverage c
-  JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+  CROSS JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
   WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3),
 routed_sources AS (
   SELECT DISTINCT i.source_revision_id
-  FROM idx i JOIN index_routes r ON r.output_id = i.output_id)
+  FROM idx i CROSS JOIN index_routes r ON r.output_id = i.output_id)
 SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator,
   rs.source_revision_id IS NOT NULL AS source_has_routing
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id

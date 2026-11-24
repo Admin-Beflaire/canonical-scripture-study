@@ -295,7 +295,9 @@ def scoped_query(kind: str, output_ids: Sequence[str]) -> tuple[str, list[Any]]:
             f"WHERE s.parent_id IS NOT NULL) SELECT id FROM ancestry)",
             list(output_ids),
         )
-    return f"SELECT * FROM {table} WHERE {where}", list(output_ids)
+    # Hide the compact D1-only integer identity from the immutable candidate contract.
+    columns = "output_id, keys_json" if kind == "index_route" else "*"
+    return f"SELECT {columns} FROM {table} WHERE {where}", list(output_ids)
 
 
 def decoded(rows: Iterable[Any]) -> list[dict[str, Any]]:

@@ -855,10 +855,10 @@ function checkPosting(
   if (!validPostingRef(p, source, manifest, ref, expectedKind)) return null;
   const hit: SearchHit = {
     source_revision_id: source,
-    span_id: p.span_id,
+    span_id: p.span_id as string,
     coordinate_version: p.coordinate_version as string,
-    native_order: p.native_order,
-    occurrence_id: p.occurrence_id,
+    native_order: p.native_order as number,
+    occurrence_id: p.occurrence_id as string,
     native_reference: ref,
   };
   if (expectedKind === 'word') {

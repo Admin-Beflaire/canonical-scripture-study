@@ -102,16 +102,16 @@ class CandidateStageTwo(unittest.TestCase):
             }
         raw = json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         state = ControlState(
-            job["task_id"],
-            job["task_revision"] + 1,
-            "running",
-            job["basis_digest"],
-            job["unit_id"],
-            job["attempt"],
-            job["task_revision"],
-            hashlib.sha256(raw.encode()).hexdigest(),
-            "run-9",
-            "dispatched",
+            task_id=job["task_id"],
+            task_revision=job["task_revision"] + 1,
+            task_state="running",
+            task_basis_digest=job["basis_digest"],
+            unit_id=job["unit_id"],
+            attempt=job["attempt"],
+            job_revision=job["task_revision"],
+            job_input_basis=hashlib.sha256(raw.encode()).hexdigest(),
+            run_id="run-9",
+            job_state="dispatched",
         )
         if state_change:
             state = replace(state, **state_change)

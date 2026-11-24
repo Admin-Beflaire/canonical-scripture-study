@@ -138,7 +138,7 @@ test('index route access path uses the search-key primary index', () => {
   });
   const plan = fixture.db.sqlite
     .prepare(`EXPLAIN QUERY PLAN ${QUERIES.index_files.sql}`)
-    .all('rel-2', ...params, 41);
+    .all('rel-2', ...(params as Array<string | number | null>), 41);
   const detail = plan.map(row => String(row.detail)).join('\n');
   assert.match(detail, /SEARCH rk USING PRIMARY KEY \(search_key=\? AND output_key=\?\)/);
 });

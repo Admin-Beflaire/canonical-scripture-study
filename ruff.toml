@@ -70,7 +70,6 @@ exclude = [
   "tests/python/test_maintenance_state.py",
   "tests/python/test_oshb_bdb.py",
   "tests/python/test_preparation_adapters.py",
-  "tests/python/test_preparation_candidate.py",
   "tests/python/test_preparation_end_to_end.py",
   "tests/python/test_preparation_evidence.py",
   "tests/python/test_preparation_executor.py",

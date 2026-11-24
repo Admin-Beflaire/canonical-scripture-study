@@ -101,6 +101,13 @@ class IndexFilesStageThree(unittest.TestCase):
         again = build_index_files(part, encoded_page_cap_bytes=2048)
         self.assertEqual(result.manifest, again.manifest)
         self.assertEqual(records.blobs, again.records.blobs)
+        [route] = records.rows('index_route')
+        self.assertEqual(route['output_id'], part.basis.output_id)
+        self.assertEqual(route['keys_json'],
+                         sorted({posting['search_key'] for posting in part.postings},
+                                key=lambda key: key.encode('utf-8')))
+        self.assertEqual(route, again.records.rows('index_route')[0])
+        self.assertEqual(sum('INSERT INTO index_routes' in sql for sql, _ in records.statements()), 1)
 
     def test_common_utf8_key_spans_postings_and_directory_pages_without_lost_rows(self):
         base = self.parts[0]

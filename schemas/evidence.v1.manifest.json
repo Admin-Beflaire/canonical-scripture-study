@@ -38,6 +38,11 @@
       "aid_entry": "aid_entries"
     }
   },
+  "index_routes": {
+    "record_schema": "indexes/route-records.v1.schema.json",
+    "migration": "migrations/0014_index_routes.sql",
+    "record_tables": {"index_route": "index_routes"}
+  },
   "json_columns": "Fields ending in _json contain decoded JSON in contracts and UTF-8 JSON text in SQL.",
   "booleans": "Contracts use JSON booleans; SQL stores 0 or 1.",
   "release_selection": "singleton_id=1; both release IDs null before the first selected release."

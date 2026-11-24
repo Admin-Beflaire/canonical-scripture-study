@@ -20,15 +20,18 @@ _RECORDS = SchemaSubset("evidence-records.v1.schema.json")
 _SEGMENTS = SchemaSubset("indexes/span-segment.v1.schema.json")
 _READER_REFERENCES = SchemaSubset("reader-references/records.v1.schema.json")
 _AID_ENTRIES = SchemaSubset("aid-entries/records.v1.schema.json")
+_INDEX_ROUTES = SchemaSubset("indexes/route-records.v1.schema.json")
 _MANIFEST = json.loads(
     (SCHEMAS / "evidence.v1.manifest.json").read_text(encoding="utf-8")
 )
 _READER_TABLES = _MANIFEST["reader_references"]["record_tables"]
 _AID_TABLES = _MANIFEST["aid_entries"]["record_tables"]
+_INDEX_ROUTE_TABLES = _MANIFEST["index_routes"]["record_tables"]
 TABLES: dict[str, str] = {
     **_MANIFEST["record_tables"],
     **_READER_TABLES,
     **_AID_TABLES,
+    **_INDEX_ROUTE_TABLES,
     "span_segment": "span_segments",
 }
 # Place reader links after the native spans they reference.
@@ -38,6 +41,7 @@ ORDER = (
     "prepared_output",
     "text_payload",
     "artifact",
+    "index_route",
     "aid_entry",
     "native_span",
     "span_segment",
@@ -55,6 +59,7 @@ KEYS: dict[str, tuple[str, ...]] = {
     "prepared_output": ("id",),
     "text_payload": ("content_id",),
     "artifact": ("id",),
+    "index_route": ("output_id",),
     "native_span": ("id",),
     "span_segment": ("span_id", "segment_ordinal"),
     "annotation": ("id",),
@@ -117,6 +122,8 @@ class RecordSet:
                 if kind in _READER_TABLES
                 else _AID_ENTRIES
                 if kind in _AID_TABLES
+                else _INDEX_ROUTES
+                if kind in _INDEX_ROUTE_TABLES
                 else _RECORDS
             )
             errors = schema.errors(kind, row)
@@ -222,6 +229,7 @@ class RecordSet:
 
 _BY_OUTPUT = (
     "artifact",
+    "index_route",
     "native_span",
     "annotation",
     "relationship",

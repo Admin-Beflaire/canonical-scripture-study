@@ -203,7 +203,8 @@ def prepare_unit(data: bytes, component: Component, book: str, unit_ids: Sequenc
                               annotations=notes)
     rules = RULES[component.source.language]
     rule_names = {'tokenizer_version': rules.tokenizer_version, 'normalization_rule': rules.normalization_rule}
-    source_basis = OutputBasis('source_search', (revision,), METHOD_VERSION, rule_names, extent,
+    source_basis = OutputBasis('source_search', (revision,), METHOD_VERSION,
+                               {**rule_names, 'index_routing': 'key-output/1'}, extent,
                                (evidence_basis.output_id,))
     sources = build_source_postings(text, evidence, source_basis, rules, max_units=len(unit_ids),
                                     max_scalars=BOOK_STRIDE - 1, max_occurrences=200_000,
@@ -211,7 +212,8 @@ def prepare_unit(data: bytes, component: Component, book: str, unit_ids: Sequenc
     postings = [row for part in sources for row in part.postings]
     observations = _observations(text, chosen, postings, component)
     word_basis = OutputBasis('word_index', (revision, component.analysis_revision_id), METHOD_VERSION,
-                             {**rule_names, 'grammar_key_version': GRAMMAR_KEY_VERSION}, extent,
+                             {**rule_names, 'grammar_key_version': GRAMMAR_KEY_VERSION,
+                              'index_routing': 'key-output/1'}, extent,
                              (evidence_basis.output_id,))
     words = build_word_postings(text, sources, observations,
                                 {component.analysis_revision_id: frozenset(row['occurrence_id'] for row in postings)},

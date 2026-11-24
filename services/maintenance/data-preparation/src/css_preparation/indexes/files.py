@@ -190,6 +190,13 @@ def build_index_files(partition: SourcePartition | WordPartition, *,  # noqa: C9
     manifest_id = f'{output_id}:manifest:{manifest_digest[:20]}'
     records = RecordSet()
     records.add('prepared_output', basis.row())
+    # Derived from the same complete postings, not from external reference lists.
+    # D1 expands this single row into indexed key/output pairs in the same transaction.
+    records.add('index_route', {
+        'output_id': output_id,
+        'keys_json': sorted({row['search_key'] for row in partition.postings},
+                            key=lambda key: key.encode('utf-8')),
+    })
     for artifact_id, data, sha, filename, kind in (
         (posting_id, content, digest, 'postings.ndjson', POSTINGS_FORMAT),
         (directory_id, directory, directory_digest, 'directory.ndjson', DIRECTORY_FORMAT),

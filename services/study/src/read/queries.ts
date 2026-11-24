@@ -44,6 +44,11 @@ const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
     throw new ReadError('invalid_request', 'Invalid query position');
   return value;
 };
+const key = (value: unknown): string => {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 300 || /[\uD800-\uDFFF]/u.test(value))
+    throw new ReadError('invalid_request', 'Invalid search key');
+  return value;
+};
 const order = (value: unknown): number => {
   if (!isSafeCount(value))
     throw new ReadError('invalid_request', 'Expected a native order');
@@ -90,7 +95,12 @@ export interface UnitSpansInput {
 export interface IndexFilesInput {
   source_revision_ids: string[];
   capability: string;
+  key: string;
   after?: [string, number, string] | null;
+}
+export interface IndexSourcesInput {
+  source_revision_ids: string[];
+  capability: string;
 }
 export interface ReaderMappingInput {
   references: {
@@ -211,9 +221,19 @@ const INDEX_FILES = `WITH idx AS (
   WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
 SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
-WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?4, ?5, ?6)
+LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
+WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
+  AND (routed.output_id IS NULL OR idx.state != 'available'
+    OR EXISTS (SELECT 1 FROM index_route_keys rk
+      WHERE rk.search_key = ?4 AND rk.output_id = routed.output_id))
 ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
-LIMIT ?7`;
+LIMIT ?8`;
+
+/** Distinguish a key absent in a selected index from a missing selected index. */
+const INDEX_SOURCES = `SELECT c.source_revision_id
+FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
+GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?4`;
 
 /** The sources selected now, one row per source and capability, with their attribution. */
 const RELEASE_SOURCES = `SELECT c.source_revision_id, c.capability, COUNT(*) AS outputs,
@@ -494,7 +514,15 @@ FROM json_each(?2) wanted WHERE EXISTS (
     params: (i: IndexFilesInput) => [
       JSON.stringify(list(i.source_revision_ids)),
       id(i.capability),
+      key(i.key),
       ...(optionalAfter(i.after, 3) ?? ['', -1, '']),
+    ],
+  },
+  index_sources: {
+    sql: INDEX_SOURCES,
+    params: (i: IndexSourcesInput) => [
+      JSON.stringify(list(i.source_revision_ids)),
+      id(i.capability),
     ],
   },
 } satisfies Record<string, Declaration<never>>;

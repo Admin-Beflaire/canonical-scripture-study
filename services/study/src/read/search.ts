@@ -113,7 +113,7 @@ export class PagedIndexSearch implements SearchAdapter {
     const capability = CAPABILITY[request.lookup];
     const searchKey = request.lookup === 'word' ? request.key : `${request.lookup}:${request.key}`;
     const start: SearchPosition = request.position ?? { source: request.sources[0], output: '', order: 0, dir: 0, entry: 0, after: null, anchor: null };
-    const indexInput: IndexFilesInput = { source_revision_ids: request.sources, capability,
+    const indexInput: IndexFilesInput = { source_revision_ids: request.sources, capability, key: searchKey,
       after: [start.source, start.output === '' ? -1 : start.order, start.output] };
     const indexRows = await session.queryIfAvailable('index_files', indexInput);
     if (indexRows === null) return finish(result, start, resumed);
@@ -130,12 +130,17 @@ export class PagedIndexSearch implements SearchAdapter {
     if (start.output !== '' && (!anchor || anchor.source !== start.source || anchor.output !== start.output || anchor.order?.[0] !== start.order))
       throw new ReadError('invalid_request', 'Continuation does not match the selected index; start the search again');
     const seen = new Set(groups.map(g => g.source));
-    for (const source of request.sources) {
-      // Sources before the resume point, or a resumed source past its first output, were reported earlier.
-      const done = compareUtf8(source, start.source) < 0 || (source === start.source && start.output !== '');
-      const later = next && compareUtf8(source, next.source) >= 0;
-      if (!done && !later && !seen.has(source))
-        result.limitations.push(limitation('missing_index', source, `No selected ${capability} index for this source`));
+    const candidates = request.sources.filter(source =>
+      !(compareUtf8(source, start.source) < 0 || (source === start.source && start.output !== ''))
+      && !(next && compareUtf8(source, next.source) >= 0) && !seen.has(source));
+    if (candidates.length) {
+      // A selected source can have zero matches without having missing coverage.
+      const covered = await session.queryIfAvailable('index_sources', {source_revision_ids: candidates, capability});
+      if (covered === null) return finish(result, start, resumed);
+      const present = new Set(covered.rows.map(row => row.source_revision_id));
+      for (const source of candidates)
+        if (!present.has(source))
+          result.limitations.push(limitation('missing_index', source, `No selected ${capability} index for this source`));
     }
     let previous: Group | undefined;
     for (const group of groups) {

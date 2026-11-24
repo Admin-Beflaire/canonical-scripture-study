@@ -117,6 +117,48 @@ test('exact word search returns attributed native references across partitions i
   );
 });
 
+/** Routes are derived from the postings; old outputs without routes remain searchable. */
+test('indexed output routing skips empty partitions without losing occurrences', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  const request: SearchRequest = {lookup: 'word', key: 'epsilon', sources: [A]};
+  const baseline = await once(fixture, request);
+  assert.equal(baseline.result.state, 'complete');
+  assert.equal(baseline.result.searched.length, 2);
+  // The fixture creates a selected release first; route rows normally precede selection.
+  fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
+  for (const output of ['syn-src-1', 'syn-src-2']) {
+    const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
+    fixture.db.sqlite.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+      .run(output, JSON.stringify(keys));
+  }
+  clearSearchCache();
+  const routed = await once(fixture, request);
+  assert.equal(routed.result.state, 'complete');
+  assert.deepEqual(routed.result.hits.map(h => h.occurrence_id),
+    baseline.result.hits.map(h => h.occurrence_id));
+  assert.equal(routed.result.searched.length, 1);
+  assert.ok(routed.usage.r2Reads < baseline.usage.r2Reads,
+    'the irrelevant partition is never opened');
+});
+
+test('a key absent from complete routed indexes is no_match, not missing coverage', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  // The fixture models routing applied at build time, before this release was selected.
+  fixture.db.sqlite.exec('DROP TRIGGER index_routes_insert_selected');
+  for (const output of ['syn-src-1', 'syn-src-2']) {
+    const keys = [...new Set(fixture.postings[output].map(p => p.search_key))];
+    fixture.db.sqlite.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
+      .run(output, JSON.stringify(keys));
+  }
+  const {result, usage} = await once(fixture, {lookup: 'word', key: 'unlisted', sources: [A]});
+  assert.equal(result.state, 'no_match');
+  assert.equal(result.limitations.length, 0);
+  assert.equal(result.hits.length, 0);
+  assert.equal(usage.r2Reads, 0);
+});
+
 test('exact search can use cached index metadata after its D1 allowance is spent', async () => {
   clearSearchCache();
   const fixture = buildFixture();

@@ -256,7 +256,7 @@ FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.rel
 JOIN prepared_outputs p ON p.id = c.output_id
 LEFT JOIN index_routes routed ON routed.output_id = c.output_id
 WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
-GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?4`;
+GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?5`;
 
 /** The sources selected now, one row per source and capability, with their attribution. */
 const RELEASE_SOURCES = `SELECT c.source_revision_id, c.capability, COUNT(*) AS outputs,

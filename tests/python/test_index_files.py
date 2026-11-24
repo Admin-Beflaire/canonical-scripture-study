@@ -213,7 +213,10 @@ class IndexFilesStageThree(unittest.TestCase):
             )
         with self.assertRaisesRegex(RecordError, "routing differs"):
             _check_index_routes(
-                basis, keys, [{**route, "keys_json": route["keys_json"] * 2}], read_pairs
+                basis,
+                keys,
+                [{**route, "keys_json": route["keys_json"] * 2}],
+                read_pairs,
             )
         with self.assertRaisesRegex(RecordError, "routing differs"):
             _check_index_routes(basis, keys, [], read_pairs)

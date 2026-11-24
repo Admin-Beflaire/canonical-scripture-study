@@ -284,6 +284,9 @@ test('cold ordinary and absent-key search measure the cost of routed coverage', 
     clearSearchCache();
     const fixture = buildFixture();
     const request: SearchRequest = {lookup: 'word', key, sources: [A]};
+    const args = ['rel-2', JSON.stringify([A]), 'word_exact', key] as const;
+    const files = fixture.db.sqlite.prepare(QUERIES.index_files.sql);
+    assert.equal(files.all(...args, A, -1, '', 41).length, 6);
     const before = await once(fixture, request);
     routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
     fixture.env.DATA_DB = {...fixture.db};
@@ -291,6 +294,14 @@ test('cold ordinary and absent-key search measure the cost of routed coverage', 
     const after = await once(fixture, request);
     assert.equal(before.usage.d1Calls, 2);
     assert.equal(after.usage.d1Calls, 3);
+    assert.equal(
+      files.all(...args, A, -1, '', 41).length,
+      key === 'alpha' ? 6 : 0,
+    );
+    const coverageRows = fixture.db.sqlite
+      .prepare(QUERIES.index_sources.sql)
+      .all(...args, 41);
+    assert.equal(coverageRows.length, 1);
     assert.deepEqual(after.result.hits, before.result.hits);
     assert.equal(after.result.state, before.result.state);
     if (key === 'unlisted') assert.equal(after.usage.r2Reads, 0);

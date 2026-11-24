@@ -761,7 +761,7 @@ test('a translating study carries the key translation rules in its first batch o
   ])
     assert.match(full, needed);
   assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/21');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/22');
   for (const needed of [
     /### Working translation — <reference>/,
     /#### <chapter heading: book and chapter, only when several chapters>/,

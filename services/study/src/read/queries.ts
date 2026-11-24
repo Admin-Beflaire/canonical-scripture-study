@@ -44,6 +44,16 @@ const optionalAfter = (value: unknown, size: number): unknown[] | undefined => {
     throw new ReadError('invalid_request', 'Invalid query position');
   return value;
 };
+const key = (value: unknown): string => {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > 300 ||
+    /[\uD800-\uDFFF]/u.test(value)
+  )
+    throw new ReadError('invalid_request', 'Invalid search key');
+  return value;
+};
 const order = (value: unknown): number => {
   if (!isSafeCount(value))
     throw new ReadError('invalid_request', 'Expected a native order');
@@ -90,7 +100,13 @@ export interface UnitSpansInput {
 export interface IndexFilesInput {
   source_revision_ids: string[];
   capability: string;
+  key: string;
   after?: [string, number, string] | null;
+}
+export interface IndexSourcesInput {
+  source_revision_ids: string[];
+  capability: string;
+  key: string;
 }
 export interface ReaderMappingInput {
   references: {
@@ -199,21 +215,60 @@ WHERE ro.release_id = ?1 AND cs.status = 'approved'
 ORDER BY cs.id
 LIMIT ?2`;
 
+/** Only compatible native-order extents may be skipped by exact-key routing. */
+const ROUTABLE_EXTENT = `typeof(json_extract(c.native_extent_json, '$.order_range[0]')) = 'integer'
+  AND typeof(json_extract(c.native_extent_json, '$.order_range[1]')) = 'integer'
+  AND json_extract(c.native_extent_json, '$.order_range[0]') >= 0
+  AND json_extract(c.native_extent_json, '$.order_range[1]') >= json_extract(c.native_extent_json, '$.order_range[0]')
+  AND json_extract(c.native_extent_json, '$.order_range[1]') <= 9007199254740991`;
+
 /** Search adapter only: index outputs for a capability in native order (their `order_range`
  *  start), with every artifact of each output. The unit list is not returned. An output without
  *  an order range sorts first and is reported as an incompatible index. */
 const INDEX_FILES = `WITH idx AS (
   SELECT c.output_id, c.source_revision_id, c.capability, c.state, c.method_version, c.limitation, c.index_artifact_id,
     json_extract(c.native_extent_json, '$.order_range[0]') AS order_first,
-    json_extract(c.native_extent_json, '$.order_range[1]') AS order_last
+    json_extract(c.native_extent_json, '$.order_range[1]') AS order_last,
+    (${ROUTABLE_EXTENT}) AS routable_extent
   FROM coverage c
-  JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-  WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
-SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator
+  CROSS JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+  WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3),
+routed_sources AS (
+  SELECT DISTINCT i.source_revision_id
+  FROM idx i CROSS JOIN index_routes r ON r.output_id = i.output_id)
+SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator,
+  rs.source_revision_id IS NOT NULL AS source_has_routing
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
-WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?4, ?5, ?6)
+LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
+LEFT JOIN routed_sources rs ON rs.source_revision_id = idx.source_revision_id
+WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
+  AND (routed.output_id IS NULL OR idx.state != 'available' OR NOT idx.routable_extent
+    OR EXISTS (SELECT 1 FROM index_route_keys rk
+      WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key))
 ORDER BY idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id, a.id
-LIMIT ?7`;
+LIMIT ?8`;
+
+/** Report the selected index coverage independently of the keys routed to R2 files.
+ *  One bounded summary per source, including outputs skipped by the exact-key route. */
+const INDEX_SOURCES = `SELECT c.source_revision_id,
+  json_group_array(json_object(
+    'state', c.state,
+    'first', json_extract(c.native_extent_json, '$.order_range[0]'),
+    'last', json_extract(c.native_extent_json, '$.order_range[1]'),
+    'first_unit', json_extract(c.native_extent_json, '$.unit_ids[0]'),
+    'last_unit', json_extract(c.native_extent_json, '$.unit_ids[#-1]'),
+    'units', json_array_length(c.native_extent_json, '$.unit_ids'),
+    'rule', json_extract(p.parameters_json, '$.normalization_rule')
+  )) FILTER (WHERE c.state = 'available' AND routed.output_key IS NOT NULL
+      AND (${ROUTABLE_EXTENT})
+      AND NOT EXISTS (SELECT 1 FROM index_route_keys rk
+        WHERE rk.search_key = ?4 AND rk.output_key = routed.output_key)
+  ) AS extents
+FROM coverage c JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
+JOIN prepared_outputs p ON p.id = c.output_id
+LEFT JOIN index_routes routed ON routed.output_id = c.output_id
+WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
+GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?5`;
 
 /** The sources selected now, one row per source and capability, with their attribution. */
 const RELEASE_SOURCES = `SELECT c.source_revision_id, c.capability, COUNT(*) AS outputs,
@@ -457,7 +512,13 @@ FROM json_each(?2) wanted WHERE EXISTS (
       ...(optionalAfter(i.after, 2) ?? ['', '']),
     ],
   },
-  statement: {sql: STATEMENT, params: (_: StatementInput) => []},
+  statement: {
+    sql: STATEMENT,
+    params: (input: StatementInput) => {
+      void input;
+      return [];
+    },
+  },
   release_sources: {
     sql: RELEASE_SOURCES,
     params: (i: ReleaseSourcesInput) => [
@@ -494,7 +555,16 @@ FROM json_each(?2) wanted WHERE EXISTS (
     params: (i: IndexFilesInput) => [
       JSON.stringify(list(i.source_revision_ids)),
       id(i.capability),
+      key(i.key),
       ...(optionalAfter(i.after, 3) ?? ['', -1, '']),
+    ],
+  },
+  index_sources: {
+    sql: INDEX_SOURCES,
+    params: (i: IndexSourcesInput) => [
+      JSON.stringify(list(i.source_revision_ids)),
+      id(i.capability),
+      key(i.key),
     ],
   },
 } satisfies Record<string, Declaration<never>>;

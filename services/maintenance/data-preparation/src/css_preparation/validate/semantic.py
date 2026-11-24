@@ -13,7 +13,7 @@ import json
 from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
-from ..prepare.evidence import NativeText, span_wording
+from ..prepare.evidence import NativeText, OutputBasis, span_wording
 from ..prepare.records import KEYS, ORDER, SHARED, RecordError, RecordSet, comparable
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
 
@@ -50,6 +50,35 @@ def _same_as_expected(
         wanted = [comparable(kind, row) for row in expected.rows(kind)]
         if sorted(rows[kind], key=key) != sorted(wanted, key=key):
             raise RecordError(f"Saved {kind} differs from the checked {what}")
+
+
+def _posting_key(posting: dict[str, Any]) -> str:
+    key = posting.get("search_key")
+    if not isinstance(key, str):
+        raise RecordError("Saved native posting has no search key")
+    return key
+
+
+def _check_index_routes(
+    index: OutputBasis,
+    posting_keys: set[str],
+    route_rows: Sequence[dict[str, Any]],
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
+) -> None:
+    """A route may exclude a key only after both stored forms match the saved postings."""
+    owned = [row for row in route_rows if row["output_id"] == index.output_id]
+    if index.parameters.get("index_routing") != "key-output/1":
+        if owned:
+            raise RecordError("Unrouted index unexpectedly has routing metadata")
+        return
+    if len(owned) != 1:
+        raise RecordError("Saved index routing differs from posting keys")
+    keys = owned[0]["keys_json"]
+    if len(keys) != len(posting_keys) or set(keys) != posting_keys:
+        raise RecordError("Saved index routing differs from posting keys")
+    expanded = read_rows("index_route_key", [index.output_id])
+    if expanded != [{"output_id": index.output_id, "matched_keys": len(posting_keys)}]:
+        raise RecordError("Saved indexed routing pairs differ from posting keys")
 
 
 def check_saved_semantics(  # noqa: C901, PLR0915
@@ -229,6 +258,7 @@ def check_saved_semantics(  # noqa: C901, PLR0915
     ):
         text = source(index.input_revisions[0])
         bases = text.scalar_bases()
+        posting_keys: set[str] = set()
         for artifact in (
             r
             for r in artifacts.values()
@@ -242,6 +272,7 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                     raise RecordError("Saved native posting is malformed") from error
                 if not isinstance(posting, dict):
                     raise RecordError("Saved native posting is not an object")
+                posting_keys.add(_posting_key(posting))
                 ref = posting.get("native_reference")
                 if (
                     not isinstance(ref, dict)
@@ -292,6 +323,8 @@ def check_saved_semantics(  # noqa: C901, PLR0915
                     pieces
                 ):
                     raise RecordError("Saved word form disagrees with source wording")
+
+        _check_index_routes(index, posting_keys, rows["index_route"], read_rows)
 
     coverage = tuple(
         sorted(

@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:css:index-route-records:1",
+  "title": "Index key routing records",
+  "$defs": {
+    "index_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "output_id",
+        "keys_json"
+      ],
+      "properties": {
+        "output_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
+        },
+        "keys_json": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\uD800-\\uDFFF]*$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -240,7 +240,7 @@ interface Group {
   method: string;
   manifestId: string | null;
   order: [number, number] | null;
-  routed: boolean;
+  sourceHasRouting: boolean;
   artifacts: Map<string, RegisteredArtifact>;
 }
 
@@ -629,7 +629,7 @@ export class PagedIndexSearch implements SearchAdapter {
     const seen = new Set(groups.map(group => group.source));
     if (
       sources.every(source => seen.has(source)) &&
-      !groups.some(group => group.routed)
+      !groups.some(group => group.sourceHasRouting)
     )
       return true;
     const covered = await session.queryIfAvailable('index_sources', {
@@ -1121,7 +1121,7 @@ function groupRows(rows: Record<string, unknown>[]): Group[] {
           isSafeCount(first) && isSafeCount(lastOrder) && first <= lastOrder
             ? [first, lastOrder]
             : null,
-        routed: Boolean(row.routing_available),
+        sourceHasRouting: Boolean(row.source_has_routing),
         artifacts: new Map(),
       };
       groups.push(group);

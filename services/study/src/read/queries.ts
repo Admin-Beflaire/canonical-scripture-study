@@ -232,11 +232,15 @@ const INDEX_FILES = `WITH idx AS (
     (${ROUTABLE_EXTENT}) AS routable_extent
   FROM coverage c
   JOIN release_outputs ro ON ro.output_id = c.output_id AND ro.release_id = ?1
-  WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3)
+  WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3),
+routed_sources AS (
+  SELECT DISTINCT i.source_revision_id
+  FROM idx i JOIN index_routes r ON r.output_id = i.output_id)
 SELECT idx.*, a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator,
-  routed.output_key IS NOT NULL AS routing_available
+  rs.source_revision_id IS NOT NULL AS source_has_routing
 FROM idx LEFT JOIN artifacts a ON a.output_id = idx.output_id
 LEFT JOIN index_routes routed ON routed.output_id = idx.output_id
+LEFT JOIN routed_sources rs ON rs.source_revision_id = idx.source_revision_id
 WHERE (idx.source_revision_id, COALESCE(idx.order_first, -1), idx.output_id) >= (?5, ?6, ?7)
   AND (routed.output_id IS NULL OR idx.state != 'available' OR NOT idx.routable_extent
     OR EXISTS (SELECT 1 FROM index_route_keys rk

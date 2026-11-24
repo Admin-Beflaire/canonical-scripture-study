@@ -194,6 +194,27 @@ test('indexed output routing skips empty partitions without losing occurrences',
   );
 });
 
+test('a routed no-match output retains coverage beside a legacy matching output', async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  const request: SearchRequest = {lookup: 'word', key: 'epsilon', sources: [A]};
+  const baseline = await once(fixture, request);
+  routeFixture(fixture, ['syn-src-1']);
+  fixture.env.DATA_DB = {...fixture.db};
+  clearSearchCache();
+  const mixed = await once(fixture, request);
+  assert.equal(mixed.result.state, 'complete');
+  assert.deepEqual(mixed.result.hits, baseline.result.hits);
+  assert.deepEqual(
+    mixed.result.searched
+      .filter(s => s.routing_summary)
+      .map(s => s.order_range),
+    [[0, 9999]],
+  );
+  assert.equal(mixed.usage.d1Calls, 3);
+  assert.ok(mixed.usage.r2Reads < baseline.usage.r2Reads);
+});
+
 test('a key absent from complete routed indexes is no_match, not missing coverage', async () => {
   clearSearchCache();
   const fixture = buildFixture();

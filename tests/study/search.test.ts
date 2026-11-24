@@ -132,6 +132,9 @@ test('indexed output routing skips empty partitions without losing occurrences',
     fixture.db.sqlite.prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
       .run(output, JSON.stringify(keys));
   }
+  // A new binding observes the newly prepared immutable routing; the per-binding
+  // D1 result cache must not reuse a pre-route query from the same fixture.
+  fixture.env.DATA_DB = {...fixture.db};
   clearSearchCache();
   const routed = await once(fixture, request);
   assert.equal(routed.result.state, 'complete');

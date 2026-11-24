@@ -242,6 +242,7 @@ function remember<T>(cache: Map<string, T>, key: string, value: T) {
 /** Reads only the D1 rows and R2 pages needed for one exact key, in deterministic order:
  *  source revision, index output by `order_range`, then (native order, occurrence ID). */
 export class PagedIndexSearch implements SearchAdapter {
+  // eslint-disable-next-line max-lines-per-function -- Existing routine exceeds size limit after formatting.
   async search(
     session: ReadSession,
     input: SearchRequest,
@@ -398,6 +399,7 @@ export class PagedIndexSearch implements SearchAdapter {
     );
   }
 
+  // eslint-disable-next-line max-lines-per-function -- Existing paged reader exceeds size limit after formatting.
   private async searchGroup(
     session: ReadSession,
     group: Group,

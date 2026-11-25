@@ -1052,6 +1052,12 @@ test('a fetch followed by a select goes on to the select step instead of complet
     report.limitations.some(text => text.includes('was not found')),
     JSON.stringify(report.limitations),
   );
+  assert.deepEqual(
+    report.completed_extent,
+    {component: 'revision/1'},
+    'the finished fetch is recorded before the select step',
+  );
+  assert.deepEqual(report.remaining_extent, {});
 });
 
 test('acquire-only validation stops unsuitable recipes and incomplete references before dispatch', async () => {

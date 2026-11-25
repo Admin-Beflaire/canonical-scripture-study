@@ -424,8 +424,16 @@ async function fetchStep(run: Run): Promise<Progress | null> {
       taskId,
       'The acquired original and its admission were not recorded.',
     ).then(blocked => ({...blocked, limitation: 'acquisition_not_recorded'}));
-  if (has(scope, 'build') || has(scope, 'select')) return null; // the next step follows
+  if (has(scope, 'build')) return null; // the build step records the extent
   const row = (await task(db, taskId))!;
+  if (has(scope, 'select')) {
+    // The fetch is done; record it before the select step follows.
+    await setOutcome(db, row, outcome => {
+      outcome.completed_extent = scope.extent;
+      outcome.remaining_extent = {};
+    });
+    return null;
+  }
   const outcome = JSON.parse(row.outcome_json) as Outcome;
   outcome.completed_extent = scope.extent;
   outcome.remaining_extent = {};

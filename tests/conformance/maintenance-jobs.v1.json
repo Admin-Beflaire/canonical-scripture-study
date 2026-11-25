@@ -39,7 +39,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -79,11 +78,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "constraints": {}
    }
   ],
@@ -112,11 +106,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "succeeded",
     "diagnostics": [
@@ -154,13 +143,8 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
-    "state": "checkpointed",
+    "state": "failed",
     "diagnostics": [
      {
       "code": "note",
@@ -209,7 +193,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -249,7 +232,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -289,7 +271,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -329,7 +310,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -369,7 +349,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -403,7 +382,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -443,7 +421,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {},
     "script": "rm -rf"
    },
@@ -484,7 +461,8 @@
       "byte_count": 12
      }
     ],
-    "constraints": {}
+    "constraints": {},
+    "checkpoint_ref": null
    },
    {
     "contract_version": "maintenance-job/1",
@@ -523,7 +501,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -562,7 +539,6 @@
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -602,7 +578,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -642,7 +617,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    },
    {
@@ -682,7 +656,6 @@
       "byte_count": 12
      }
     ],
-    "checkpoint_ref": null,
     "constraints": {}
    }
   ],
@@ -711,11 +684,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "promoted",
     "diagnostics": [
@@ -749,11 +717,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "succeeded",
     "diagnostics": [
@@ -787,11 +750,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "succeeded",
     "diagnostics": [
@@ -825,11 +783,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "succeeded",
     "diagnostics": [
@@ -863,11 +816,6 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": {
      "artifact_id": "a"
     },
@@ -902,13 +850,41 @@
     "coverage_refs": [
      "cov-1"
     ],
-    "checkpoint_ref": {
-     "artifact_id": "art-1",
-     "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-     "byte_count": 12
-    },
     "quality_receipt_ref": null,
     "state": "succeeded",
+    "diagnostics": [
+     {
+      "code": "note",
+      "message": "ok"
+     }
+    ]
+   },
+   {
+    "contract_version": "maintenance-job/1",
+    "task_id": "task-1",
+    "task_revision": 1,
+    "unit_id": "unit-1",
+    "attempt": 1,
+    "basis_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "run_id": "run-1",
+    "completed_extent": {
+     "books": [
+      "GEN"
+     ]
+    },
+    "remaining_extent": {},
+    "output_refs": [
+     {
+      "artifact_id": "art-1",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_count": 12
+     }
+    ],
+    "coverage_refs": [
+     "cov-1"
+    ],
+    "quality_receipt_ref": null,
+    "state": "checkpointed",
     "diagnostics": [
      {
       "code": "note",

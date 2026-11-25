@@ -26,11 +26,10 @@
       "source_context"
     ],
     "dependency_refs": [],
-    "checkpoint_ref": null,
     "constraints": {
       "ratio": 1
     }
   },
-  "canonical_json": "{\"attempt\":1,\"basis_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"checkpoint_ref\":null,\"constraints\":{\"ratio\":1},\"contract_version\":\"maintenance-job/1\",\"dependency_refs\":[],\"input_refs\":[{\"id\":\"synthetic:a:revision-1\",\"kind\":\"source_revision\"}],\"kind\":\"prepare\",\"manifest_revision\":\"manifest-1\",\"native_extent\":{\"coordinate_version\":\"synthetic:unicode-scalars/1\",\"unit_ids\":[\"1.1\",\"1.2\"]},\"recipe_revision\":\"recipe-1\",\"required_capabilities\":[\"source_context\"],\"task_id\":\"task-wire-1\",\"task_revision\":1,\"unit_id\":\"unit-wire-1\"}",
-  "sha256": "ae3e32bd8066f90eacae01500e85498a8b1d9ace2db84efa091ccd7a253c1964"
+  "canonical_json": "{\"attempt\":1,\"basis_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"constraints\":{\"ratio\":1},\"contract_version\":\"maintenance-job/1\",\"dependency_refs\":[],\"input_refs\":[{\"id\":\"synthetic:a:revision-1\",\"kind\":\"source_revision\"}],\"kind\":\"prepare\",\"manifest_revision\":\"manifest-1\",\"native_extent\":{\"coordinate_version\":\"synthetic:unicode-scalars/1\",\"unit_ids\":[\"1.1\",\"1.2\"]},\"recipe_revision\":\"recipe-1\",\"required_capabilities\":[\"source_context\"],\"task_id\":\"task-wire-1\",\"task_revision\":1,\"unit_id\":\"unit-wire-1\"}",
+  "sha256": "40752ce9ddb7a2609aa322a93c655f49a9f83dd218badc9418fcc9667cf3597d"
 }

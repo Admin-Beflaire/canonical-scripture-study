@@ -1,12 +1,18 @@
 """DP-03 Stage 4: saved-index integrity, dependency-scoped reuse and invalidation."""
+
 from copy import deepcopy
 from dataclasses import replace
 import hashlib
 import json
 import unittest
 
-from css_preparation.indexes.files import PAGE_CAP, build_index_files, page_lines, _object_key
-from css_preparation.indexes.saved import verify_saved_index, reusable_index_ids
+from css_preparation.indexes.files import (
+    PAGE_CAP,
+    build_index_files,
+    page_lines,
+    _object_key,
+)
+from css_preparation.indexes.saved import verify_saved_index
 from css_preparation.prepare.records import RecordError, RecordSet
 from test_word_index_builder import WordIndexStageTwo
 
@@ -23,42 +29,73 @@ class SavedIndexStageFour(unittest.TestCase):
         self.records = RecordSet()
         for built in (self.a, self.b, self.word):
             self.records.merge(built.records)
-        self.outputs = self.records.rows('prepared_output')
-        self.artifacts = self.records.rows('artifact')
-        self.coverage = self.records.rows('coverage')
+        self.outputs = self.records.rows("prepared_output")
+        self.artifacts = self.records.rows("artifact")
+        self.coverage = self.records.rows("coverage")
         self.blobs = dict(self.records.blobs)
-        self.bases = (fixture.parts[0].basis, fixture.parts[1].basis, fixture.build()[0].basis)
+        self.bases = (
+            fixture.parts[0].basis,
+            fixture.parts[1].basis,
+            fixture.build()[0].basis,
+        )
 
-    def check(self, built, *, saved_output=None, artifacts=None, coverage=None, blobs=None,
-              max_page_bytes=PAGE_CAP):
-        output = saved_output if saved_output is not None else next(
-            row for row in self.outputs if row['id'] == built.manifest['prepared_output_id'])
+    def check(
+        self,
+        built,
+        *,
+        saved_output=None,
+        artifacts=None,
+        coverage=None,
+        blobs=None,
+        max_page_bytes=PAGE_CAP,
+    ):
+        output = (
+            saved_output
+            if saved_output is not None
+            else next(
+                row
+                for row in self.outputs
+                if row["id"] == built.manifest["prepared_output_id"]
+            )
+        )
         return verify_saved_index(
-            next(basis for basis in self.bases if basis.output_id == built.manifest['prepared_output_id']),
+            next(
+                basis
+                for basis in self.bases
+                if basis.output_id == built.manifest["prepared_output_id"]
+            ),
             output,
             self.artifacts if artifacts is None else artifacts,
             self.coverage if coverage is None else coverage,
             self.blobs if blobs is None else blobs,
-            max_page_bytes=max_page_bytes)
+            max_page_bytes=max_page_bytes,
+        )
 
     def mutate_manifest(self, built, mutate):
         """Forge consistent registry SHA/size so a structural defect is reached."""
         manifest = deepcopy(built.manifest)
         mutate(manifest)
-        content = json.dumps(manifest, ensure_ascii=False, sort_keys=True,
-                             separators=(',', ':')).encode('utf-8')
+        content = json.dumps(
+            manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         digest = hashlib.sha256(content).hexdigest()
         old_id = built.manifest_artifact_id
         new_id = f"{built.manifest['prepared_output_id']}:manifest:{digest[:20]}"
         artifacts = deepcopy(self.artifacts)
         for row in artifacts:
-            if row['id'] == old_id:
-                row.update(id=new_id, sha256=digest, byte_count=len(content),
-                           registered_locator=_object_key(row['output_id'], digest, 'manifest.json'))
+            if row["id"] == old_id:
+                row.update(
+                    id=new_id,
+                    sha256=digest,
+                    byte_count=len(content),
+                    registered_locator=_object_key(
+                        row["output_id"], digest, "manifest.json"
+                    ),
+                )
         coverage = deepcopy(self.coverage)
         for row in coverage:
-            if row['index_artifact_id'] == old_id:
-                row['index_artifact_id'] = new_id
+            if row["index_artifact_id"] == old_id:
+                row["index_artifact_id"] = new_id
         blobs = dict(self.blobs)
         del blobs[old_id]
         blobs[new_id] = content
@@ -67,52 +104,106 @@ class SavedIndexStageFour(unittest.TestCase):
     def forge(self, built, *, postings=None, entries=None):
         """Rewrite postings and/or directory entries, then forge consistent digests, IDs and registry rows
         for the directory and manifest, so a structural defect (not a digest) is what is reached."""
-        output = built.manifest['prepared_output_id']
-        cap = built.manifest['encoded_page_cap_bytes']
+        output = built.manifest["prepared_output_id"]
+        cap = built.manifest["encoded_page_cap_bytes"]
         manifest = deepcopy(built.manifest)
-        blobs = {k: v for k, v in self.blobs.items()
-                 if k not in (built.postings_artifact_id, built.directory_artifact_id, built.manifest_artifact_id)}
+        blobs = {
+            k: v
+            for k, v in self.blobs.items()
+            if k
+            not in (
+                built.postings_artifact_id,
+                built.directory_artifact_id,
+                built.manifest_artifact_id,
+            )
+        }
         artifacts = [dict(r) for r in self.artifacts]
-        body = postings if postings is not None else self.blobs[built.postings_artifact_id]
+        body = (
+            postings if postings is not None else self.blobs[built.postings_artifact_id]
+        )
         body_sha = hashlib.sha256(body).hexdigest()
-        posting_id = f'{output}:postings:{body_sha[:20]}'
+        posting_id = f"{output}:postings:{body_sha[:20]}"
         if entries is None:
-            _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                                   for l in body.splitlines(keepends=True)], cap)  # noqa: E741
-            entries = [{'postings_artifact_id': posting_id, **page} for page in pages]
-        lines = [(e['first_key'], e['last_key'], json.dumps(e, sort_keys=True, ensure_ascii=False,
-                  separators=(',', ':')).encode('utf-8') + b'\n') for e in entries]
+            _, pages = page_lines(
+                [
+                    (json.loads(raw)["search_key"], json.loads(raw)["search_key"], raw)
+                    for raw in body.splitlines(keepends=True)
+                ],
+                cap,
+            )
+            entries = [{"postings_artifact_id": posting_id, **page} for page in pages]
+        lines = [
+            (
+                e["first_key"],
+                e["last_key"],
+                json.dumps(
+                    e, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")
+                + b"\n",
+            )
+            for e in entries
+        ]
         directory, directory_pages = page_lines(lines, cap)
         directory_sha = hashlib.sha256(directory).hexdigest()
-        directory_id = f'{output}:directory:{directory_sha[:20]}'
-        manifest['files'] = [{'artifact_id': posting_id, 'byte_length': len(body), 'sha256': body_sha}]
-        manifest['directory'] = {'artifact_id': directory_id, 'byte_length': len(directory),
-                                 'sha256': directory_sha, 'pages': directory_pages}
-        content = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        directory_id = f"{output}:directory:{directory_sha[:20]}"
+        manifest["files"] = [
+            {"artifact_id": posting_id, "byte_length": len(body), "sha256": body_sha}
+        ]
+        manifest["directory"] = {
+            "artifact_id": directory_id,
+            "byte_length": len(directory),
+            "sha256": directory_sha,
+            "pages": directory_pages,
+        }
+        content = json.dumps(
+            manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         manifest_sha = hashlib.sha256(content).hexdigest()
-        manifest_id = f'{output}:manifest:{manifest_sha[:20]}'
+        manifest_id = f"{output}:manifest:{manifest_sha[:20]}"
         for row in artifacts:
             for old, new, sha, data, name in (
-                    (built.postings_artifact_id, posting_id, body_sha, body, 'postings.ndjson'),
-                    (built.directory_artifact_id, directory_id, directory_sha, directory, 'directory.ndjson'),
-                    (built.manifest_artifact_id, manifest_id, manifest_sha, content, 'manifest.json')):
-                if row['id'] == old:
-                    row.update(id=new, sha256=sha, byte_count=len(data),
-                               registered_locator=_object_key(output, sha, name))
-        coverage = [dict(r, index_artifact_id=manifest_id) if r['index_artifact_id'] == built.manifest_artifact_id
-                    else dict(r) for r in self.coverage]
+                (
+                    built.postings_artifact_id,
+                    posting_id,
+                    body_sha,
+                    body,
+                    "postings.ndjson",
+                ),
+                (
+                    built.directory_artifact_id,
+                    directory_id,
+                    directory_sha,
+                    directory,
+                    "directory.ndjson",
+                ),
+                (
+                    built.manifest_artifact_id,
+                    manifest_id,
+                    manifest_sha,
+                    content,
+                    "manifest.json",
+                ),
+            ):
+                if row["id"] == old:
+                    row.update(
+                        id=new,
+                        sha256=sha,
+                        byte_count=len(data),
+                        registered_locator=_object_key(output, sha, name),
+                    )
+        coverage = [
+            dict(r, index_artifact_id=manifest_id)
+            if r["index_artifact_id"] == built.manifest_artifact_id
+            else dict(r)
+            for r in self.coverage
+        ]
         blobs.update({posting_id: body, directory_id: directory, manifest_id: content})
         return artifacts, coverage, blobs
 
     def test_valid_source_and_word_saved_files_reuse_in_dependency_order(self):
         for built in (self.a, self.b, self.word):
             self.assertEqual(self.check(built), built.manifest)
-        chosen = reusable_index_ids((self.bases[2], self.bases[1], self.bases[0]),
-                                    self.outputs, self.artifacts, self.coverage,
-                                    self.blobs, valid_external_dependencies=self.external)
-        self.assertEqual(chosen, (self.bases[2].output_id, self.bases[1].output_id,
-                                  self.bases[0].output_id))
-        self.assertEqual(self.records.rows('artifact'), self.artifacts)
+        self.assertEqual(self.records.rows("artifact"), self.artifacts)
 
     def test_reordered_dependencies_keep_same_immutable_coverage_and_reuse(self):
         # OutputBasis IDs already ignore dependency tuple order. Saved coverage must too.
@@ -120,148 +211,172 @@ class SavedIndexStageFour(unittest.TestCase):
         fixture.setUp()
         [word_part] = fixture.build()
         reversed_basis = replace(
-            word_part.basis, dependencies=tuple(reversed(word_part.basis.dependencies)))
+            word_part.basis, dependencies=tuple(reversed(word_part.basis.dependencies))
+        )
         self.assertGreater(len(word_part.basis.dependencies), 1)
         self.assertNotEqual(word_part.basis.dependencies, reversed_basis.dependencies)
         self.assertEqual(word_part.basis.output_id, reversed_basis.output_id)
 
         original = build_index_files(word_part)
         reordered = build_index_files(replace(word_part, basis=reversed_basis))
-        self.assertEqual(original.records.rows('prepared_output'),
-                         reordered.records.rows('prepared_output'))
-        self.assertEqual(original.records.rows('coverage'), reordered.records.rows('coverage'))
+        self.assertEqual(
+            original.records.rows("prepared_output"),
+            reordered.records.rows("prepared_output"),
+        )
+        self.assertEqual(
+            original.records.rows("coverage"), reordered.records.rows("coverage")
+        )
         self.assertEqual(original.records.blobs, reordered.records.blobs)
         self.assertEqual(
-            verify_saved_index(reversed_basis,
-                               next(row for row in self.outputs
-                                    if row['id'] == reversed_basis.output_id),
-                               self.artifacts, self.coverage, self.blobs),
-            self.word.manifest)
-        self.assertEqual(
-            reusable_index_ids((self.bases[0], self.bases[1], reversed_basis),
-                               self.outputs, self.artifacts, self.coverage, self.blobs,
-                               valid_external_dependencies=self.external),
-            tuple(basis.output_id for basis in self.bases))
+            verify_saved_index(
+                reversed_basis,
+                next(
+                    row for row in self.outputs if row["id"] == reversed_basis.output_id
+                ),
+                self.artifacts,
+                self.coverage,
+                self.blobs,
+            ),
+            self.word.manifest,
+        )
 
     def test_portable_object_keys_and_wrong_cap_rejected(self):
         built = self.a
-        for artifact in built.records.rows('artifact'):
-            self.assertNotIn(':', artifact['registered_locator'])
-            self.assertNotIn('\\', artifact['registered_locator'])
-            self.assertTrue(artifact['registered_locator'].startswith('prepared/source_search/'))
-        wrong = replace(self.bases[0], parameters={**self.bases[0].parameters,
-                                                    'encoded_page_cap_bytes': 700})
+        for artifact in built.records.rows("artifact"):
+            self.assertNotIn(":", artifact["registered_locator"])
+            self.assertNotIn("\\", artifact["registered_locator"])
+            self.assertTrue(
+                artifact["registered_locator"].startswith("prepared/source_search/")
+            )
+        wrong = replace(
+            self.bases[0],
+            parameters={**self.bases[0].parameters, "encoded_page_cap_bytes": 700},
+        )
         self.assertNotEqual(wrong.output_id, self.bases[0].output_id)
-        with self.assertRaisesRegex(RecordError, 'reuse basis'):
-            verify_saved_index(wrong, self.a.records.rows('prepared_output')[0],
-                               self.a.records.rows('artifact'),
-                               self.a.records.rows('coverage'), self.a.records.blobs)
+        with self.assertRaisesRegex(RecordError, "reuse basis"):
+            verify_saved_index(
+                wrong,
+                self.a.records.rows("prepared_output")[0],
+                self.a.records.rows("artifact"),
+                self.a.records.rows("coverage"),
+                self.a.records.blobs,
+            )
         # A forged manifest can have correct SHA-256 yet contradict its output basis.
         artifacts, coverage, blobs = self.mutate_manifest(
-            self.a, lambda manifest: manifest.update(encoded_page_cap_bytes=700))
-        with self.assertRaisesRegex(RecordError, 'page cap disagrees'):
+            self.a, lambda manifest: manifest.update(encoded_page_cap_bytes=700)
+        )
+        with self.assertRaisesRegex(RecordError, "page cap disagrees"):
             self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
         # A path from the retired colon-containing form must not be reused.
         legacy = deepcopy(self.artifacts)
         for row in legacy:
-            if row['id'] == built.postings_artifact_id:
-                row['registered_locator'] = (
-                    f"prepared/{row['output_id']}/indexes/{row['sha256']}/postings.ndjson")
-        with self.assertRaisesRegex(RecordError, 'incompatible object key'):
+            if row["id"] == built.postings_artifact_id:
+                row["registered_locator"] = (
+                    f"prepared/{row['output_id']}/indexes/{row['sha256']}/postings.ndjson"
+                )
+        with self.assertRaisesRegex(RecordError, "incompatible object key"):
             self.check(self.a, artifacts=legacy)
 
-
     def test_wrong_basis_or_missing_registered_bytes_are_not_reused(self):
-        saved = next(row for row in self.outputs if row['id'] == self.a.manifest['prepared_output_id'])
-        wrong = {**saved, 'method_version': 'changed'}
-        with self.assertRaisesRegex(RecordError, 'reuse basis'):
+        saved = next(
+            row
+            for row in self.outputs
+            if row["id"] == self.a.manifest["prepared_output_id"]
+        )
+        wrong = {**saved, "method_version": "changed"}
+        with self.assertRaisesRegex(RecordError, "reuse basis"):
             self.check(self.a, saved_output=wrong)
         for lost in (self.a.postings_artifact_id, self.a.manifest_artifact_id):
             blobs = {key: value for key, value in self.blobs.items() if key != lost}
-            with self.subTest(lost=lost), self.assertRaisesRegex(RecordError, 'incomplete saved artifact'):
+            with (
+                self.subTest(lost=lost),
+                self.assertRaisesRegex(RecordError, "incomplete saved artifact"),
+            ):
                 self.check(self.a, blobs=blobs)
-        replaced = {**self.blobs, self.a.postings_artifact_id: b'corrupted'}
-        with self.assertRaisesRegex(RecordError, 'artifact'):
+        replaced = {**self.blobs, self.a.postings_artifact_id: b"corrupted"}
+        with self.assertRaisesRegex(RecordError, "artifact"):
             self.check(self.a, blobs=replaced)
-        self.assertEqual(reusable_index_ids((self.bases[0],), self.outputs, self.artifacts,
-                         self.coverage, replaced, valid_external_dependencies=self.external), ())
 
     def test_page_caps_and_manifest_directory_fail_closed(self):
-        with self.assertRaisesRegex(RecordError, 'page cap'):
+        with self.assertRaisesRegex(RecordError, "page cap"):
             self.check(self.a, max_page_bytes=1024)
-        self.assertEqual(self.check(self.a, **dict(zip(('artifacts', 'coverage', 'blobs'), self.forge(self.a))))['format_version'],  # noqa: B905
-                         'index-manifest/2', 'the forging helper itself yields a valid index')
+        self.assertEqual(
+            self.check(
+                self.a,
+                **dict(
+                    zip(
+                        ("artifacts", "coverage", "blobs"),
+                        self.forge(self.a),
+                        strict=True,
+                    )
+                ),
+            )["format_version"],
+            "index-manifest/2",
+            "the forging helper itself yields a valid index",
+        )
         root = self.blobs[self.a.directory_artifact_id]
         good = [json.loads(line) for line in root.splitlines()]
         for change in (
             lambda e: e[0].update(byte_offset=1),
-            lambda e: e[0].update(first_key='wrong'),
+            lambda e: e[0].update(first_key="wrong"),
             lambda e: e[0].update(byte_length=PAGE_CAP + 1),
             lambda e: e.pop(),
-            lambda e: e[0].update(postings_artifact_id='elsewhere'),
+            lambda e: e[0].update(postings_artifact_id="elsewhere"),
         ):
             with self.subTest(change=change.__code__.co_firstlineno):
                 entries = deepcopy(good)
                 change(entries)
                 artifacts, coverage, blobs = self.forge(self.a, entries=entries)
                 with self.assertRaises(RecordError):
-                    self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+                    self.check(
+                        self.a, artifacts=artifacts, coverage=coverage, blobs=blobs
+                    )
         for change in (
-            lambda m: m['directory']['pages'][0].update(first_key='wrong'),
-            lambda m: m['directory']['pages'].pop(),
-            lambda m: m.update(format_version='index-manifest/1'),
-            lambda m: m['native_extent'].update(order_range=[5, 1]),
+            lambda m: m["directory"]["pages"][0].update(first_key="wrong"),
+            lambda m: m["directory"]["pages"].pop(),
+            lambda m: m.update(format_version="index-manifest/1"),
+            lambda m: m["native_extent"].update(order_range=[5, 1]),
         ):
             with self.subTest(manifest=change.__code__.co_firstlineno):
                 artifacts, coverage, blobs = self.mutate_manifest(self.a, change)
                 with self.assertRaises(RecordError):
-                    self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+                    self.check(
+                        self.a, artifacts=artifacts, coverage=coverage, blobs=blobs
+                    )
 
     def test_complete_coverage_required_and_registry_consistency(self):
         artifacts, covered, blobs = self.mutate_manifest(
-            self.a, lambda m: m['coverage'].update(state='partial', limitation='Missing unit'))
+            self.a,
+            lambda m: m["coverage"].update(state="partial", limitation="Missing unit"),
+        )
         for row in covered:
-            if row['output_id'] == self.a.manifest['prepared_output_id']:
-                row.update(state='partial', limitation='Missing unit')
-        with self.assertRaisesRegex(RecordError, 'Incomplete saved index coverage'):
+            if row["output_id"] == self.a.manifest["prepared_output_id"]:
+                row.update(state="partial", limitation="Missing unit")
+        with self.assertRaisesRegex(RecordError, "Incomplete saved index coverage"):
             self.check(self.a, artifacts=artifacts, coverage=covered, blobs=blobs)
         altered = deepcopy(self.coverage)
         for row in altered:
-            if row['output_id'] == self.word.manifest['prepared_output_id']:
-                row['index_artifact_id'] = self.a.manifest_artifact_id
+            if row["output_id"] == self.word.manifest["prepared_output_id"]:
+                row["index_artifact_id"] = self.a.manifest_artifact_id
         with self.assertRaises(RecordError):
             self.check(self.word, coverage=altered)
         altered = deepcopy(self.artifacts)
         altered.append(dict(altered[0]))
-        with self.assertRaisesRegex(RecordError, 'Duplicate saved artifact'):
+        with self.assertRaisesRegex(RecordError, "Duplicate saved artifact"):
             self.check(self.a, artifacts=altered)
 
     def test_reject_misordered_rows_even_with_recomputed_digests(self):
         # Every digest, registry row and key range forged consistently around reversed postings.
         lines = self.blobs[self.a.postings_artifact_id].splitlines(keepends=True)
         self.assertGreater(len(lines), 2)
-        artifacts, coverage, blobs = self.forge(self.a, postings=b''.join(reversed(lines)))
-        with self.assertRaisesRegex(RecordError, 'out of (bytewise|key) order'):
+        artifacts, coverage, blobs = self.forge(
+            self.a, postings=b"".join(reversed(lines))
+        )
+        with self.assertRaisesRegex(RecordError, "out of (bytewise|key) order"):
             self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
 
-    def test_correction_and_removal_omit_dependents_keep_unrelated(self):
-        # Part B is independent of part A; word depends on part A.
-        old_a, unaffected, word = self.bases
-        changed_a = replace(old_a, parameters={**old_a.parameters, 'recipe_revision': 'corrected'})
-        for desired in ((changed_a, unaffected, word), (unaffected, word)):
-            chosen = reusable_index_ids(desired, self.outputs, self.artifacts, self.coverage,
-                                        self.blobs, valid_external_dependencies=self.external)
-            self.assertEqual(chosen, (unaffected.output_id,))
-        # Deleting the evidence dependency invalidates both native source outputs.
-        chosen = reusable_index_ids(self.bases, self.outputs, self.artifacts, self.coverage,
-                                    self.blobs, valid_external_dependencies=())
-        self.assertEqual(chosen, ())
-        with self.assertRaisesRegex(RecordError, 'External dependencies'):
-            reusable_index_ids((old_a,), self.outputs, self.artifacts, self.coverage, self.blobs,
-                               valid_external_dependencies=(old_a.output_id,))
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
 
 
@@ -270,6 +385,7 @@ class SavedIndexAcrossFiles(unittest.TestCase):
 
     def build(self, reverse):
         from test_index_files import common_rows, with_cap
+
         fixture = WordIndexStageTwo()
         fixture.setUp()
         base = fixture.parts[0]
@@ -277,42 +393,115 @@ class SavedIndexAcrossFiles(unittest.TestCase):
         built = build_index_files(part, encoded_page_cap_bytes=2048)
         output, cap = part.basis.output_id, 2048
         body = built.records.blobs[built.postings_artifact_id]
-        _, pages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                               for l in body.splitlines(keepends=True)], cap)  # noqa: E741
+        _, pages = page_lines(
+            [
+                (json.loads(raw)["search_key"], json.loads(raw)["search_key"], raw)
+                for raw in body.splitlines(keepends=True)
+            ],
+            cap,
+        )
         self.assertGreater(len(pages), 1)
-        cut = pages[1]['byte_offset']
+        cut = pages[1]["byte_offset"]
         files = []
         for data in (body[:cut], body[cut:]):
             sha = hashlib.sha256(data).hexdigest()
-            files.append({'id': f'{output}:postings:{sha[:20]}', 'data': data, 'sha': sha})
+            files.append(
+                {"id": f"{output}:postings:{sha[:20]}", "data": data, "sha": sha}
+            )
         entries = []
         for file in files:
-            _, fpages = page_lines([(json.loads(l)['search_key'], json.loads(l)['search_key'], l)
-                                    for l in file['data'].splitlines(keepends=True)], cap)  # noqa: E741
-            entries.append([{'postings_artifact_id': file['id'], **p} for p in fpages])
+            _, fpages = page_lines(
+                [
+                    (json.loads(raw)["search_key"], json.loads(raw)["search_key"], raw)
+                    for raw in file["data"].splitlines(keepends=True)
+                ],
+                cap,
+            )
+            entries.append([{"postings_artifact_id": file["id"], **p} for p in fpages])
         ordered = (entries[1] + entries[0]) if reverse else (entries[0] + entries[1])
-        line = lambda e: json.dumps(e, sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode('utf-8') + b'\n'  # noqa: E731
-        directory, dpages = page_lines([(e['first_key'], e['last_key'], line(e)) for e in ordered], cap)
+
+        def line(e):
+            return (
+                json.dumps(
+                    e, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8")
+                + b"\n"
+            )
+
+        directory, dpages = page_lines(
+            [(e["first_key"], e["last_key"], line(e)) for e in ordered], cap
+        )
         dsha = hashlib.sha256(directory).hexdigest()
         manifest = deepcopy(built.manifest)
-        manifest['files'] = [{'artifact_id': f['id'], 'byte_length': len(f['data']), 'sha256': f['sha']} for f in files]
-        manifest['directory'] = {'artifact_id': f'{output}:directory:{dsha[:20]}', 'byte_length': len(directory), 'sha256': dsha, 'pages': dpages}
-        content = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        manifest["files"] = [
+            {"artifact_id": f["id"], "byte_length": len(f["data"]), "sha256": f["sha"]}
+            for f in files
+        ]
+        manifest["directory"] = {
+            "artifact_id": f"{output}:directory:{dsha[:20]}",
+            "byte_length": len(directory),
+            "sha256": dsha,
+            "pages": dpages,
+        }
+        content = json.dumps(
+            manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         msha = hashlib.sha256(content).hexdigest()
-        mid = f'{output}:manifest:{msha[:20]}'
+        mid = f"{output}:manifest:{msha[:20]}"
         source = part.basis.input_revisions[0]
-        artifacts = [{'id': f['id'], 'source_revision_id': source, 'output_id': output, 'sha256': f['sha'], 'byte_count': len(f['data']),
-                      'format': 'application/x-ndjson', 'registered_locator': _object_key(output, f['sha'], 'postings.ndjson')} for f in files]
-        artifacts += [{'id': manifest['directory']['artifact_id'], 'source_revision_id': source, 'output_id': output, 'sha256': dsha,
-                       'byte_count': len(directory), 'format': 'application/x-ndjson; profile=index-directory',
-                       'registered_locator': _object_key(output, dsha, 'directory.ndjson')},
-                      {'id': mid, 'source_revision_id': source, 'output_id': output, 'sha256': msha, 'byte_count': len(content),
-                       'format': 'application/json', 'registered_locator': _object_key(output, msha, 'manifest.json')}]
-        coverage = [dict(r, index_artifact_id=mid) for r in built.records.rows('coverage')]
-        blobs = {f['id']: f['data'] for f in files} | {manifest['directory']['artifact_id']: directory, mid: content}
-        return part.basis, built.records.rows('prepared_output')[0], artifacts, coverage, blobs
+        artifacts = [
+            {
+                "id": f["id"],
+                "source_revision_id": source,
+                "output_id": output,
+                "sha256": f["sha"],
+                "byte_count": len(f["data"]),
+                "format": "application/x-ndjson",
+                "registered_locator": _object_key(output, f["sha"], "postings.ndjson"),
+            }
+            for f in files
+        ]
+        artifacts += [
+            {
+                "id": manifest["directory"]["artifact_id"],
+                "source_revision_id": source,
+                "output_id": output,
+                "sha256": dsha,
+                "byte_count": len(directory),
+                "format": "application/x-ndjson; profile=index-directory",
+                "registered_locator": _object_key(output, dsha, "directory.ndjson"),
+            },
+            {
+                "id": mid,
+                "source_revision_id": source,
+                "output_id": output,
+                "sha256": msha,
+                "byte_count": len(content),
+                "format": "application/json",
+                "registered_locator": _object_key(output, msha, "manifest.json"),
+            },
+        ]
+        coverage = [
+            dict(r, index_artifact_id=mid) for r in built.records.rows("coverage")
+        ]
+        blobs = {f["id"]: f["data"] for f in files} | {
+            manifest["directory"]["artifact_id"]: directory,
+            mid: content,
+        }
+        return (
+            part.basis,
+            built.records.rows("prepared_output")[0],
+            artifacts,
+            coverage,
+            blobs,
+        )
 
     def test_directory_sequence_order_is_verified_across_files(self):
-        self.assertEqual(verify_saved_index(*self.build(reverse=False), max_page_bytes=2048)['format_version'], 'index-manifest/2')
-        with self.assertRaisesRegex(RecordError, 'directory sequence'):
+        self.assertEqual(
+            verify_saved_index(*self.build(reverse=False), max_page_bytes=2048)[
+                "format_version"
+            ],
+            "index-manifest/2",
+        )
+        with self.assertRaisesRegex(RecordError, "directory sequence"):
             verify_saved_index(*self.build(reverse=True), max_page_bytes=2048)

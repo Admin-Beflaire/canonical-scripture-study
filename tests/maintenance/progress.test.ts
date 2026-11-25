@@ -1,6 +1,7 @@
 import test, {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import type {DatabaseSync} from 'node:sqlite';
 import {localD1} from './d1.ts';
 import {fakeGitHub} from './github.ts';
 import {GitHubActions} from '../../services/maintenance/control/src/github.ts';
@@ -131,7 +132,6 @@ function resultFor(
       },
     ],
     coverage_refs: [],
-    checkpoint_ref: null,
     quality_receipt_ref: null,
     state: 'succeeded',
     diagnostics: [],
@@ -483,7 +483,8 @@ test('recipe problems block the task with a plain reason; no recipe means no dis
   assert.ok(changed.limitation?.includes('start a new task'));
 });
 
-test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to stop runs', async () => {
+/** A local database and a fake GitHub holding the synthetic recipe. */
+function githubWorld() {
   const db = localD1();
   const gh = fakeGitHub({
     recipes: {'collection/recipes/synthetic.json': recipe},
@@ -492,6 +493,25 @@ test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to s
     {repository: 'owner/app', token: 't'},
     gh.fetcher,
   );
+  return {db, gh, github};
+}
+
+/** An MCP caller that has already completed the initialize handshake. */
+async function initializedCaller(
+  db: ReturnType<typeof localD1>,
+  github: GitHubActions,
+) {
+  const call = mcpCaller(db, github);
+  await call('initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: {name: 't', version: '1'},
+  });
+  return call;
+}
+
+test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to stop runs', async () => {
+  const {db, gh, github} = githubWorld();
   const handler = protocolHandler(
     () => controlServer(db, owner, false, github),
     false,
@@ -561,20 +581,8 @@ test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to s
 
 test('R22-1: a GitHub outage postpones progression but never breaks or blocks the task tools', async () => {
   for (const mode of ['down', 'offline'] as const) {
-    const db = localD1();
-    const gh = fakeGitHub({
-      recipes: {'collection/recipes/synthetic.json': recipe},
-    });
-    const github = new GitHubActions(
-      {repository: 'owner/app', token: 't'},
-      gh.fetcher,
-    );
-    const call = mcpCaller(db, github);
-    await call('initialize', {
-      protocolVersion: '2025-06-18',
-      capabilities: {},
-      clientInfo: {name: 't', version: '1'},
-    });
+    const {db, gh, github} = githubWorld();
+    const call = await initializedCaller(db, github);
     gh.state[mode] = true;
     const created = await call('tools/call', {
       name: 'request_task',
@@ -621,21 +629,9 @@ test('R22-1: a GitHub outage postpones progression but never breaks or blocks th
   );
 });
 
-test('R22-2: failed cancellations are reported and retried; an orphaned run is cancelled', async () => {
-  const db = localD1();
-  const gh = fakeGitHub({
-    recipes: {'collection/recipes/synthetic.json': recipe},
-  });
-  const github = new GitHubActions(
-    {repository: 'owner/app', token: 't'},
-    gh.fetcher,
-  );
-  const call = mcpCaller(db, github);
-  await call('initialize', {
-    protocolVersion: '2025-06-18',
-    capabilities: {},
-    clientInfo: {name: 't', version: '1'},
-  });
+test('R22-2: failed cancellations are reported and retried', async () => {
+  const {db, gh, github} = githubWorld();
+  const call = await initializedCaller(db, github);
   const created = JSON.parse(
     (
       await call('tools/call', {
@@ -689,7 +685,9 @@ test('R22-2: failed cancellations are reported and retried; an orphaned run is c
     db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()?.state,
     'cancelled',
   );
+});
 
+test('R22-2: a run that GitHub starts for a cancelled task is cancelled', async () => {
   // Orphan: the task is cancelled while GitHub is starting the run.
   const context = await setup();
   context.gh.state.onDispatch = () => {
@@ -934,59 +932,29 @@ test('Control progression failures distinguish D1 write quota from other errors 
   );
 });
 
-test('an acquire task completes with the original recorded and never touches a release', async () => {
-  const acquireRecipe = {
-    recipe_version: 'preparation-recipe/1',
-    id: 'acquire-synthetic',
-    revision: 'acquire-synthetic/1',
-    manifest_revision: 'route/1',
-    adapter: {name: 'acquire-only', method_version: 'acquire-only/1'},
-    input_format: 'archive/opaque',
-    parameters: {manifest: 'synthetic.json'},
-    native_extent: {component: 'revision/1'},
-    capabilities: [],
-    dependencies: ['route/1'],
-    units: [
-      {
-        unit_id: 'acquire',
-        kind: 'acquire',
-        native_extent: {component: 'revision/1'},
-        depends_on: [],
-      },
-    ],
-  };
-  const ctx = await setup({
-    'collection/recipes/acquire-synthetic.json': acquireRecipe,
-  });
-  const created = await requestTask(ctx.db, owner, {
-    request_key: 'acquire',
-    instruction: 'Acquire the synthetic source',
-    kind: 'acquire',
-    inputs: [
-      {kind: 'acquisition', id: 'route/1'},
-      {kind: 'source_revision', id: 'revision/1'},
-    ],
-    extent: {component: 'revision/1'},
-    capabilities: [],
-    constraints: {recipe: 'acquire-synthetic'},
-    decision_refs: [
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'revision/1'},
-    ],
-  });
-  assert.equal(created.status, 'created');
-  if (created.status !== 'created') throw new Error('task not created');
-  await advance(ctx.db, ctx.github, created.task.id);
-  const {run, job, text} = dispatched(ctx.gh, 'acquire');
-  const state = await ctx.post('/internal/jobs/state', {
-    task_id: job.task_id,
-    unit_id: 'acquire',
-    attempt: job.attempt,
-    run_id: String(run.id),
-    job_input_basis: sha(text),
-  });
-  assert.equal(state.status, 200);
-  const db = ctx.db.sqlite;
+const acquireRecipe = {
+  recipe_version: 'preparation-recipe/1',
+  id: 'acquire-synthetic',
+  revision: 'acquire-synthetic/1',
+  manifest_revision: 'route/1',
+  adapter: {name: 'acquire-only', method_version: 'acquire-only/1'},
+  input_format: 'archive/opaque',
+  parameters: {manifest: 'synthetic.json'},
+  native_extent: {component: 'revision/1'},
+  capabilities: [],
+  dependencies: ['route/1'],
+  units: [
+    {
+      unit_id: 'acquire',
+      kind: 'acquire',
+      native_extent: {component: 'revision/1'},
+      depends_on: [],
+    },
+  ],
+};
+
+/** Record the acquired original and its admission, as the executor's receipt would show. */
+function recordAcquiredOriginal(db: DatabaseSync) {
   for (const [id, kind, parent] of [
     ['work', 'work', null],
     ['edition', 'edition', 'work'],
@@ -1022,6 +990,42 @@ test('an acquire task completes with the original recorded and never touches a r
     1,
     'unresolved',
   );
+}
+
+test('an acquire task completes with the original recorded and never touches a release', async () => {
+  const ctx = await setup({
+    'collection/recipes/acquire-synthetic.json': acquireRecipe,
+  });
+  const created = await requestTask(ctx.db, owner, {
+    request_key: 'acquire',
+    instruction: 'Acquire the synthetic source',
+    kind: 'acquire',
+    inputs: [
+      {kind: 'acquisition', id: 'route/1'},
+      {kind: 'source_revision', id: 'revision/1'},
+    ],
+    extent: {component: 'revision/1'},
+    capabilities: [],
+    constraints: {recipe: 'acquire-synthetic'},
+    decision_refs: [
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'revision/1'},
+    ],
+  });
+  assert.equal(created.status, 'created');
+  if (created.status !== 'created') throw new Error('task not created');
+  await advance(ctx.db, ctx.github, created.task.id);
+  const {run, job, text} = dispatched(ctx.gh, 'acquire');
+  const state = await ctx.post('/internal/jobs/state', {
+    task_id: job.task_id,
+    unit_id: 'acquire',
+    attempt: job.attempt,
+    run_id: String(run.id),
+    job_input_basis: sha(text),
+  });
+  assert.equal(state.status, 200);
+  const db = ctx.db.sqlite;
+  recordAcquiredOriginal(db);
   await ctx.post('/internal/jobs/result', {
     result: resultFor(job, String(run.id), {output_refs: []}),
     commit: ctx.gh.commit,

@@ -202,6 +202,187 @@ async function progressSafely<T>(
   }
 }
 
+/** What every task tool needs: the database, the authenticated owner and the executors. */
+interface Tools {
+  db: D1Database;
+  owner: () => string;
+  github: GitHubActions | null;
+  objects: ObjectStore | null;
+}
+
+async function requestTaskTool(tools: Tools, request: TaskRequest) {
+  const {db, github, objects} = tools;
+  const result = await requestTask(db, tools.owner(), request);
+  if (result.status === 'needs_information')
+    return reply(
+      'More information is needed from the owner before this task can start.',
+      result,
+    );
+  if (result.status === 'conflict') return reply(result.message, result, true);
+  if (request.supersedes) await tidyReleases(db, objects);
+  const attempt = await progressSafely('advance', result.task.id, () =>
+    advance(db, github, result.task.id, objects),
+  );
+  const progress = attempt.value;
+  const task = (await taskReport(db, tools.owner(), result.task.id))!;
+  const dispatched = progress?.dispatched ?? [];
+  return reply(
+    `Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${dispatched.length ? `; dispatched ${dispatched.join(', ')}` : ''}${progress === null ? '; the progression check did not complete, it continues on the next check' : progress.limitation === 'github_unavailable' ? '; dispatch postponed (GitHub unavailable), it continues on the next check' : ''}.`,
+    {
+      status: result.status,
+      task_id: task.id,
+      state: task.state,
+      revision: task.revision,
+      superseded: result.superseded,
+      dispatched,
+      limitations: task.limitations,
+      ...(attempt.failure
+        ? {progression: {status: 'failed', ...attempt.failure}}
+        : {}),
+    },
+  );
+}
+
+/** Reconcile interrupted work and continue progression before reporting. A GitHub outage
+ *  only postpones this; the saved status is still reported. */
+async function refreshTask(tools: Tools, taskId: string) {
+  const {db, github, objects} = tools;
+  const failures: ProgressFailure[] = [];
+  const reconciliation = await progressSafely('reconcile', taskId, () =>
+    reconcile(db, github, taskId),
+  );
+  const notes = reconciliation.value ?? [];
+  if (reconciliation.failure) failures.push(reconciliation.failure);
+  const attempt = await progressSafely('advance', taskId, () =>
+    advance(db, github, taskId, objects),
+  );
+  if (attempt.failure) failures.push(attempt.failure);
+  else if (attempt.value?.limitation === 'github_unavailable')
+    notes.push(
+      'Dispatch postponed: GitHub was unavailable; it continues on the next check.',
+    );
+  return {notes, failures};
+}
+
+async function getTaskTool(
+  tools: Tools,
+  {task_id, cursor}: {task_id?: string; cursor?: string},
+) {
+  const {db} = tools;
+  if (!task_id) {
+    const page = await listTasks(db, tools.owner(), cursor);
+    return reply(
+      page.tasks.length
+        ? `${page.tasks.length} task(s)${page.cursor ? '; more available with the cursor' : ''}.`
+        : 'No tasks yet.',
+      page,
+    );
+  }
+  const {notes, failures} = (await taskReport(db, tools.owner(), task_id))
+    ? await refreshTask(tools, task_id)
+    : {notes: [], failures: []};
+  const report = await taskReport(db, tools.owner(), task_id);
+  if (!report) return reply('No task with this ID.', {task_id}, true);
+  return reply(
+    `Task ${report.id} is ${report.state} (revision ${report.revision}); data ${report.data_current ? 'became current' : 'is not current from this task'}.`,
+    notes.length || failures.length
+      ? {
+          ...report,
+          ...(notes.length ? {reconciliation: notes} : {}),
+          ...(failures.length
+            ? {progression: {status: 'failed', failures}}
+            : {}),
+        }
+      : report,
+  );
+}
+
+async function tidyTool(tools: Tools) {
+  tools.owner();
+  const done = await tidyReleases(tools.db, tools.objects);
+  return reply(
+    `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s) and asked the bucket to delete ${done.objects} stored object(s) (${formatBytes(done.bytes)} as recorded, not measured)${done.objectsLeft ? `, ${done.objectsLeft} object(s) left after a bucket error` : ''}${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
+    done,
+  );
+}
+
+/** Ask the executor to stop the runs a cancellation named. */
+async function cancelRuns(tools: Tools, outcomeJson: string) {
+  const cancelled: string[] = [];
+  const failed: string[] = [];
+  await tidyReleases(tools.db, tools.objects);
+  const runs = (JSON.parse(outcomeJson) as Outcome).cancel_requested_runs ?? [];
+  for (const run of runs)
+    (tools.github && (await tools.github.cancel(run))
+      ? cancelled
+      : failed
+    ).push(run);
+  return {cancelled, failed};
+}
+
+/** Continue unfinished work after a resume; failures are reported, never thrown. */
+async function resumeProgress(tools: Tools, taskId: string) {
+  const {db, github, objects} = tools;
+  const reconciliation = await progressSafely('reconcile', taskId, () =>
+    reconcile(db, github, taskId),
+  );
+  const progression = await progressSafely('advance', taskId, () =>
+    advance(db, github, taskId, objects),
+  );
+  return [reconciliation.failure, progression.failure].filter(
+    (failure): failure is ProgressFailure => !!failure,
+  );
+}
+
+async function controlTaskTool(
+  tools: Tools,
+  {
+    task_id,
+    expected_revision,
+    action,
+  }: {task_id: string; expected_revision: number; action: ControlAction},
+) {
+  const result = await controlTask(
+    tools.db,
+    tools.owner(),
+    task_id,
+    expected_revision,
+    action,
+  );
+  if (result.status !== 'ok')
+    return reply(
+      result.message,
+      {
+        status: result.status,
+        state: result.task?.state,
+        revision: result.task?.revision,
+      },
+      true,
+    );
+  const {cancelled, failed} =
+    action === 'cancel'
+      ? await cancelRuns(tools, result.task.outcome_json)
+      : {cancelled: [], failed: []};
+  const failures =
+    action === 'resume' ? await resumeProgress(tools, task_id) : [];
+  const task = (await taskReport(tools.db, tools.owner(), task_id))!;
+  const note = failed.length
+    ? ` Cancellation of ${failed.length} run(s) did not go through; get_task requests it again.`
+    : '';
+  return reply(
+    `Task ${task.id} is now ${task.state} (revision ${task.revision}).${note}`,
+    {
+      status: 'ok',
+      state: task.state,
+      revision: task.revision,
+      ...(action === 'cancel'
+        ? {runs_cancelled: cancelled, cancel_failed: failed}
+        : {}),
+      ...(failures.length ? {progression: {status: 'failed', failures}} : {}),
+    },
+  );
+}
+
 /** The single Maintenance MCP server for one authenticated request. */
 export function controlServer(
   db: D1Database,
@@ -215,6 +396,7 @@ export function controlServer(
     if (!requester) throw new Error('Task tools need the authenticated owner.');
     return requester;
   };
+  const tools: Tools = {db, owner, github, objects};
   server.registerTool(
     'request_task',
     {
@@ -222,38 +404,7 @@ export function controlServer(
         "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Returns the task ID and state, or the information still needed.",
       inputSchema: requestSchema,
     },
-    async request => {
-      const result = await requestTask(db, owner(), request);
-      if (result.status === 'needs_information')
-        return reply(
-          'More information is needed from the owner before this task can start.',
-          result,
-        );
-      if (result.status === 'conflict')
-        return reply(result.message, result, true);
-      if (request.supersedes) await tidyReleases(db, objects);
-      const attempt = await progressSafely('advance', result.task.id, () =>
-        advance(db, github, result.task.id, objects),
-      );
-      const progress = attempt.value;
-      const task = (await taskReport(db, owner(), result.task.id))!;
-      const dispatched = progress?.dispatched ?? [];
-      return reply(
-        `Task ${task.id} is ${task.state} (revision ${task.revision})${result.status === 'existing' ? ', already recorded for this request key' : ''}${dispatched.length ? `; dispatched ${dispatched.join(', ')}` : ''}${progress === null ? '; the progression check did not complete, it continues on the next check' : progress.limitation === 'github_unavailable' ? '; dispatch postponed (GitHub unavailable), it continues on the next check' : ''}.`,
-        {
-          status: result.status,
-          task_id: task.id,
-          state: task.state,
-          revision: task.revision,
-          superseded: result.superseded,
-          dispatched,
-          limitations: task.limitations,
-          ...(attempt.failure
-            ? {progression: {status: 'failed', ...attempt.failure}}
-            : {}),
-        },
-      );
-    },
+    request => requestTaskTool(tools, request),
   );
   server.registerTool(
     'get_task',
@@ -262,53 +413,7 @@ export function controlServer(
         'Without task_id: list open and recent tasks (newest first, bounded pages). With task_id: requested, completed and remaining scope, jobs, checks, selection and limitations.',
       inputSchema: getSchema,
     },
-    async ({task_id, cursor}) => {
-      if (task_id) {
-        let notes: string[] = [];
-        const failures: ProgressFailure[] = [];
-        if (await taskReport(db, owner(), task_id)) {
-          // Reconcile interrupted work and continue progression before reporting. A GitHub outage
-          // only postpones this; the saved status is still reported.
-          const reconciliation = await progressSafely(
-            'reconcile',
-            task_id,
-            () => reconcile(db, github, task_id),
-          );
-          notes = reconciliation.value ?? [];
-          if (reconciliation.failure) failures.push(reconciliation.failure);
-          const attempt = await progressSafely('advance', task_id, () =>
-            advance(db, github, task_id, objects),
-          );
-          const progress = attempt.value;
-          if (attempt.failure) failures.push(attempt.failure);
-          else if (progress?.limitation === 'github_unavailable')
-            notes.push(
-              'Dispatch postponed: GitHub was unavailable; it continues on the next check.',
-            );
-        }
-        const report = await taskReport(db, owner(), task_id);
-        if (!report) return reply('No task with this ID.', {task_id}, true);
-        return reply(
-          `Task ${report.id} is ${report.state} (revision ${report.revision}); data ${report.data_current ? 'became current' : 'is not current from this task'}.`,
-          notes.length || failures.length
-            ? {
-                ...report,
-                ...(notes.length ? {reconciliation: notes} : {}),
-                ...(failures.length
-                  ? {progression: {status: 'failed', failures}}
-                  : {}),
-              }
-            : report,
-        );
-      }
-      const page = await listTasks(db, owner(), cursor);
-      return reply(
-        page.tasks.length
-          ? `${page.tasks.length} task(s)${page.cursor ? '; more available with the cursor' : ''}.`
-          : 'No tasks yet.',
-        page,
-      );
-    },
+    args => getTaskTool(tools, args),
   );
   server.registerTool(
     'tidy_releases',
@@ -317,83 +422,16 @@ export function controlServer(
         'Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. Bounded per call; call again while more is true. Changes no task and no selection.',
       inputSchema: tidySchema,
     },
-    async () => {
-      owner();
-      const done = await tidyReleases(db, objects);
-      return reply(
-        `Removed the membership of ${done.memberships} row(s) and ${done.outputs} saved output(s) and asked the bucket to delete ${done.objects} stored object(s) (${formatBytes(done.bytes)} as recorded, not measured)${done.objectsLeft ? `, ${done.objectsLeft} object(s) left after a bucket error` : ''}${done.skipped ? `; ${done.skipped} blocked for now` : ''}${done.more ? '; more may remain, call again' : ''}.`,
-        done,
-      );
-    },
+    () => tidyTool(tools),
   );
   server.registerTool(
     'control_task',
     {
       description:
-        'Pause, cancel or resume a task. Pass the revision you last read; saved checkpoints and outputs are kept.',
+        'Pause, cancel or resume a task. Pass the revision you last read; saved outputs are kept.',
       inputSchema: controlSchema,
     },
-    async ({task_id, expected_revision, action}) => {
-      const result = await controlTask(
-        db,
-        owner(),
-        task_id,
-        expected_revision,
-        action,
-      );
-      if (result.status !== 'ok')
-        return reply(
-          result.message,
-          {
-            status: result.status,
-            state: result.task?.state,
-            revision: result.task?.revision,
-          },
-          true,
-        );
-      const cancelled: string[] = [];
-      const failed: string[] = [];
-      const failures: ProgressFailure[] = [];
-      if (action === 'cancel') {
-        await tidyReleases(db, objects);
-        const runs =
-          (JSON.parse(result.task.outcome_json) as Outcome)
-            .cancel_requested_runs ?? [];
-        for (const run of runs)
-          (github && (await github.cancel(run)) ? cancelled : failed).push(run);
-      }
-      if (action === 'resume') {
-        const reconciliation = await progressSafely('reconcile', task_id, () =>
-          reconcile(db, github, task_id),
-        );
-        const progression = await progressSafely('advance', task_id, () =>
-          advance(db, github, task_id, objects),
-        );
-        failures.push(
-          ...[reconciliation.failure, progression.failure].filter(
-            (failure): failure is ProgressFailure => !!failure,
-          ),
-        );
-      }
-      const task = (await taskReport(db, owner(), task_id))!;
-      const note = failed.length
-        ? ` Cancellation of ${failed.length} run(s) did not go through; get_task requests it again.`
-        : '';
-      return reply(
-        `Task ${task.id} is now ${task.state} (revision ${task.revision}).${note}`,
-        {
-          status: 'ok',
-          state: task.state,
-          revision: task.revision,
-          ...(action === 'cancel'
-            ? {runs_cancelled: cancelled, cancel_failed: failed}
-            : {}),
-          ...(failures.length
-            ? {progression: {status: 'failed', failures}}
-            : {}),
-        },
-      );
-    },
+    args => controlTaskTool(tools, args),
   );
   return server;
 }

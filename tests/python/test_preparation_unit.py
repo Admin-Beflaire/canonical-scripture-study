@@ -1,4 +1,4 @@
-"""DP-04 Stage 3: durable unit resume and bounded failure tests (synthetic only)."""
+"""A unit saves its outputs, retries within a bound and reports failures safely (synthetic only)."""
 
 from dataclasses import replace
 import hashlib
@@ -6,13 +6,12 @@ import json
 from pathlib import Path
 import unittest
 
-from css_preparation.executor import ControlState, UnitNotRunnable
+from css_preparation.executor import ControlState, UnitNotRunnableError
 from css_preparation.executor.candidate import CandidateStore
-from css_preparation.executor.checkpoints import (
-    CheckpointStore,
+from css_preparation.executor.unit import (
     RetryableUnitError,
-    StopWork,
-    run_checkpointed_unit,
+    StopWorkError,
+    run_unit,
 )
 from css_preparation.prepare.records import (
     ReaderBoundaryError,
@@ -30,12 +29,11 @@ FIXTURE = json.loads(
 )
 
 
-class CheckpointStageThree(unittest.TestCase):
+class UnitRun(unittest.TestCase):
     def setUp(self):
         self.db = database()
         self.addCleanup(self.db.close)
         self.blobs = {}
-        self.checkpoint_blobs = {}
         self.work_count = 0
         self.selection = [
             tuple(r) for r in self.db.execute("SELECT * FROM release_selection")
@@ -43,7 +41,6 @@ class CheckpointStageThree(unittest.TestCase):
         self.storage = CandidateStore(
             self.put, self.read, self.write, self.find, self.all_rows
         )
-        self.checkpoints = CheckpointStore(self.save_checkpoint, self.load_checkpoint)
         self.state = None
         self.job = dict(FIXTURE["valid"]["job_input"][0])
         self.job["input_refs"] = [
@@ -79,21 +76,6 @@ class CheckpointStageThree(unittest.TestCase):
     def all_rows(self, kind, *_):
         return decoded(self.db.execute("SELECT * FROM " + TABLES[kind]).fetchall())
 
-    def save_checkpoint(self, content):
-        sha = hashlib.sha256(content).hexdigest()
-        ref = {
-            "artifact_id": "checkpoint:" + sha[:32],
-            "sha256": sha,
-            "byte_count": len(content),
-        }
-        previous = self.checkpoint_blobs.setdefault(ref["artifact_id"], bytes(content))
-        if previous != content:
-            raise RecordError("Different checkpoint at same key")
-        return ref
-
-    def load_checkpoint(self, ref):
-        return self.checkpoint_blobs[ref["artifact_id"]]
-
     def build(self, _):
         self.work_count += 1
         return evidence_a()
@@ -103,7 +85,6 @@ class CheckpointStageThree(unittest.TestCase):
         *,
         job=None,
         builder=None,
-        checkpoint_store=None,
         max_retries=1,
         registry=None,
         control=None,
@@ -127,7 +108,7 @@ class CheckpointStageThree(unittest.TestCase):
             return self.state if control is None else control()
 
         handler = builder or self.build
-        return run_checkpointed_unit(
+        return run_unit(
             raw,
             run_id="run-9",
             read_control=reader,
@@ -136,54 +117,26 @@ class CheckpointStageThree(unittest.TestCase):
             prepare=handler,
             quality=handler,
             storage=self.storage,
-            checkpoints=checkpoint_store or self.checkpoints,
             max_retries=max_retries,
         )
 
-    def test_checkpoint_is_durable_and_resume_avoids_duplicate_work(self):
+    def test_a_unit_saves_its_outputs_and_reports_them(self):
         first = self.invoke()
-        self.assertEqual(first.state, "checkpointed")
+        self.assertEqual(first.state, "saved")
         self.assertEqual(first.completed_extent, self.job["native_extent"])
         self.assertEqual(first.remaining_extent, {})
-        self.assertEqual(first.cursor, self.job["unit_id"])
         self.assertEqual(first.saved.output_ids, tuple(evidence_a().output_ids()))
         self.assertEqual(self.work_count, 1)
-        self.assertIsNotNone(first.checkpoint_ref)
-        checkpoint = json.loads(self.load_checkpoint(first.checkpoint_ref))
-        self.assertEqual(
-            checkpoint["identity"]["recipe_revision"], self.job["recipe_revision"]
-        )
-        self.assertEqual(checkpoint["identity"]["attempt"], self.job["attempt"])
-        self.assertEqual(
-            checkpoint["saved"]["output_ids"], list(first.saved.output_ids)
-        )
-        passed = []
-        replay = self.invoke(
-            job={**self.job, "checkpoint_ref": first.checkpoint_ref},
-            builder=lambda _: self.fail("replay rebuilt a verified unit"),
-            registry=lambda r: passed.append(r["id"]) or True,
-        )
-        self.assertEqual(replay.saved, first.saved)
-        self.assertEqual(replay.checkpoint_ref, first.checkpoint_ref)
-        self.assertIn(first.checkpoint_ref["artifact_id"], passed)
         self.assertEqual(
             [tuple(r) for r in self.db.execute("SELECT * FROM release_selection")],
             self.selection,
         )
 
-    def test_interruption_after_save_before_report_can_retry_idempotently(self):
-        interrupts = [True]
-
-        def interrupted_save(data):
-            ref = self.save_checkpoint(data)
-            if interrupts and interrupts.pop():
-                raise RetryableUnitError("synthetic interrupted callback")
-            return ref
-
-        result = self.invoke(
-            checkpoint_store=replace(self.checkpoints, save=interrupted_save)
-        )
-        self.assertEqual(result.state, "checkpointed")
+    def test_rerunning_a_saved_unit_saves_nothing_twice(self):
+        first = self.invoke()
+        again = self.invoke()
+        self.assertEqual(again.state, "saved")
+        self.assertEqual(again.saved, first.saved)
         self.assertEqual(self.work_count, 2)
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 1
@@ -191,36 +144,15 @@ class CheckpointStageThree(unittest.TestCase):
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM releases").fetchone()[0], 0
         )
-        replay = self.invoke(
-            job={**self.job, "checkpoint_ref": result.checkpoint_ref},
-            builder=lambda _: self.fail("must reuse saved unit"),
-        )
-        self.assertEqual(replay.state, "checkpointed")
-        self.assertEqual(self.work_count, 2)
 
-    def test_changed_basis_or_attempt_rebuilds_instead_of_reusing_old_checkpoint(self):
-        original = self.invoke()
-        for changed in (
-            {"recipe_revision": "recipe-2"},
-            {"manifest_revision": "manifest-2"},
-            {"attempt": self.job["attempt"] + 1},
-            {"basis_digest": "a" * 64},
-        ):
-            with self.subTest(changed=changed):
-                job = {**self.job, **changed, "checkpoint_ref": original.checkpoint_ref}
-                before = self.work_count
-                result = self.invoke(job=job)
-                self.assertEqual(result.state, "checkpointed")
-                self.assertEqual(self.work_count, before + 1)
-
-    def test_corrupt_or_missing_saved_artifact_never_reused_as_complete(self):
+    def test_a_damaged_saved_artifact_is_never_reported_as_saved(self):
         result = self.invoke()
         artifact_ref = result.saved.artifact_refs[0]
         locator = self.find("artifact", artifact_ref["artifact_id"])[
             "registered_locator"
         ]
         self.blobs[locator] = b"damaged"
-        check = self.invoke(job={**self.job, "checkpoint_ref": result.checkpoint_ref})
+        check = self.invoke()
         self.assertEqual(check.state, "failed")
         self.assertEqual(check.completed_extent, {})
         self.assertEqual(check.remaining_extent, self.job["native_extent"])
@@ -230,17 +162,15 @@ class CheckpointStageThree(unittest.TestCase):
             self.selection,
         )
 
-    def test_missing_saved_coverage_disables_replay(self):
-        result = self.invoke()
-
+    def test_missing_saved_coverage_is_not_reported_as_saved(self):
         def incomplete(kind, *_):
             rows = self.all_rows(kind)
             return [] if kind == "coverage" else rows
 
         self.storage = replace(self.storage, read_rows=incomplete)
-        replay = self.invoke(job={**self.job, "checkpoint_ref": result.checkpoint_ref})
-        self.assertEqual(replay.state, "failed")
-        self.assertEqual(replay.diagnostics, ("invalid_or_unavailable_output",))
+        result = self.invoke()
+        self.assertEqual(result.state, "failed")
+        self.assertEqual(result.diagnostics, ("invalid_or_unavailable_output",))
 
     def test_rejects_different_revision_or_extent_before_persistence(self):
         changed = {
@@ -257,22 +187,14 @@ class CheckpointStageThree(unittest.TestCase):
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0
         )
 
-    def test_tampered_checkpoint_bytes_fail_closed(self):
-        original = self.invoke()
-        self.checkpoint_blobs[original.checkpoint_ref["artifact_id"]] = b"wrong"
-        result = self.invoke(
-            job={**self.job, "checkpoint_ref": original.checkpoint_ref}
-        )
-        self.assertEqual(result.state, "failed")
-        self.assertEqual(result.completed_extent, {})
-        self.assertEqual(result.diagnostics, ("invalid_or_unavailable_output",))
-
     def test_paused_or_cancelled_task_stops_without_new_candidate_writes(self):
         for state in ("paused", "cancelled", "superseded"):
             with self.subTest(state=state):
-                with self.assertRaises(UnitNotRunnable):
+                with self.assertRaises(UnitNotRunnableError):
                     self.invoke(
-                        control=lambda: replace(self.state, task_state=state),  # noqa: B023
+                        control=lambda state=state: replace(
+                            self.state, task_state=state
+                        ),
                         builder=lambda _: self.fail("task not eligible"),
                     )
                 self.assertEqual(self.work_count, 0)
@@ -281,7 +203,7 @@ class CheckpointStageThree(unittest.TestCase):
             self.state = replace(self.state, task_state="paused", task_revision=3)
             return evidence_a()
 
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(builder=change_state)
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0
@@ -299,7 +221,6 @@ class CheckpointStageThree(unittest.TestCase):
         self.assertEqual(result.state, "failed")
         self.assertEqual(result.diagnostics, ("stopped",))
         self.assertEqual(calls, ["called"])
-        self.assertIsNone(result.checkpoint_ref)
 
     def test_bounded_transient_retry_and_refusal_limit_diagnostics(self):
         attempts = []
@@ -311,13 +232,13 @@ class CheckpointStageThree(unittest.TestCase):
             return evidence_a()
 
         result = self.invoke(builder=once)
-        self.assertEqual(result.state, "checkpointed")
+        self.assertEqual(result.state, "saved")
         self.assertEqual(len(attempts), 2)
         for reason in ("quota", "refused", "missing_dependency", "limit"):
             with self.subTest(reason=reason):
 
-                def stop(_):
-                    raise StopWork(reason)  # noqa: B023
+                def stop(_, reason=reason):
+                    raise StopWorkError(reason)
 
                 failed = self.invoke(builder=stop)
                 self.assertEqual(failed.diagnostics, (reason,))
@@ -377,6 +298,7 @@ class CheckpointStageThree(unittest.TestCase):
 
     def test_control_failure_on_retry_reports_control_stage(self):
         checks = []
+        attempts = []
 
         def control():
             checks.append(1)
@@ -384,65 +306,36 @@ class CheckpointStageThree(unittest.TestCase):
                 raise OSError("private detail")
             return self.state
 
-        def save(_):
-            raise RetryableUnitError("retry")
+        def once(_):
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise RetryableUnitError("retry")
+            return evidence_a()
 
-        result = self.invoke(
-            control=control, checkpoint_store=replace(self.checkpoints, save=save)
-        )
+        result = self.invoke(control=control, builder=once)
         self.assertEqual(self.record(result)["stage"], "control_check")
         self.assertNotIn("private", result.diagnostic_detail)
 
-    def test_checkpoint_provider_error_retains_stage_and_status(self):
-        def fail(_):
-            raise ProviderError("Checkpoint write refused", status=503)
-
-        result = self.invoke(checkpoint_store=replace(self.checkpoints, save=fail))
-        self.assertEqual(result.diagnostics, ("provider_failure",))
-        record = self.record(result)
-        self.assertEqual(
-            (record["stage"], record["http"], record["message"]),
-            ("saving_checkpoint", 503, "Checkpoint write refused"),
-        )
-
-    def test_transient_checkpoint_provider_failures_retry_within_bound(self):
-        calls = []
-
-        def eventually(data):
-            calls.append(1)
-            if len(calls) == 1:
-                raise ProviderError(
-                    "Checkpoint write refused", status=503, transient=True
-                )
-            return self.save_checkpoint(data)
-
-        result = self.invoke(
-            checkpoint_store=replace(self.checkpoints, save=eventually)
-        )
-        self.assertEqual(result.state, "checkpointed")
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(result.diagnostics, ())
-
-        for transient, expected in ((True, 2), (False, 1)):
+    def test_a_storage_provider_error_retains_stage_and_status(self):
+        for transient in (True, False):
             with self.subTest(transient=transient):
-                calls.clear()
+                calls = []
 
-                def fail(_):
+                def refuse(key, data, calls=calls, transient=transient):
                     calls.append(1)
                     raise ProviderError(
-                        "Checkpoint write refused",
-                        status=503,
-                        transient=transient,  # noqa: B023
+                        "Storage write refused", status=503, transient=transient
                     )
 
-                failed = self.invoke(
-                    checkpoint_store=replace(self.checkpoints, save=fail)
-                )
-                self.assertEqual(len(calls), expected)
+                self.storage = replace(self.storage, put_blob=refuse)
+                result = self.invoke()
+                self.assertEqual(result.diagnostics, ("provider_failure",))
+                record = self.record(result)
                 self.assertEqual(
-                    (self.record(failed)["stage"], self.record(failed)["http"]),
-                    ("saving_checkpoint", 503),
+                    (record["stage"], record["http"], record["message"]),
+                    ("saving_output", 503, "Storage write refused"),
                 )
+                self.assertEqual(len(calls), 1)
 
     def test_acquisition_failure_reports_stage_and_tool(self):
         def fail(_):

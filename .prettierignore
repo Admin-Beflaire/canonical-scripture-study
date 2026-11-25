@@ -8,7 +8,6 @@ packages/shared/src/platform.ts
 packages/shared/src/reader-catalogue.ts
 packages/shared/src/references.ts
 packages/shared/src/versification.ts
-services/maintenance/control/src/contracts.ts
 services/study/src/index.ts
 services/study/src/operators/passage.ts
 services/study/src/read/manifest.ts
@@ -19,9 +18,7 @@ services/study/src/scope/books.ts
 services/study/src/scope/keys.ts
 services/study/src/scope/references.ts
 tests/maintenance/d1.ts
-tests/maintenance/github.test.ts
 tests/maintenance/github.ts
-tests/maintenance/migration.test.ts
 tests/platform/deployment.test.ts
 tests/platform/platform.test.ts
 tests/platform/study-fit.test.ts

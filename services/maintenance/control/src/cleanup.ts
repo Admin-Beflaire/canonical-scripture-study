@@ -12,7 +12,7 @@ import {OPEN_STATES} from './tasks.ts';
  *  transaction, so it is never half removed and a later preparation of the same output finds
  *  nothing and writes it fresh. Only after that are its stored objects removed, in one call to
  *  the bucket: except an object another artifact record still names, and anything under
- *  receipts, checkpoints or the language-aid cache. If that call fails, the objects are left
+ *  receipts or the language-aid cache. If that call fails, the objects are left
  *  (an unreferenced object is only wasted space) and the failure is reported. Without a bucket
  *  no output is removed. The owner decided that no recovery copy is needed first.
  *
@@ -21,7 +21,7 @@ import {OPEN_STATES} from './tasks.ts';
  *  release's membership is removed whole, in one transaction: a release is either complete
  *  or empty, never partly cleaned, so validation cannot take a remainder for a release. */
 const OPEN = `('${OPEN_STATES.join("','")}')`;
-const UNFINISHED = `('intended','dispatched','running','checkpointed')`;
+const UNFINISHED = `('intended','dispatched','running')`;
 const RELEASES_PER_CALL = 20; // Releases whose membership is removed by one call.
 const OUTPUTS_PER_CALL = 4; // Saved outputs removed by one call.
 const OUTPUTS_LOOKED_AT = 12; // Saved outputs one call tries, so blocked ones do not hide the rest.
@@ -31,7 +31,6 @@ const OBJECTS_PER_DELETE = 1000; // Keys one bucket delete accepts.
 const OUTPUT_OBJECTS = `SELECT a.registered_locator AS key, MAX(a.byte_count) AS bytes FROM artifacts a WHERE a.output_id = ?
   AND a.registered_locator LIKE 'prepared/%'
   AND a.registered_locator NOT LIKE 'prepared/receipts/%'
-  AND a.registered_locator NOT LIKE 'prepared/checkpoints/%'
   AND a.registered_locator NOT LIKE 'prepared/language-aid-cache/%'
   AND NOT EXISTS (SELECT 1 FROM artifacts o WHERE o.registered_locator = a.registered_locator
     AND (o.output_id IS NULL OR o.output_id <> a.output_id))

@@ -379,7 +379,7 @@ export type ControlResult =
       task?: TaskRow;
     };
 
-/** Revision-guarded pause/cancel/resume. Checkpoints and saved outputs are never removed. */
+/** Revision-guarded pause/cancel/resume. Saved outputs are never removed. */
 export async function controlTask(
   db: D1Database,
   requester: string,
@@ -411,7 +411,7 @@ export async function controlTask(
     // Unsent units are dropped; dispatched runs are recorded for executor cancellation and can never promote.
     const active = await db
       .prepare(
-        `SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND state IN ('dispatched','running','checkpointed')`,
+        `SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND state IN ('dispatched','running')`,
       )
       .bind(task.id)
       .all<{run_id: string}>();
@@ -536,7 +536,7 @@ export async function taskReport(
   if (!task) return null;
   const jobs = await db
     .prepare(
-      `SELECT unit_id, attempt, kind, state, run_id, checkpoint_ref, result_ref, result_json FROM maintenance_jobs
+      `SELECT unit_id, attempt, kind, state, run_id, result_ref, result_json FROM maintenance_jobs
     WHERE task_id = ? ORDER BY unit_id, attempt LIMIT 51`,
     )
     .bind(task.id)
@@ -546,7 +546,6 @@ export async function taskReport(
       kind: string;
       state: string;
       run_id: string | null;
-      checkpoint_ref: string | null;
       result_ref: string | null;
       result_json: string | null;
     }>();

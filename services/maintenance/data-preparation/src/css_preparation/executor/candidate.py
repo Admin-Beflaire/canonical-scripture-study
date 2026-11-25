@@ -4,6 +4,7 @@ D1 candidate-row writes are transactional; immutable private-R2 bytes must be
 read back before their registry rows can be acknowledged. No release writes,
 selection, provider setup, or Control scope decision is made here.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,8 +12,6 @@ import hashlib
 from typing import Any, Callable, Mapping, Sequence
 
 from ..prepare.records import KEYS, RecordError, RecordSet, comparable
-from . import ControlState, execute_unit
-from .basis import check_unit_records
 
 
 @dataclass(frozen=True)
@@ -27,7 +26,9 @@ class CandidateStore:
     read_blob: Callable[[str], bytes]
     write_rows: Callable[[list[tuple[str, list[Any]]]], None]
     read_row: Callable[[str, str], Mapping[str, Any] | None]
-    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]] | None = None  # (kind, output IDs)
+    read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]] | None = (
+        None  # (kind, output IDs)
+    )
 
     def optional_row(self, kind: str, identity: str) -> Mapping[str, Any] | None:
         """Missing D1 identity is None; tolerate KeyError-style adapters safely."""
@@ -45,102 +46,116 @@ class SavedCandidate:
     artifact_refs: tuple[dict[str, Any], ...]
 
 
-def _check_saved_rows(records: RecordSet, output_id: str, storage: CandidateStore) -> None:
+def _check_saved_rows(
+    records: RecordSet, output_id: str, storage: CandidateStore
+) -> None:
     """A saved output is reused only if every row it owns equals the candidate's.
 
     The output basis does not cover its owned rows (spans, segments, annotations,
     relationships, coverage), so they are compared directly.
     """
     if storage.read_rows is None:
-        raise RecordError('Cannot verify a saved output without its saved rows')
+        raise RecordError("Cannot verify a saved output without its saved rows")
     for kind, rows in records.owned_rows(output_id).items():
-        if kind == 'prepared_output':
+        if kind == "prepared_output":
             continue
-        expected = sorted((comparable(kind, row) for row in rows), key=lambda r: tuple(r[k] for k in KEYS[kind]))
-        saved = sorted((comparable(kind, dict(row)) for row in storage.read_rows(kind, [output_id])),
-                       key=lambda r: tuple(r[k] for k in KEYS[kind]))
+        expected = sorted(
+            (comparable(kind, row) for row in rows),
+            key=lambda r: tuple(r[k] for k in KEYS[kind]),
+        )
+        saved = sorted(
+            (
+                comparable(kind, dict(row))
+                for row in storage.read_rows(kind, [output_id])
+            ),
+            key=lambda r: tuple(r[k] for k in KEYS[kind]),
+        )
         if saved != expected:
-            raise RecordError('Existing candidate metadata is incomplete or different')
+            raise RecordError("Existing candidate metadata is incomplete or different")
 
 
-def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:  # noqa: C901
-    """Save immutable blobs before candidate records and report only read-back refs.
-
-    An interrupted row commit may leave an unreferenced immutable blob. It must
-    never produce a successful result; later checkpoint/quality stages reconcile it.
-    """
+def _check_candidate(records: RecordSet) -> None:
+    """Every artifact belongs to an output and its bytes match its registration."""
     if not isinstance(records, RecordSet):
-        raise RecordError('Preparation module must return a RecordSet')
-    outputs = records.rows('prepared_output')
-    artifacts = records.rows('artifact')
-    output_ids = {item['id'] for item in outputs}
-    metadata = {item['id']: item for item in artifacts}
-    if set(records.blobs) != set(metadata):
-        raise RecordError('Every new artifact must have saved bytes and metadata')
+        raise RecordError("Preparation module must return a RecordSet")
+    output_ids = {item["id"] for item in records.rows("prepared_output")}
+    artifacts = records.rows("artifact")
+    if set(records.blobs) != {item["id"] for item in artifacts}:
+        raise RecordError("Every new artifact must have saved bytes and metadata")
     for artifact in artifacts:
-        if artifact['output_id'] not in output_ids:
-            raise RecordError('Artifact output not present in the candidate unit')
-        data = records.blobs[artifact['id']]
-        if (len(data) != artifact['byte_count'] or
-                hashlib.sha256(data).hexdigest() != artifact['sha256']):
-            raise RecordError('Artifact byte count or digest does not match registered metadata')
+        if artifact["output_id"] not in output_ids:
+            raise RecordError("Artifact output not present in the candidate unit")
+        data = records.blobs[artifact["id"]]
+        if (
+            len(data) != artifact["byte_count"]
+            or hashlib.sha256(data).hexdigest() != artifact["sha256"]
+        ):
+            raise RecordError(
+                "Artifact byte count or digest does not match registered metadata"
+            )
 
-    for artifact in artifacts:
-        locator = artifact['registered_locator']
-        storage.put_blob(locator, records.blobs[artifact['id']])
+
+def _save_blobs(records: RecordSet, storage: CandidateStore) -> None:
+    for artifact in records.rows("artifact"):
+        locator = artifact["registered_locator"]
+        storage.put_blob(locator, records.blobs[artifact["id"]])
         saved = storage.read_blob(locator)
-        if (not isinstance(saved, bytes) or saved != records.blobs[artifact['id']]):
-            raise RecordError('Saved artifact bytes differ from the candidate')
+        if not isinstance(saved, bytes) or saved != records.blobs[artifact["id"]]:
+            raise RecordError("Saved artifact bytes differ from the candidate")
 
-    # An output may already be saved: by a retry after a saved candidate but before its
-    # checkpoint/report, or by an earlier build when its basis is unchanged (a rebuild that
-    # reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
-    # exactly the candidate's; the remaining outputs are written in one atomic batch.
-    # Never overwrite identities.
+
+def _saved_outputs(records: RecordSet, storage: CandidateStore) -> list[str]:
+    """IDs of outputs already saved exactly as the candidate describes them.
+
+    An output may already be saved: by a retry after a saved candidate but before its
+    report, or by an earlier build when its basis is unchanged (a rebuild that
+    reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
+    exactly the candidate's. Never overwrite identities.
+    """
+    artifacts = records.rows("artifact")
     reused = []
-    for output in outputs:
-        owned = [row for row in artifacts if row['output_id'] == output['id']]
-        saved_output = storage.optional_row('prepared_output', output['id'])
-        saved_owned = [storage.optional_row('artifact', row['id']) for row in owned]
+    for output in records.rows("prepared_output"):
+        owned = [row for row in artifacts if row["output_id"] == output["id"]]
+        saved_output = storage.optional_row("prepared_output", output["id"])
+        saved_owned = [storage.optional_row("artifact", row["id"]) for row in owned]
         if saved_output is None and all(row is None for row in saved_owned):
             continue
         if saved_output != output or saved_owned != owned:
-            raise RecordError('Existing candidate metadata is incomplete or different')
-        _check_saved_rows(records, output['id'], storage)
-        reused.append(output['id'])
+            raise RecordError("Existing candidate metadata is incomplete or different")
+        _check_saved_rows(records, output["id"], storage)
+        reused.append(output["id"])
+    return reused
+
+
+def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:
+    """Save immutable blobs before candidate records and report only read-back refs.
+
+    An interrupted row commit may leave an unreferenced immutable blob. It must
+    never produce a successful result; the quality step reconciles it.
+    """
+    _check_candidate(records)
+    outputs = records.rows("prepared_output")
+    artifacts = records.rows("artifact")
+    _save_blobs(records, storage)
+    # The remaining outputs are written in one atomic batch.
+    reused = _saved_outputs(records, storage)
     if not outputs or len(reused) < len(outputs):
         storage.write_rows(records.without_outputs(reused).statements())
     for output in outputs:
-        if storage.read_row('prepared_output', output['id']) != output:
-            raise RecordError('Saved candidate output identity differs')
+        if storage.read_row("prepared_output", output["id"]) != output:
+            raise RecordError("Saved candidate output identity differs")
     for artifact in artifacts:
-        if storage.read_row('artifact', artifact['id']) != artifact:
-            raise RecordError('Saved artifact registration differs')
+        if storage.read_row("artifact", artifact["id"]) != artifact:
+            raise RecordError("Saved artifact registration differs")
 
-    return SavedCandidate(tuple(item['id'] for item in outputs), tuple({
-        'artifact_id': item['id'], 'sha256': item['sha256'], 'byte_count': item['byte_count']
-    } for item in artifacts))
-
-
-def run_candidate_unit(job_json: str, *, run_id: str,
-                       read_control: Callable[[str, str, int], ControlState | None],
-                       registered: Callable[[dict[str, Any]], bool],
-                       acquire: Callable[[dict[str, Any]], RecordSet],
-                       prepare: Callable[[dict[str, Any]], RecordSet],
-                       quality: Callable[[dict[str, Any]], RecordSet],
-                       storage: CandidateStore) -> SavedCandidate:
-    """Use the Stage 1 gate, then call only the requested module and save its rows.
-
-    Handlers bind existing acquisition, preparation/index or validation
-    functions for an explicitly instructed unit. This entry returns only saved
-    candidate identities; checkpoint and quality receipt paths are separate.
-    """
-    handlers = {'acquire': acquire, 'prepare': prepare, 'quality': quality}
-
-    def run(job: dict[str, Any]) -> SavedCandidate:
-        records = handlers[job['kind']](job)
-        check_unit_records(job, records, storage)
-        return persist_candidate(records, storage)
-
-    return execute_unit(job_json, run_id=run_id, read_control=read_control,
-                        registered=registered, process=run)
+    return SavedCandidate(
+        tuple(item["id"] for item in outputs),
+        tuple(
+            {
+                "artifact_id": item["id"],
+                "sha256": item["sha256"],
+                "byte_count": item["byte_count"],
+            }
+            for item in artifacts
+        ),
+    )

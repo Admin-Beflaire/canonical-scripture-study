@@ -3,20 +3,17 @@
 from dataclasses import replace
 import hashlib
 import json
-import tempfile
 from pathlib import Path
 import unittest
 
 from css_preparation.acquire.retention import (
     AdmissionBasis,
-    record_supplied,
+    InputRecord,
     assert_usable,
 )
-from css_preparation.executor import ControlState, UnitNotRunnable
-from css_preparation.executor.candidate import (
-    CandidateStore,
-    run_candidate_unit,
-)
+from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
+from css_preparation.executor.basis import check_unit_records
+from css_preparation.executor.candidate import CandidateStore, persist_candidate
 from css_preparation.indexes.files import build_index_files
 from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.records import (
@@ -121,13 +118,19 @@ class CandidateStageTwo(unittest.TestCase):
             )
             for name in ("acquire", "prepare", "quality")
         }
-        return run_candidate_unit(
+        target = storage or self.store
+
+        def run(entry):
+            records = handlers[entry["kind"]](entry)
+            check_unit_records(entry, records, target)
+            return persist_candidate(records, target)
+
+        return execute_unit(
             raw,
             run_id="run-9",
             read_control=lambda *_: state,
             registered=lambda _: True,
-            storage=storage or self.store,
-            **handlers,
+            process=run,
         )
 
     def test_preparation_and_source_index_saved_with_exact_refs(self):
@@ -173,29 +176,31 @@ class CandidateStageTwo(unittest.TestCase):
     def test_acquisition_and_quality_use_separate_existing_modules_without_claiming_receipts(
         self,
     ):
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "synthetic.txt"
-            path.write_bytes(b"Synthetic source bytes")
-            called = []
+        data = b"Synthetic source bytes"
+        called = []
 
-            def acquisition(_):
-                source = record_supplied(
-                    path,
-                    source_revision_id="synthetic:revision-1",
-                    component="text",
-                    admission=AdmissionBasis(
-                        ("owner:synthetic",), "synthetic eligible", True, "not_allowed"
-                    ),
-                )
-                assert_usable(source)
-                called.append(("acquire", source.sha256))
-                # Retention of originals is owned by the acquisition module.
-                return RecordSet()
+        def acquisition(_):
+            source = InputRecord(
+                "synthetic:revision-1",
+                "text",
+                "supplied",
+                "synthetic",
+                len(data),
+                hashlib.sha256(data).hexdigest(),
+                True,
+                AdmissionBasis(
+                    ("owner:synthetic",), "synthetic eligible", True, "not_allowed"
+                ),
+            )
+            assert_usable(source)
+            called.append(("acquire", source.sha256))
+            # Retention of originals is owned by the acquisition module.
+            return RecordSet()
 
-            result = self.invoke("acquire", acquisition)
-            self.assertEqual(result.output_ids, ())
-            self.assertEqual(result.artifact_refs, ())
-            self.assertEqual(called[0][0], "acquire")
+        result = self.invoke("acquire", acquisition)
+        self.assertEqual(result.output_ids, ())
+        self.assertEqual(result.artifact_refs, ())
+        self.assertEqual(called[0][0], "acquire")
 
         def quality(_):
             called.append(("quality", "synthetic"))
@@ -500,7 +505,7 @@ class CandidateStageTwo(unittest.TestCase):
             check_output_basis(job, [output], set())
 
     def test_gated_out_runs_do_not_write_or_invoke_handler(self):
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(
                 "prepare",
                 lambda _: self.fail("Processing should not begin"),

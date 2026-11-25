@@ -1,9 +1,10 @@
 import {isIdentifier, isSafeCount} from './bytes.ts';
 import {ReadError} from './states.ts';
+import {ROUTABLE_EXTENT} from '../../../../packages/shared/src/index-summary.ts';
 
 /** The only D1 statements Study runs. Every statement is a fixed SELECT whose first
  *  parameter is the current release ID and which reaches evidence rows only through
- *  `release_outputs` membership. Hosts never supply SQL, table names or object keys.
+ *  `release_outputs` membership, or through the release's own stored index summary. Hosts never supply SQL, table names or object keys.
  *  The final parameter is always the row limit (one more than returned, to detect more). */
 interface Declaration<I> {
   sql: string;
@@ -215,13 +216,6 @@ WHERE ro.release_id = ?1 AND cs.status = 'approved'
 ORDER BY cs.id
 LIMIT ?2`;
 
-/** Only compatible native-order extents may be skipped by exact-key routing. */
-const ROUTABLE_EXTENT = `typeof(json_extract(c.native_extent_json, '$.order_range[0]')) = 'integer'
-  AND typeof(json_extract(c.native_extent_json, '$.order_range[1]')) = 'integer'
-  AND json_extract(c.native_extent_json, '$.order_range[0]') >= 0
-  AND json_extract(c.native_extent_json, '$.order_range[1]') >= json_extract(c.native_extent_json, '$.order_range[0]')
-  AND json_extract(c.native_extent_json, '$.order_range[1]') <= 9007199254740991`;
-
 /** Search adapter only: index outputs for a capability in native order (their `order_range`
  *  start), with every artifact of each output. The unit list is not returned. An output without
  *  an order range sorts first and is reported as an incompatible index. */
@@ -269,6 +263,54 @@ JOIN prepared_outputs p ON p.id = c.output_id
 LEFT JOIN index_routes routed ON routed.output_id = c.output_id
 WHERE c.source_revision_id IN (SELECT value FROM json_each(?2)) AND c.capability = ?3
 GROUP BY c.source_revision_id ORDER BY c.source_revision_id LIMIT ?5`;
+
+/** The same two answers from the release's stored index summary: one row per source and
+ *  capability, then only the outputs that hold the key (plus the unrouted ones) with their
+ *  artifacts. A key lookup reads only the matching route rows. Used when the release stores
+ *  its summary; an older release keeps the full scan above. */
+const SUMMARY_OUTPUTS = `summary AS (
+  SELECT s.source_revision_id, s.capability, s.has_routing, j.value AS o
+  FROM release_index_summary s CROSS JOIN json_each(s.outputs_json) j
+  WHERE s.release_id = ?1 AND s.source_revision_id IN (SELECT value FROM json_each(?2)) AND s.capability = ?3)`;
+
+const INDEX_FILES_SUMMARY = `WITH ${SUMMARY_OUTPUTS},
+idx AS (
+  SELECT json_extract(o, '$.id') AS output_id, source_revision_id, capability,
+    json_extract(o, '$.state') AS state, json_extract(o, '$.method') AS method_version,
+    json_extract(o, '$.limitation') AS limitation, json_extract(o, '$.index_artifact') AS index_artifact_id,
+    json_extract(o, '$.first') AS order_first, json_extract(o, '$.last') AS order_last,
+    json_extract(o, '$.routable') AS routable_extent, json_extract(o, '$.key') AS output_key,
+    has_routing AS source_has_routing
+  FROM summary),
+chosen AS (
+  SELECT * FROM idx
+  WHERE (source_revision_id, COALESCE(order_first, -1), output_id) >= (?5, ?6, ?7)
+    AND (output_key IS NULL OR state != 'available' OR NOT routable_extent
+      OR EXISTS (SELECT 1 FROM index_route_keys rk WHERE rk.search_key = ?4 AND rk.output_key = idx.output_key))
+  ORDER BY source_revision_id, COALESCE(order_first, -1), output_id LIMIT ?8)
+SELECT chosen.output_id, chosen.source_revision_id, chosen.capability, chosen.state, chosen.method_version,
+  chosen.limitation, chosen.index_artifact_id, chosen.order_first, chosen.order_last, chosen.routable_extent,
+  a.id AS artifact_id, a.sha256, a.byte_count, a.format, a.registered_locator, chosen.source_has_routing
+FROM chosen LEFT JOIN artifacts a ON a.output_id = chosen.output_id
+ORDER BY chosen.source_revision_id, COALESCE(chosen.order_first, -1), chosen.output_id, a.id
+LIMIT ?8`;
+
+const INDEX_SOURCES_SUMMARY = `WITH ${SUMMARY_OUTPUTS}
+SELECT source_revision_id,
+  json_group_array(json_object(
+    'state', json_extract(o, '$.state'),
+    'first', json_extract(o, '$.first'),
+    'last', json_extract(o, '$.last'),
+    'first_unit', json_extract(o, '$.first_unit'),
+    'last_unit', json_extract(o, '$.last_unit'),
+    'units', json_extract(o, '$.units'),
+    'rule', json_extract(o, '$.rule')
+  )) FILTER (WHERE json_extract(o, '$.state') = 'available' AND json_extract(o, '$.key') IS NOT NULL
+      AND json_extract(o, '$.routable') = 1
+      AND NOT EXISTS (SELECT 1 FROM index_route_keys rk
+        WHERE rk.search_key = ?4 AND rk.output_key = json_extract(o, '$.key'))
+  ) AS extents
+FROM summary GROUP BY source_revision_id ORDER BY source_revision_id LIMIT ?5`;
 
 /** The sources selected now, one row per source and capability, with their attribution. */
 const RELEASE_SOURCES = `SELECT c.source_revision_id, c.capability, COUNT(*) AS outputs,
@@ -450,6 +492,19 @@ const aidParams = (i: LanguageAidInput) => [
   ...(optionalAfter(i.after, 2) ?? ['', -1]),
 ];
 
+/** The scan and the stored summary answer the same question, so they take the same parameters. */
+const indexFilesParams = (i: IndexFilesInput) => [
+  JSON.stringify(list(i.source_revision_ids)),
+  id(i.capability),
+  key(i.key),
+  ...(optionalAfter(i.after, 3) ?? ['', -1, '']),
+];
+const indexSourcesParams = (i: IndexSourcesInput) => [
+  JSON.stringify(list(i.source_revision_ids)),
+  id(i.capability),
+  key(i.key),
+];
+
 export const QUERIES = {
   linked_aid_presence: {
     sql: `SELECT COALESCE(json_group_array(json(wanted.value)), '[]') AS keys
@@ -550,22 +605,12 @@ FROM json_each(?2) wanted WHERE EXISTS (
       i.include_current ? 1 : 0,
     ],
   },
-  index_files: {
-    sql: INDEX_FILES,
-    params: (i: IndexFilesInput) => [
-      JSON.stringify(list(i.source_revision_ids)),
-      id(i.capability),
-      key(i.key),
-      ...(optionalAfter(i.after, 3) ?? ['', -1, '']),
-    ],
-  },
-  index_sources: {
-    sql: INDEX_SOURCES,
-    params: (i: IndexSourcesInput) => [
-      JSON.stringify(list(i.source_revision_ids)),
-      id(i.capability),
-      key(i.key),
-    ],
+  index_files: {sql: INDEX_FILES, params: indexFilesParams},
+  index_files_summary: {sql: INDEX_FILES_SUMMARY, params: indexFilesParams},
+  index_sources: {sql: INDEX_SOURCES, params: indexSourcesParams},
+  index_sources_summary: {
+    sql: INDEX_SOURCES_SUMMARY,
+    params: indexSourcesParams,
   },
 } satisfies Record<string, Declaration<never>>;
 

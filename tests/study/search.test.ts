@@ -15,6 +15,7 @@ import {
 import {compareUtf8} from '../../services/study/src/read/bytes.ts';
 import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
+import {RELEASE_INDEX_SUMMARY} from '../../packages/shared/src/index-summary.ts';
 
 const roomy = {
   ...limitsFor({}, 'passage'),
@@ -697,4 +698,102 @@ test('R30-8: one output filling the whole D1 window is reported, not repeated as
     ),
     state('exceeds_limits'),
   );
+});
+
+/** The stored summary must answer both routing questions exactly as the full scan does. */
+test("the stored index summary gives the full scan's files and coverage, without scanning coverage", async () => {
+  clearSearchCache();
+  const fixture = buildFixture();
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  const db = fixture.db.sqlite;
+  db.prepare(RELEASE_INDEX_SUMMARY).run('rel-2');
+  assert.ok(
+    db
+      .prepare(
+        'SELECT COUNT(*) AS n FROM release_index_summary WHERE release_id = ?',
+      )
+      .get('rel-2')!.n,
+  );
+  for (const key of ['alpha', 'unlisted']) {
+    const args = ['rel-2', JSON.stringify([A]), 'word_exact', key] as const;
+    const scan = db
+      .prepare(QUERIES.index_files.sql)
+      .all(...args, A, -1, '', 41);
+    const stored = db
+      .prepare(QUERIES.index_files_summary.sql)
+      .all(...args, A, -1, '', 41);
+    assert.deepEqual(stored, scan, key);
+    const extents = (rows: unknown[]) =>
+      rows.map(row => {
+        const r = row as {source_revision_id: string; extents: string};
+        return [
+          r.source_revision_id,
+          JSON.parse(r.extents)
+            .map((e: unknown) => JSON.stringify(e))
+            .sort(),
+        ];
+      });
+    assert.deepEqual(
+      extents(db.prepare(QUERIES.index_sources_summary.sql).all(...args, 41)),
+      extents(db.prepare(QUERIES.index_sources.sql).all(...args, 41)),
+      key,
+    );
+  }
+  for (const name of [
+    'index_files_summary',
+    'index_sources_summary',
+  ] as const) {
+    const plan = db
+      .prepare(`EXPLAIN QUERY PLAN ${QUERIES[name].sql}`)
+      .all(
+        'rel-2',
+        JSON.stringify([A]),
+        'word_exact',
+        'alpha',
+        ...(name === 'index_files_summary' ? [A, -1, '', 41] : [41]),
+      )
+      .map(row => String(row.detail))
+      .join('\n');
+    assert.match(
+      plan,
+      /SEARCH s USING (COVERING )?INDEX|SEARCH s USING PRIMARY KEY/,
+      name,
+    );
+    assert.doesNotMatch(
+      plan,
+      /\b(coverage|release_outputs|prepared_outputs|index_routes)\b/,
+      name,
+    );
+  }
+});
+
+test('a search over a release with a stored summary returns what the full scan returns', async () => {
+  for (const key of ['alpha', 'unlisted']) {
+    clearSearchCache();
+    const fixture = buildFixture();
+    routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+    fixture.env.DATA_DB = {...fixture.db};
+    const request: SearchRequest = {lookup: 'word', key, sources: [A, B]};
+    assert.equal(
+      (await ReadSession.open(fixture.env, roomy)).release.index_summary,
+      false,
+    );
+    const scanned = await once(fixture, request);
+    fixture.db.sqlite.prepare(RELEASE_INDEX_SUMMARY).run('rel-2');
+    clearSearchCache();
+    assert.equal(
+      (await ReadSession.open(fixture.env, roomy)).release.index_summary,
+      true,
+    );
+    const stored = await once(fixture, request);
+    assert.deepEqual(stored.result.hits, scanned.result.hits, key);
+    assert.deepEqual(stored.result.searched, scanned.result.searched, key);
+    assert.deepEqual(
+      stored.result.limitations,
+      scanned.result.limitations,
+      key,
+    );
+    assert.equal(stored.result.state, scanned.result.state);
+    assert.equal(stored.usage.d1Calls, scanned.usage.d1Calls);
+  }
 });

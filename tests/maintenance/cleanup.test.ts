@@ -160,26 +160,34 @@ test('membership of releases nothing needs is removed; kept releases and release
   assert.equal(w.count('releases'), 6);
 });
 
-test('the stored index summary of a release leaves with its membership; a kept release keeps it', async () => {
+test('selecting a release stores its index summary; a release nothing keeps loses it with its membership', async () => {
   const w = world();
-  const [a, b] = ['oa', 'ob'].map(id => w.output(id, id));
+  const [a, b] = ['oa', 'ob'].map(id => w.output(id, id, 'source_search'));
+  const text = w.output('oc', 'oc');
   w.release('release-old', [a]);
-  w.release('release-current', [b]);
-  w.select('release-current');
-  const insert = w.sql.prepare(
-    `INSERT INTO release_index_summary VALUES (?, 'rev', 'word_exact', 0, '[]')`,
-  );
-  insert.run('release-old');
-  insert.run('release-current');
-  const done = await tidyReleases(w.db, bucket());
-  assert.equal(done.memberships, 1); // the summary row is not counted as membership
-  assert.deepEqual(
+  w.release('release-current', [b, text]);
+  w.release('release-unselected', [a]);
+  w.select('release-current', 'release-old');
+  const stored = () =>
     w.sql
-      .prepare('SELECT release_id FROM release_index_summary')
+      .prepare(
+        'SELECT release_id, capability, outputs_json FROM release_index_summary ORDER BY release_id',
+      )
       .all()
-      .map(row => row.release_id),
-    ['release-current'],
-  );
+      .map(row => [
+        row.release_id,
+        row.capability,
+        (JSON.parse(String(row.outputs_json)) as {id: string}[]).map(o => o.id),
+      ]);
+  // Both selected releases store it, and only for index outputs, never for a text output.
+  assert.deepEqual(stored(), [
+    ['release-current', 'source_context', ['ob']],
+    ['release-old', 'source_context', ['oa']],
+  ]);
+  w.select('release-current');
+  const done = await tidyReleases(w.db, bucket());
+  assert.equal(done.memberships, 2); // release-old and release-unselected; summary rows are not counted
+  assert.deepEqual(stored(), [['release-current', 'source_context', ['ob']]]);
 });
 
 test('saved outputs nothing kept uses are removed with their rows; shared text stays while used', async () => {

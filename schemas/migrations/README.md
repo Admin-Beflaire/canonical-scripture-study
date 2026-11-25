@@ -65,8 +65,9 @@ with the migrated schema.
 `0014_index_routes.sql` routes a search key to the index outputs that hold it.
 `0015_release_index_summary.sql` stores, per release, source and capability, the
 list of the index outputs the release selects, so a search reads one row instead of
-scanning every output's coverage, membership and route rows. Control writes it in
-the same step that stores the release's members. Study reads it only when the
-release has one; an older release keeps the full scan until its summary is stored.
-Apply the migration with the Control deployment before the matching Study
-deployment: the new Study build reads the table when it opens a release.
+scanning every output's coverage, membership and route rows. A trigger on
+`release_selection` writes it when a release becomes the current or previous one,
+and the migration writes it for the releases selected now. Study reads it only when
+the release has one; any other release keeps the full scan. Apply the migration
+with the Control deployment before the matching Study deployment: the new Study
+build reads the table when it opens a release.

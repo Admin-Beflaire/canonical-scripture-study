@@ -1,6 +1,5 @@
 import {isIdentifier, isSafeCount} from './bytes.ts';
 import {ReadError} from './states.ts';
-import {ROUTABLE_EXTENT} from '../../../../packages/shared/src/index-summary.ts';
 
 /** The only D1 statements Study runs. Every statement is a fixed SELECT whose first
  *  parameter is the current release ID and which reaches evidence rows only through
@@ -215,6 +214,13 @@ JOIN character_statements cs ON cs.output_id = ro.output_id
 WHERE ro.release_id = ?1 AND cs.status = 'approved'
 ORDER BY cs.id
 LIMIT ?2`;
+
+/** Only compatible native-order extents may be skipped by exact-key routing. */
+const ROUTABLE_EXTENT = `typeof(json_extract(c.native_extent_json, '$.order_range[0]')) = 'integer'
+  AND typeof(json_extract(c.native_extent_json, '$.order_range[1]')) = 'integer'
+  AND json_extract(c.native_extent_json, '$.order_range[0]') >= 0
+  AND json_extract(c.native_extent_json, '$.order_range[1]') >= json_extract(c.native_extent_json, '$.order_range[0]')
+  AND json_extract(c.native_extent_json, '$.order_range[1]') <= 9007199254740991`;
 
 /** Search adapter only: index outputs for a capability in native order (their `order_range`
  *  start), with every artifact of each output. The unit list is not returned. An output without

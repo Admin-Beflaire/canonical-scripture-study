@@ -8,6 +8,8 @@ import unittest
 from unittest import mock
 
 from css_preparation.adapters.stepbible import BookRecipe, DECLARATION
+from css_preparation.adapters.stepbible.fetch import ComponentFetch
+from css_preparation.adapters.stepbible.recipes import fetch_recipe
 from css_preparation.adapters.stepbible.format import (
     FormatError,
     join_forms,
@@ -367,6 +369,14 @@ class PrepareTest(unittest.TestCase):
 
 
 class RecipeTest(unittest.TestCase):
+    def assert_pinned(self, value, component, manifest, pinned):
+        item = pinned[component.component]
+        self.assertEqual(
+            (component.sha256, component.byte_count),
+            (item["sha256"], item["byte_count"]),
+        )
+        self.assertEqual(value["manifest_revision"], manifest["manifest_revision"])
+
     def test_committed_recipes_resolve_and_fit_control_limits(self):
         recipes = load_recipes()
         mappings = [
@@ -378,6 +388,7 @@ class RecipeTest(unittest.TestCase):
             revision.rsplit("/", 1)[0]
             for revision, recipe in recipes.items()
             if revision.startswith("stepbible-")
+            and not revision.startswith("stepbible-fetch-")
             and recipe.read_reader_references is None
         }
         self.assertEqual(len(base), 66)
@@ -392,27 +403,18 @@ class RecipeTest(unittest.TestCase):
             (ROOT / "collection/manifests/stepbible-data-5de0a47f35f0.json").read_text()
         )
         pinned = {item["component"]: item for item in manifest["components"]}
-        for path in sorted((ROOT / "collection/recipes").glob("stepbible-*.json")):
+        for path in sorted((ROOT / "collection/recipes").glob("stepbible-t*.json")):
             with self.subTest(recipe=path.stem):
                 value = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(path.read_text(encoding="utf-8"), dumps(value))
                 book = BookRecipe.from_recipe(value)
                 component = book.component
-                self.assertEqual(
-                    (component.sha256, component.byte_count),
-                    (
-                        pinned[component.component]["sha256"],
-                        pinned[component.component]["byte_count"],
-                    ),
-                )
-                self.assertEqual(
-                    value["manifest_revision"], manifest["manifest_revision"]
-                )
+                self.assert_pinned(value, component, manifest, pinned)
                 units = value["units"]
                 prepare = [unit for unit in units if unit["kind"] == "prepare"]
                 self.assertEqual(
                     [u["kind"] for u in units],
-                    ["acquire"] + ["prepare"] * len(prepare) + ["quality"],
+                    ["prepare"] * len(prepare) + ["quality"],
                 )
                 self.assertLessEqual(len(prepare), MAX_PREPARE_UNITS)
                 verses = [
@@ -470,6 +472,48 @@ class RecipeTest(unittest.TestCase):
                             [u["native_extent"] for u in original_prepare],
                         )
 
+    def test_fetch_recipes_cover_every_pinned_file_once(self):
+        manifest = json.loads(
+            (ROOT / "collection/manifests/stepbible-data-5de0a47f35f0.json").read_text()
+        )
+        pinned = {item["component"]: item for item in manifest["components"]}
+        fetches = {}
+        for path in sorted(
+            (ROOT / "collection/recipes").glob("stepbible-fetch-*.json")
+        ):
+            with self.subTest(recipe=path.stem):
+                value = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(path.read_text(encoding="utf-8"), dumps(value))
+                component = ComponentFetch.from_recipe(value).component
+                self.assertEqual(path.stem, f"stepbible-fetch-{component.component}")
+                self.assert_pinned(value, component, manifest, pinned)
+                fetches[component.component] = value["parameters"]
+        # Every file a book recipe reads is fetched by exactly one recipe with the same pin.
+        for path in sorted((ROOT / "collection/recipes").glob("stepbible-t*.json")):
+            book = json.loads(path.read_text(encoding="utf-8"))["parameters"]
+            self.assertEqual(fetches[book["component"]], book, path.stem)
+        self.assertEqual(set(fetches), {key for key in pinned if key in fetches})
+
+    def test_fetch_recipe_must_match_its_component(self):
+        value = fetch_recipe(fixture.component("tahot")[0])
+        ComponentFetch.from_recipe(value)
+        for change in (
+            {"native_extent": {"book": "Exo"}},
+            {"capabilities": ["word_exact"]},
+            {"dependencies": []},
+            {"parameters": {**value["parameters"], "commit": "main"}},
+            {"units": []},
+            {"units": [{**value["units"][0], "unit_id": "fetch"}]},
+            {
+                "adapter": {
+                    "name": "stepbible-fetch",
+                    "method_version": "stepbible-fetch/0",
+                }
+            },
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                ComponentFetch.from_recipe({**value, **change})
+
     def test_recipe_must_match_its_component(self):
         value, _, _ = fixture.recipe("tahot")
         for change in (
@@ -521,8 +565,11 @@ class RunnerFlowTest(unittest.TestCase):
         )
         book = BookRecipe.from_recipe(self.recipe_value)
         self.recipe = Recipe(
-            book.acquire, book.prepare, book.read_source, book.declares
+            prepare=book.prepare, read_source=book.read_source, declares=book.declares
         )
+        self.fetch_value = fetch_recipe(self.component)
+        fetch = ComponentFetch.from_recipe(self.fetch_value)
+        self.fetch = Recipe(acquire=fetch.acquire, declares=fetch.declares)
         self.storage = storage_for(self.api)
         self.client = control_client_for(self.api)
         self.api.control_handler = self.control
@@ -550,16 +597,19 @@ class RunnerFlowTest(unittest.TestCase):
         return 200, {"status": "accepted", "eligible": True, "state": "succeeded"}
 
     def job_run(self, unit_id, **changes):
-        unit = next(
-            item for item in self.recipe_value["units"] if item["unit_id"] == unit_id
+        value, recipe = (
+            (self.fetch_value, self.fetch)
+            if unit_id == "acquire"
+            else (self.recipe_value, self.recipe)
         )
+        unit = next(item for item in value["units"] if item["unit_id"] == unit_id)
         job = deepcopy(WIRE["job_input"])
         job.update(
             task_id="task-stepbible",
             unit_id=unit_id,
             kind=unit["kind"],
             native_extent=unit["native_extent"],
-            recipe_revision=self.recipe_value["revision"],
+            recipe_revision=value["revision"],
             input_refs=self.inputs,
             dependency_refs=[],
             required_capabilities=unit.get("required_capabilities", []),
@@ -569,7 +619,7 @@ class RunnerFlowTest(unittest.TestCase):
         self.current = json.dumps(
             job, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         )
-        with mock.patch.dict(RECIPES, {self.recipe_value["revision"]: self.recipe}):
+        with mock.patch.dict(RECIPES, {value["revision"]: recipe}):
             return runner.run_job(
                 self.current,
                 unit["kind"],

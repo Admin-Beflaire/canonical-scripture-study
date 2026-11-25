@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tahot-hag",
-  "revision": "stepbible-tahot-hag/5de0a47f35f0/1",
+  "revision": "stepbible-tahot-hag/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -32,23 +32,13 @@
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [
     {
-      "unit_id": "acquire",
-      "kind": "acquire",
-      "native_extent": {
-        "component": "tahot-isa-mal"
-      },
-      "depends_on": []
-    },
-    {
       "unit_id": "prepare-01",
       "kind": "prepare",
       "native_extent": {
         "coordinate_version": "stepbible-tahot:hebrew-verses/1",
         "unit_ids": ["Hag.1.1", "Hag.1.2", "Hag.1.3", "Hag.1.4", "Hag.1.5", "Hag.1.6", "Hag.1.7", "Hag.1.8", "Hag.1.9", "Hag.1.10", "Hag.1.11", "Hag.1.12", "Hag.1.13", "Hag.1.14", "Hag.1.15", "Hag.2.1", "Hag.2.2", "Hag.2.3", "Hag.2.4", "Hag.2.5", "Hag.2.6", "Hag.2.7", "Hag.2.8", "Hag.2.9", "Hag.2.10", "Hag.2.11", "Hag.2.12", "Hag.2.13", "Hag.2.14", "Hag.2.15", "Hag.2.16", "Hag.2.17", "Hag.2.18", "Hag.2.19", "Hag.2.20", "Hag.2.21", "Hag.2.22", "Hag.2.23"]
       },
-      "depends_on": [
-        "acquire"
-      ]
+      "depends_on": []
     },
     {
       "unit_id": "quality",

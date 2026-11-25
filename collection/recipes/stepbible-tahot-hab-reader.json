@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tahot-hab-reader",
-  "revision": "stepbible-tahot-hab-reader/5de0a47f35f0/1",
+  "revision": "stepbible-tahot-hab-reader/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -28,23 +28,13 @@
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [
     {
-      "unit_id": "acquire",
-      "kind": "acquire",
-      "native_extent": {
-        "component": "tahot-isa-mal"
-      },
-      "depends_on": []
-    },
-    {
       "unit_id": "prepare-01",
       "kind": "prepare",
       "native_extent": {
         "coordinate_version": "stepbible-tahot:hebrew-verses/1",
         "unit_ids": ["Hab.1.1", "Hab.1.2", "Hab.1.3", "Hab.1.4", "Hab.1.5", "Hab.1.6", "Hab.1.7", "Hab.1.8", "Hab.1.9", "Hab.1.10", "Hab.1.11", "Hab.1.12", "Hab.1.13", "Hab.1.14", "Hab.1.15", "Hab.1.16", "Hab.1.17", "Hab.2.1", "Hab.2.2", "Hab.2.3", "Hab.2.4", "Hab.2.5", "Hab.2.6", "Hab.2.7", "Hab.2.8", "Hab.2.9", "Hab.2.10", "Hab.2.11", "Hab.2.12", "Hab.2.13", "Hab.2.14", "Hab.2.15", "Hab.2.16", "Hab.2.17", "Hab.2.18", "Hab.2.19", "Hab.2.20", "Hab.3.1", "Hab.3.2", "Hab.3.3", "Hab.3.4", "Hab.3.5", "Hab.3.6", "Hab.3.7", "Hab.3.8", "Hab.3.9", "Hab.3.10", "Hab.3.11", "Hab.3.12", "Hab.3.13", "Hab.3.14", "Hab.3.15", "Hab.3.16", "Hab.3.17", "Hab.3.18", "Hab.3.19"]
       },
-      "depends_on": [
-        "acquire"
-      ]
+      "depends_on": []
     },
     {
       "unit_id": "quality",

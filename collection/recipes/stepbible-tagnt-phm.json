@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tagnt-phm",
-  "revision": "stepbible-tagnt-phm/5de0a47f35f0/1",
+  "revision": "stepbible-tagnt-phm/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -32,23 +32,13 @@
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [
     {
-      "unit_id": "acquire",
-      "kind": "acquire",
-      "native_extent": {
-        "component": "tagnt-act-rev"
-      },
-      "depends_on": []
-    },
-    {
       "unit_id": "prepare-01",
       "kind": "prepare",
       "native_extent": {
         "coordinate_version": "stepbible-tagnt:nestle-aland-verses/1",
         "unit_ids": ["Phm.1.1", "Phm.1.2", "Phm.1.3", "Phm.1.4", "Phm.1.5", "Phm.1.6", "Phm.1.7", "Phm.1.8", "Phm.1.9", "Phm.1.10", "Phm.1.11", "Phm.1.12", "Phm.1.13", "Phm.1.14", "Phm.1.15", "Phm.1.16", "Phm.1.17", "Phm.1.18", "Phm.1.19", "Phm.1.20", "Phm.1.21", "Phm.1.22", "Phm.1.23", "Phm.1.24", "Phm.1.25"]
       },
-      "depends_on": [
-        "acquire"
-      ]
+      "depends_on": []
     },
     {
       "unit_id": "quality",

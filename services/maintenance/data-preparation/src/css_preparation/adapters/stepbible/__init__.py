@@ -1,8 +1,9 @@
 """STEPBible tagged-text adapter (TAHOT Hebrew OT, TAGNT Greek NT).
 
-One recipe covers one book: an acquire unit for the pinned component file, prepare units of
-whole verses sized for one D1 batch each, and a quality unit over the book. The adapter code
-is generic; the recipe pins the exact file.
+One recipe covers one book: prepare units of whole verses sized for one D1 batch each, and a
+quality unit over the book. Fetching the pinned component file is a separate recipe (`fetch.py`)
+that one fetch of a file serves for every book in it. The adapter code is generic; the recipe
+pins the exact file.
 """
 
 from __future__ import annotations
@@ -10,8 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ...acquire.fetch import fetch_original
-from ...acquire.transfer import Route
 from ...prepare.evidence import NativeText
 from ...prepare.records import RecordError, RecordSet
 from .. import AdapterDeclaration, AdapterRegistry
@@ -23,7 +22,7 @@ from .prepare import (
     read_component,
 )
 from .reader_references import READER_REFERENCE, prepare_reader_reference_unit
-from .source import BOOKS, RAW_HOST, Component
+from .source import BOOKS, Component
 
 INPUT_FORMAT = "stepbible/tagged-tsv"
 CAPABILITIES = (
@@ -88,64 +87,11 @@ class BookRecipe:
 
     # Gate --------------------------------------------------------------------
     def declares(self, reference: Mapping[str, Any], kind: str) -> bool:
-        """Inputs this reviewed recipe vouches for before they are saved.
+        """Inputs this reviewed recipe vouches for before they are saved: the acquisition route.
 
-        The acquisition route is declared here. The source revision is accepted unsaved only
-        by the acquire unit, which creates it; later units need the saved revision.
+        The source revision is created by fetching the file (see `fetch.py`); a build needs it saved.
         """
-        component = self.component
-        if reference.get("kind") == "acquisition":
-            return (
-                reference.get("id") == component.acquisition_id
-                and reference.get("sha256", component.sha256) == component.sha256
-                and reference.get("byte_count", component.byte_count)
-                == component.byte_count
-            )
-        return (
-            kind == "acquire"
-            and reference.get("kind") == "source_revision"
-            and reference.get("id") == component.revision_id
-            and set(reference) == {"kind", "id"}
-        )
-
-    def _check_inputs(self, job: Mapping[str, Any]) -> None:
-        refs = {(ref["kind"], ref["id"]) for ref in job["input_refs"]}
-        if (
-            not {
-                ("acquisition", self.component.acquisition_id),
-                ("source_revision", self.component.revision_id),
-            }
-            <= refs
-        ):
-            raise RecordError(
-                "The task does not name this recipe's acquisition and source revision"
-            )
-
-    # Units -------------------------------------------------------------------
-    def acquire(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
-        """Retain the pinned original privately and register its source and admission records."""
-        self._check_inputs(job)
-        component = self.component
-        key = component.original_key
-        try:
-            component.check_original(storage.read_blob(key))
-        except (KeyError, RecordError):
-            route = Route(
-                component.acquisition_id,
-                component.url,
-                frozenset({RAW_HOST}),
-                component.byte_count,
-                component.sha256,
-            )
-            data, _ = fetch_original(route)
-            data = component.check_original(data)
-            storage.put_blob(key, data)
-            component.check_original(storage.read_blob(key))
-        records = RecordSet()
-        for row in component.identity().rows():
-            records.add("source_node", row)
-        records.add("admission", component.admission_row())
-        return records
+        return self.component.declares_acquisition(reference)
 
     def _original(self, storage: Any) -> bytes:
         try:
@@ -156,7 +102,7 @@ class BookRecipe:
             raise RecordError("The original has not been acquired") from None
 
     def prepare(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
-        self._check_inputs(job)
+        self.component.check_inputs(job)
         extent = job["native_extent"]
         if extent.get("coordinate_version") != self.component.coordinate_version:
             raise RecordError("Prepare unit uses other coordinates")
@@ -185,7 +131,7 @@ class BookRecipe:
 
     def read_reader_references(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
         """Rebuild expected mappings from pinned input and the reviewed prepare partition."""
-        self._check_inputs(job)
+        self.component.check_inputs(job)
         self._check_mapping_unit(job)
         partition = [
             unit["native_extent"]["unit_ids"]

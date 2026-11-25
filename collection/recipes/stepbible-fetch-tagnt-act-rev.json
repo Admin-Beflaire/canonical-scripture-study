@@ -1,0 +1,36 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-fetch-tagnt-act-rev",
+  "revision": "stepbible-fetch-tagnt-act-rev/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-fetch",
+    "method_version": "stepbible-fetch/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tagnt",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tagnt-act-rev",
+    "path": "Translators Amalgamated OT+NT/TAGNT Act-Rev - Translators Amalgamated Greek NT - STEPBible.org CC-BY.txt",
+    "sha256": "122040eeeaeba50d6abbf67b39cacaff687211bda69b080e5d53927c830d9968",
+    "byte_count": 15938967
+  },
+  "native_extent": {
+    "component": "tagnt-act-rev"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tagnt-act-rev"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tagnt-act-rev"
+      },
+      "depends_on": []
+    }
+  ]
+}

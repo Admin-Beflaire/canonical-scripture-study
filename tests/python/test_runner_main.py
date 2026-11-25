@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from css_shared.error_record import annotation
+from css_preparation.adapters.stepbible.recipes import fetch_recipe
 from css_preparation.contracts import ContractError, contract_errors
 from css_preparation.prepare.records import RecordError, RecordSet
 from css_preparation.prepare.records import ReaderBoundaryError
@@ -238,9 +239,11 @@ class RunnerTest(unittest.TestCase):
         value["units"][-1]["required_capabilities"] = value["capabilities"]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            (path / f"{value['id']}.json").write_text(
-                json.dumps(value), encoding="utf-8"
-            )
+            fetch = fetch_recipe(component)
+            for item in (fetch, value):
+                (path / f"{item['id']}.json").write_text(
+                    json.dumps(item), encoding="utf-8"
+                )
             recipes = load_recipes(path)
 
         self.storage.put_blob(component.original_key, data)
@@ -249,10 +252,10 @@ class RunnerTest(unittest.TestCase):
             {"kind": "source_revision", "id": component.revision_id},
         ]
 
-        def run(unit, **changes):
+        def run(unit, recipe=value, **changes):
             raw = self.job(
                 unit["kind"],
-                recipe_revision=value["revision"],
+                recipe_revision=recipe["revision"],
                 unit_id=unit["unit_id"],
                 native_extent=unit["native_extent"],
                 input_refs=inputs,
@@ -268,8 +271,9 @@ class RunnerTest(unittest.TestCase):
                 recipes=recipes,
             )
 
-        acquire, baseline, exceptions, quality = value["units"]
-        self.assertEqual(run(acquire)["state"], "succeeded")
+        baseline, exceptions, quality = value["units"]
+        [acquire] = fetch["units"]
+        self.assertEqual(run(acquire, fetch)["state"], "succeeded")
         baseline_result, exception_result = run(baseline), run(exceptions)
         for result in (baseline_result, exception_result):
             self.assertEqual(result["state"], "succeeded", result["diagnostics"])

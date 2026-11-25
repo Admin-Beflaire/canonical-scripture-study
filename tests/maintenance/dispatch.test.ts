@@ -1,6 +1,7 @@
 import test, {mock} from 'node:test';
 import assert from 'node:assert/strict';
 import {localD1} from './d1.ts';
+import {prepareGenesis} from './requests.ts';
 import {
   requestTask,
   controlTask,
@@ -27,17 +28,7 @@ const unit: UnitPlan = {
 
 async function setup() {
   const db = localD1();
-  const created = await requestTask(db, owner, {
-    request_key: 'p1',
-    instruction: 'Prepare Genesis',
-    kind: 'prepare',
-    inputs: [{kind: 'acquisition', id: 'route-1'}],
-    extent: {books: ['GEN']},
-    capabilities: ['source_text'],
-    decision_refs: [
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-    ],
-  });
+  const created = await requestTask(db, owner, prepareGenesis);
   assert.ok(created.status === 'created');
   return {db, task: created.task};
 }
@@ -303,15 +294,10 @@ test('a run started while the task was superseded is reported as orphaned', asyn
   const racing: WorkflowTransport = {
     async dispatch() {
       const next = await requestTask(db, owner, {
+        ...prepareGenesis,
         request_key: 'p2',
         instruction: 'Prepare Genesis and Exodus',
-        kind: 'prepare',
-        inputs: [{kind: 'acquisition', id: 'route-1'}],
         extent: {books: ['GEN', 'EXO']},
-        capabilities: ['source_text'],
-        decision_refs: [
-          {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-        ],
         supersedes: task.id,
       });
       assert.equal(next.status, 'created');

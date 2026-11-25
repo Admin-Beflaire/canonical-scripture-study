@@ -209,6 +209,7 @@ export async function tidyReleases(
           ].map(sql => db.prepare(sql).bind(id)),
         ),
       );
+      // Statements come in pairs (summary, then membership); only memberships are counted.
       done.memberships = removed.reduce(
         (n, r, at) => n + (at % 2 ? (r.meta.changes ?? 0) : 0),
         0,

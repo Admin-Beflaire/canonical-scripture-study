@@ -11,7 +11,7 @@ from css_preparation.acquire.retention import (
     InputRecord,
     assert_usable,
 )
-from css_preparation.executor import ControlState, UnitNotRunnable, execute_unit
+from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
 from css_preparation.executor.basis import check_unit_records
 from css_preparation.executor.candidate import CandidateStore, persist_candidate
 from css_preparation.indexes.files import build_index_files
@@ -505,7 +505,7 @@ class CandidateStageTwo(unittest.TestCase):
             check_output_basis(job, [output], set())
 
     def test_gated_out_runs_do_not_write_or_invoke_handler(self):
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(
                 "prepare",
                 lambda _: self.fail("Processing should not begin"),

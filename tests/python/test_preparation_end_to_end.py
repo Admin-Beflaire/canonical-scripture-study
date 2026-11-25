@@ -5,7 +5,6 @@ deployed Workflow. Stage 6 never selects a release or admits a real source.
 """
 
 from copy import deepcopy
-from dataclasses import replace  # noqa: F401
 import hashlib
 import json
 from pathlib import Path
@@ -13,7 +12,7 @@ import unittest
 
 from css_preparation.acquire.retention import AdmissionBasis, InputRecord, assert_usable
 from css_preparation.contracts import contract_errors
-from css_preparation.executor import ControlState, UnitNotRunnable, execute_unit
+from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
 from css_preparation.executor.candidate import CandidateStore, persist_candidate
 from css_preparation.executor.records import RecordStore
 from css_preparation.executor.unit import run_unit
@@ -420,7 +419,7 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         # of its own canonicalJson UTF-8 bytes. Transport cannot reserialize it.
         altered = json.dumps(job, ensure_ascii=False)
         self.assertNotEqual(altered, raw)
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             execute_unit(
                 altered,
                 run_id="run-wire",

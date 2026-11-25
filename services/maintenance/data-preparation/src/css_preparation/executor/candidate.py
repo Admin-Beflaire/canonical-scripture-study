@@ -74,19 +74,13 @@ def _check_saved_rows(
             raise RecordError("Existing candidate metadata is incomplete or different")
 
 
-def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:  # noqa: C901
-    """Save immutable blobs before candidate records and report only read-back refs.
-
-    An interrupted row commit may leave an unreferenced immutable blob. It must
-    never produce a successful result; the quality step reconciles it.
-    """
+def _check_candidate(records: RecordSet) -> None:
+    """Every artifact belongs to an output and its bytes match its registration."""
     if not isinstance(records, RecordSet):
         raise RecordError("Preparation module must return a RecordSet")
-    outputs = records.rows("prepared_output")
+    output_ids = {item["id"] for item in records.rows("prepared_output")}
     artifacts = records.rows("artifact")
-    output_ids = {item["id"] for item in outputs}
-    metadata = {item["id"]: item for item in artifacts}
-    if set(records.blobs) != set(metadata):
+    if set(records.blobs) != {item["id"] for item in artifacts}:
         raise RecordError("Every new artifact must have saved bytes and metadata")
     for artifact in artifacts:
         if artifact["output_id"] not in output_ids:
@@ -100,20 +94,27 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
                 "Artifact byte count or digest does not match registered metadata"
             )
 
-    for artifact in artifacts:
+
+def _save_blobs(records: RecordSet, storage: CandidateStore) -> None:
+    for artifact in records.rows("artifact"):
         locator = artifact["registered_locator"]
         storage.put_blob(locator, records.blobs[artifact["id"]])
         saved = storage.read_blob(locator)
         if not isinstance(saved, bytes) or saved != records.blobs[artifact["id"]]:
             raise RecordError("Saved artifact bytes differ from the candidate")
 
-    # An output may already be saved: by a retry after a saved candidate but before its
-    # report, or by an earlier build when its basis is unchanged (a rebuild that
-    # reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
-    # exactly the candidate's; the remaining outputs are written in one atomic batch.
-    # Never overwrite identities.
+
+def _saved_outputs(records: RecordSet, storage: CandidateStore) -> list[str]:
+    """IDs of outputs already saved exactly as the candidate describes them.
+
+    An output may already be saved: by a retry after a saved candidate but before its
+    report, or by an earlier build when its basis is unchanged (a rebuild that
+    reuses evidence and adds new indexes). Each saved output, with its artifacts, must be
+    exactly the candidate's. Never overwrite identities.
+    """
+    artifacts = records.rows("artifact")
     reused = []
-    for output in outputs:
+    for output in records.rows("prepared_output"):
         owned = [row for row in artifacts if row["output_id"] == output["id"]]
         saved_output = storage.optional_row("prepared_output", output["id"])
         saved_owned = [storage.optional_row("artifact", row["id"]) for row in owned]
@@ -123,6 +124,21 @@ def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandi
             raise RecordError("Existing candidate metadata is incomplete or different")
         _check_saved_rows(records, output["id"], storage)
         reused.append(output["id"])
+    return reused
+
+
+def persist_candidate(records: RecordSet, storage: CandidateStore) -> SavedCandidate:
+    """Save immutable blobs before candidate records and report only read-back refs.
+
+    An interrupted row commit may leave an unreferenced immutable blob. It must
+    never produce a successful result; the quality step reconciles it.
+    """
+    _check_candidate(records)
+    outputs = records.rows("prepared_output")
+    artifacts = records.rows("artifact")
+    _save_blobs(records, storage)
+    # The remaining outputs are written in one atomic batch.
+    reused = _saved_outputs(records, storage)
     if not outputs or len(reused) < len(outputs):
         storage.write_rows(records.without_outputs(reused).statements())
     for output in outputs:

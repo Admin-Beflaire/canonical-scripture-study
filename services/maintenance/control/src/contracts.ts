@@ -104,29 +104,20 @@ function hasType(schema: Schema, actual: string): string[] | null {
   return fits ? null : allowed;
 }
 
-function check(
+/** The definition a `$ref` points to; an unknown or malformed reference is a programming error. */
+function resolveRef(ref: string, from: Defs): Schema {
+  const name = /^#\/\$defs\/([a-z_]+)$/.exec(ref)?.[1];
+  if (!name || !from[name]) throw new Error(`Unknown schema reference ${ref}`);
+  return from[name];
+}
+
+/** Checks of the keywords that apply to any value: const, enum, strings and minimum. */
+function checkScalar(
   schema: Schema,
   value: unknown,
   path: string,
   errors: string[],
-  from: Defs = defs,
 ) {
-  for (const key of Object.keys(schema))
-    if (!SUPPORTED.has(key))
-      throw new Error(`Unsupported schema keyword ${key}`);
-  if (typeof schema.$ref === 'string') {
-    const name = /^#\/\$defs\/([a-z_]+)$/.exec(schema.$ref)?.[1];
-    if (!name || !from[name])
-      throw new Error(`Unknown schema reference ${schema.$ref}`);
-    check(from[name], value, path, errors, from);
-    return;
-  }
-  const actual = typeOf(value);
-  const wrongType = hasType(schema, actual);
-  if (wrongType) {
-    errors.push(`${path}: expected ${wrongType.join(' or ')}`);
-    return;
-  }
   if (schema.const !== undefined && value !== schema.const)
     errors.push(`${path}: must be ${String(schema.const)}`);
   if (Array.isArray(schema.enum) && !schema.enum.includes(value))
@@ -138,6 +129,29 @@ function check(
     value < schema.minimum
   )
     errors.push(`${path}: below minimum`);
+}
+
+function check(
+  schema: Schema,
+  value: unknown,
+  path: string,
+  errors: string[],
+  from: Defs = defs,
+) {
+  for (const key of Object.keys(schema))
+    if (!SUPPORTED.has(key))
+      throw new Error(`Unsupported schema keyword ${key}`);
+  if (typeof schema.$ref === 'string') {
+    check(resolveRef(schema.$ref, from), value, path, errors, from);
+    return;
+  }
+  const actual = typeOf(value);
+  const wrongType = hasType(schema, actual);
+  if (wrongType) {
+    errors.push(`${path}: expected ${wrongType.join(' or ')}`);
+    return;
+  }
+  checkScalar(schema, value, path, errors);
   if (actual === 'array')
     checkArray(schema, value as unknown[], path, errors, from);
   if (actual === 'object')

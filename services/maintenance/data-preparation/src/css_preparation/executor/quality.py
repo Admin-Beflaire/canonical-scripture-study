@@ -14,7 +14,7 @@ from ..diagnostics import diagnostic
 from ..provider import ProviderError
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
-from . import ControlState, UnitNotRunnable, execute_unit
+from . import ControlState, UnitNotRunnableError, execute_unit
 from .records import RecordStore, check_record_ref
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
@@ -152,7 +152,7 @@ def check_candidate_quality(
                 coverage_refs=coverage_refs,
                 quality_receipt_ref=reference,
             )
-        except UnitNotRunnable:
+        except UnitNotRunnableError:
             raise  # A late cancellation is not a failed quality check.
         except ReaderBoundaryError as error:
             return failed(stage, "reader_boundary", error)

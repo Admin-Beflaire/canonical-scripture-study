@@ -36,6 +36,23 @@ def canonical(job):
     return json.dumps(job, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def inconsistent_reader(read_rows, kind, field, altered):
+    """Simulate an inconsistent read without changing the database's immutable rows."""
+
+    def inconsistent_rows(requested, output_ids):
+        rows = read_rows(requested, output_ids)
+        if requested == kind:
+            row = next(
+                row
+                for row in rows
+                if kind == "reader_reference_base" or row["status"] == "missing"
+            )
+            row[field] = altered
+        return rows
+
+    return inconsistent_rows
+
+
 class RunnerTest(unittest.TestCase):
     def setUp(self):
         self.api = LoopbackApi().__enter__()
@@ -307,18 +324,7 @@ class RunnerTest(unittest.TestCase):
             ("reader_reference_link", "gap_reason", "Invented reason"),
         ):
             with self.subTest(kind=kind):
-                # Simulate an inconsistent read without changing the database's immutable rows.
-                def inconsistent_rows(requested, output_ids):
-                    rows = read_rows(requested, output_ids)
-                    if requested == kind:  # noqa: B023
-                        row = next(
-                            row
-                            for row in rows
-                            if kind == "reader_reference_base"  # noqa: B023
-                            or row["status"] == "missing"
-                        )
-                        row[field] = altered  # noqa: B023
-                    return rows
+                inconsistent_rows = inconsistent_reader(read_rows, kind, field, altered)
 
                 with mock.patch.object(
                     self.storage, "read_rows", side_effect=inconsistent_rows

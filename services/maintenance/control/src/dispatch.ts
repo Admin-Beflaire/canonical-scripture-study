@@ -77,6 +77,95 @@ export function jobInput(
   return input;
 }
 
+const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+
+/** The newest job of a unit, if it has any. */
+async function latestJob(
+  db: D1Database,
+  taskId: string,
+  unitId: string,
+): Promise<JobRow | undefined> {
+  const jobs = await db
+    .prepare(
+      'SELECT * FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? ORDER BY attempt DESC',
+    )
+    .bind(taskId, unitId)
+    .all<JobRow>();
+  return jobs.results[0];
+}
+
+/** Save the intent of a new attempt, only while the task is still at the expected revision. */
+async function saveIntent(
+  db: D1Database,
+  task: TaskRow,
+  unit: UnitPlan,
+  attempt: number,
+  inputBasis: string,
+): Promise<boolean> {
+  const intent = await db
+    .prepare(
+      `INSERT INTO maintenance_jobs(task_id, task_revision, unit_id, attempt, kind, input_basis, state)
+    SELECT ?, ?, ?, ?, ?, ?, 'intended' WHERE EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ?
+      AND state IN ('queued','running')) ON CONFLICT DO NOTHING`,
+    )
+    .bind(
+      task.id,
+      task.revision,
+      unit.unit_id,
+      attempt,
+      unit.kind,
+      inputBasis,
+      task.id,
+      task.revision,
+    )
+    .run();
+  return Boolean(intent.meta.changes);
+}
+
+/** Bind the run to the saved intent and start the task. */
+async function confirmDispatch(
+  db: D1Database,
+  task: TaskRow,
+  unit: UnitPlan,
+  attempt: number,
+  runId: string,
+): Promise<DispatchResult> {
+  const [confirmed] = await db.batch([
+    db
+      .prepare(
+        `UPDATE maintenance_jobs SET run_id = ?, state = 'dispatched' WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = 'intended'
+      AND (SELECT state FROM maintenance_tasks WHERE id = ?) NOT IN ('cancelled','superseded')`,
+      )
+      .bind(runId, task.id, unit.unit_id, attempt, task.id),
+    db
+      .prepare(
+        `UPDATE maintenance_tasks SET state = 'running', revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'queued'`,
+      )
+      .bind(task.id, task.revision),
+  ]);
+  if (confirmed.meta.changes)
+    return {status: 'dispatched', run_id: runId, attempt};
+  // The run may already have confirmed itself through the state route while GitHub's reply was
+  // on its way: that is the same, successful dispatch.
+  const bound = await db
+    .prepare(
+      'SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?',
+    )
+    .bind(task.id, unit.unit_id, attempt)
+    .first<{run_id: string | null}>();
+  if (bound?.run_id === runId)
+    return {status: 'dispatched', run_id: runId, attempt};
+  // The task was cancelled or superseded while the workflow was starting: the run exists but
+  // has no job record, so the caller must ask the executor to cancel it.
+  return {
+    status: 'orphaned',
+    run_id: runId,
+    attempt,
+    message:
+      'The task was cancelled or superseded during dispatch. Ask the executor to cancel this run.',
+  };
+}
+
 /** Save the intent first, then call the workflow. An unanswered call leaves the intent
  *  for reconciliation; it is never silently re-sent as a second attempt. */
 export async function dispatchUnit(
@@ -101,13 +190,7 @@ export async function dispatchUnit(
         ? `Task is ${task.state} at revision ${task.revision}.`
         : 'Unknown task.',
     };
-  const jobs = await db
-    .prepare(
-      'SELECT * FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? ORDER BY attempt DESC',
-    )
-    .bind(task.id, unit.unit_id)
-    .all<JobRow>();
-  const latest = jobs.results[0];
+  const latest = await latestJob(db, task.id, unit.unit_id);
   if (latest && (ACTIVE_JOB.has(latest.state) || latest.state === 'succeeded'))
     return {
       status: 'existing',
@@ -118,24 +201,7 @@ export async function dispatchUnit(
   const attempt = (latest?.attempt ?? 0) + 1;
   const input = jobInput(task, unit, attempt);
   const inputBasis = await sha256(canonicalJson(input));
-  const intent = await db
-    .prepare(
-      `INSERT INTO maintenance_jobs(task_id, task_revision, unit_id, attempt, kind, input_basis, state)
-    SELECT ?, ?, ?, ?, ?, ?, 'intended' WHERE EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ?
-      AND state IN ('queued','running')) ON CONFLICT DO NOTHING`,
-    )
-    .bind(
-      task.id,
-      task.revision,
-      unit.unit_id,
-      attempt,
-      unit.kind,
-      inputBasis,
-      task.id,
-      task.revision,
-    )
-    .run();
-  if (!intent.meta.changes)
+  if (!(await saveIntent(db, task, unit, attempt, inputBasis)))
     return {
       status: 'not_dispatchable',
       message: 'Task or unit changed before dispatch.',
@@ -143,8 +209,7 @@ export async function dispatchUnit(
   let runId: string;
   try {
     runId = (await transport.dispatch(input)).run_id;
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(runId))
-      throw new Error('Invalid run identity');
+    if (!RUN_ID.test(runId)) throw new Error('Invalid run identity');
   } catch (error) {
     reportError(error, {
       tool: 'control',
@@ -161,41 +226,7 @@ export async function dispatchUnit(
         'The workflow did not confirm the dispatch. The saved intent is reconciled before any new attempt.',
     };
   }
-  const [confirmed] = await db.batch([
-    db
-      .prepare(
-        `UPDATE maintenance_jobs SET run_id = ?, state = 'dispatched' WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = 'intended'
-      AND (SELECT state FROM maintenance_tasks WHERE id = ?) NOT IN ('cancelled','superseded')`,
-      )
-      .bind(runId, task.id, unit.unit_id, attempt, task.id),
-    db
-      .prepare(
-        `UPDATE maintenance_tasks SET state = 'running', revision = revision + 1 WHERE id = ? AND revision = ? AND state = 'queued'`,
-      )
-      .bind(task.id, task.revision),
-  ]);
-  if (!confirmed.meta.changes) {
-    // The run may already have confirmed itself through the state route while GitHub's reply was
-    // on its way: that is the same, successful dispatch.
-    const bound = await db
-      .prepare(
-        'SELECT run_id FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?',
-      )
-      .bind(task.id, unit.unit_id, attempt)
-      .first<{run_id: string | null}>();
-    if (bound?.run_id === runId)
-      return {status: 'dispatched', run_id: runId, attempt};
-    // The task was cancelled or superseded while the workflow was starting: the run exists but
-    // has no job record, so the caller must ask the executor to cancel it.
-    return {
-      status: 'orphaned',
-      run_id: runId,
-      attempt,
-      message:
-        'The task was cancelled or superseded during dispatch. Ask the executor to cancel this run.',
-    };
-  }
-  return {status: 'dispatched', run_id: runId, attempt};
+  return confirmDispatch(db, task, unit, attempt, runId);
 }
 
 export type ReceiptResult =
@@ -205,6 +236,60 @@ export type ReceiptResult =
 /** Accept a result only when it matches the recorded dispatch exactly. Results for
  *  cancelled or superseded work are kept as diagnostics but are never eligible for promotion.
  *  A successful workflow run by itself is not evidence of any output. */
+/** Why a result does not belong to the recorded dispatch, or null when it does. */
+function dispatchMismatch(
+  job: JobRow,
+  task: TaskRow,
+  result: JobResult,
+): string | null {
+  if (
+    job.task_revision !== result.task_revision ||
+    task.basis_digest !== result.basis_digest
+  )
+    return 'task revision or basis does not match';
+  if (job.run_id === null)
+    return 'dispatch not yet confirmed; reconcile the run first';
+  if (job.run_id !== result.run_id) return 'run does not match the dispatch';
+  return null;
+}
+
+/** Write the result and return the job state it ended in. Decided against the task state at
+ *  the moment of writing: a late result for cancelled or superseded work is recorded as
+ *  cancelled, never as success. Null when the job changed while recording. */
+async function recordResult(
+  db: D1Database,
+  job: JobRow,
+  result: JobResult,
+  resultRef: string,
+): Promise<string | null> {
+  const update = await db
+    .prepare(
+      `UPDATE maintenance_jobs SET
+      state = CASE WHEN (SELECT state FROM maintenance_tasks WHERE id = ?) IN ('cancelled','superseded') THEN 'cancelled' ELSE ? END,
+      result_ref = ?, result_json = ?
+    WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = ?`,
+    )
+    .bind(
+      job.task_id,
+      result.state,
+      resultRef,
+      canonicalJson(result),
+      job.task_id,
+      job.unit_id,
+      job.attempt,
+      job.state,
+    )
+    .run();
+  if (!update.meta.changes) return null;
+  const row = await db
+    .prepare(
+      'SELECT state FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?',
+    )
+    .bind(job.task_id, job.unit_id, job.attempt)
+    .first<{state: string}>();
+  return row!.state;
+}
+
 export async function acceptReceipt(
   db: D1Database,
   value: unknown,
@@ -235,21 +320,8 @@ export async function acceptReceipt(
     .first<TaskRow>();
   if (!job || !task)
     return {status: 'rejected', reason: 'no matching dispatch'};
-  if (
-    job.task_revision !== result.task_revision ||
-    task.basis_digest !== result.basis_digest
-  )
-    return {
-      status: 'rejected',
-      reason: 'task revision or basis does not match',
-    };
-  if (job.run_id === null)
-    return {
-      status: 'rejected',
-      reason: 'dispatch not yet confirmed; reconcile the run first',
-    };
-  if (job.run_id !== result.run_id)
-    return {status: 'rejected', reason: 'run does not match the dispatch'};
+  const mismatch = dispatchMismatch(job, task, result);
+  if (mismatch) return {status: 'rejected', reason: mismatch};
   const resultRef = `sha256:${await sha256(canonicalJson(result))}`;
   const live = !['cancelled', 'superseded'].includes(task.state);
   if (job.result_ref === resultRef)
@@ -258,42 +330,16 @@ export async function acceptReceipt(
       eligible: live && job.state === 'succeeded',
       state: job.state,
     };
-  if (['succeeded', 'failed', 'cancelled'].includes(job.state)) {
+  if (['succeeded', 'failed', 'cancelled'].includes(job.state))
     return {
       status: 'rejected',
       reason: 'a different final result is already recorded',
     };
-  }
-  // Decide against the task state at the moment of writing: a late result for cancelled or
-  // superseded work is recorded as cancelled, never as success.
-  const update = await db
-    .prepare(
-      `UPDATE maintenance_jobs SET
-      state = CASE WHEN (SELECT state FROM maintenance_tasks WHERE id = ?) IN ('cancelled','superseded') THEN 'cancelled' ELSE ? END,
-      result_ref = ?, result_json = ?
-    WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = ?`,
-    )
-    .bind(
-      job.task_id,
-      result.state,
-      resultRef,
-      canonicalJson(result),
-      job.task_id,
-      job.unit_id,
-      job.attempt,
-      job.state,
-    )
-    .run();
-  if (!update.meta.changes)
+  const state = await recordResult(db, job, result, resultRef);
+  if (state === null)
     return {
       status: 'rejected',
       reason: 'the job changed while recording; resend the receipt',
     };
-  const state = (await db
-    .prepare(
-      'SELECT state FROM maintenance_jobs WHERE task_id = ? AND unit_id = ? AND attempt = ?',
-    )
-    .bind(job.task_id, job.unit_id, job.attempt)
-    .first<{state: string}>())!.state;
   return {status: 'accepted', eligible: state === 'succeeded', state};
 }

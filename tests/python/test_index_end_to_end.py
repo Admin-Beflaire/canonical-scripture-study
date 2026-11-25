@@ -243,7 +243,7 @@ class IndexIntegratedStageFive(unittest.TestCase):
         )
 
     def test_complete_paged_search_round_trips_and_literary_context(self):
-        for part, built in zip(self.parts, self.files):  # noqa: B905
+        for part, built in zip(self.parts, self.files, strict=True):
             saved = next(
                 row for row in self.outputs if row["id"] == part.basis.output_id
             )

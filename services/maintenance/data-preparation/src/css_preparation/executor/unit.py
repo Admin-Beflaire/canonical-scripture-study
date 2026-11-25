@@ -16,7 +16,7 @@ from ..contracts import parse_job_input
 from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
 from ..diagnostics import diagnostic
 from ..provider import ProviderError
-from . import ControlState, UnitNotRunnable, execute_unit
+from . import ControlState, UnitNotRunnableError, execute_unit
 from .candidate import CandidateStore, SavedCandidate, persist_candidate
 from .basis import check_unit_records
 from ..prepare.evidence import OutputBasis
@@ -243,7 +243,7 @@ def run_unit(
                 registered=registered,
                 process=process,
             )
-        except UnitNotRunnable:
+        except UnitNotRunnableError:
             if retry == 0:
                 raise  # Refused before any unit work.
             return failure("stopped")

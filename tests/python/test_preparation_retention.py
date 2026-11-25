@@ -4,7 +4,7 @@ import unittest
 
 from css_preparation.acquire.retention import (
     AdmissionBasis,
-    BlockedInput,
+    BlockedInputError,
     InputRecord,
     assert_usable,
 )
@@ -35,12 +35,12 @@ class RetentionTest(unittest.TestCase):
             AdmissionBasis(("d",), "terms", None, "allowed"),
             AdmissionBasis(("d",), "terms", False, "allowed"),
         ):
-            with self.assertRaises(BlockedInput):
+            with self.assertRaises(BlockedInputError):
                 assert_usable(record(admission))
-        with self.assertRaises(BlockedInput):
+        with self.assertRaises(BlockedInputError):
             assert_usable(record(complete=False))
         for unsafe in ("../src", "a/../../outside", "a/./b", "a//b", "a/"):
-            with self.assertRaises(BlockedInput, msg=unsafe):
+            with self.assertRaises(BlockedInputError, msg=unsafe):
                 InputRecord(
                     unsafe, "text", "route-a", "etag", 5, "a" * 64, True, PUBLIC
                 )

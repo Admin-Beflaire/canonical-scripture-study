@@ -31,7 +31,7 @@ class ControlState:
     job_state: str
 
 
-class UnitNotRunnable(ContractError):  # noqa: N818
+class UnitNotRunnableError(ContractError):
     """The job is invalid, unregistered or no longer eligible to run."""
 
 
@@ -57,11 +57,11 @@ def execute_unit(
     """
     job = parse_job_input(job_json)
     if not isinstance(run_id, str) or not _ID.fullmatch(run_id):
-        raise UnitNotRunnable("Invalid runner identity")
+        raise UnitNotRunnableError("Invalid runner identity")
 
     state = read_control(job["task_id"], job["unit_id"], job["attempt"])
     if state is None:
-        raise UnitNotRunnable("No recorded Control dispatch")
+        raise UnitNotRunnableError("No recorded Control dispatch")
     if (
         state.task_id != job["task_id"]
         or state.unit_id != job["unit_id"]
@@ -70,7 +70,7 @@ def execute_unit(
         or state.task_basis_digest != job["basis_digest"]
         or state.run_id != run_id
     ):
-        raise UnitNotRunnable("Control task or dispatch does not match the job")
+        raise UnitNotRunnableError("Control task or dispatch does not match the job")
 
     # Control increments the task revision when queued -> running. A job dispatched
     # while already running uses the unchanged revision. Other revision changes
@@ -80,13 +80,13 @@ def execute_unit(
         or state.task_revision not in (job["task_revision"], job["task_revision"] + 1)
         or state.job_state not in _ACTIVE_JOBS
     ):
-        raise UnitNotRunnable("Control task or job is not runnable")
+        raise UnitNotRunnableError("Control task or job is not runnable")
 
     # Control hashes canonicalJson(job) and sends those exact UTF-8 JSON bytes.
     # Do not parse/serialize again: Python and JavaScript format some numbers differently.
     exact_basis = hashlib.sha256(job_json.encode("utf-8")).hexdigest()
     if exact_basis != state.job_input_basis:
-        raise UnitNotRunnable("Dispatched job inputs changed")
+        raise UnitNotRunnableError("Dispatched job inputs changed")
 
     refs = list(job["input_refs"])
     refs.extend(
@@ -100,6 +100,6 @@ def execute_unit(
     )
     for ref in refs:
         if not registered(ref):
-            raise UnitNotRunnable("Input or dependency is not registered")
+            raise UnitNotRunnableError("Input or dependency is not registered")
 
     return process(job)

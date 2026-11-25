@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from css_preparation.acquire.transfer import TransferResult, TransferError  # noqa: F401
+from css_preparation.acquire.transfer import TransferResult
 from css_preparation.adapters.acquire_only import AcquireRecipe
 from css_preparation.prepare.records import RecordError
 from css_preparation.runner.recipes import load_recipes

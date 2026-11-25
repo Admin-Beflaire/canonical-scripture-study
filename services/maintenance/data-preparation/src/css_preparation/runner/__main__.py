@@ -25,7 +25,7 @@ from typing import Any, Mapping
 from css_shared.error_record import annotation, error_record
 
 from ..contracts import ContractError, parse_job_input, unit_result
-from ..executor import UnitNotRunnable, execute_unit
+from ..executor import UnitNotRunnableError, execute_unit
 from ..executor.unit import StopWorkError, UnitProgress, run_unit
 from ..executor.quality import check_candidate_quality
 from ..prepare.evidence import OutputBasis
@@ -224,7 +224,7 @@ def run_job(
             storage=storage.candidate_store(),
         )
         return _from_progress(job, run_id, progress)
-    except UnitNotRunnable as error:
+    except UnitNotRunnableError as error:
         return unit_result(
             job,
             run_id,

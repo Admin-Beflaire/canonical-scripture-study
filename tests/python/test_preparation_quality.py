@@ -1,6 +1,5 @@
 """DP-04 Stage 5: semantic quality and immutable receipts using saved fixtures."""
 
-from copy import deepcopy  # noqa: F401
 from dataclasses import replace
 import hashlib
 import json
@@ -202,18 +201,21 @@ class CandidateQualityStageFive(unittest.TestCase):
             ("provider_failure", "verifying_receipt", 503),
         )
 
+    def failing_control(self, fail_at):
+        calls = []
+
+        def control(*_):
+            calls.append(1)
+            if len(calls) == fail_at:
+                raise ProviderError("Control state request refused", status=503)
+            return self.state
+
+        return control
+
     def test_initial_and_pre_receipt_control_failures_identify_control_stage(self):
         for fail_at in (1, 2):
             with self.subTest(fail_at=fail_at):
-                calls = []
-
-                def control(*_):
-                    calls.append(1)  # noqa: B023
-                    if len(calls) == fail_at:  # noqa: B023
-                        raise ProviderError("Control state request refused", status=503)
-                    return self.state
-
-                failed = self.invoke(control=control)
+                failed = self.invoke(control=self.failing_control(fail_at))
                 code, record = self.record(failed)
                 self.assertEqual(
                     (code, record["stage"], record["http"]),
@@ -347,7 +349,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(first["coverage_refs"], second["coverage_refs"])
 
     def test_cancelled_mid_quality_never_emits_receipt(self):
-        from css_preparation.executor import UnitNotRunnable
+        from css_preparation.executor import UnitNotRunnableError
 
         calls = [0]
 
@@ -359,7 +361,7 @@ class CandidateQualityStageFive(unittest.TestCase):
                 else replace(self.state, task_state="cancelled", task_revision=3)
             )
 
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(control=reader)
         self.assertEqual(calls[0], 2)
         self.assertEqual(self.received, {})
@@ -382,19 +384,23 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertIsNone(result["quality_receipt_ref"])
         self.assertEqual(self.received, {})
 
+    def disappearing_reader(self, locator, error_class):
+        calls = [0]
+
+        def disappearing(key):
+            if key == locator:
+                calls[0] += 1
+                if calls[0] > 1:
+                    raise error_class("synthetic storage disappearance")
+            return self.saved.blobs[key]
+
+        return disappearing, calls
+
     def test_saved_artifact_disappears_between_reads_returns_failed_result(self):
         locator = self.saved.records.rows("artifact")[0]["registered_locator"]
         for error_class in (KeyError, OSError):
             with self.subTest(error=error_class.__name__):
-                calls = [0]
-
-                def disappearing(key):
-                    if key == locator:
-                        calls[0] += 1  # noqa: B023
-                        if calls[0] > 1:  # noqa: B023
-                            raise error_class("synthetic storage disappearance")  # noqa: B023
-                    return self.saved.blobs[key]
-
+                disappearing, calls = self.disappearing_reader(locator, error_class)
                 result = self.invoke(read_blob=disappearing)
                 self.assertEqual(result["state"], "failed")
                 self.assertEqual(result["diagnostics"][0]["code"], "quality_failed")

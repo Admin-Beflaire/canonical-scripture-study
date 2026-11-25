@@ -397,7 +397,7 @@ async function advanceTask(
             .bind(revision)
             .first<{details_json: string}>()
         : null;
-      let verified = false;
+      let verified: boolean;
       try {
         const details =
           saved && (JSON.parse(saved.details_json) as Record<string, unknown>);

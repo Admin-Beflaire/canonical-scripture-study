@@ -15,7 +15,7 @@ from css_shared.error_record import OwnMessage
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 
 
-class BlockedInput(OwnMessage, ValueError):  # noqa: N818
+class BlockedInputError(OwnMessage, ValueError):
     """The input cannot be used: eligibility is unresolved or the record is inconsistent."""
 
 
@@ -46,23 +46,27 @@ class InputRecord:
             if not ID.fullmatch(value) or any(
                 part in ("", ".", "..") for part in value.split("/")
             ):
-                raise BlockedInput("Unsafe identifier")
+                raise BlockedInputError("Unsafe identifier")
         if (
             not re.fullmatch(r"[0-9a-f]{64}", self.sha256)
             or self.byte_count < 0
             or not self.upstream_basis
         ):
-            raise BlockedInput("Input needs exact bytes, digest and upstream basis")
+            raise BlockedInputError(
+                "Input needs exact bytes, digest and upstream basis"
+            )
 
 
 def assert_usable(record: InputRecord) -> None:
     """Block anything not admitted for both hosts on an owner decision, or not completely retained."""
     basis = record.admission
     if not basis.decision_refs or not basis.terms_basis:
-        raise BlockedInput(
+        raise BlockedInputError(
             f"{record.source_revision_id}: no owner admission decision recorded"
         )
     if basis.both_hosts_eligible is not True:
-        raise BlockedInput(f"{record.source_revision_id}: not eligible for both hosts")
+        raise BlockedInputError(
+            f"{record.source_revision_id}: not eligible for both hosts"
+        )
     if not record.complete:
-        raise BlockedInput(f"{record.source_revision_id}: original is incomplete")
+        raise BlockedInputError(f"{record.source_revision_id}: original is incomplete")

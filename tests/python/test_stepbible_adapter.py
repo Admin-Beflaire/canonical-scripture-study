@@ -27,7 +27,7 @@ from css_preparation.adapters.stepbible.recipes import (
     dumps,
 )
 from css_preparation.adapters.stepbible.rules import RULES
-from css_preparation.adapters.stepbible.source import BOOK_STRIDE, Component  # noqa: F401
+from css_preparation.adapters.stepbible.source import BOOK_STRIDE
 from css_preparation.contracts import contract_errors
 from css_preparation.prepare.evidence import NativeText
 from css_preparation.prepare.records import RecordError

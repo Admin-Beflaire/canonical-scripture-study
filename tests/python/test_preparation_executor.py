@@ -8,7 +8,7 @@ from pathlib import Path
 import unittest
 
 from css_preparation.contracts import ContractError
-from css_preparation.executor import ControlState, UnitNotRunnable, execute_unit
+from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
 
 FIXTURE = json.loads(
     (
@@ -98,11 +98,14 @@ class ExecutorEntryTests(unittest.TestCase):
             "superseded",
             "completed",
         ):
-            with self.subTest(state=state), self.assertRaises(UnitNotRunnable):
+            with self.subTest(state=state), self.assertRaises(UnitNotRunnableError):
                 self.invoke(state=replace(self.state, task_state=state))
             self.assertEqual(self.observed, [])
         for revision in (0, 3, 4):
-            with self.subTest(revision=revision), self.assertRaises(UnitNotRunnable):
+            with (
+                self.subTest(revision=revision),
+                self.assertRaises(UnitNotRunnableError),
+            ):
                 self.invoke(state=replace(self.state, task_revision=revision))
             self.assertEqual(self.observed, [])
 
@@ -119,15 +122,15 @@ class ExecutorEntryTests(unittest.TestCase):
             dict(job_state="succeeded"),
         )
         for changes in variants:
-            with self.subTest(changes=changes), self.assertRaises(UnitNotRunnable):
+            with self.subTest(changes=changes), self.assertRaises(UnitNotRunnableError):
                 self.invoke(state=replace(self.state, **changes))
             self.assertEqual(self.observed, [])
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(run_id="run-9\n")
 
     def test_exact_dispatch_inputs_not_just_task_digest(self):
         modified = dict(self.job, manifest_revision="manifest-2")
-        with self.assertRaisesRegex(UnitNotRunnable, "inputs changed"):
+        with self.assertRaisesRegex(UnitNotRunnableError, "inputs changed"):
             self.invoke(job=modified)
         self.assertEqual(self.observed, [])
 
@@ -150,7 +153,7 @@ class ExecutorEntryTests(unittest.TestCase):
         self.assertEqual(result, "prepare")
         self.assertEqual(seen, ["prepare"])
         # A differently serialized payload, even with the same fields, was not dispatched.
-        with self.assertRaisesRegex(UnitNotRunnable, "inputs changed"):
+        with self.assertRaisesRegex(UnitNotRunnableError, "inputs changed"):
             execute_unit(
                 raw,
                 run_id="run-9",
@@ -163,7 +166,7 @@ class ExecutorEntryTests(unittest.TestCase):
         for rejected_id in ("src-rev-1", "art-0", "art-1"):
             with (
                 self.subTest(rejected_id=rejected_id),
-                self.assertRaises(UnitNotRunnable),
+                self.assertRaises(UnitNotRunnableError),
             ):
                 self.invoke(registered=lambda ref, rid=rejected_id: ref["id"] != rid)
             self.assertNotIn("processed", self.observed)
@@ -172,7 +175,7 @@ class ExecutorEntryTests(unittest.TestCase):
         job = FIXTURE["valid"]["job_input"][1]
         state = replace(self.state, job_input_basis=basis(job))
         seen = []
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(
                 job=job,
                 state=state,

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unittest
 
-from css_preparation.executor import ControlState, UnitNotRunnable
+from css_preparation.executor import ControlState, UnitNotRunnableError
 from css_preparation.executor.candidate import CandidateStore
 from css_preparation.executor.unit import (
     RetryableUnitError,
@@ -190,7 +190,7 @@ class UnitRun(unittest.TestCase):
     def test_paused_or_cancelled_task_stops_without_new_candidate_writes(self):
         for state in ("paused", "cancelled", "superseded"):
             with self.subTest(state=state):
-                with self.assertRaises(UnitNotRunnable):
+                with self.assertRaises(UnitNotRunnableError):
                     self.invoke(
                         control=lambda state=state: replace(
                             self.state, task_state=state
@@ -203,7 +203,7 @@ class UnitRun(unittest.TestCase):
             self.state = replace(self.state, task_state="paused", task_revision=3)
             return evidence_a()
 
-        with self.assertRaises(UnitNotRunnable):
+        with self.assertRaises(UnitNotRunnableError):
             self.invoke(builder=change_state)
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0

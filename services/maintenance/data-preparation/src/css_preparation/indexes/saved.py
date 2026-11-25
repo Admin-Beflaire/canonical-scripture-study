@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from typing import Iterable, Mapping
 
 from ..prepare.evidence import OutputBasis, reusable
@@ -71,29 +72,47 @@ def _checked_artifact(
     return content
 
 
-def verify_saved_index(  # noqa: C901, PLR0915
-    basis: OutputBasis,
-    saved_output: Mapping,
-    artifacts: Iterable[Mapping],
-    coverage: Iterable[Mapping],
-    blobs: Mapping[str, bytes],
-    *,
-    max_page_bytes: int = PAGE_CAP,
-) -> dict:
-    """Reject corrupt, incomplete, incompatible or out-of-budget saved indexes.
+@dataclass(frozen=True)
+class _Context:
+    """What every check of one saved index needs to know."""
 
-    Only 'available' coverage is eligible for reuse; partial candidate artifacts
-    remain valid Stage-3 outputs but must not be mistaken for complete indexes.
-    Every D1 artifact and coverage row must agree with the registered manifest.
-    """
-    if type(max_page_bytes) is not int or not 1 <= max_page_bytes <= _SAFE_MAX:
-        raise RecordError("Invalid saved-page byte cap")
-    if not reusable(saved_output, basis):
-        raise RecordError(
-            "Saved index reuse basis does not match requested input, method and extent"
-        )
+    basis: OutputBasis
+    manifest: dict
+    blobs: Mapping[str, bytes]
+    artifact_by_id: Mapping
+    cap: int
+    max_page_bytes: int
+
+    @property
+    def output_id(self) -> str:
+        return self.basis.output_id
+
+    @property
+    def revision(self) -> str:
+        return self.basis.input_revisions[0]
+
+    @property
+    def word(self) -> bool:
+        return self.basis.kind == "word_index"
+
+
+class _Walk:
+    """What the postings walk observed, checked afterwards against the manifest."""
+
+    def __init__(self) -> None:
+        self.seen: set[tuple[str, str]] = set()
+        self.page_orders: dict[tuple[str, int], list[tuple[bytes, int, bytes]]] = {}
+        self.capabilities: set[str] = set()
+        # Source rows have one stored occurrence per normalized key. Word rows
+        # carry all attributed alternatives even when several lookup keys match.
+        self.observed: dict[str, set[str]] = {}
+
+
+def _registered_rows(
+    basis: OutputBasis, artifacts: Iterable[Mapping], coverage: Iterable[Mapping]
+) -> tuple[dict, dict, str]:
+    """The registered artifacts and coverage rows of this output, and the manifest's ID."""
     output_id = basis.output_id
-    revision = basis.input_revisions[0]
     indexed = [dict(row) for row in artifacts if row.get("output_id") == output_id]
     covered = [dict(row) for row in coverage if row.get("output_id") == output_id]
     if not indexed or not covered:
@@ -116,12 +135,11 @@ def verify_saved_index(  # noqa: C901, PLR0915
         raise RecordError("Saved manifest is not registered")
     if artifact_by_id[manifest_id].get("format") != "application/json":
         raise RecordError("Invalid manifest artifact format")
-    manifest_bytes = _checked_artifact(
-        artifact_by_id[manifest_id],
-        blobs,
-        output_id=output_id,
-        source_revision=revision,
-    )
+    return artifact_by_id, capability_rows, manifest_id
+
+
+def _checked_manifest(basis: OutputBasis, manifest_bytes: bytes) -> dict:
+    """The manifest, when it matches the complete reuse basis."""
     manifest = _object(manifest_bytes, context="manifest")
     errors = _MANIFEST.document_errors(manifest)
     if errors:
@@ -129,9 +147,9 @@ def verify_saved_index(  # noqa: C901, PLR0915
     word = basis.kind == "word_index"
     if (
         basis.kind not in ("source_search", "word_index")
-        or manifest["prepared_output_id"] != output_id
+        or manifest["prepared_output_id"] != basis.output_id
         or manifest["index_kind"] != ("word_language" if word else "source_text")
-        or manifest["source_revision_ids"] != [revision]
+        or manifest["source_revision_ids"] != [basis.input_revisions[0]]
         or manifest["analysis_revision_ids"]
         != (list(basis.input_revisions[1:]) if word else [])
         or manifest["format_version"] != MANIFEST_VERSION
@@ -146,6 +164,12 @@ def verify_saved_index(  # noqa: C901, PLR0915
         raise RecordError(
             "Saved index manifest does not match its complete reuse basis"
         )
+    return manifest
+
+
+def _checked_cap(
+    manifest: dict, manifest_bytes: bytes, basis: OutputBasis, max_page_bytes: int
+) -> int:
     cap = manifest["encoded_page_cap_bytes"]
     if (
         cap != basis.parameters.get("encoded_page_cap_bytes")
@@ -155,16 +179,22 @@ def verify_saved_index(  # noqa: C901, PLR0915
         raise RecordError(
             "Saved index page cap disagrees with reuse basis or configured limit"
         )
+    return cap
+
+
+def _check_coverage(
+    basis: OutputBasis, manifest: dict, capability_rows: dict, manifest_id: str
+) -> None:
+    """Only complete coverage that agrees with the manifest can be reused."""
     state = manifest["coverage"]["state"]
     if state != "available" or manifest["coverage"]["limitation"] is not None:
         raise RecordError("Incomplete saved index coverage cannot be reused")
-    capabilities = manifest["coverage"]["capabilities"]
-    if set(capability_rows) != set(capabilities):
+    if set(capability_rows) != set(manifest["coverage"]["capabilities"]):
         raise RecordError("Saved index coverage capabilities disagree with manifest")
     for capability, row in capability_rows.items():
         if (
-            row["output_id"] != output_id
-            or row["source_revision_id"] != revision
+            row["output_id"] != basis.output_id
+            or row["source_revision_id"] != basis.input_revisions[0]
             or row["method_version"] != basis.method_version
             or row["native_extent_json"] != manifest["native_extent"]
             or row["state"] != state
@@ -174,6 +204,8 @@ def verify_saved_index(  # noqa: C901, PLR0915
         ):
             raise RecordError(f"Incompatible saved coverage: {capability}")
 
+
+def _check_inventory(manifest: dict, artifact_by_id: Mapping, manifest_id: str) -> None:
     file_ids = [file["artifact_id"] for file in manifest["files"]]
     directory_id = manifest["directory"]["artifact_id"]
     if (
@@ -183,143 +215,210 @@ def verify_saved_index(  # noqa: C901, PLR0915
         or set(artifact_by_id) != set(file_ids) | {manifest_id, directory_id}
     ):
         raise RecordError("Saved artifact inventory is incomplete or incompatible")
+
+
+def _check_posting(
+    posting: dict, ctx: _Context, walk: _Walk, location: tuple[str, int]
+) -> str:
+    """Check one decoded posting, record what it shows, and return its search key."""
+    errors = _POSTING.document_errors(posting)
+    if errors:
+        raise RecordError("Invalid saved posting: " + "; ".join(errors[:3]))
+    manifest = ctx.manifest
+    order_low, order_high = manifest["native_extent"]["order_range"]
+    if (
+        posting["posting_kind"] != ("word" if ctx.word else "source")
+        or posting["source_revision_id"] != ctx.revision
+        or posting["coordinate_version"] != manifest["coordinate_version"]
+        or posting["native_reference"]["source_revision_id"] != ctx.revision
+        or posting["native_reference"]["coordinate_version"]
+        != manifest["coordinate_version"]
+        or any(
+            seg["unit_id"] not in manifest["native_extent"]["unit_ids"]
+            for seg in posting["native_reference"]["segments"]
+        )
+        or not order_low <= posting["native_order"] <= order_high
+    ):
+        raise RecordError("Incompatible saved posting source or native reference")
+    walk.page_orders.setdefault(location, []).append(
+        (
+            posting["search_key"].encode("utf-8"),
+            posting["native_order"],
+            posting["occurrence_id"].encode("utf-8"),
+        )
+    )
+    identity = (posting["search_key"], posting["occurrence_id"])
+    if identity in walk.seen:
+        raise RecordError("Duplicate saved index occurrence")
+    walk.seen.add(identity)
+    if ctx.word:
+        _check_word_posting(posting, ctx.basis, walk)
+    return posting["search_key"]
+
+
+def _check_word_posting(posting: dict, basis: OutputBasis, walk: _Walk) -> None:
+    kind = posting["lookup_kind"]
+    if not posting["search_key"].startswith(kind + ":"):
+        raise RecordError("Saved word lookup key kind mismatch")
+    walk.capabilities.add(
+        {"form": "form_exact", "lemma": "lemma_exact", "grammar": "grammar_exact"}[kind]
+    )
+    if any(
+        a["analysis_revision_id"] not in basis.input_revisions[1:]
+        for a in posting["analyses"]
+    ):
+        raise RecordError("Saved word posting has an unadmitted analysis revision")
+    walk.observed.setdefault(posting["occurrence_id"], set()).update(
+        a["analysis_revision_id"] for a in posting["analyses"]
+    )
+
+
+def _check_page(
+    content: bytes,
+    page: dict,
+    offset: int,
+    ctx: _Context,
+    walk: _Walk,
+    artifact_id: str,
+) -> int:
+    """Check one directory page of a postings file; return the page's byte length."""
+    length = page["byte_length"]
+    if (
+        type(length) is not int
+        or length < 1
+        or length > ctx.cap
+        or length > ctx.max_page_bytes
+        or page["byte_offset"] != offset
+        or offset + length > len(content)
+    ):
+        raise RecordError("Saved page is oversized, missing or noncontiguous")
+    block = content[offset : offset + length]
+    if _digest(block) != page["sha256"] or not block.endswith(b"\n"):
+        raise RecordError("Saved page digest or line alignment invalid")
+    lines = block.split(b"\n")
+    if lines[-1] != b"" or not lines[:-1] or any(not line for line in lines[:-1]):
+        raise RecordError("Saved page has incomplete or blank NDJSON lines")
+    keys = [
+        _check_posting(
+            _object(line, context="posting"),
+            ctx,
+            walk,
+            (artifact_id, page["byte_offset"]),
+        )
+        for line in lines[:-1]
+    ]
+    if keys[0] != page["first_key"] or keys[-1] != page["last_key"]:
+        raise RecordError("Saved page key boundaries do not match decoded postings")
+    return length
+
+
+def _check_postings_file(
+    listed: dict, entries: list, ctx: _Context, walk: _Walk
+) -> None:
+    artifact_id = listed["artifact_id"]
+    row = ctx.artifact_by_id[artifact_id]
+    if row.get("format") != POSTINGS_FORMAT:
+        raise RecordError("Invalid saved postings artifact format")
+    content = _checked_artifact(
+        row, ctx.blobs, output_id=ctx.output_id, source_revision=ctx.revision
+    )
+    if listed["byte_length"] != len(content) or listed["sha256"] != _digest(content):
+        raise RecordError("Saved postings do not match file directory")
+    offset = 0
+    for page in entries:
+        offset += _check_page(content, page, offset, ctx, walk, artifact_id)
+    if offset != len(content):
+        raise RecordError("Saved page directory does not cover entire file")
+
+
+def _check_directory_order(walk: _Walk, directory_order: list) -> None:
+    """Readers follow the directory, across postings files too, so order is checked in directory sequence."""
+    previous: tuple[bytes, int, bytes] | None = None
+    for entry in directory_order:
+        for order in walk.page_orders[
+            (entry["postings_artifact_id"], entry["byte_offset"])
+        ]:
+            if previous is not None and order < previous:
+                raise RecordError(
+                    "Saved postings out of bytewise order in directory sequence"
+                )
+            previous = order
+
+
+def _check_walk(ctx: _Context, walk: _Walk) -> None:
+    """What the walk saw must match what the manifest and the basis declare."""
+    if not walk.seen:
+        raise RecordError("Empty saved index")
+    declared_capabilities = set(ctx.manifest["coverage"]["capabilities"])
+    if declared_capabilities != (walk.capabilities if ctx.word else {"word_exact"}):
+        raise RecordError("Saved coverage claims unsupported lookup capabilities")
+    if not ctx.word:
+        return
+    basis = ctx.basis
+    declared = basis.extent.get("analysis_occurrence_ids")
+    if not isinstance(declared, dict) or set(declared) != set(
+        basis.input_revisions[1:]
+    ):
+        raise RecordError("Saved word analysis extent is incompatible")
+    for analysis_rev, occurrence_ids in declared.items():
+        if not isinstance(occurrence_ids, list) or any(
+            analysis_rev not in walk.observed.get(occurrence, set())
+            for occurrence in occurrence_ids
+        ):
+            raise RecordError("Missing required saved word analyses")
+
+
+def verify_saved_index(
+    basis: OutputBasis,
+    saved_output: Mapping,
+    artifacts: Iterable[Mapping],
+    coverage: Iterable[Mapping],
+    blobs: Mapping[str, bytes],
+    *,
+    max_page_bytes: int = PAGE_CAP,
+) -> dict:
+    """Reject corrupt, incomplete, incompatible or out-of-budget saved indexes.
+
+    Only 'available' coverage is eligible for reuse; partial candidate artifacts
+    remain valid Stage-3 outputs but must not be mistaken for complete indexes.
+    Every D1 artifact and coverage row must agree with the registered manifest.
+    """
+    if type(max_page_bytes) is not int or not 1 <= max_page_bytes <= _SAFE_MAX:
+        raise RecordError("Invalid saved-page byte cap")
+    if not reusable(saved_output, basis):
+        raise RecordError(
+            "Saved index reuse basis does not match requested input, method and extent"
+        )
+    artifact_by_id, capability_rows, manifest_id = _registered_rows(
+        basis, artifacts, coverage
+    )
+    manifest_bytes = _checked_artifact(
+        artifact_by_id[manifest_id],
+        blobs,
+        output_id=basis.output_id,
+        source_revision=basis.input_revisions[0],
+    )
+    manifest = _checked_manifest(basis, manifest_bytes)
+    cap = _checked_cap(manifest, manifest_bytes, basis, max_page_bytes)
+    _check_coverage(basis, manifest, capability_rows, manifest_id)
+    _check_inventory(manifest, artifact_by_id, manifest_id)
+    ctx = _Context(basis, manifest, blobs, artifact_by_id, cap, max_page_bytes)
     entries_by_file, directory_order = _directory_entries(
         manifest,
         artifact_by_id,
         blobs,
         cap=cap,
         max_page_bytes=max_page_bytes,
-        output_id=output_id,
-        revision=revision,
+        output_id=ctx.output_id,
+        revision=ctx.revision,
     )
-    order_low, order_high = manifest["native_extent"]["order_range"]
-    seen: set[tuple[str, str]] = set()
-    page_orders: dict[tuple[str, int], list[tuple[bytes, int, bytes]]] = {}
-    actual_capabilities: set[str] = set()
-    # Source rows have one stored occurrence per normalized key. Word rows
-    # carry all attributed alternatives even when several lookup keys match.
-    observed: dict[str, set[str]] = {}
+    walk = _Walk()
     for listed in manifest["files"]:
-        artifact_id = listed["artifact_id"]
-        row = artifact_by_id[artifact_id]
-        if row.get("format") != POSTINGS_FORMAT:
-            raise RecordError("Invalid saved postings artifact format")
-        content = _checked_artifact(
-            row, blobs, output_id=output_id, source_revision=revision
+        _check_postings_file(
+            listed, entries_by_file.get(listed["artifact_id"], []), ctx, walk
         )
-        if listed["byte_length"] != len(content) or listed["sha256"] != _digest(
-            content
-        ):
-            raise RecordError("Saved postings do not match file directory")
-        offset = 0
-        for page in entries_by_file.get(artifact_id, []):
-            length = page["byte_length"]
-            if (
-                type(length) is not int
-                or length < 1
-                or length > cap
-                or length > max_page_bytes
-                or page["byte_offset"] != offset
-                or offset + length > len(content)
-            ):
-                raise RecordError("Saved page is oversized, missing or noncontiguous")
-            block = content[offset : offset + length]
-            if _digest(block) != page["sha256"] or not block.endswith(b"\n"):
-                raise RecordError("Saved page digest or line alignment invalid")
-            lines = block.split(b"\n")
-            if (
-                lines[-1] != b""
-                or not lines[:-1]
-                or any(not line for line in lines[:-1])
-            ):
-                raise RecordError("Saved page has incomplete or blank NDJSON lines")
-            keys: list[str] = []
-            for line in lines[:-1]:
-                posting = _object(line, context="posting")
-                errors = _POSTING.document_errors(posting)
-                if errors:
-                    raise RecordError("Invalid saved posting: " + "; ".join(errors[:3]))
-                if (
-                    posting["posting_kind"] != ("word" if word else "source")
-                    or posting["source_revision_id"] != revision
-                    or posting["coordinate_version"] != manifest["coordinate_version"]
-                    or posting["native_reference"]["source_revision_id"] != revision
-                    or posting["native_reference"]["coordinate_version"]
-                    != manifest["coordinate_version"]
-                    or any(
-                        seg["unit_id"] not in manifest["native_extent"]["unit_ids"]
-                        for seg in posting["native_reference"]["segments"]
-                    )
-                    or not order_low <= posting["native_order"] <= order_high
-                ):
-                    raise RecordError(
-                        "Incompatible saved posting source or native reference"
-                    )
-                page_orders.setdefault((artifact_id, page["byte_offset"]), []).append(
-                    (
-                        posting["search_key"].encode("utf-8"),
-                        posting["native_order"],
-                        posting["occurrence_id"].encode("utf-8"),
-                    )
-                )
-                identity = (posting["search_key"], posting["occurrence_id"])
-                if identity in seen:
-                    raise RecordError("Duplicate saved index occurrence")
-                seen.add(identity)
-                keys.append(posting["search_key"])
-                if word:
-                    kind = posting["lookup_kind"]
-                    if not posting["search_key"].startswith(kind + ":"):
-                        raise RecordError("Saved word lookup key kind mismatch")
-                    actual_capabilities.add(
-                        {
-                            "form": "form_exact",
-                            "lemma": "lemma_exact",
-                            "grammar": "grammar_exact",
-                        }[kind]
-                    )
-                    if any(
-                        a["analysis_revision_id"] not in basis.input_revisions[1:]
-                        for a in posting["analyses"]
-                    ):
-                        raise RecordError(
-                            "Saved word posting has an unadmitted analysis revision"
-                        )
-                    observed.setdefault(posting["occurrence_id"], set()).update(
-                        a["analysis_revision_id"] for a in posting["analyses"]
-                    )
-            if keys[0] != page["first_key"] or keys[-1] != page["last_key"]:
-                raise RecordError(
-                    "Saved page key boundaries do not match decoded postings"
-                )
-            offset += length
-        if offset != len(content):
-            raise RecordError("Saved page directory does not cover entire file")
-    # Readers follow the directory, across postings files too, so order is checked in directory sequence.
-    previous: tuple[bytes, int, bytes] | None = None
-    for entry in directory_order:
-        for order in page_orders[(entry["postings_artifact_id"], entry["byte_offset"])]:
-            if previous is not None and order < previous:
-                raise RecordError(
-                    "Saved postings out of bytewise order in directory sequence"
-                )
-            previous = order
-    if not seen:
-        raise RecordError("Empty saved index")
-    if set(capabilities) != (actual_capabilities if word else {"word_exact"}):
-        raise RecordError("Saved coverage claims unsupported lookup capabilities")
-    if word:
-        declared = basis.extent.get("analysis_occurrence_ids")
-        if not isinstance(declared, dict) or set(declared) != set(
-            basis.input_revisions[1:]
-        ):
-            raise RecordError("Saved word analysis extent is incompatible")
-        for analysis_rev, occurrence_ids in declared.items():
-            if not isinstance(occurrence_ids, list) or any(
-                analysis_rev not in observed.get(occurrence, set())
-                for occurrence in occurrence_ids
-            ):
-                raise RecordError("Missing required saved word analyses")
+    _check_directory_order(walk, directory_order)
+    _check_walk(ctx, walk)
     return manifest
 
 

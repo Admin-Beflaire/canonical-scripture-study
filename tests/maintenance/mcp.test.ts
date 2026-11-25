@@ -8,10 +8,36 @@ import {
   controlServer,
   CONTROL_INSTRUCTIONS,
 } from '../../services/maintenance/control/src/mcp.ts';
+import {STEPS} from '../../services/maintenance/control/src/tasks.ts';
 import {localD1} from './d1.ts';
 import {prepareGenesis} from './requests.ts';
 
 const owner = 'owner@example.invalid';
+test('the instructions name every step and constraint a task can use, and no removed kind', () => {
+  for (const step of STEPS)
+    assert.match(CONTROL_INSTRUCTIONS, new RegExp(`\\b${step}\\b`), step);
+  for (const key of [
+    'fetch_recipe',
+    'recipe',
+    'candidate',
+    'replaces',
+    'select_release',
+  ])
+    assert.ok(
+      CONTROL_INSTRUCTIONS.includes(`constraints.${key}`) ||
+        CONTROL_INSTRUCTIONS.includes(`{${key}`) ||
+        (CONTROL_INSTRUCTIONS.includes(`{candidate`) && key === 'candidate'),
+      key,
+    );
+  for (const removed of [
+    'incorporate_statement',
+    'kind prepare',
+    'prepare (includes',
+  ])
+    assert.ok(!CONTROL_INSTRUCTIONS.includes(removed), removed);
+  assert.match(CONTROL_INSTRUCTIONS, /Starting a task/);
+});
+
 async function call(
   handler: ReturnType<typeof protocolHandler>,
   method: string,

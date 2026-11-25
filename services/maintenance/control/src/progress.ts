@@ -191,16 +191,10 @@ async function advanceTask(
     );
   if (ALONE_STEPS.some(step => has(scope, step))) {
     // Removal, rollback and restore validation prepare nothing: they go straight to the checks and gate.
-    // A removal whose selection guard failed stays checked and is rebuilt here from the new current.
-    const direct =
-      row.state !== 'checked' || has(scope, 'remove')
-        ? await selectDirect(db, objects, row)
-        : {state: row.state};
-    return resultOf(direct);
+    return resultOf(await selectDirect(db, objects, row));
   }
   if (!has(scope, 'fetch') && !has(scope, 'build'))
     // Make a finished build's checked candidate current; no work is dispatched.
-    // A task left checked by an interruption selects again here, after the same guards.
     return resultOf(await releaseCandidate(db, objects, row));
   if (!github) {
     await setOutcome(db, row, outcome =>

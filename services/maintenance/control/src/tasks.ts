@@ -72,12 +72,9 @@ export interface Outcome {
   candidate?: {
     release_id: string;
     base_release_id: string | null;
-    exclusions: string;
   };
   removal_report?: Record<string, unknown>;
   restore_report?: Record<string, unknown>;
-  /** Token of the invocation that completed the task; exclusion changes are tied to it. */
-  completion?: string;
   /** The recipe revisions this task started with, one per recipe step. */
   recipe_revision?: string;
   fetch_recipe_revision?: string;

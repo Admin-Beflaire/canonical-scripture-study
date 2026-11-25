@@ -1,1044 +1,176 @@
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
-import type {ArtifactRef, JobResult, Recipe} from './contracts.ts';
+import type {JobResult, Recipe} from './contracts.ts';
+import {
+  inChunks,
+  members,
+  releaseVersions,
+  storedSizes,
+  validateMembers,
+  type ObjectStore,
+  type Output,
+  type Stored,
+} from './release-check.ts';
+import {membership} from './release-members.ts';
+import {scopeCheck} from './release-scope.ts';
+import {
+  liftedBy,
+  makeCurrent,
+  recordedBy,
+  releaseIdOf,
+  type Plan,
+  type SelectResult,
+} from './release-write.ts';
+import {restoreOrRollBack} from './release-direct.ts';
 import {
   has,
   statementOf,
-  type DecisionRef,
   type Outcome,
   type Scope,
   type TaskRow,
 } from './tasks.ts';
-import readerCatalogue from '../../../../schemas/reader-references/nrsva-1.json' with {type: 'json'};
 
-/** Scope check, release construction and checked selection (Maintenance Control To-Be §4, MC-03).
+/** Control's checks and the one guarded change of the selected release (Maintenance Control
+ *  To-Be §4, MC-03).
  *
- *  Data Preparation's quality receipt says the candidate is sound. Control checks separately
- *  that the candidate is what the owner instructed and that the whole resulting release is
- *  complete, stored, admitted and not excluded, and only then selects it in a conditional D1
- *  transaction. A failed check or guard leaves the current release unchanged. Nothing here
- *  deletes data. */
+ *  Data Preparation's quality receipt says the candidate is sound. Control checks separately that
+ *  the candidate is what the owner instructed and that the whole resulting release is complete,
+ *  stored, admitted and not excluded, and only then selects it in one guarded D1 batch. A failed
+ *  check or guard leaves the current release unchanged. Nothing here deletes data. */
 
-/** Control's view of the private bucket: object sizes by key prefix, in pages. */
-export interface ObjectStore {
-  list(
-    prefix: string,
-    cursor?: string,
-  ): Promise<{objects: Array<{key: string; size: number}>; cursor?: string}>;
-  /** Remove stored objects (release cleanup only); a missing key is not an error. */
-  remove?(keys: string[]): Promise<void>;
+export {
+  FORMATS,
+  READABLE_VERSIONS,
+  SCHEMA_VERSIONS,
+  selection,
+  unreadable,
+  validateMembers,
+  validateRelease,
+  type Check,
+  type ObjectStore,
+  type Output,
+} from './release-check.ts';
+export {membership} from './release-members.ts';
+export {scopeCheck} from './release-scope.ts';
+export {releaseCandidate} from './release-staged.ts';
+
+const digestOf = async (value: unknown) =>
+  `sha256:${await sha256(canonicalJson(value))}`;
+
+interface Built {
+  checked: Awaited<ReturnType<typeof scopeCheck>>;
+  quality: string | null;
 }
 
-/** Stored artifact formats a release may hold; index-manifest/2 adds the paged directory. */
-export const FORMATS = new Set([
-  'text/utf-8',
-  'application/x-ndjson',
-  'application/json',
-  'application/x-ndjson; profile=index-directory',
-  'application/x-ndjson; profile=aid-entries',
-]);
-/** Data format versions of a release, as `infrastructure/github/deployment/compatibility.json`
- *  lists them: deployment refuses code that does not support the selected release's versions. */
-export const SCHEMA_VERSIONS = {
-  evidence_records: '1',
-  native_reference: '1',
-  index_manifest: '2',
-};
-/** Formats the deployed Study can read, as `compatibility.json` lists them (a test keeps them equal).
- *  Rollback and restore select only releases whose every recorded format is listed here; when a
- *  format changes, this list changes with the reader and the check follows. */
-export const READABLE_VERSIONS: Readonly<Record<string, readonly string[]>> = {
-  evidence_records: ['1'],
-  native_reference: ['1'],
-  index_manifest: ['2'],
-  reader_scheme_version: [readerCatalogue.reader_scheme_version],
-};
-const MAX_LIST_PAGES = 100; // At most 100,000 stored objects checked in one request.
-const CHUNK = 50; // D1 binds at most 100 parameters per statement.
-const BLOCK_TRIES = 5;
-const DIRECTORY = 'application/x-ndjson; profile=index-directory';
-/** Files every index output needs, in any format version: postings and manifest. */
-const INDEX_FILES: Record<string, string[]> = {
-  source_search: ['application/x-ndjson', 'application/json'],
-  word_index: ['application/x-ndjson', 'application/json'],
-};
-/** A task's new index outputs use index-manifest/2, which adds the paged directory. Kept members
- *  were approved in an earlier release; they are checked for presence and integrity, not
- *  re-judged by a newer format rule. Each source's index is read on its own. */
-const NEW_INDEX_FILES = [DIRECTORY];
-
-interface OutputRow {
-  id: string;
-  kind: string;
-  input_revisions_json: string;
-  native_extent_json: string;
-  validation_basis_json: string;
-}
-export interface Output {
-  id: string;
-  kind: string;
-  revisions: string[];
-  extent: Record<string, unknown>;
-  dependencies: string[];
-}
-interface ArtifactRow {
-  id: string;
-  output_id: string | null;
-  sha256: string;
-  byte_count: number;
-  format: string;
-  registered_locator: string;
-}
-export type Check = {problems: string[]; notes: string[]};
-type SelectResult = {state: string; limitation?: string};
-/** Stored object sizes, or why they could not be read. */
-type Stored = Map<string, number> | 'no_binding' | 'too_many';
-
-const parseOutput = (row: OutputRow): Output => ({
-  id: row.id,
-  kind: row.kind,
-  revisions: JSON.parse(row.input_revisions_json) as string[],
-  extent: JSON.parse(row.native_extent_json) as Record<string, unknown>,
-  dependencies:
-    (JSON.parse(row.validation_basis_json) as {dependencies?: string[]})
-      .dependencies ?? [],
-});
-const hasReaderMappings = (items: Output[]) =>
-  items.some(item => item.kind === 'reader_reference');
-const releaseVersions = (items: Output[]) =>
-  hasReaderMappings(items)
-    ? {
-        ...SCHEMA_VERSIONS,
-        reader_scheme_version: readerCatalogue.reader_scheme_version,
-      }
-    : SCHEMA_VERSIONS;
-
-const units = (extent: Record<string, unknown>) =>
-  Array.isArray(extent.unit_ids) &&
-  extent.unit_ids.length &&
-  extent.unit_ids.every(unit => typeof unit === 'string')
-    ? (extent.unit_ids as string[])
-    : null;
-
-async function inChunks<T>(
+/** The ids of the statement outputs a new statement replaces in the base. */
+async function replacedStatements(
   db: D1Database,
-  sql: (marks: string) => string,
-  ids: string[],
-): Promise<T[]> {
-  const rows: T[] = [];
-  const unique = [...new Set(ids)];
-  for (let start = 0; start < unique.length; start += CHUNK) {
-    const chunk = unique.slice(start, start + CHUNK);
-    rows.push(
-      ...(
-        await db
-          .prepare(sql(chunk.map(() => '?').join(',')))
-          .bind(...chunk)
-          .all<T>()
-      ).results,
-    );
-  }
-  return rows;
-}
-
-async function outputs(db: D1Database, ids: string[]): Promise<Output[]> {
-  return (
-    await inChunks<OutputRow>(
-      db,
-      marks => `SELECT id, kind, input_revisions_json, native_extent_json, validation_basis_json
-    FROM prepared_outputs WHERE id IN (${marks})`,
-      ids,
-    )
-  ).map(parseOutput);
-}
-
-async function members(
-  db: D1Database,
-  releaseId: string | null,
-): Promise<Output[]> {
-  if (!releaseId) return [];
-  return (
-    await db
-      .prepare(
-        `SELECT po.id, po.kind, po.input_revisions_json, po.native_extent_json, po.validation_basis_json
-    FROM release_outputs ro JOIN prepared_outputs po ON po.id = ro.output_id WHERE ro.release_id = ?`,
-      )
-      .bind(releaseId)
-      .all<OutputRow>()
-  ).results.map(parseOutput);
-}
-
-export async function selection(db: D1Database) {
-  return (await db
-    .prepare(
-      'SELECT current_release_id, previous_release_id FROM release_selection WHERE singleton_id = 1',
-    )
-    .first<{
-      current_release_id: string | null;
-      previous_release_id: string | null;
-    }>())!;
-}
-
-/** The exact exclusion state, as one comparable value. Read before any check that uses
- *  exclusions; the selection transaction requires it unchanged. */
-const EXCLUSION_STATE = `(SELECT COALESCE(group_concat(entry, '|'), '') FROM (SELECT source_or_component_id || ':' || decision_ref
-  || ':' || active || ':' || revision || ':' || task_id AS entry FROM maintenance_exclusions ORDER BY source_or_component_id, decision_ref))`;
-async function exclusionState(db: D1Database) {
-  return (await db
-    .prepare(`SELECT ${EXCLUSION_STATE} AS state`)
-    .first<{state: string}>())!.state;
-}
-
-/** Every stored object under `prepared/` (outputs and receipts), by key. */
-async function storedSizes(objects: ObjectStore | null): Promise<Stored> {
-  if (!objects) return 'no_binding';
-  const sizes = new Map<string, number>();
-  let cursor: string | undefined;
-  for (let page = 0; page < MAX_LIST_PAGES; page++) {
-    const listed = await objects.list('prepared/', cursor);
-    for (const item of listed.objects) sizes.set(item.key, item.size);
-    if (!listed.cursor) return sizes;
-    cursor = listed.cursor;
-  }
-  return 'too_many';
-}
-const storageProblem = (stored: Stored) =>
-  stored === 'no_binding'
-    ? 'stored objects cannot be checked: Control has no bucket binding'
-    : stored === 'too_many'
-      ? 'too many stored objects to check in one request'
-      : null;
-
-/** Everything a release needs, checked over its whole membership: saved outputs, dependency
- *  closure, stored artifacts with recorded sizes and supported formats, admission for both
- *  hosts, active exclusions and statements. Promotion, removal, rollback and restore all use it. */
-export async function validateMembers(
-  db: D1Database,
-  stored: Stored,
-  items: Output[],
-  options: {
-    approved?: DecisionRef | null;
-    added?: Set<string>;
-    lifted?: Set<string>;
-    adding?: Set<string>;
-    allCurrentFormat?: boolean;
-  } = {},
-): Promise<Check> {
-  const problems: string[] = [];
-  const notes: string[] = [];
-  const ids = items.map(item => item.id);
-  const found = new Set((await outputs(db, ids)).map(item => item.id));
-  for (const id of ids)
-    if (!found.has(id)) problems.push(`output ${id} is not saved`);
-  const memberIds = new Set(ids);
-  for (const item of items)
-    for (const dependency of item.dependencies)
-      if (!memberIds.has(dependency))
-        problems.push(
-          `output ${item.id} depends on ${dependency}, which is not in the release`,
-        );
-
-  const artifacts = await inChunks<ArtifactRow>(
-    db,
-    marks => `SELECT id, output_id, sha256, byte_count, format, registered_locator
-    FROM artifacts WHERE output_id IN (${marks})`,
-    ids,
-  );
-  // Index outputs live only in their stored files: each needs its postings and its manifest.
-  // Evidence may keep its wording in D1, so it needs no artifact.
-  for (const item of items.filter(output => INDEX_FILES[output.kind])) {
-    const formats = new Set(
-      artifacts
-        .filter(artifact => artifact.output_id === item.id)
-        .map(artifact => artifact.format),
-    );
-    const current = options.allCurrentFormat || options.added?.has(item.id);
-    const required = current
-      ? [...INDEX_FILES[item.kind], ...NEW_INDEX_FILES]
-      : INDEX_FILES[item.kind];
-    for (const format of required)
-      if (!formats.has(format))
-        problems.push(`index output ${item.id} has no ${format} file`);
-  }
-  for (const artifact of artifacts)
-    if (!FORMATS.has(artifact.format))
-      problems.push(
-        `artifact ${artifact.id} has unsupported format ${artifact.format}`,
-      );
-  if (artifacts.length) {
-    const problem = storageProblem(stored);
-    if (problem) problems.push(problem);
-    else
-      for (const artifact of artifacts) {
-        const size = (stored as Map<string, number>).get(
-          artifact.registered_locator,
-        );
-        if (size === undefined)
-          problems.push(`artifact ${artifact.id} is missing from storage`);
-        else if (size !== artifact.byte_count)
-          problems.push(
-            `artifact ${artifact.id} has ${size} bytes, ${artifact.byte_count} recorded`,
-          );
-      }
-  }
-
-  const statements = await inChunks<{
-    output_id: string;
-    name: string;
-    version: string;
-    status: string;
-  }>(
-    db,
-    marks =>
-      `SELECT output_id, name, version, status FROM character_statements WHERE output_id IN (${marks})`,
-    ids,
-  );
-  const statementIds = new Set(statements.map(row => row.output_id));
-  if (statements.length > 1)
-    problems.push('more than one character-of-God statement would be selected');
-  for (const statement of statements) {
-    if (statement.status !== 'approved')
-      problems.push(
-        `statement ${statement.name} ${statement.version} is not approved`,
-      );
-    // A statement this task adds must be exactly the owner's approved name and version.
-    else if (
-      options.added?.has(statement.output_id) &&
-      (!options.approved ||
-        options.approved.name !== statement.name ||
-        options.approved.version !== statement.version)
-    )
-      problems.push(
-        `statement ${statement.name} ${statement.version} is not the owner-approved version for this task`,
-      );
-  }
-
-  // Every input revision that is a source revision must be saved and admitted for both hosts.
-  const revisions = [...new Set(items.flatMap(item => item.revisions))];
-  const nodes = new Map(
-    (
-      await inChunks<{id: string; kind: string}>(
-        db,
-        marks => `SELECT id, kind FROM source_nodes WHERE id IN (${marks})`,
-        revisions,
-      )
-    ).map(row => [row.id, row.kind]),
-  );
-  for (const item of items)
-    if (
-      !statementIds.has(item.id) &&
-      nodes.get(item.revisions[0]) !== 'source_revision'
-    )
-      problems.push(
-        `output ${item.id} has no saved source revision ${item.revisions[0]}`,
-      );
-  const sourceRevisions = revisions.filter(
-    id => nodes.get(id) === 'source_revision',
-  );
-  const admitted = new Map(
-    (
-      await inChunks<{
-        source_revision_id: string;
-        total: number;
-        eligible: number;
-      }>(
-        db,
-        marks =>
-          `SELECT source_revision_id, COUNT(*) AS total, SUM(both_hosts_eligible = 1) AS eligible FROM admissions
-     WHERE source_revision_id IN (${marks}) GROUP BY source_revision_id`,
-        sourceRevisions,
-      )
-    ).map(row => [row.source_revision_id, row]),
-  );
-  for (const id of sourceRevisions) {
-    const row = admitted.get(id);
-    if (!row || row.total === 0 || row.eligible !== row.total)
-      problems.push(`source revision ${id} is not admitted for both hosts`);
-  }
-  const other = revisions.filter(id => !nodes.has(id));
-  if (other.length)
-    notes.push(
-      `analysis revisions attributed by the reviewed recipe: ${other.slice(0, 5).join(', ')}${other.length > 5 ? ', …' : ''}`,
-    );
-
-  // Active exclusions apply to a source revision, any of its ancestors or an admitted component.
-  // An owner exclusion decision on a task that adds data lifts that exclusion.
-  const excluded = new Set(
-    (
-      await db
-        .prepare(
-          'SELECT source_or_component_id FROM maintenance_exclusions WHERE active = 1',
-        )
-        .all<{source_or_component_id: string}>()
-    ).results
-      .map(row => row.source_or_component_id)
-      .filter(id => !options.lifted?.has(id))
-      .concat([...(options.adding ?? [])]),
-  );
-  if (excluded.size)
-    for (const revision of sourceRevisions) {
-      const related = await db
-        .prepare(
-          `WITH RECURSIVE up(id, parent) AS (SELECT id, parent_id FROM source_nodes WHERE id = ?
-        UNION SELECT s.id, s.parent_id FROM source_nodes s JOIN up ON s.id = up.parent)
-      SELECT id FROM up UNION SELECT component FROM admissions WHERE source_revision_id = ?`,
-        )
-        .bind(revision, revision)
-        .all<{id: string}>();
-      const hit = related.results.find(row => excluded.has(row.id));
-      if (hit)
-        problems.push(
-          `source revision ${revision} is excluded by the owner (${hit.id})`,
-        );
-    }
-  return {problems, notes};
-}
-
-/** Resolve result references exactly: each must be a saved artifact with the stated digest and size. */
-async function resolve(db: D1Database, refs: ArtifactRef[], what: string) {
-  const problems: string[] = [];
-  const rows = new Map(
-    (
-      await inChunks<ArtifactRow>(
-        db,
-        marks => `SELECT id, output_id, sha256, byte_count, format, registered_locator
-    FROM artifacts WHERE id IN (${marks})`,
-        refs.map(ref => ref.artifact_id),
-      )
-    ).map(row => [row.id, row]),
-  );
-  const ids = new Set<string>();
-  for (const ref of refs) {
-    const row = rows.get(ref.artifact_id);
-    if (!row)
-      problems.push(
-        `${what} reference ${ref.artifact_id} is not a saved artifact`,
-      );
-    else if (row.sha256 !== ref.sha256 || row.byte_count !== ref.byte_count)
-      problems.push(
-        `${what} reference ${ref.artifact_id} does not match the saved artifact`,
-      );
-    else if (!row.output_id)
-      problems.push(
-        `${what} reference ${ref.artifact_id} belongs to no prepared output`,
-      );
-    else ids.add(row.output_id);
-  }
-  return {problems, ids};
-}
-
-/** The candidate of a prepared task: exactly the outputs its prepare units saved and its quality
- *  unit checked, with the quality receipt itself stored as referenced. */
-async function candidateOf(
-  db: D1Database,
-  stored: Stored,
-  recipe: Recipe,
-  succeeded: Map<string, JobResult>,
-) {
-  const problems: string[] = [];
-  const quality = recipe.units!.filter(unit => unit.kind === 'quality');
-  if (quality.length !== 1)
-    problems.push('the recipe must have exactly one quality unit');
-  const result =
-    quality.length === 1 ? succeeded.get(quality[0].unit_id) : undefined;
-  const receipt = result?.quality_receipt_ref ?? null;
-  if (!receipt) problems.push('no quality receipt');
-  else if (receipt.artifact_id !== `receipt:${receipt.sha256.slice(0, 32)}`)
-    problems.push('the quality receipt reference is malformed');
-  else if (
-    !storageProblem(stored) &&
-    (stored as Map<string, number>).get(
-      `prepared/receipts/${receipt.sha256}.json`,
-    ) !== receipt.byte_count
-  )
-    problems.push('the quality receipt is not stored as referenced');
-  const checked = await resolve(db, result?.output_refs ?? [], 'quality');
-  const prepared = await resolve(
-    db,
-    recipe
-      .units!.filter(unit => unit.kind === 'prepare')
-      .flatMap(unit => succeeded.get(unit.unit_id)?.output_refs ?? []),
-    'prepared',
-  );
-  problems.push(...checked.problems, ...prepared.problems);
-  for (const id of checked.ids)
-    if (!prepared.ids.has(id))
-      problems.push(`checked output ${id} was not prepared by this task`);
-  for (const id of prepared.ids)
-    if (!checked.ids.has(id))
-      problems.push(`prepared output ${id} was not quality-checked`);
-  return {
-    problems,
-    ids: [...checked.ids].sort(),
-    receipt,
-    extent: quality[0]?.native_extent ?? {},
-  };
-}
-
-/** Same kind, except that an `aid_entries` output replaces the `evidence` output that held the
- *  same language aids before they moved to an entries file (same source revision, coordinate
- *  version and units). An `evidence` candidate never replaces an `aid_entries` output. */
-const sameKind = (base: Output, next: Output) =>
-  base.kind === next.kind ||
-  (base.kind === 'evidence' && next.kind === 'aid_entries');
-
-const overlaps = (a: Output, b: Output) => {
-  if (
-    !sameKind(a, b) ||
-    a.revisions[0] !== b.revisions[0] ||
-    a.extent.coordinate_version !== b.extent.coordinate_version
-  )
-    return false;
-  const left = units(a.extent);
-  const right = units(b.extent);
-  if (!left || !right)
-    return canonicalJson(a.extent) === canonicalJson(b.extent);
-  const set = new Set(left);
-  return right.some(unit => set.has(unit));
-};
-
-/** Base members kept, plus the candidate. Same-kind outputs of the same source revision over
- *  overlapping native units are replaced; `replaces` and `removes` drop whole source revisions.
- *  A kept output that depends on a dropped one is a problem: it would point at nothing. */
-export function membership(
+  scope: Scope,
   base: Output[],
-  candidate: Output[],
-  replaces: Set<string>,
-  removes: Set<string>,
 ) {
-  const candidateIds = new Set(candidate.map(item => item.id));
-  const dropped = base.filter(
-    item =>
-      !candidateIds.has(item.id) &&
-      (replaces.has(item.revisions[0]) ||
-        removes.has(item.revisions[0]) ||
-        candidate.some(next => overlaps(item, next))),
+  if (!statementOf(scope)) return new Set<string>();
+  return new Set(
+    (
+      await inChunks<{output_id: string}>(
+        db,
+        marks =>
+          `SELECT output_id FROM character_statements WHERE output_id IN (${marks})`,
+        base.map(item => item.id),
+      )
+    ).map(row => row.output_id),
   );
-  const droppedIds = new Set(dropped.map(item => item.id));
-  const kept = base.filter(item => !droppedIds.has(item.id));
-  const all = [
-    ...kept,
-    ...candidate.filter(item => !kept.some(old => old.id === item.id)),
-  ];
-  const problems = kept
-    .filter(item =>
-      item.dependencies.some(dependency => droppedIds.has(dependency)),
-    )
-    .map(item => `kept output ${item.id} depends on an output this task drops`);
-  return {
-    ids: all.map(item => item.id).sort(),
-    all,
-    dropped: [...droppedIds].sort(),
-    problems,
-  };
 }
 
-/** Scope check of a prepared candidate against the owner's instruction. */
-export async function scopeCheck(
+/** The release a checked candidate makes, on the given current release: base members kept, the
+ *  candidate added, the whole checked, and the change to write or the reasons it cannot be. */
+async function buildPlan(
   db: D1Database,
   stored: Stored,
   task: TaskRow,
   recipe: Recipe,
-  succeeded: Map<string, JobResult>,
-) {
+  built: Built,
+  select: boolean,
+  currentId: string | null,
+): Promise<Plan> {
+  const outcome = JSON.parse(task.outcome_json) as Outcome;
   const scope = JSON.parse(task.scope_json) as Scope;
-  const found = await candidateOf(db, stored, recipe, succeeded);
-  const problems = [...found.problems];
-  const candidate = await outputs(db, found.ids);
-  if (!candidate.length) problems.push('the candidate has no saved outputs');
-
-  // Every source revision an output was prepared from must be named in the task.
-  const instructed = new Set(
-    scope.inputs
-      .filter(ref => ref.kind === 'source_revision')
-      .map(ref => ref.id),
+  const {checked, quality} = built;
+  const replaces = new Set(
+    Array.isArray(scope.constraints.replaces)
+      ? (scope.constraints.replaces as string[])
+      : [],
   );
-  const revisions = [...new Set(candidate.flatMap(item => item.revisions))];
-  const sourceRevisions = new Set(
-    (
-      await inChunks<{id: string}>(
-        db,
-        marks =>
-          `SELECT id FROM source_nodes WHERE kind = 'source_revision' AND id IN (${marks})`,
-        revisions,
-      )
-    ).map(row => row.id),
+  const base = await members(db, currentId);
+  const replaced = await replacedStatements(db, scope, base);
+  const whole = membership(
+    base.filter(item => !replaced.has(item.id)),
+    checked.candidate,
+    replaces,
+    new Set(),
   );
-  for (const item of candidate)
-    for (const revision of item.revisions)
-      if (
-        (sourceRevisions.has(revision) || revision === item.revisions[0]) &&
-        !instructed.has(revision)
-      )
-        problems.push(
-          `output ${item.id} was prepared from ${revision}, which the task does not name`,
-        );
-
-  // Actual extent: the recipe's checked unit list; every output inside it.
-  const wanted = units(found.extent);
-  if (!wanted)
-    problems.push(
-      'the quality unit must list its native unit_ids; other extent shapes are not supported',
-    );
-  else {
-    const allowed = new Set(wanted);
-    for (const item of candidate) {
-      const actual = units(item.extent);
-      if (
-        !actual ||
-        item.extent.coordinate_version !== found.extent.coordinate_version ||
-        actual.some(unit => !allowed.has(unit))
-      )
-        problems.push(
-          `output ${item.id} covers units outside the instructed extent`,
-        );
-    }
-  }
-  // Capabilities: every instructed capability is available coverage over every unit.
-  const coverage = await inChunks<{
-    output_id: string;
-    capability: string;
-    state: string;
-    native_extent_json: string;
-  }>(
-    db,
-    marks =>
-      `SELECT output_id, capability, state, native_extent_json FROM coverage WHERE output_id IN (${marks})`,
-    found.ids,
-  );
-  for (const capability of scope.capabilities) {
-    const covered = new Set(
-      coverage
-        .filter(
-          row => row.capability === capability && row.state === 'available',
-        )
-        .flatMap(
-          row =>
-            units(
-              JSON.parse(row.native_extent_json) as Record<string, unknown>,
-            ) ?? [],
-        ),
-    );
-    const missing = (wanted ?? []).filter(unit => !covered.has(unit));
-    if (!covered.size)
-      problems.push(`capability ${capability} is not available`);
-    else if (missing.length)
-      problems.push(
-        `capability ${capability} is not available for ${missing.length} unit(s), first ${missing[0]}`,
-      );
-  }
+  const validation = await validateMembers(db, stored, whole.all, {
+    added: new Set(checked.candidate.map(item => item.id)),
+    approved: statementOf(scope),
+    lifted: new Set(liftedBy(scope)),
+  });
+  const problems = [
+    ...new Set([
+      ...checked.problems,
+      ...whole.problems,
+      ...validation.problems,
+    ]),
+  ];
   const report = {
-    task_id: task.id,
-    task_revision: task.revision,
-    basis_digest: task.basis_digest,
-    recipe_revision: recipe.revision,
-    quality_receipt: found.receipt,
-    candidate: found.ids,
-    extent: found.extent,
-    capabilities: scope.capabilities,
-    coverage_rows: coverage.length,
-    coverage_not_available: coverage.filter(row => row.state !== 'available')
-      .length,
+    ...checked.report,
+    base_release_id: currentId,
+    members: whole.ids.length,
+    dropped: whole.dropped,
+    notes: validation.notes,
+    problems,
   };
-  return {problems, candidate, receipt: found.receipt, report, coverage};
-}
-
-/** Exclusions the owner lifts with this task: exclusion decisions on a task that adds data. */
-const liftedBy = (scope: Scope) =>
-  has(scope, 'remove')
-    ? []
-    : scope.decision_refs
-        .filter(ref => ref.kind === 'exclusion' && ref.subject)
-        .map(ref => ref.subject!);
-const recordedBy = (scope: Scope) =>
-  has(scope, 'remove')
-    ? scope.decision_refs.filter(ref => ref.kind === 'exclusion' && ref.subject)
-    : [];
-
-/** Exclusion changes the task makes. They are written only after this very invocation completed
- *  the task: the guard matches the completion token it wrote, so a stale or repeated check whose
- *  own update failed can never replay them (for example after a later lift). */
-function exclusionChanges(
-  db: D1Database,
-  scope: Scope,
-  taskId: string,
-  revision: number,
-  token: string,
-) {
-  const guard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'completed'
-    AND json_extract(outcome_json, '$.completion') = ?)`;
-  const guardValues = [taskId, revision + 1, token];
-  return [
-    ...recordedBy(scope).map(ref =>
-      db
-        .prepare(
-          `INSERT INTO maintenance_exclusions(source_or_component_id, decision_ref, task_id, revision, active)
-      SELECT ?, ?, ?, ?, 1 WHERE ${guard} ON CONFLICT(source_or_component_id, decision_ref) DO UPDATE SET active = 1, revision = excluded.revision`,
-        )
-        .bind(ref.subject, ref.ref, taskId, revision, ...guardValues),
-    ),
-    ...liftedBy(scope).map(subject =>
-      db
-        .prepare(
-          `UPDATE maintenance_exclusions SET active = 0, revision = ?
-      WHERE source_or_component_id = ? AND active = 1 AND ${guard}`,
-        )
-        .bind(revision, subject, ...guardValues),
-    ),
-  ];
-}
-
-/** Promote a checked release: record the release and `checked` in one guarded batch, then select
- *  it in a second batch guarded by base, task revision, candidate and the checked exclusion state. */
-async function promote(
-  db: D1Database,
-  task: TaskRow,
-  release: {
-    members: string[];
-    formats: Record<string, string>;
-    manifest: string;
-    recipe: string;
-    quality: string;
-    scope: string;
-    coverage: string;
-    base: string | null;
-    exclusions: string;
-  },
-  outcome: Outcome,
-  select = true,
-): Promise<SelectResult> {
-  const scope = JSON.parse(task.scope_json) as Scope;
-  const releaseId = `release-${(await sha256(canonicalJson({members: release.members, quality: release.quality, scope: release.scope}))).slice(0, 32)}`;
-  const guardTask = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state IN ('queued','running','checked'))`;
-  const candidate = {
-    release_id: releaseId,
-    base_release_id: release.base,
-    exclusions: release.exclusions,
-  };
-  // A build ends checked, with its candidate recorded, and waits for a release task; it can still be cancelled or superseded.
-  const checked: Outcome = {
-    ...outcome,
-    checks: {...outcome.checks, scope: 'passed'},
-    ...(select
-      ? {}
-      : {
-          candidate,
-          selection: {current_release_id: release.base, became_current: false},
-        }),
-  };
-  const [, , record] = await db.batch([
-    db
-      .prepare(
-        `INSERT INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
-      SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${guardTask} AND NOT EXISTS (SELECT 1 FROM releases WHERE id = ?)`,
-      )
-      .bind(
-        releaseId,
-        release.manifest,
-        release.recipe,
-        canonicalJson(release.formats),
-        release.coverage,
-        release.quality,
-        release.scope,
-        task.id,
-        task.revision,
-        releaseId,
-      ),
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?)
-      WHERE ${guardTask} AND NOT EXISTS (SELECT 1 FROM release_selection WHERE ? IN (current_release_id, previous_release_id))`,
-      )
-      .bind(
-        releaseId,
-        JSON.stringify(release.members),
-        task.id,
-        task.revision,
-        releaseId,
-      ),
-    db
-      .prepare(
-        `UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
-        quality_ref = ?, scope_ref = ?, outcome_json = ? WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')
-        AND EXISTS (SELECT 1 FROM releases WHERE id = ?) AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ?`,
-      )
-      .bind(
-        release.base,
-        releaseId,
-        release.quality,
-        release.scope,
-        canonicalJson(checked),
-        task.id,
-        task.revision,
-        releaseId,
-        releaseId,
-        release.members.length,
-      ),
-  ]);
-  if (!record.meta.changes) {
-    const now = await db
-      .prepare('SELECT state FROM maintenance_tasks WHERE id = ?')
-      .bind(task.id)
-      .first<{state: string}>();
-    return {state: now?.state ?? 'unknown'};
-  }
-  if (!select) return {state: 'checked'};
-  return selectSaved(
-    db,
-    task.id,
-    task.revision + 1,
-    scope,
-    releaseId,
-    release.base,
-    release.exclusions,
-    checked,
+  if (problems.length)
+    return {outcome, problems, report, quality: built.quality};
+  const scopeRef = await digestOf(report);
+  const coverage = await digestOf(
+    checked.coverage
+      .map(row => [row.output_id, row.capability, row.state])
+      .sort(),
   );
-}
-
-/** Select a saved, checked release in one guarded batch: base, task revision, candidate and exclusion state
- *  must be unchanged. `scope` supplies the exclusion changes that commit with the selection. */
-interface CombinedRelease {
-  manifest: string;
-  recipe: string;
-  formats: Record<string, string>;
-  coverage: string;
-  quality: string;
-  scope: string;
-  members: string[];
-  previousRevision: number;
-  taskScope: string;
-}
-
-async function selectSaved(
-  db: D1Database,
-  taskId: string,
-  revision: number,
-  scope: Scope,
-  releaseId: string,
-  base: string | null,
-  exclusions: string,
-  checked: Outcome,
-  build?: {id: string; revision: number; outcome: Outcome; candidate: string},
-  combined?: CombinedRelease,
-): Promise<SelectResult> {
-  const token = crypto.randomUUID();
+  const id = await releaseIdOf(whole.ids, quality!, scopeRef);
   const done: Outcome = {
-    ...checked,
-    completion: token,
-    selection: {current_release_id: releaseId, became_current: true},
-  };
-  const selected = `(SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`;
-  // A release also requires its build to still be the same checked build: cancelled or superseded after the check, it is not selected.
-  const buildGuard = build
-    ? `AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)`
-    : '';
-  // Constructing a parallel combined release is part of the SAME guarded D1 batch
-  // as selecting it. If the release task, build, base or exclusions change, neither
-  // the release nor its members is inserted.
-  const combinedGuard = `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')) AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ? AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) AND ${EXCLUSION_STATE} = ? ${buildGuard}`;
-  const guardedArgs = [
-    taskId,
-    combined?.previousRevision,
-    base,
-    releaseId,
-    exclusions,
-    ...(build ? [build.id, build.revision, build.candidate] : []),
-  ];
-  try {
-    await db.batch([
-      ...(combined
-        ? [
-            db
-              .prepare(
-                `INSERT INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt) SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${combinedGuard} AND NOT EXISTS (SELECT 1 FROM releases WHERE id = ?)`,
-              )
-              .bind(
-                releaseId,
-                combined.manifest,
-                combined.recipe,
-                canonicalJson(combined.formats),
-                combined.coverage,
-                combined.quality,
-                combined.scope,
-                ...guardedArgs,
-                releaseId,
-              ),
-            db
-              .prepare(
-                `INSERT OR IGNORE INTO release_outputs(release_id, output_id) SELECT ?, value FROM json_each(?) WHERE ${combinedGuard} AND EXISTS (SELECT 1 FROM releases WHERE id = ?)`,
-              )
-              .bind(
-                releaseId,
-                JSON.stringify(combined.members),
-                ...guardedArgs,
-                releaseId,
-              ),
-            // The candidate FK needs its release to exist. Record it only here, after the
-            // guarded release inserts and before the guarded selection, in one transaction.
-            db
-              .prepare(
-                `UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1,
-          base_release_id = ?, candidate_release_id = ?, quality_ref = ?, scope_ref = ?
-          WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')
-            AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ?
-            AND ? IS NOT (SELECT current_release_id FROM release_selection WHERE singleton_id = 1)
-            AND ${EXCLUSION_STATE} = ? AND EXISTS (SELECT 1 FROM releases WHERE id = ?)
-            AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ? ${buildGuard}`,
-              )
-              .bind(
-                base,
-                releaseId,
-                combined.quality,
-                combined.taskScope,
-                taskId,
-                combined.previousRevision,
-                base,
-                releaseId,
-                exclusions,
-                releaseId,
-                releaseId,
-                combined.members.length,
-                ...(build ? [build.id, build.revision, build.candidate] : []),
-              ),
-          ]
-        : []),
-      db
-        .prepare(
-          `UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
-        WHERE singleton_id = 1 AND current_release_id IS ? AND ? IS NOT current_release_id
-          AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked' AND candidate_release_id = ?)
-          ${buildGuard}
-          AND ${EXCLUSION_STATE} = ?`,
-        )
-        .bind(
-          releaseId,
-          base,
-          releaseId,
-          taskId,
-          revision,
-          releaseId,
-          ...(build ? [build.id, build.revision, build.candidate] : []),
-          exclusions,
-        ),
-      db
-        .prepare(
-          `UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
-        WHERE id = ? AND revision = ? AND state = 'checked' AND ${selected} AND ${EXCLUSION_STATE} = ?`,
-        )
-        .bind(canonicalJson(done), taskId, revision, releaseId, exclusions),
-      ...exclusionChanges(db, scope, taskId, revision, token),
-      // The released build is finished with the same selection; it cannot be released again.
-      ...(build
-        ? [
-            db
-              .prepare(
-                `UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
-        WHERE id = ? AND revision = ? AND state = 'checked' AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ?
-          AND state = 'completed' AND json_extract(outcome_json, '$.completion') = ?)`,
-              )
-              .bind(
-                canonicalJson({
-                  ...build.outcome,
-                  selection: {
-                    current_release_id: releaseId,
-                    became_current: true,
-                  },
-                }),
-                build.id,
-                build.revision,
-                taskId,
-                revision + 1,
-                token,
-              ),
-          ]
-        : []),
-    ]);
-  } catch {
-    /* A lost response: the read below decides. */
-  }
-  const now = await db
-    .prepare('SELECT state FROM maintenance_tasks WHERE id = ?')
-    .bind(taskId)
-    .first<{state: string}>();
-  if (now?.state === 'completed') return {state: 'completed'};
-  return {
-    state: now?.state ?? 'unknown',
-    limitation:
-      'The current release or the exclusions changed before selection; the next check rebuilds the release.',
-  };
-}
-
-/** Block with the reasons. A quality check that passed is recorded as passed, with its receipt,
- *  even when the scope check fails. */
-async function block(
-  db: D1Database,
-  task: TaskRow,
-  outcome: Outcome,
-  problems: string[],
-  report?: unknown,
-  quality?: string | null,
-): Promise<SelectResult> {
-  const next: Outcome = {
     ...outcome,
-    limitations: [
-      ...new Set([...outcome.limitations, ...problems.slice(0, 20)]),
-    ],
-    checks: {
-      ...outcome.checks,
-      ...(quality ? {quality: 'passed' as const} : {}),
-      scope: 'failed',
-    },
-    ...(report ? {scope_report: report as Outcome['scope_report']} : {}),
+    checks: {...outcome.checks, quality: 'passed', scope: 'passed'},
+    scope_report: report,
   };
-  await db
-    .prepare(
-      `UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1, outcome_json = ?,
-      quality_ref = COALESCE(?, quality_ref) WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`,
-    )
-    .bind(canonicalJson(next), quality ?? null, task.id, task.revision)
-    .run();
-  return {state: 'blocked', limitation: problems[0]};
+  return {
+    outcome: select
+      ? {...done, selection: {current_release_id: id, became_current: true}}
+      : {
+          ...done,
+          candidate: {release_id: id, base_release_id: currentId},
+          selection: {current_release_id: currentId, became_current: false},
+        },
+    change: {
+      mode: select ? 'select' : 'stage',
+      create: {
+        id,
+        members: whole.ids,
+        formats: releaseVersions(whole.all),
+        manifest: recipe.manifest_revision!,
+        recipe: recipe.revision,
+        quality: quality!,
+        scope: scopeRef,
+        coverage,
+      },
+      target: id,
+      related: validation.related,
+      lifted: liftedBy(scope),
+      recorded: recordedBy(scope),
+    },
+  };
 }
 
-/** Finish without a selection change. The task's exclusion changes commit with it, and only if
- *  the exclusion state the task read is unchanged. */
-async function complete(
-  db: D1Database,
-  task: TaskRow,
-  outcome: Outcome,
-  change: Partial<Outcome>,
-  exclusions: string,
-  current: string | null,
-): Promise<SelectResult> {
-  const scope = JSON.parse(task.scope_json) as Scope;
-  const token = crypto.randomUUID();
-  try {
-    await db.batch([
-      db
-        .prepare(
-          `UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
-        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked') AND ${EXCLUSION_STATE} = ?
-          AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ?`,
-        )
-        .bind(
-          canonicalJson({...outcome, ...change, completion: token}),
-          task.id,
-          task.revision,
-          exclusions,
-          current,
-        ),
-      ...exclusionChanges(db, scope, task.id, task.revision, token),
-    ]);
-  } catch {
-    /* A lost response: the read below decides. */
-  }
-  const now = await db
-    .prepare('SELECT state FROM maintenance_tasks WHERE id = ?')
-    .bind(task.id)
-    .first<{state: string}>();
-  return {state: now?.state ?? 'unknown'};
-}
-
-/** All units of a prepared task succeeded: check scope, build the release, validate it whole, select it. */
+/** All units of a prepared task succeeded: check scope, build the release, validate it whole,
+ *  and select it (or, for a build alone, record it as the checked candidate). */
 export async function checkAndSelect(
   db: D1Database,
   objects: ObjectStore | null,
@@ -1047,408 +179,24 @@ export async function checkAndSelect(
   succeeded: Map<string, JobResult>,
   select = true,
 ): Promise<SelectResult> {
-  const outcome = JSON.parse(task.outcome_json) as Outcome;
-  const scope = JSON.parse(task.scope_json) as Scope;
-  const exclusions = await exclusionState(db); // Read first: the selection requires it unchanged.
-  const current = await selection(db);
   const stored = await storedSizes(objects);
   const checked = await scopeCheck(db, stored, task, recipe, succeeded);
-  const replaces = new Set(
-    Array.isArray(scope.constraints.replaces)
-      ? (scope.constraints.replaces as string[])
-      : [],
-  );
-  const base = await members(db, current.current_release_id);
-  // A new statement replaces the selected one; ordinary sources stay usable without one.
-  const replacedStatements = statementOf(scope)
-    ? new Set(
-        (
-          await inChunks<{output_id: string}>(
-            db,
-            marks =>
-              `SELECT output_id FROM character_statements WHERE output_id IN (${marks})`,
-            base.map(item => item.id),
-          )
-        ).map(row => row.output_id),
-      )
-    : new Set<string>();
-  const built = membership(
-    base.filter(item => !replacedStatements.has(item.id)),
-    checked.candidate,
-    replaces,
-    new Set(),
-  );
-  const whole = await validateMembers(db, stored, built.all, {
-    added: new Set(checked.candidate.map(item => item.id)),
-    approved: statementOf(scope),
-    lifted: new Set(liftedBy(scope)),
-  });
-  const problems = [
-    ...new Set([...checked.problems, ...built.problems, ...whole.problems]),
-  ];
-  const report = {
-    ...checked.report,
-    base_release_id: current.current_release_id,
-    members: built.ids.length,
-    dropped: built.dropped,
-    notes: whole.notes,
-    problems,
-  };
   const quality =
     checked.receipt &&
     !checked.problems.some(text => text.includes('quality receipt'))
       ? `${checked.receipt.artifact_id}@${checked.receipt.sha256}`
       : null;
-  if (problems.length)
-    return block(db, task, outcome, problems, report, quality);
-  const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
-  const coverage = `sha256:${await sha256(canonicalJson(checked.coverage.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
-  return promote(
-    db,
-    task,
-    {
-      members: built.ids,
-      formats: releaseVersions(built.all),
-      manifest: recipe.manifest_revision!,
-      recipe: recipe.revision,
-      quality: quality!,
-      scope: scopeRef,
-      coverage,
-      base: current.current_release_id,
-      exclusions,
-    },
-    {
-      ...outcome,
-      checks: {...outcome.checks, quality: 'passed'},
-      scope_report: report,
-    },
-    select,
-  );
-}
-
-/** A release can apply a checked build's changes to a newer selection when they do not
- *  conflict. The saved output is reused; the combined release is checked again. */
-export async function releaseCandidate(
-  db: D1Database,
-  objects: ObjectStore | null,
-  task: TaskRow,
-): Promise<SelectResult> {
-  const outcome = JSON.parse(task.outcome_json) as Outcome;
-  const scope = JSON.parse(task.scope_json) as Scope;
-  const refuse = (problem: string) => block(db, task, outcome, [problem]);
-  const build = await db
-    .prepare('SELECT * FROM maintenance_tasks WHERE id = ? AND requester = ?')
-    .bind(scope.constraints.candidate, task.requester)
-    .first<TaskRow>();
-  if (!build)
-    return refuse(
-      `Candidate task ${String(scope.constraints.candidate)} was not found.`,
-    );
-  const built = JSON.parse(build.outcome_json) as Outcome;
-  const buildScope = JSON.parse(build.scope_json) as Scope;
-  if (build.state === 'completed' && built.selection?.became_current)
-    return refuse('This candidate is already current.');
-  if (
-    !has(buildScope, 'build') ||
-    has(buildScope, 'select') ||
-    build.state !== 'checked' ||
-    !built.candidate ||
-    !built.checks ||
-    built.checks.quality !== 'passed' ||
-    built.checks.scope !== 'passed'
-  )
-    return refuse(
-      'The candidate must be a checked build that is not cancelled or superseded, with quality and scope checks passed.',
-    );
-  const current = await selection(db);
-  if (current.current_release_id === built.candidate.release_id)
-    return refuse('This candidate is already current.');
-  const exclusions = await exclusionState(db);
-  if (exclusions !== built.candidate.exclusions)
-    return refuse(
-      'The source exclusions changed after this build; run the build again.',
-    );
-  const original = await members(db, built.candidate.base_release_id);
-  const candidate = await members(db, built.candidate.release_id);
-  const currentItems = await members(db, current.current_release_id);
-  const originalIds = new Set(original.map(item => item.id));
-  const candidateIds = new Set(candidate.map(item => item.id));
-  const currentIds = new Set(currentItems.map(item => item.id));
-  const added = candidate.filter(item => !originalIds.has(item.id));
-  const removed = original.filter(item => !candidateIds.has(item.id));
-  const concurrent = currentItems.filter(
-    item => !originalIds.has(item.id) && !candidateIds.has(item.id),
-  );
-  const replaces = new Set(
-    Array.isArray(buildScope.constraints.replaces)
-      ? (buildScope.constraints.replaces as string[])
-      : [],
-  );
-  if (
-    concurrent.some(
-      item =>
-        replaces.has(item.revisions[0]) ||
-        [...added, ...removed].some(change => overlaps(item, change)),
-    )
-  )
-    return refuse(
-      'A newer release changed the same source extent; prepare this change again.',
-    );
-  const removedIds = new Set(removed.map(item => item.id));
-  const combined = membership(
-    currentItems.filter(item => !removedIds.has(item.id)),
-    added,
-    new Set(),
-    new Set(),
-  );
-  if (combined.problems.length)
-    return refuse(
-      `The combined release cannot be selected: ${combined.problems[0]}`,
-    );
-  const items = combined.all;
-  const listed = (await db
-    .prepare(
-      'SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?',
-    )
-    .bind(built.candidate.release_id)
-    .first<{total: number}>())!.total;
-  const check = await validateMembers(db, await storedSizes(objects), items, {
-    added: new Set(
-      added.filter(item => !currentIds.has(item.id)).map(item => item.id),
-    ),
-    approved: null,
-    lifted: new Set(liftedBy(buildScope)),
-  });
-  if (listed !== candidate.length)
-    check.problems.unshift(
-      `${listed - candidate.length} listed output(s) are not saved`,
-    );
-  if (check.problems.length)
-    return refuse(
-      `The candidate release no longer validates: ${check.problems[0]}`,
-    );
-  let releaseId = built.candidate.release_id;
-  let combinedRelease: CombinedRelease | undefined;
-  if (current.current_release_id !== built.candidate.base_release_id) {
-    const source = await db
-      .prepare(
-        'SELECT manifest_revision, recipe_revision FROM releases WHERE id = ?',
-      )
-      .bind(built.candidate.release_id)
-      .first<{manifest_revision: string; recipe_revision: string}>();
-    if (!source || !build.quality_ref || !build.scope_ref)
-      return refuse('The checked candidate metadata is missing.');
-    const coverageRows = await inChunks<{
-      output_id: string;
-      capability: string;
-      state: string;
-    }>(
+  return makeCurrent(db, task, current =>
+    buildPlan(
       db,
-      marks =>
-        `SELECT output_id, capability, state FROM coverage WHERE output_id IN (${marks})`,
-      combined.ids,
-    );
-    const coverage = `sha256:${await sha256(canonicalJson(coverageRows.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
-    const report = {
-      build: build.id,
-      candidate: built.candidate.release_id,
-      base: current.current_release_id,
-      members: combined.ids,
-    };
-    const scopeRef = `sha256:${await sha256(canonicalJson(report))}`;
-    releaseId = `release-${(await sha256(canonicalJson({members: combined.ids, quality: build.quality_ref, scope: scopeRef}))).slice(0, 32)}`;
-    combinedRelease = {
-      manifest: source.manifest_revision,
-      recipe: source.recipe_revision,
-      formats: releaseVersions(items),
-      coverage,
-      quality: build.quality_ref,
-      scope: scopeRef,
-      members: combined.ids,
-      previousRevision: task.revision,
-      taskScope: build.scope_ref,
-    };
-  }
-  // Record the candidate on this task (once), then select it with the build's own exclusion changes.
-  let revision = task.revision;
-  if (combinedRelease) {
-    // Its candidate FK cannot be recorded before the combined release exists;
-    // selectSaved records it inside the same guarded transaction, advancing the revision.
-    revision += 1;
-  } else if (
-    task.state !== 'checked' ||
-    task.candidate_release_id !== releaseId ||
-    task.base_release_id !== current.current_release_id
-  ) {
-    const recorded = await db
-      .prepare(
-        `UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
-        quality_ref = ?, scope_ref = ? WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`,
-      )
-      .bind(
-        current.current_release_id,
-        releaseId,
-        build.quality_ref,
-        build.scope_ref,
-        task.id,
-        task.revision,
-      )
-      .run();
-    if (!recorded.meta.changes) {
-      const now = await db
-        .prepare('SELECT state FROM maintenance_tasks WHERE id = ?')
-        .bind(task.id)
-        .first<{state: string}>();
-      return {state: now?.state ?? 'unknown'};
-    }
-    revision += 1;
-  }
-  return selectSaved(
-    db,
-    task.id,
-    revision,
-    buildScope,
-    releaseId,
-    current.current_release_id,
-    exclusions,
-    {
-      ...outcome,
-      checks: built.checks,
-      limitations: [...outcome.limitations, ...check.notes],
-    },
-    {
-      id: build.id,
-      revision: build.revision,
-      outcome: built,
-      candidate: built.candidate.release_id,
-    },
-    combinedRelease,
-  );
-}
-
-/** Validate a saved release whole before selecting it again (rollback, restore). The deployed
- *  Study reader must be able to read it: it must record the current index format, and every
- *  index must be complete in that format. */
-export async function validateRelease(
-  db: D1Database,
-  stored: Stored,
-  releaseId: string,
-): Promise<Check> {
-  const release = await db
-    .prepare('SELECT id, schema_versions_json FROM releases WHERE id = ?')
-    .bind(releaseId)
-    .first<{id: string; schema_versions_json: string}>();
-  if (!release)
-    return {problems: [`release ${releaseId} is not saved`], notes: []};
-  const items = await members(db, releaseId);
-  const listed = (await db
-    .prepare(
-      'SELECT COUNT(*) AS total FROM release_outputs WHERE release_id = ?',
-    )
-    .bind(releaseId)
-    .first<{total: number}>())!.total;
-  const check = await validateMembers(db, stored, items, {
-    allCurrentFormat: true,
-  });
-  if (listed !== items.length)
-    check.problems.unshift(
-      `release ${releaseId} lists ${listed - items.length} output(s) that are not saved`,
-    );
-  // Cleanup removes the membership of a release nothing needs; an empty release cannot be selected again.
-  if (!listed)
-    check.problems.unshift(
-      `release ${releaseId} has no members; its membership was removed`,
-    );
-  check.problems.unshift(
-    ...unreadable(
-      releaseId,
-      release.schema_versions_json,
-      hasReaderMappings(items),
+      stored,
+      task,
+      recipe,
+      {checked, quality},
+      select,
+      current.current_release_id,
     ),
   );
-  return check;
-}
-
-/** Why the deployed Study could not read a release with these recorded formats (empty if it can). */
-export function unreadable(
-  releaseId: string,
-  recordedJson: string,
-  needsReaderScheme = false,
-): string[] {
-  let recorded: unknown;
-  try {
-    recorded = JSON.parse(recordedJson);
-  } catch {
-    recorded = undefined;
-  }
-  if (!recorded || typeof recorded !== 'object' || Array.isArray(recorded))
-    return [`release ${releaseId} has no readable format record`];
-  const versions = recorded as Record<string, unknown>;
-  const problems: string[] = [];
-  for (const [name, supported] of Object.entries(READABLE_VERSIONS)) {
-    if (
-      name === 'reader_scheme_version' &&
-      versions[name] === undefined &&
-      !needsReaderScheme
-    )
-      continue;
-    if (!supported.includes(String(versions[name])))
-      problems.push(
-        `release ${releaseId} uses ${name} format ${versions[name] === undefined ? '(none)' : String(versions[name])}; the Study reader reads ${supported.join(', ')}`,
-      );
-  }
-  for (const name of Object.keys(versions))
-    if (!(name in READABLE_VERSIONS))
-      problems.push(
-        `release ${releaseId} records ${name}, a format the Study reader does not know`,
-      );
-  return problems;
-}
-
-/** Block every restored open task. A task whose revision moves is read again; one that cannot be
- *  blocked is reported, and the restore validation then does not pass. */
-async function blockRestored(
-  db: D1Database,
-  taskId: string,
-): Promise<{blocked: string[]; failed: string[]}> {
-  const blocked: string[] = [];
-  const failed: string[] = [];
-  const note = `Blocked by restore validation in ${taskId}; check the restored state, then resume.`;
-  const open = (
-    await db
-      .prepare(
-        `SELECT id FROM maintenance_tasks WHERE id <> ? AND state IN ('queued','running','checked')`,
-      )
-      .bind(taskId)
-      .all<{id: string}>()
-  ).results;
-  for (const {id} of open) {
-    let done = false;
-    for (let attempt = 0; attempt < BLOCK_TRIES && !done; attempt++) {
-      const row = await db
-        .prepare('SELECT revision, state FROM maintenance_tasks WHERE id = ?')
-        .bind(id)
-        .first<{revision: number; state: string}>();
-      if (!row || !['queued', 'running', 'checked'].includes(row.state)) {
-        done = true;
-        break;
-      } // Paused, blocked or finished: nothing restarts.
-      const changed = await db
-        .prepare(
-          `UPDATE maintenance_tasks SET state = 'blocked', revision = revision + 1,
-          outcome_json = json_set(outcome_json, '$.limitations', json_insert(json_extract(outcome_json, '$.limitations'), '$[#]', ?))
-        WHERE id = ? AND revision = ? AND state IN ('queued','running','checked')`,
-        )
-        .bind(note, id, row.revision)
-        .run();
-      if (changed.meta.changes) {
-        blocked.push(id);
-        done = true;
-      }
-    }
-    if (!done) failed.push(id);
-  }
-  return {blocked, failed};
 }
 
 /** Remove, rollback and restore validation: no preparation, the same checks and gate. */
@@ -1457,233 +205,101 @@ export async function selectDirect(
   objects: ObjectStore | null,
   task: TaskRow,
 ): Promise<SelectResult> {
-  const outcome = JSON.parse(task.outcome_json) as Outcome;
   const scope = JSON.parse(task.scope_json) as Scope;
-  const exclusions = await exclusionState(db); // Read first: every change below requires it unchanged.
-  const current = await selection(db);
-  const unchanged = (limitation: string, extra: Partial<Outcome> = {}) =>
-    complete(
-      db,
-      task,
-      outcome,
-      {
-        ...extra,
-        limitations: [
-          ...(extra.limitations ?? outcome.limitations),
-          limitation,
-        ],
-        selection: {
-          current_release_id: current.current_release_id,
-          became_current: false,
-        },
-      },
-      exclusions,
-      current.current_release_id,
-    );
-
-  if (has(scope, 'remove')) {
-    // The owner's exclusions are recorded even when the current release holds none of the sources,
-    // so a later rollback or task cannot bring them back.
-    const removes = new Set(
-      scope.inputs
-        .filter(ref => ref.kind === 'source_revision')
-        .map(ref => ref.id),
-    );
-    const adding = new Set(recordedBy(scope).map(ref => ref.subject!));
-    const base = await members(db, current.current_release_id);
-    const built = membership(base, [], new Set(), removes);
-    // What stays selected must not fall under the exclusions this removal records (a subject
-    // may be an ancestor or component of another revision).
-    const whole = await validateMembers(
-      db,
-      await storedSizes(objects),
-      built.all,
-      {adding},
-    );
-    const problems = [...built.problems, ...whole.problems];
-    if (problems.length) return block(db, task, outcome, problems);
-    if (!built.dropped.length)
-      return unchanged(
-        current.current_release_id
-          ? 'The current release holds none of the named sources.'
-          : 'Nothing is current, so nothing was removed.',
-      );
-    const report = {
-      task_id: task.id,
-      task_revision: task.revision,
-      removed: built.dropped,
-      members: built.ids.length,
-      base_release_id: current.current_release_id,
-    };
-    const digest = `sha256:${await sha256(canonicalJson(report))}`;
-    const prior = await db
-      .prepare(
-        'SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?',
-      )
-      .bind(current.current_release_id)
-      .first<{
-        manifest_revision: string;
-        recipe_revision: string;
-        coverage_basis: string;
-      }>();
-    return promote(
-      db,
-      task,
-      {
-        members: built.ids,
-        formats: releaseVersions(built.all),
-        manifest: prior!.manifest_revision,
-        recipe: prior!.recipe_revision,
-        quality: `control-removal:${digest}`,
-        scope: digest,
-        coverage: prior!.coverage_basis,
-        base: current.current_release_id,
-        exclusions,
-      },
-      {...outcome, removal_report: report},
-    );
-  }
-
   const stored = await storedSizes(objects);
-  if (has(scope, 'rollback')) {
-    if (!current.previous_release_id)
-      return unchanged(
-        'No previous release is available; the current release is unchanged.',
-      );
-    const check = await validateRelease(
-      db,
-      stored,
-      current.previous_release_id,
+  if (has(scope, 'remove'))
+    return makeCurrent(db, task, current =>
+      removePlan(db, stored, task, scope, current.current_release_id),
     );
-    if (check.problems.length)
-      return unchanged(
-        'The previous release is not eligible; the current release is unchanged.',
-        {limitations: [...outcome.limitations, ...check.problems.slice(0, 20)]},
-      );
-    return swap(
-      db,
-      task,
-      outcome,
-      current.current_release_id!,
-      current.previous_release_id,
-      check,
-      exclusions,
-    );
-  }
-
-  // validate_restore: check the restored releases, and block restored open work so it never restarts by itself.
-  const results: Record<string, Check> = {};
-  for (const id of [
-    current.current_release_id,
-    current.previous_release_id,
-  ].filter((value): value is string => !!value))
-    results[id] = await validateRelease(db, stored, id);
-  const tasks = await blockRestored(db, task.id);
-  const problems = [
-    ...Object.entries(results).flatMap(([id, check]) =>
-      check.problems.map(problem => `${id}: ${problem}`),
-    ),
-    ...tasks.failed.map(
-      id =>
-        `task ${id} kept changing and could not be blocked; check it before resuming work`,
-    ),
-  ];
-  const report = {
-    releases: results,
-    blocked_tasks: tasks.blocked,
-    unblocked_tasks: tasks.failed,
-  };
-  const wanted =
-    typeof scope.constraints.select_release === 'string'
-      ? scope.constraints.select_release
-      : null;
-  if (wanted && wanted !== current.current_release_id) {
-    const check = await validateRelease(db, stored, wanted);
-    const refused = [
-      ...check.problems,
-      ...tasks.failed.map(id => `task ${id} could not be blocked`),
-    ];
-    if (refused.length)
-      return unchanged(
-        `Release ${wanted} is not eligible; the current release is unchanged.`,
-        {
-          restore_report: report,
-          limitations: [...outcome.limitations, ...refused.slice(0, 20)],
-        },
-      );
-    return swap(
-      db,
-      task,
-      {...outcome, restore_report: report},
-      current.current_release_id,
-      wanted,
-      check,
-      exclusions,
-    );
-  }
-  return unchanged(
-    problems.length
-      ? 'The restored state did not pass validation; see the limitations.'
-      : 'The restored releases passed validation.',
-    {
-      restore_report: report,
-      limitations: [...outcome.limitations, ...problems.slice(0, 20)],
-    },
-  );
+  return restoreOrRollBack(db, stored, task, scope);
 }
 
-/** Select an existing, validated release; the previously current one becomes previous. */
-async function swap(
+/** Drop the named sources from the current release and record the owner's exclusions with it. */
+async function removePlan(
   db: D1Database,
+  stored: Stored,
   task: TaskRow,
-  outcome: Outcome,
-  base: string | null,
-  target: string,
-  check: Check,
-  exclusions: string,
-): Promise<SelectResult> {
-  const done: Outcome = {
-    ...outcome,
-    limitations: [...outcome.limitations, ...check.notes],
-    selection: {current_release_id: target, became_current: true},
+  scope: Scope,
+  currentId: string | null,
+): Promise<Plan> {
+  const outcome = JSON.parse(task.outcome_json) as Outcome;
+  const removes = new Set(
+    scope.inputs
+      .filter(ref => ref.kind === 'source_revision')
+      .map(ref => ref.id),
+  );
+  const recorded = recordedBy(scope);
+  const base = await members(db, currentId);
+  const built = membership(base, [], new Set(), removes);
+  // What stays selected must not fall under the exclusions this removal records (a subject
+  // may be an ancestor or component of another revision).
+  const whole = await validateMembers(db, stored, built.all, {
+    adding: new Set(recorded.map(ref => ref.subject!)),
+  });
+  const problems = [...built.problems, ...whole.problems];
+  if (problems.length) return {outcome, problems};
+  const change = {
+    related: whole.related,
+    lifted: [],
+    recorded,
   };
-  try {
-    await db.batch([
-      db
-        .prepare(
-          `UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
-        WHERE singleton_id = 1 AND current_release_id IS ? AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ?
-          AND state IN ('queued','running')) AND ${EXCLUSION_STATE} = ?`,
-        )
-        .bind(target, base, task.id, task.revision, exclusions),
-      db
-        .prepare(
-          `UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
-          outcome_json = ? WHERE id = ? AND revision = ? AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`,
-        )
-        .bind(
-          base,
-          target,
-          canonicalJson(done),
-          task.id,
-          task.revision,
-          target,
-        ),
-    ]);
-  } catch {
-    /* A lost response: the read below decides. */
-  }
-  const now = await db
-    .prepare('SELECT state FROM maintenance_tasks WHERE id = ?')
-    .bind(task.id)
-    .first<{state: string}>();
+  // The owner's exclusions are recorded even when the current release holds none of the sources,
+  // so a later rollback or task cannot bring them back.
+  if (!built.dropped.length)
+    return {
+      outcome: {
+        ...outcome,
+        limitations: [
+          ...outcome.limitations,
+          currentId
+            ? 'The current release holds none of the named sources.'
+            : 'Nothing is current, so nothing was removed.',
+        ],
+        selection: {current_release_id: currentId, became_current: false},
+      },
+      change: {mode: 'none', ...change},
+    };
+  const report = {
+    task_id: task.id,
+    task_revision: task.revision,
+    removed: built.dropped,
+    members: built.ids.length,
+    base_release_id: currentId,
+  };
+  const digest = await digestOf(report);
+  const prior = (await db
+    .prepare(
+      'SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?',
+    )
+    .bind(currentId)
+    .first<{
+      manifest_revision: string;
+      recipe_revision: string;
+      coverage_basis: string;
+    }>())!;
+  const quality = `control-removal:${digest}`;
+  const id = await releaseIdOf(built.ids, quality, digest);
   return {
-    state: now?.state ?? 'unknown',
-    ...(now?.state === 'completed'
-      ? {}
-      : {
-          limitation:
-            'The selection or exclusions changed during the check; check the task again.',
-        }),
+    outcome: {
+      ...outcome,
+      checks: {...outcome.checks, scope: 'passed'},
+      removal_report: report,
+      selection: {current_release_id: id, became_current: true},
+    },
+    change: {
+      mode: 'select',
+      create: {
+        id,
+        members: built.ids,
+        formats: releaseVersions(built.all),
+        manifest: prior.manifest_revision,
+        recipe: prior.recipe_revision,
+        quality,
+        scope: digest,
+        coverage: prior.coverage_basis,
+      },
+      target: id,
+      ...change,
+    },
   };
 }

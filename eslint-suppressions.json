@@ -36,11 +36,8 @@
     }
   },
   "services/maintenance/control/src/selection.ts": {
-    "complexity": {
-      "count": 4
-    },
     "max-lines-per-function": {
-      "count": 7
+      "count": 2
     }
   },
   "services/study/src/coordinator.ts": {

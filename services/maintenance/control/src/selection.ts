@@ -80,20 +80,15 @@ async function replacedStatements(
   );
 }
 
-/** The release a checked candidate makes, on the given current release: base members kept, the
- *  candidate added, the whole checked, and the change to write or the reasons it cannot be. */
-async function buildPlan(
+/** The whole release a checked candidate makes on the current release: base members kept, the
+ *  candidate added, everything validated, with the report of what was found. */
+async function wholeRelease(
   db: D1Database,
   stored: Stored,
-  task: TaskRow,
-  recipe: Recipe,
-  built: Built,
-  select: boolean,
+  scope: Scope,
+  checked: Built['checked'],
   currentId: string | null,
-): Promise<Plan> {
-  const outcome = JSON.parse(task.outcome_json) as Outcome;
-  const scope = JSON.parse(task.scope_json) as Scope;
-  const {checked, quality} = built;
+) {
   const replaces = new Set(
     Array.isArray(scope.constraints.replaces)
       ? (scope.constraints.replaces as string[])
@@ -127,6 +122,30 @@ async function buildPlan(
     notes: validation.notes,
     problems,
   };
+  return {whole, validation, problems, report};
+}
+
+/** The release a checked candidate makes, on the given current release: the change to write, or
+ *  the reasons it cannot be. */
+async function buildPlan(
+  db: D1Database,
+  stored: Stored,
+  task: TaskRow,
+  recipe: Recipe,
+  built: Built,
+  select: boolean,
+  currentId: string | null,
+): Promise<Plan> {
+  const outcome = JSON.parse(task.outcome_json) as Outcome;
+  const scope = JSON.parse(task.scope_json) as Scope;
+  const {checked, quality} = built;
+  const {whole, validation, problems, report} = await wholeRelease(
+    db,
+    stored,
+    scope,
+    checked,
+    currentId,
+  );
   if (problems.length)
     return {outcome, problems, report, quality: built.quality};
   const scopeRef = await digestOf(report);
@@ -214,6 +233,37 @@ export async function selectDirect(
   return restoreOrRollBack(db, stored, task, scope);
 }
 
+/** The release a removal makes: the current one without the named sources, with the same
+ *  manifest, recipe and coverage basis. */
+async function removalRelease(
+  db: D1Database,
+  built: ReturnType<typeof membership>,
+  currentId: string | null,
+  digest: string,
+) {
+  const prior = (await db
+    .prepare(
+      'SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?',
+    )
+    .bind(currentId)
+    .first<{
+      manifest_revision: string;
+      recipe_revision: string;
+      coverage_basis: string;
+    }>())!;
+  const quality = `control-removal:${digest}`;
+  return {
+    id: await releaseIdOf(built.ids, quality, digest),
+    members: built.ids,
+    formats: releaseVersions(built.all),
+    manifest: prior.manifest_revision,
+    recipe: prior.recipe_revision,
+    quality,
+    scope: digest,
+    coverage: prior.coverage_basis,
+  };
+}
+
 /** Drop the named sources from the current release and record the owner's exclusions with it. */
 async function removePlan(
   db: D1Database,
@@ -229,8 +279,12 @@ async function removePlan(
       .map(ref => ref.id),
   );
   const recorded = recordedBy(scope);
-  const base = await members(db, currentId);
-  const built = membership(base, [], new Set(), removes);
+  const built = membership(
+    await members(db, currentId),
+    [],
+    new Set(),
+    removes,
+  );
   // What stays selected must not fall under the exclusions this removal records (a subject
   // may be an ancestor or component of another revision).
   const whole = await validateMembers(db, stored, built.all, {
@@ -238,11 +292,7 @@ async function removePlan(
   });
   const problems = [...built.problems, ...whole.problems];
   if (problems.length) return {outcome, problems};
-  const change = {
-    related: whole.related,
-    lifted: [],
-    recorded,
-  };
+  const change = {related: whole.related, lifted: [], recorded};
   // The owner's exclusions are recorded even when the current release holds none of the sources,
   // so a later rollback or task cannot bring them back.
   if (!built.dropped.length)
@@ -266,40 +316,19 @@ async function removePlan(
     members: built.ids.length,
     base_release_id: currentId,
   };
-  const digest = await digestOf(report);
-  const prior = (await db
-    .prepare(
-      'SELECT manifest_revision, recipe_revision, coverage_basis FROM releases WHERE id = ?',
-    )
-    .bind(currentId)
-    .first<{
-      manifest_revision: string;
-      recipe_revision: string;
-      coverage_basis: string;
-    }>())!;
-  const quality = `control-removal:${digest}`;
-  const id = await releaseIdOf(built.ids, quality, digest);
+  const create = await removalRelease(
+    db,
+    built,
+    currentId,
+    await digestOf(report),
+  );
   return {
     outcome: {
       ...outcome,
       checks: {...outcome.checks, scope: 'passed'},
       removal_report: report,
-      selection: {current_release_id: id, became_current: true},
+      selection: {current_release_id: create.id, became_current: true},
     },
-    change: {
-      mode: 'select',
-      create: {
-        id,
-        members: built.ids,
-        formats: releaseVersions(built.all),
-        manifest: prior.manifest_revision,
-        recipe: prior.recipe_revision,
-        quality,
-        scope: digest,
-        coverage: prior.coverage_basis,
-      },
-      target: id,
-      ...change,
-    },
+    change: {mode: 'select', create, target: create.id, ...change},
   };
 }

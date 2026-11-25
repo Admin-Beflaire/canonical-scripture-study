@@ -160,6 +160,28 @@ test('membership of releases nothing needs is removed; kept releases and release
   assert.equal(w.count('releases'), 6);
 });
 
+test('the stored index summary of a release leaves with its membership; a kept release keeps it', async () => {
+  const w = world();
+  const [a, b] = ['oa', 'ob'].map(id => w.output(id, id));
+  w.release('release-old', [a]);
+  w.release('release-current', [b]);
+  w.select('release-current');
+  const insert = w.sql.prepare(
+    `INSERT INTO release_index_summary VALUES (?, 'rev', 'word_exact', 0, '[]')`,
+  );
+  insert.run('release-old');
+  insert.run('release-current');
+  const done = await tidyReleases(w.db, bucket());
+  assert.equal(done.memberships, 1); // the summary row is not counted as membership
+  assert.deepEqual(
+    w.sql
+      .prepare('SELECT release_id FROM release_index_summary')
+      .all()
+      .map(row => row.release_id),
+    ['release-current'],
+  );
+});
+
 test('saved outputs nothing kept uses are removed with their rows; shared text stays while used', async () => {
   const w = world();
   const kept = w.output('kept', 'shared text');

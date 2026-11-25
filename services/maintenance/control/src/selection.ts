@@ -1,6 +1,7 @@
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import type {ArtifactRef, JobResult, Recipe} from './contracts.ts';
 import type {DecisionRef, Outcome, Scope, TaskRow} from './tasks.ts';
+import {RELEASE_INDEX_SUMMARY} from '../../../../packages/shared/src/index-summary.ts';
 import readerCatalogue from '../../../../schemas/reader-references/nrsva-1.json' with {type: 'json'};
 
 /** Scope check, release construction and checked selection (Maintenance Control To-Be §4, MC-03).
@@ -718,7 +719,7 @@ async function promote(
           selection: {current_release_id: release.base, became_current: false},
         }),
   };
-  const [, , record] = await db.batch([
+  const [, , , record] = await db.batch([
     db
       .prepare(
         `INSERT INTO releases(id, manifest_revision, recipe_revision, schema_versions_json, coverage_basis, quality_receipt, scope_receipt)
@@ -748,6 +749,8 @@ async function promote(
         task.revision,
         releaseId,
       ),
+    // Derived from the members just stored; nothing is stored for a release without members.
+    db.prepare(RELEASE_INDEX_SUMMARY).bind(releaseId),
     db
       .prepare(
         `UPDATE maintenance_tasks SET state = 'checked', revision = revision + 1, base_release_id = ?, candidate_release_id = ?,
@@ -865,6 +868,7 @@ async function selectSaved(
                 ...guardedArgs,
                 releaseId,
               ),
+            db.prepare(RELEASE_INDEX_SUMMARY).bind(releaseId),
             // The candidate FK needs its release to exist. Record it only here, after the
             // guarded release inserts and before the guarded selection, in one transaction.
             db

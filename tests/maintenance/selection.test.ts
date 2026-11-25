@@ -359,6 +359,16 @@ async function runBook(
   return {taskId, releaseId: released.id, task: released.report};
 }
 
+function summaryRows(w: World, release: string | null) {
+  return (
+    w.db.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS n FROM release_index_summary WHERE release_id = ?`,
+      )
+      .get(release) as {n: number}
+  ).n;
+}
+
 async function releaseBuild(w: World, buildId: string, key: string) {
   const created = await requestTask(w.db, owner, {
     request_key: key,
@@ -412,6 +422,31 @@ test('a checked candidate becomes current in one guarded selection; the first pr
   assert.equal(now.previous_release_id, null);
   assert.equal(task.selection.base_release_id, null);
   assert.equal(membersOf(w, now.current_release_id).length, 4);
+  // The release stores its index summary: one row per source and capability, every index output once.
+  const summary = w.db.sqlite
+    .prepare(
+      `SELECT has_routing, outputs_json FROM release_index_summary WHERE release_id = ?`,
+    )
+    .all(now.current_release_id) as {
+    has_routing: number;
+    outputs_json: string;
+  }[];
+  const indexed = w.db.sqlite
+    .prepare(
+      `SELECT po.id FROM release_outputs ro JOIN prepared_outputs po ON po.id = ro.output_id
+       WHERE ro.release_id = ? AND po.kind = 'source_search' ORDER BY po.id`,
+    )
+    .all(now.current_release_id)
+    .map(row => row.id);
+  assert.ok(indexed.length > 0);
+  assert.deepEqual(
+    summary
+      .flatMap(row => JSON.parse(row.outputs_json) as {id: string}[])
+      .map(entry => entry.id)
+      .sort(),
+    indexed,
+  );
+  assert.ok(summary.every(row => row.has_routing === 0));
   const release = w.db.sqlite.prepare('SELECT * FROM releases').get() as Record<
     string,
     string
@@ -802,6 +837,13 @@ test('a checked candidate can be released after an unrelated selection without r
     exodus,
     'a build alone never selects',
   );
+  // The release made by the build step stores its summary before anything selects it.
+  assert.ok(
+    summaryRows(
+      w,
+      (await taskReport(w.db, owner, taskId))!.selection.candidate_release_id,
+    ) > 0,
+  );
   // Another selection lands after the build.
   w.db.sqlite
     .exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
@@ -816,6 +858,8 @@ test('a checked candidate can be released after an unrelated selection without r
   assert.equal(released.report.selection.base_release_id, 'release-other');
   assert.equal(selected(w).previous_release_id, 'release-other');
   assert.equal(membersOf(w, selected(w).current_release_id).length, 6);
+  // The release made at selection stores its summary.
+  assert.ok(summaryRows(w, selected(w).current_release_id) > 0);
 });
 
 test('a checked candidate does not overwrite a newer change to the same source extent', async () => {

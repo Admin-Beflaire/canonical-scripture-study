@@ -24,9 +24,9 @@ from typing import Any, Mapping
 
 from css_shared.error_record import annotation, error_record
 
-from ..contracts import ContractError, job_result, parse_job_input
+from ..contracts import ContractError, parse_job_input, unit_result
 from ..executor import UnitNotRunnable, execute_unit
-from ..executor.checkpoints import StopWork, UnitProgress, run_checkpointed_unit
+from ..executor.unit import StopWorkError, UnitProgress, run_unit
 from ..executor.quality import check_candidate_quality
 from ..prepare.evidence import OutputBasis
 from ..prepare.records import RecordError
@@ -66,45 +66,27 @@ def _emit_failures(result: Mapping[str, Any]) -> None:
         _emit(json.loads(item["message"]))
 
 
-def _result(
-    job: dict[str, Any], run_id: str, state: str, **fields: Any
-) -> dict[str, Any]:
-    return job_result(
-        job,
-        run_id=run_id,
-        completed_extent=fields.get("completed_extent", {}),
-        remaining_extent=fields.get("remaining_extent", dict(job["native_extent"])),
-        output_refs=fields.get("output_refs", []),
-        coverage_refs=fields.get("coverage_refs", []),
-        checkpoint_ref=fields.get("checkpoint_ref", job["checkpoint_ref"]),
-        quality_receipt_ref=None,
-        state=state,
-        diagnostics=fields.get("diagnostics", []),
-    )
-
-
 def _from_progress(
     job: dict[str, Any], run_id: str, progress: UnitProgress
 ) -> dict[str, Any]:
     if (
-        progress.state == "checkpointed"
+        progress.state == "saved"
         and progress.saved is not None
         and progress.remaining_extent == {}
     ):
-        return _result(
+        return unit_result(
             job,
             run_id,
             "succeeded",
             completed_extent=progress.completed_extent,
             remaining_extent={},
             output_refs=list(progress.saved.artifact_refs),
-            checkpoint_ref=progress.checkpoint_ref,
         )
     code = progress.diagnostics[0] if progress.diagnostics else "unit_failed"
     message = (
-        progress.diagnostic_detail or diagnostic(job, "checkpointing", code)["message"]
+        progress.diagnostic_detail or diagnostic(job, "saving_unit", code)["message"]
     )
-    return _result(
+    return unit_result(
         job, run_id, "failed", diagnostics=[{"code": code, "message": message}]
     )
 
@@ -186,7 +168,7 @@ def run_job(
         if recipe is None:
             # Still confirm the dispatch, so a stale job is reported as not runnable.
             execute_unit(job_json, **gate, process=lambda _: None)
-            return _result(
+            return unit_result(
                 job,
                 run_id,
                 "failed",
@@ -194,7 +176,7 @@ def run_job(
             )
         if kind == "quality":
             if recipe.read_source is None:
-                return _result(
+                return unit_result(
                     job,
                     run_id,
                     "failed",
@@ -209,7 +191,7 @@ def run_job(
                 read_rows=storage.read_rows,
                 read_blob=storage.read_blob,
                 read_source=lambda revision: recipe.read_source(revision, storage),
-                receipts=storage.record_store("receipts"),
+                receipts=storage.receipt_store(),
                 read_reader_references=(lambda job: read_mappings(job, storage))
                 if read_mappings
                 else None,
@@ -219,7 +201,7 @@ def run_job(
             )
         module = getattr(recipe, kind)
         if module is None:
-            return _result(
+            return unit_result(
                 job,
                 run_id,
                 "failed",
@@ -230,21 +212,20 @@ def run_job(
             return module(entry, storage)
 
         def refuse(_: dict[str, Any]):
-            raise StopWork(
+            raise StopWorkError(
                 "refused"
             )  # Only the dispatched kind may run in this workflow job.
 
         handlers = {k: (handler if k == kind else refuse) for k in KINDS}
-        progress = run_checkpointed_unit(
+        progress = run_unit(
             job_json,
             **gate,
             **handlers,
             storage=storage.candidate_store(),
-            checkpoints=storage.record_store("checkpoints"),
         )
         return _from_progress(job, run_id, progress)
     except UnitNotRunnable as error:
-        return _result(
+        return unit_result(
             job,
             run_id,
             "cancelled",
@@ -255,14 +236,14 @@ def run_job(
             ],
         )
     except ProviderError as error:
-        return _result(
+        return unit_result(
             job,
             run_id,
             "failed",
             diagnostics=[diagnostic(job, "runner", "provider_failure", error)],
         )
     except (RecordError, KeyError, ValueError, TypeError) as error:
-        return _result(
+        return unit_result(
             job,
             run_id,
             "failed",
@@ -363,7 +344,7 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
                 job_text, kind, run_id=run_id, control=control, storage=storage
             )
         except Exception as error:
-            result = _result(
+            result = unit_result(
                 job,
                 run_id,
                 "failed",

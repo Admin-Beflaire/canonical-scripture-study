@@ -9,7 +9,7 @@ import unittest
 
 from css_preparation.contracts import contract_errors
 from css_preparation.executor import ControlState
-from css_preparation.executor.checkpoints import CheckpointStore
+from css_preparation.executor.records import RecordStore
 from css_preparation.executor.quality import check_candidate_quality
 from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.provider import ProviderError
@@ -39,10 +39,9 @@ class CandidateQualityStageFive(unittest.TestCase):
                 "coordinate_version": COORDINATES,
             },
             required_capabilities=["source_context"],
-            checkpoint_ref=None,
         )
         self.received = {}
-        self.receipts = CheckpointStore(self.save, self.load)
+        self.receipts = RecordStore(self.save, self.load)
         self.raw = ""
 
     def save(self, data):
@@ -161,7 +160,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         def fail_save(_):
             raise OSError("secret or source wording")
 
-        failed = self.invoke(receipts=CheckpointStore(fail_save, self.load))
+        failed = self.invoke(receipts=RecordStore(fail_save, self.load))
         code, record = self.record(failed)
         self.assertEqual((code, record["stage"]), ("quality_failed", "saving_receipt"))
         self.assertNotIn("secret", json.dumps(record))
@@ -197,9 +196,7 @@ class CandidateQualityStageFive(unittest.TestCase):
         def fail(_):
             raise ProviderError("Receipt read refused", status=503)
 
-        code, record = self.record(
-            self.invoke(receipts=CheckpointStore(self.save, fail))
-        )
+        code, record = self.record(self.invoke(receipts=RecordStore(self.save, fail)))
         self.assertEqual(
             (code, record["stage"], record["http"]),
             ("provider_failure", "verifying_receipt", 503),

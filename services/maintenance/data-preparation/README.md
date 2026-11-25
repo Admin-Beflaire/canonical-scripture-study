@@ -7,21 +7,18 @@ Worker nor TypeScript runtime code. Standard library only.
 | Module | Purpose |
 | --- | --- |
 | `validation` | Runtime check of the JSON Schema keyword subset used by `schemas/`. |
-| `contracts` | Control's versioned job input and checkpoint/result envelopes. |
+| `contracts` | Control's versioned job input and result envelopes. |
 | `adapters` | Adapter declarations and resolution of declarative recipes (`collection/recipes/`). |
 | `adapters.stepbible` | STEPBible TAHOT/TAGNT tagged-text adapter: reader, search rules and analyses, per-book evidence and indexes, pinned acquisition and admission records, recipe writer. |
-| `acquire.retention` | Exact-original input records, owner admission basis, blocking and storage routes. |
+| `acquire.retention` | Exact-original input records, owner admission basis and blocking. |
 | `acquire.transfer` | Bounded transfer of one declared route; confined redirects, basis-checked resume. |
-| `acquire.extract` | Confined ZIP/tar extraction with path, link, size and ratio limits. |
 | `prepare.records` | Candidate evidence rows checked against `schemas/`, rendered as parameterised SQL in foreign-key order. |
 | `prepare.evidence` | Source identities, exact native wording (D1 payload or registered R2 UTF-8 ranges), annotations, navigation rows, coverage and the reuse basis. |
 | `prepare.literary` | Literary units (discontinuous, disputed with alternatives) and attributed relationships from admitted versification mappings. |
-| `prepare.packages` | Source-only package refresh, incorporation of the one instructed approved statement, and dependency-aware rebuild plans. |
 | `runner` | GitHub Actions entry (`python -m css_preparation.runner`) for one Control-dispatched job: Cloudflare REST storage, Control's internal job routes and the reviewed recipe registry. |
 
 Preparation records the owner's admission decisions; it makes none. Unresolved
-eligibility blocks the input. Originals go to `sources/` only with recorded public
-redistribution; otherwise to protected storage. No source is chosen in code, and no
+eligibility blocks the input. No source is chosen in code, and no
 real acquisition runs from these modules without an owner-instructed Maintenance task.
 
 ## Preparation records
@@ -44,9 +41,7 @@ extent including the coordinate version, dependencies); reuse needs the whole
 basis to match. Source-context coverage claims only units whose whole wording a
 non-gap span exposes; anything else is reported as partial or missing. Mappings
 link spans of one stated kind (for example verses) only through admitted mapping
-rows, by exact native reference, never by verse number. Packages hold current source pointers only; a reference to a source that
-is no longer held is dropped and reported, and a package with no held source is
-omitted. Only the instructed owner-approved statement version is incorporated.
+rows, by exact native reference, never by verse number.
 
 Preparation writes candidate rows only. It never writes releases, release
 membership or `release_selection`; the executor (DP-04) performs the D1/R2 writes
@@ -59,8 +54,7 @@ and quality checks.
 `quality`) from the job. The runner reads the job from the event file,
 never from a step environment or shell. Control also sends `dispatch_ref`, the job's SHA-256, which becomes the run title, and the runner refuses a job that does not match it. It writes D1 candidate rows through the
 Cloudflare REST API (one batch per unit) and immutable private R2 objects, keeps
-checkpoints under `prepared/checkpoints/` and quality receipts under
-`prepared/receipts/`, and submits the result to Control
+quality receipts under `prepared/receipts/`, and submits the result to Control
 (`tests/conformance/internal-jobs.v1.json`). A failure is one safe error record
 (`css_shared.error_record`): it is printed as an `::error` annotation and is the
 diagnostic message of the result that Control stores and `get_task` shows. A job's `recipe_revision` must belong to a
@@ -69,7 +63,7 @@ reviewed recipe in `collection/recipes/` that resolves against a declared adapte
 Job inputs must be saved, except those the recipe itself declares: its acquisition
 route, and the source revision that only its acquire unit creates. A quality job
 names its candidate in `constraints.candidate` (`added`, `reused`, `omitted` output
-IDs). Quality and checkpoint checks read only the candidate's own rows (by output,
+IDs). Quality checks read only the candidate's own rows (by output,
 through its spans and relationships, and its source ancestry), in pages and in
 chunks of at most 90 bound IDs, never whole tables.
 

@@ -330,7 +330,7 @@ export function controlServer(
     'control_task',
     {
       description:
-        'Pause, cancel or resume a task. Pass the revision you last read; saved checkpoints and outputs are kept.',
+        'Pause, cancel or resume a task. Pass the revision you last read; saved outputs are kept.',
       inputSchema: controlSchema,
     },
     async ({task_id, expected_revision, action}) => {

@@ -70,7 +70,6 @@ function result(task: TaskRow, overrides: Record<string, unknown> = {}) {
       {artifact_id: 'out-1', sha256: 'c'.repeat(64), byte_count: 9},
     ],
     coverage_refs: [],
-    checkpoint_ref: null,
     quality_receipt_ref: null,
     state: 'succeeded',
     diagnostics: [],
@@ -180,25 +179,13 @@ test('receipts must match revision, unit, attempt, basis, run and commit; duplic
       'rejected',
       JSON.stringify(bad),
     );
-  const checkpoint = await acceptReceipt(
+  const old = await acceptReceipt(
     db,
-    result(task, {
-      state: 'checkpointed',
-      remaining_extent: {chapters: [2]},
-      checkpoint_ref: {
-        artifact_id: 'ck-1',
-        sha256: 'd'.repeat(64),
-        byte_count: 4,
-      },
-    }),
+    result(task, {state: 'checkpointed'}),
     commit,
     commit,
   );
-  assert.deepEqual(checkpoint, {
-    status: 'accepted',
-    eligible: false,
-    state: 'checkpointed',
-  });
+  assert.equal(old.status, 'rejected');
   const done = await acceptReceipt(db, result(task), commit, commit);
   assert.deepEqual(done, {
     status: 'accepted',
@@ -222,7 +209,7 @@ test('receipts must match revision, unit, attempt, basis, run and commit; duplic
     'rejected',
   );
   const report = await taskReport(db, owner, task.id);
-  assert.equal(report?.jobs[0].checkpoint_ref, `ck-1@${'d'.repeat(64)}`);
+  assert.equal(report?.jobs[0].state, 'succeeded');
   assert.equal(report?.data_current, false);
 });
 
@@ -254,7 +241,7 @@ test('late results for cancelled work are recorded but never eligible', async ()
   });
 });
 
-test('paused work keeps arriving checkpoints but dispatches nothing new', async () => {
+test('paused work keeps arriving results but dispatches nothing new', async () => {
   const {db, task} = await setup();
   await dispatchUnit(db, transport(), task.id, 1, unit);
   assert.equal(
@@ -270,19 +257,7 @@ test('paused work keeps arriving checkpoints but dispatches nothing new', async 
     ).status,
     'not_dispatchable',
   );
-  const kept = await acceptReceipt(
-    db,
-    result(task, {
-      state: 'checkpointed',
-      checkpoint_ref: {
-        artifact_id: 'ck-2',
-        sha256: 'd'.repeat(64),
-        byte_count: 4,
-      },
-    }),
-    commit,
-    commit,
-  );
+  const kept = await acceptReceipt(db, result(task), commit, commit);
   assert.equal(kept.status, 'accepted');
 });
 

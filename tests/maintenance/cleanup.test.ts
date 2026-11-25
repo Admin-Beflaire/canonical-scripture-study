@@ -108,7 +108,7 @@ function world() {
   const job = (taskId: string, state: string, refs: string[] = []) =>
     sql
       .prepare(
-        `INSERT INTO maintenance_jobs VALUES (?, 1, ?, 1, 'prepare', ?, ?, ?, NULL, NULL, ?)`,
+        `INSERT INTO maintenance_jobs VALUES (?, 1, ?, 1, 'prepare', ?, ?, ?, NULL, ?)`,
       )
       .run(
         taskId,

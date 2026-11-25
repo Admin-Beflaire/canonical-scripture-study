@@ -25,7 +25,6 @@ export interface UnitPlan {
   native_extent: Record<string, unknown>;
   required_capabilities?: string[];
   dependency_refs?: ArtifactRef[];
-  checkpoint_ref?: ArtifactRef | null;
   /** Unit-specific constraints, for example the quality unit's candidate output IDs. */
   constraints?: Record<string, unknown>;
 }
@@ -38,7 +37,6 @@ interface JobRow {
   input_basis: string;
   run_id: string | null;
   state: string;
-  checkpoint_ref: string | null;
   result_ref: string | null;
 }
 export type DispatchResult =
@@ -49,12 +47,7 @@ export type DispatchResult =
   | {status: 'not_dispatchable'; message: string};
 
 const DISPATCHABLE = new Set(['queued', 'running']);
-const ACTIVE_JOB = new Set([
-  'intended',
-  'dispatched',
-  'running',
-  'checkpointed',
-]);
+const ACTIVE_JOB = new Set(['intended', 'dispatched', 'running']);
 
 export function jobInput(
   task: TaskRow,
@@ -76,7 +69,6 @@ export function jobInput(
     native_extent: unit.native_extent,
     required_capabilities: unit.required_capabilities ?? scope.capabilities,
     dependency_refs: unit.dependency_refs ?? [],
-    checkpoint_ref: unit.checkpoint_ref ?? null,
     constraints: {...scope.constraints, ...(unit.constraints ?? {})},
   };
   assertJobInput(input);
@@ -210,7 +202,7 @@ export type ReceiptResult =
   | {status: 'accepted' | 'duplicate'; eligible: boolean; state: string}
   | {status: 'rejected'; reason: string};
 
-/** Accept a checkpoint/result only when it matches the recorded dispatch exactly. Results for
+/** Accept a result only when it matches the recorded dispatch exactly. Results for
  *  cancelled or superseded work are kept as diagnostics but are never eligible for promotion.
  *  A successful workflow run by itself is not evidence of any output. */
 export async function acceptReceipt(
@@ -274,20 +266,16 @@ export async function acceptReceipt(
   }
   // Decide against the task state at the moment of writing: a late result for cancelled or
   // superseded work is recorded as cancelled, never as success.
-  const checkpoint = result.checkpoint_ref
-    ? `${result.checkpoint_ref.artifact_id}@${result.checkpoint_ref.sha256}`
-    : job.checkpoint_ref;
   const update = await db
     .prepare(
       `UPDATE maintenance_jobs SET
       state = CASE WHEN (SELECT state FROM maintenance_tasks WHERE id = ?) IN ('cancelled','superseded') THEN 'cancelled' ELSE ? END,
-      checkpoint_ref = ?, result_ref = ?, result_json = ?
+      result_ref = ?, result_json = ?
     WHERE task_id = ? AND unit_id = ? AND attempt = ? AND state = ?`,
     )
     .bind(
       job.task_id,
       result.state,
-      checkpoint,
       resultRef,
       canonicalJson(result),
       job.task_id,

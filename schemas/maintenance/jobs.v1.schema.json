@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:css:maintenance-jobs:1",
-  "title": "Maintenance job input and checkpoint/result envelopes",
+  "title": "Maintenance job input and result envelopes",
   "$defs": {
     "id": { "type": "string", "minLength": 1, "maxLength": 200, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" },
     "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
@@ -41,7 +41,7 @@
       "additionalProperties": false,
       "required": ["contract_version", "task_id", "task_revision", "unit_id", "attempt", "kind", "basis_digest",
         "input_refs", "manifest_revision", "recipe_revision", "native_extent", "required_capabilities",
-        "dependency_refs", "checkpoint_ref", "constraints"],
+        "dependency_refs", "constraints"],
       "properties": {
         "contract_version": { "const": "maintenance-job/1" },
         "task_id": { "$ref": "#/$defs/id" },
@@ -56,7 +56,6 @@
         "native_extent": { "$ref": "#/$defs/extent" },
         "required_capabilities": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/id" } },
         "dependency_refs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/artifact_ref" } },
-        "checkpoint_ref": { "$ref": "#/$defs/optional_artifact_ref" },
         "constraints": { "type": "object", "maxProperties": 32 }
       }
     },
@@ -64,7 +63,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["contract_version", "task_id", "task_revision", "unit_id", "attempt", "basis_digest", "run_id",
-        "completed_extent", "remaining_extent", "output_refs", "coverage_refs", "checkpoint_ref",
+        "completed_extent", "remaining_extent", "output_refs", "coverage_refs",
         "quality_receipt_ref", "state", "diagnostics"],
       "properties": {
         "contract_version": { "const": "maintenance-job/1" },
@@ -78,9 +77,8 @@
         "remaining_extent": { "$ref": "#/$defs/extent" },
         "output_refs": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/artifact_ref" } },
         "coverage_refs": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/id" } },
-        "checkpoint_ref": { "$ref": "#/$defs/optional_artifact_ref" },
         "quality_receipt_ref": { "$ref": "#/$defs/optional_artifact_ref" },
-        "state": { "enum": ["checkpointed", "succeeded", "failed", "cancelled"] },
+        "state": { "enum": ["succeeded", "failed", "cancelled"] },
         "diagnostics": { "type": "array", "maxItems": 32, "items": {
           "type": "object", "additionalProperties": false, "required": ["code", "message"],
           "properties": { "code": { "$ref": "#/$defs/id" }, "message": { "type": "string", "maxLength": 1000 } }

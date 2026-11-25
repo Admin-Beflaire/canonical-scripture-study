@@ -34,7 +34,7 @@ import {
  *  ready units and reconciles interrupted ones. When every unit has succeeded, the scope check
  *  and conditional selection follow (selection.ts, MC-03). */
 export const MAX_ATTEMPTS = 3;
-const ACTIVE = new Set(['intended', 'dispatched', 'running', 'checkpointed']);
+const ACTIVE = new Set(['intended', 'dispatched', 'running']);
 const OPEN = new Set<string>(OPEN_STATES);
 const ENDED = new Set<string>(TASK_STATES.filter(state => !OPEN.has(state)));
 const RETRYABLE = new Set(['failed', 'cancelled']);
@@ -626,7 +626,6 @@ async function unitPlan(
     recipe_revision: recipe.revision,
     native_extent: unit.native_extent,
     dependency_refs: [...refs.values()],
-    checkpoint_ref: null,
     ...(unit.required_capabilities
       ? {required_capabilities: unit.required_capabilities}
       : {}),
@@ -680,7 +679,7 @@ export async function reconcile(
     await db
       .prepare(
         `SELECT unit_id, attempt, kind, state, run_id, result_json, input_basis FROM maintenance_jobs
-    WHERE task_id = ? AND state IN ('intended','dispatched','running','checkpointed')`,
+    WHERE task_id = ? AND state IN ('intended','dispatched','running')`,
       )
       .bind(taskId)
       .all<JobView>()
@@ -747,7 +746,7 @@ export async function reconcile(
     const changed = await db
       .prepare(
         `UPDATE maintenance_jobs SET state = ?
-      WHERE task_id = ? AND unit_id = ? AND attempt = ? AND run_id = ? AND state IN ('dispatched','running','checkpointed')`,
+      WHERE task_id = ? AND unit_id = ? AND attempt = ? AND run_id = ? AND state IN ('dispatched','running')`,
       )
       .bind(
         stopped ? 'cancelled' : 'failed',

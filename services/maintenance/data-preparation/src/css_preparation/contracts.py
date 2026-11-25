@@ -34,7 +34,7 @@ def parse_job_input(text: str) -> dict[str, Any]:
 
 
 def job_result(job: dict[str, Any], **fields: Any) -> dict[str, Any]:
-    """Build a checkpoint/result envelope that repeats the job's identity and basis."""
+    """Build a result envelope that repeats the job's identity and basis."""
     result = {
         "contract_version": CONTRACT_VERSION,
         **{
@@ -53,3 +53,20 @@ def job_result(job: dict[str, Any], **fields: Any) -> dict[str, Any]:
     if errors:
         raise ContractError("Invalid job result: " + "; ".join(errors[:5]))
     return result
+
+
+def unit_result(
+    job: dict[str, Any], run_id: str, state: str, **fields: Any
+) -> dict[str, Any]:
+    """A result envelope; a field left out means nothing completed and the whole extent remains."""
+    return job_result(
+        job,
+        run_id=run_id,
+        completed_extent=fields.get("completed_extent", {}),
+        remaining_extent=fields.get("remaining_extent", dict(job["native_extent"])),
+        output_refs=fields.get("output_refs", []),
+        coverage_refs=fields.get("coverage_refs", []),
+        quality_receipt_ref=fields.get("quality_receipt_ref"),
+        state=state,
+        diagnostics=fields.get("diagnostics", []),
+    )

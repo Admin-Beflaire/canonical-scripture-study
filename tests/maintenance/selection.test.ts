@@ -290,7 +290,6 @@ async function report(
     remaining_extent: {},
     output_refs: [],
     coverage_refs: [],
-    checkpoint_ref: null,
     quality_receipt_ref: null,
     state: 'succeeded',
     diagnostics: [],

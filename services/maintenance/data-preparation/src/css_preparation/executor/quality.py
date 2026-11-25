@@ -7,7 +7,7 @@ import re
 from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
-from ..contracts import job_result, parse_job_input
+from ..contracts import parse_job_input, unit_result
 from ..prepare.evidence import NativeText
 from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
 from ..diagnostics import diagnostic
@@ -15,7 +15,7 @@ from ..provider import ProviderError
 from ..validate.saved import CandidateInventory
 from ..validate.semantic import _canonical, check_saved_semantics
 from . import ControlState, UnitNotRunnable, execute_unit
-from .checkpoints import CheckpointStore, _check_ref
+from .records import RecordStore, check_record_ref
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 
@@ -30,7 +30,7 @@ def check_candidate_quality(
     read_rows: Callable[[str, Sequence[str]], list[dict[str, Any]]],
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
-    receipts: CheckpointStore,
+    receipts: RecordStore,
     max_page_bytes: int = PAGE_CAP,
     read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
     read_aid_entries: Callable[[Mapping[str, Any]], RecordSet] | None = None,
@@ -41,18 +41,7 @@ def check_candidate_quality(
         raise RecordError("Only quality jobs may issue candidate-wide receipts")
 
     def result(state: str, **fields: Any) -> dict[str, Any]:
-        return job_result(
-            job,
-            run_id=run_id,
-            completed_extent=fields.get("completed_extent", {}),
-            remaining_extent=fields.get("remaining_extent", dict(job["native_extent"])),
-            output_refs=fields.get("output_refs", []),
-            coverage_refs=fields.get("coverage_refs", []),
-            checkpoint_ref=job["checkpoint_ref"],
-            quality_receipt_ref=fields.get("quality_receipt_ref"),
-            state=state,
-            diagnostics=fields.get("diagnostics", []),
-        )
+        return unit_result(job, run_id, state, **fields)
 
     def failed(stage: str, code: str, error: BaseException) -> dict[str, Any]:
         return result("failed", diagnostics=[diagnostic(job, stage, code, error)])
@@ -152,7 +141,7 @@ def check_candidate_quality(
             stage = "saving_receipt"
             reference = receipts.save(data)
             stage = "verifying_receipt"
-            _check_ref(reference, receipts.load(reference))
+            check_record_ref(reference, receipts.load(reference))
             if receipts.load(reference) != data:
                 raise RecordError("Saved quality receipt bytes differ")
             return result(

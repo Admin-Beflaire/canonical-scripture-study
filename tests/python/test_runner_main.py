@@ -16,12 +16,11 @@ from css_preparation.contracts import ContractError, contract_errors
 from css_preparation.prepare.records import RecordError, RecordSet
 from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.runner import __main__ as runner
-from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorage
-from css_preparation.runner.control import ControlClient, ControlConfig
+from css_preparation.runner.cloudflare import CloudflareConfig
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
 from css_preparation.runner.web import Origin, ProviderError
 from preparation_fixture import evidence_a, text_a
-from runner_doubles import TOKEN_ID, LoopbackApi
+from runner_doubles import TOKEN_ID, LoopbackApi, control_client_for, storage_for
 from stepbible_fixture import recipe as stepbible_recipe
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,21 +59,8 @@ class RunnerTest(unittest.TestCase):
             {"status": "accepted", "eligible": True, "state": "succeeded"},
         )
         self.api.control_handler = self.control
-        self.storage = CloudflareStorage(
-            CloudflareConfig(
-                "acct",
-                "db",
-                "bucket",
-                "synthetic-token",
-                TOKEN_ID,
-                api=Origin(self.api.origin),
-                r2_origin=Origin(self.api.origin),
-            )
-        )
-        self.client = ControlClient(
-            ControlConfig(Origin(self.api.origin), "synthetic-id", "synthetic-secret"),
-            sleep=lambda _: None,
-        )
+        self.storage = storage_for(self.api)
+        self.client = control_client_for(self.api)
         self.initial_selection = self.selection()
         self.recipe = Recipe(
             prepare=lambda job, storage: self.evidence,
@@ -96,7 +82,6 @@ class RunnerTest(unittest.TestCase):
             input_refs=[{"kind": "source_revision", "id": self.revision}],
             dependency_refs=[],
             required_capabilities=["source_context"] if kind == "quality" else [],
-            checkpoint_ref=None,
             constraints={},
         )
         job.update(changes)
@@ -136,19 +121,15 @@ class RunnerTest(unittest.TestCase):
                 raw, kind, run_id=RUN_ID, control=self.client, storage=self.storage
             )
 
-    def test_prepare_unit_saves_candidate_checkpoint_and_valid_result(self):
+    def test_prepare_unit_saves_candidate_and_valid_result(self):
         result = self.run_job(self.job())
         self.assertEqual(contract_errors("job_result", result), [])
         self.assertEqual(result["state"], "succeeded")
         self.assertEqual(result["remaining_extent"], {})
         self.assertTrue(result["output_refs"])
-        self.assertTrue(
-            result["checkpoint_ref"]["artifact_id"].startswith("checkpoint:")
-        )
         self.assertIsNotNone(self.storage.read_row("prepared_output", self.output_id))
-        self.assertIn(
-            f"prepared/checkpoints/{result['checkpoint_ref']['sha256']}.json",
-            self.api.objects,
+        self.assertFalse(
+            [key for key in self.api.objects if key.startswith("prepared/checkpoints/")]
         )
         # Preparation never selects data: selection unchanged, no release rows.
         self.assertEqual(self.selection(), self.initial_selection)
@@ -296,7 +277,7 @@ class RunnerTest(unittest.TestCase):
         result = check(ids)
         self.assertEqual(result["state"], "succeeded", result["diagnostics"])
         ref = result["quality_receipt_ref"]
-        receipt = json.loads(self.storage.record_store("receipts").load(ref))
+        receipt = json.loads(self.storage.receipt_store().load(ref))
         self.assertEqual(receipt["actual_capabilities"], ["reader_reference"])
         self.assertIn("reader_references", receipt["checks"])
         self.assertTrue(

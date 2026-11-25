@@ -71,3 +71,8 @@ and the migration writes it for the releases selected now. Study reads it only w
 the release has one; any other release keeps the full scan. Apply the migration
 with the Control deployment before the matching Study deployment: the new Study
 build reads the table when it opens a release.
+
+`0016_drop_job_checkpoint.sql` drops the unused `checkpoint_ref` column of
+`maintenance_jobs`. Apply it with the Control deployment: the previous Control build
+writes the column. The `checkpointed` job state stays allowed by the table constraint
+and is never written.

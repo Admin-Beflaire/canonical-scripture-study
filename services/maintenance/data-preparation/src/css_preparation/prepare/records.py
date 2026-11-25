@@ -261,7 +261,7 @@ def comparable(kind: str, row: dict[str, Any]) -> dict[str, Any]:
 def scoped_query(kind: str, output_ids: Sequence[str]) -> tuple[str, list[Any]]:
     """SELECT for the saved `kind` rows that belong to these prepared outputs.
 
-    Quality and checkpoint checks read only their candidate's rows, never whole tables:
+    Quality checks read only their candidate's rows, never whole tables:
     output-owned rows by output, navigation, members and payloads through their spans or
     relationships, and source identities through the outputs' input revisions and their
     ancestry. The query binds each output ID once.

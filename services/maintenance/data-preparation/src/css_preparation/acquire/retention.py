@@ -1,4 +1,4 @@
-"""Exact-original input records, admission basis and storage routing.
+"""Exact-original input records and their admission basis.
 
 Preparation records the owner's decision references; it never makes an admission decision
 or reassesses unchanged permissions. Unresolved eligibility blocks the affected input.
@@ -7,15 +7,12 @@ or reassesses unchanged permissions. Unresolved eligibility blocks the affected 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import hashlib
-from pathlib import Path, PurePosixPath
 import re
-from typing import Iterable, Literal
+from typing import Literal
 
 from css_shared.error_record import OwnMessage
 
 ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
-NOTICE_NAMES = ("license", "licence", "readme", "notice", "copying", "copyright")
 
 
 class BlockedInput(OwnMessage, ValueError):  # noqa: N818
@@ -69,72 +66,3 @@ def assert_usable(record: InputRecord) -> None:
         raise BlockedInput(f"{record.source_revision_id}: not eligible for both hosts")
     if not record.complete:
         raise BlockedInput(f"{record.source_revision_id}: original is incomplete")
-
-
-def storage_route(
-    record: InputRecord, filename: str
-) -> tuple[Literal["public_git", "protected"], str]:
-    """`sources/` only with recorded public redistribution; otherwise an account-independent protected key."""
-    assert_usable(record)
-    name = PurePosixPath(filename).name
-    if not name or name != filename or name.startswith("."):
-        raise BlockedInput("Unsafe original file name")
-    if record.admission.public_redistribution == "allowed":
-        return "public_git", f"sources/{record.source_revision_id}/{name}"
-    return "protected", f"originals/{record.source_revision_id}/{record.sha256}/{name}"
-
-
-def record_supplied(
-    path: Path,
-    *,
-    source_revision_id: str,
-    component: str,
-    admission: AdmissionBasis,
-    coverage: Iterable[str] = (),
-    notices: Iterable[str] = (),
-) -> InputRecord:
-    """Record an owner-supplied original exactly as received."""
-    digest = hashlib.sha256()
-    size = 0
-    with Path(path).open("rb") as handle:
-        while chunk := handle.read(1 << 20):
-            digest.update(chunk)
-            size += len(chunk)
-    return InputRecord(
-        source_revision_id,
-        component,
-        "supplied",
-        f"sha256:{digest.hexdigest()}",
-        size,
-        digest.hexdigest(),
-        True,
-        admission,
-        tuple(notices),
-        frozenset(coverage),
-    )
-
-
-def reusable(
-    records: Iterable[InputRecord], source_revision_id: str, coverage: Iterable[str]
-) -> InputRecord | None:
-    """Reuse a retained input only for the same revision, complete, covering the requested extent."""
-    wanted = frozenset(coverage)
-    for record in records:
-        if (
-            record.source_revision_id == source_revision_id
-            and record.complete
-            and wanted <= record.coverage
-        ):
-            return record
-    return None
-
-
-def notice_members(names: Iterable[str]) -> tuple[str, ...]:
-    """Licence/readme/notice files that must travel with the original."""
-    return tuple(
-        sorted(
-            name
-            for name in names
-            if PurePosixPath(name).name.lower().startswith(NOTICE_NAMES)
-        )
-    )

@@ -38,6 +38,32 @@ const prepare = (extra: Partial<TaskRequest> = {}): TaskRequest => ({
   ...extra,
 });
 
+/** Insert job rows for a task: unit id, run id and state each. */
+function insertJobs(
+  db: ReturnType<typeof localD1>,
+  taskId: string,
+  jobs: [unit: string, run: string | null, state: string][],
+) {
+  const statement = db.sqlite.prepare(
+    `INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state)
+     VALUES (?, 1, ?, 1, 'prepare', ?, ?, ?)`,
+  );
+  for (const [unit, run, state] of jobs)
+    statement.run(taskId, unit, 'a'.repeat(64), run, state);
+}
+
+/** A local database with one admitted task that already has the given job rows. */
+async function taskWithJobs(
+  jobs: [unit: string, run: string | null, state: string][],
+) {
+  const db = localD1();
+  admitted(db);
+  const created = await requestTask(db, owner, prepare());
+  assert.ok(created.status === 'created');
+  insertJobs(db, created.task.id, jobs);
+  return {db, id: created.task.id};
+}
+
 test('every task kind normalizes, and missing information is named instead of guessed', () => {
   for (const kind of TASK_KINDS) {
     const {missing} = normalizeScope({
@@ -257,14 +283,7 @@ test('superseding is all or nothing under interleaving', async () => {
 });
 
 test('a cancel that loses the revision race changes no jobs', async () => {
-  const db = localD1();
-  admitted(db);
-  const created = await requestTask(db, owner, prepare());
-  assert.ok(created.status === 'created');
-  const id = created.task.id;
-  db.sqlite.exec(
-    `INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, checkpoint_ref, result_ref) VALUES ('${id}',1,'u1',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`,
-  );
+  const {db, id} = await taskWithJobs([['u1', null, 'intended']]);
   // Another change lands between this caller's read and its write.
   const racing = {
     ...db,
@@ -286,14 +305,10 @@ test('a cancel that loses the revision race changes no jobs', async () => {
 });
 
 test('pause, resume and cancel are revision guarded and keep truthful remaining scope', async () => {
-  const db = localD1();
-  admitted(db);
-  const created = await requestTask(db, owner, prepare());
-  assert.ok(created.status === 'created');
-  const id = created.task.id;
-  db.sqlite
-    .exec(`INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, checkpoint_ref, result_ref) VALUES ('${id}',1,'u-sent',1,'prepare','${'a'.repeat(64)}','run-7','running','ckpt-1',NULL),
-    ('${id}',1,'u-unsent',1,'prepare','${'a'.repeat(64)}',NULL,'intended',NULL,NULL)`);
+  const {db, id} = await taskWithJobs([
+    ['u-sent', 'run-7', 'running'],
+    ['u-unsent', null, 'intended'],
+  ]);
   assert.equal(
     (await controlTask(db, owner, id, 2, 'pause')).status,
     'conflict',
@@ -320,10 +335,10 @@ test('pause, resume and cancel are revision guarded and keep truthful remaining 
   assert.deepEqual(report?.remaining_extent, {books: ['GEN']});
   assert.equal(report?.data_current, false);
   assert.deepEqual(
-    report?.jobs.map(job => [job.unit_id, job.state, job.checkpoint_ref]),
+    report?.jobs.map(job => [job.unit_id, job.state]),
     [
-      ['u-sent', 'running', 'ckpt-1'],
-      ['u-unsent', 'cancelled', null],
+      ['u-sent', 'running'],
+      ['u-unsent', 'cancelled'],
     ],
   );
   assert.equal(
@@ -412,7 +427,7 @@ test('task report shows the error record as stored and only a code for results f
 test('Python preparation error records are shown by Control exactly as built', async () => {
   const script = `import json
 from css_preparation.diagnostics import diagnostic
-from css_preparation.executor.checkpoints import UnitProgress
+from css_preparation.executor.unit import UnitProgress
 from css_preparation.prepare.records import ReaderBoundaryError, RecordError
 from css_preparation.provider import ProviderError
 from css_preparation.runner.__main__ import _from_progress
@@ -422,9 +437,9 @@ errors = [('invalid_or_unavailable_output', OSError('private secret material')),
           ('provider_failure', ProviderError('Provider request refused', status=503)),
           ('reader_boundary', ReaderBoundaryError('1Ch.12.5')), ('stopped', None)]
 out = []
-for stage in ['control_check', 'building_output', 'saving_checkpoint']:
+for stage in ['control_check', 'building_output', 'saving_output']:
     for code, error in errors:
-        progress = UnitProgress('failed', {}, job['native_extent'], None, None, None, (code,), diagnostic(job, stage, code, error)['message'])
+        progress = UnitProgress('failed', {}, job['native_extent'], None, (code,), diagnostic(job, stage, code, error)['message'])
         out.extend(_from_progress(job, '123', progress)['diagnostics'])
 print(json.dumps(out))`;
   const env = {

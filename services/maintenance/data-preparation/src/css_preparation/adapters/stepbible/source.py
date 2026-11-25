@@ -288,6 +288,13 @@ class Component:
             "public_redistribution": basis.public_redistribution,
         }
 
+    def task_inputs(self) -> list[dict[str, str]]:
+        """The two inputs a task for this file names: its acquisition route and its source revision."""
+        return [
+            {"kind": "acquisition", "id": self.acquisition_id},
+            {"kind": "source_revision", "id": self.revision_id},
+        ]
+
     def declares_acquisition(self, reference: Mapping[str, Any]) -> bool:
         """The reviewed recipe vouches for this file's acquisition route before it is saved."""
         return (

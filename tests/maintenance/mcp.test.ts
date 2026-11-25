@@ -36,6 +36,7 @@ test('the instructions name every step and constraint a task can use, and no rem
   ])
     assert.ok(!CONTROL_INSTRUCTIONS.includes(removed), removed);
   assert.match(CONTROL_INSTRUCTIONS, /Starting a task/);
+  assert.match(CONTROL_INSTRUCTIONS, /task_inputs/);
 });
 
 async function call(

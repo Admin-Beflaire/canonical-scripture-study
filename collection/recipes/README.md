@@ -9,6 +9,8 @@ adapters' own declarations and rejects anything that does not fit.
 
 ## STEPBible TAHOT and TAGNT
 
+Every STEPBible recipe also lists `task_inputs`: the acquisition route and the source revision a task for it must name. Control blocks a task that leaves one out, before anything runs.
+
 `stepbible-fetch-<component>.json` fetches one pinned STEPBible-Data file for the
 `stepbible-fetch` adapter: its single `acquire` unit keeps the original in protected private
 storage only and registers its source revision and admission. One fetch of a file serves every

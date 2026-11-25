@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-fetch-tahot-isa-mal",
-  "revision": "stepbible-fetch-tahot-isa-mal/5de0a47f35f0/1",
+  "revision": "stepbible-fetch-tahot-isa-mal/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-fetch",
     "method_version": "stepbible-fetch/1"
@@ -21,6 +21,16 @@
   "capabilities": [],
   "dependencies": [
     "stepbible-data:5de0a47f35f0:tahot-isa-mal"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "stepbible-data:5de0a47f35f0:tahot-isa-mal"
+    },
+    {
+      "kind": "source_revision",
+      "id": "stepbible-tahot:5de0a47f35f0"
+    }
   ],
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [

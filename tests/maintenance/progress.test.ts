@@ -1070,6 +1070,43 @@ test('an acquire task completes with the original recorded and never touches a r
   );
 });
 
+test('a recipe that lists its task inputs blocks a task that misses one before anything is dispatched', async () => {
+  const listed = {
+    ...acquireRecipe,
+    id: 'acquire-listed',
+    revision: 'acquire-listed/1',
+    adapter: {name: 'other-fetch', method_version: 'other-fetch/1'},
+    task_inputs: [
+      {kind: 'acquisition', id: 'route/1'},
+      {kind: 'source_revision', id: 'revision/1'},
+    ],
+  };
+  const ctx = await setup({'collection/recipes/acquire-listed.json': listed});
+  const created = await requestTask(ctx.db, owner, {
+    request_key: 'listed',
+    instruction: 'Fetch it',
+    steps: ['fetch'],
+    inputs: [{kind: 'acquisition', id: 'route/1'}],
+    extent: {component: 'revision/1'},
+    capabilities: [],
+    constraints: {fetch_recipe: 'acquire-listed'},
+    decision_refs: [
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
+    ],
+  });
+  if (created.status !== 'created') throw new Error('task not created');
+  await advance(ctx.db, ctx.github, created.task.id);
+  const report = (await taskReport(ctx.db, owner, created.task.id))!;
+  assert.equal(report.state, 'blocked');
+  assert.ok(
+    report.limitations.some(text =>
+      text.includes('source_revision revision/1'),
+    ),
+    JSON.stringify(report.limitations),
+  );
+  assert.equal(ctx.gh.runs.size, 0, 'nothing was dispatched');
+});
+
 test('a fetch followed by a select goes on to the select step instead of completing', async () => {
   const ctx = await acquireContext();
   const id = await requestAcquire(ctx, ['fetch', 'select'], {

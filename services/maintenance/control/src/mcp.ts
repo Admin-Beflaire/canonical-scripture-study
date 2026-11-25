@@ -38,7 +38,7 @@ Starting a task (one request_key per instruction; the owner's go in chat is his 
 - Build only: steps ["build"]. Make that build current later: steps ["select"], constraints {candidate: the build task's ID}, no inputs.
 - Remove: steps ["remove"], inputs the source revisions, decision kind "exclusion" per subject.
 - One task has one extent, and each step's recipe has its own native_extent that it must equal. Chain two steps only when both recipes have the same extent; otherwise start one task per step.
-- Input IDs are never guessed. The acquisition ID is the entry in the recipe's dependencies. The source revision is the one named by earlier tasks for the same source: read an earlier completed task with get_task and reuse its inputs. If an input is not registered, the task blocks at the first attempt and names it.
+- Input IDs are never guessed. A recipe lists in task_inputs the inputs a task for it must name (kind and id); copy them exactly. If you do not have them, start the task with the inputs you know: it is blocked at once and the message names the exact missing ones. Then start it again under a new request_key, with supersedes set to the blocked task.
 
 Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 

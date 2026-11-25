@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tagnt-jhn-reader",
-  "revision": "stepbible-tagnt-jhn-reader/5de0a47f35f0/2",
+  "revision": "stepbible-tagnt-jhn-reader/5de0a47f35f0/3",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -24,6 +24,16 @@
   ],
   "dependencies": [
     "stepbible-data:5de0a47f35f0:tagnt-mat-jhn"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "stepbible-data:5de0a47f35f0:tagnt-mat-jhn"
+    },
+    {
+      "kind": "source_revision",
+      "id": "stepbible-tagnt:5de0a47f35f0"
+    }
   ],
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [

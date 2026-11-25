@@ -65,13 +65,14 @@ def book_recipe(component: Component, book: str, unit_ids: list[str]) -> dict[st
     return {
         "recipe_version": "preparation-recipe/1",
         "id": recipe_id,
-        "revision": f"{recipe_id}/{component.commit[:12]}/2",
+        "revision": f"{recipe_id}/{component.commit[:12]}/3",
         "adapter": {"name": "stepbible-tagged", "method_version": METHOD_VERSION},
         "input_format": INPUT_FORMAT,
         "parameters": pinned(component),
         "native_extent": {"book": book, "coordinate_version": coordinates},
         "capabilities": list(CAPABILITIES),
         "dependencies": [component.acquisition_id],
+        "task_inputs": component.task_inputs(),
         "manifest_revision": manifest_revision(component.commit),
         "units": [
             *prepare,
@@ -95,13 +96,14 @@ def fetch_recipe(component: Component) -> dict[str, Any]:
     return {
         "recipe_version": "preparation-recipe/1",
         "id": recipe_id,
-        "revision": f"{recipe_id}/{component.commit[:12]}/1",
+        "revision": f"{recipe_id}/{component.commit[:12]}/2",
         "adapter": {"name": "stepbible-fetch", "method_version": "stepbible-fetch/1"},
         "input_format": INPUT_FORMAT,
         "parameters": pinned(component),
         "native_extent": {"component": component.component},
         "capabilities": [],
         "dependencies": [component.acquisition_id],
+        "task_inputs": component.task_inputs(),
         "manifest_revision": manifest_revision(component.commit),
         "units": [
             {

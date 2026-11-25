@@ -579,6 +579,12 @@ function recipeFit(
     return 'the recipe has nothing to fetch; a fetch step names a fetch recipe';
   if (which === 'build' && fetches)
     return 'a fetch recipe cannot build; a build step names a build recipe';
+  const missing = (recipe.task_inputs ?? []).filter(
+    item =>
+      !scope.inputs.some(ref => ref.kind === item.kind && ref.id === item.id),
+  );
+  if (missing.length)
+    return `the recipe needs these inputs: ${missing.map(item => `${item.kind} ${item.id}`).join(', ')}`;
   return which === 'fetch' ? fetchFit(scope, recipe) : buildFit(scope, recipe);
 }
 

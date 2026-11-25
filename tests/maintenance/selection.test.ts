@@ -376,7 +376,7 @@ async function releaseBuild(w: World, buildId: string, key: string) {
 function beforeWrite(
   w: World,
   requestKey: string,
-  action: () => void = () => {},
+  action: () => unknown = () => {},
   fail = () => false,
   every = false,
 ) {
@@ -389,8 +389,9 @@ function beforeWrite(
       )
       .get(requestKey);
     if (row && statements.length >= 3) {
-      if (every || !done) action();
-      done = true;
+      const first = !done;
+      done = true; // before the action: the action may write batches of its own
+      if (every || first) await action();
       if (fail()) throw new Error('worker stopped before the write');
     }
     return batch(statements);
@@ -1642,6 +1643,38 @@ test('a release task whose revision moves just before the write changes nothing'
   assert.deepEqual(selected(w), before);
   assert.deepEqual(releaseCounts(w), rows);
   assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
+});
+
+test('R110-2: a task whose selection was refused is not completed because another task selected the same release', async () => {
+  const w = world();
+  const taskId = await stageGenesis(w);
+  // Another release task makes the same candidate current just before this one writes.
+  const reached = beforeWrite(w, 'release-a', async () => {
+    const other = await releaseBuild(w, taskId, 'release-b');
+    assert.equal(other.report.state, 'completed');
+  });
+  const first = (await taskReport(w.db, owner, taskId))!.selection
+    .candidate_release_id;
+  const refused = await releaseBuild(w, taskId, 'release-a');
+  assert.ok(reached());
+  assert.notEqual(refused.report.state, 'completed');
+  assert.equal(
+    refused.report.data_current,
+    false,
+    'it did not select anything',
+  );
+  assert.equal(selected(w).current_release_id, first);
+  const selecting = w.db.sqlite
+    .prepare(
+      `SELECT request_key FROM maintenance_tasks WHERE json_extract(outcome_json, '$.selection.became_current') = 1 AND request_key IN ('release-a', 'release-b')`,
+    )
+    .all()
+    .map(row => row.request_key);
+  assert.deepEqual(
+    selecting,
+    ['release-b'],
+    'only the task that selected claims it',
+  );
 });
 
 test('R25-5: rollback refuses a release with a missing dependency, and removal refuses survivors that fail validation', async () => {

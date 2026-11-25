@@ -87,21 +87,34 @@ interface Guard {
   sql: string;
   args: unknown[];
 }
+/** The guard of a change. Once the release rows are written (`written`), it also requires that the
+ *  release exists with all its members. A task completes only under the whole guard, and the
+ *  selection follows only if the task completed, so a task never reports a selection that another
+ *  task made. */
 function guardOf(
   task: TaskRow,
   base: string | null,
   change: Change,
   staged: Staged | null,
+  written = false,
 ): Guard {
   const build = staged
     ? ` AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'checked')`
     : '';
+  const stored =
+    written && change.target
+      ? ` AND EXISTS (SELECT 1 FROM releases WHERE id = ?)${
+          change.create
+            ? ` AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ?`
+            : ''
+        }`
+      : '';
   return {
     sql: `EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state IN ${OPEN})
       AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) IS ?
       AND NOT EXISTS (SELECT 1 FROM maintenance_exclusions WHERE active = 1
         AND source_or_component_id IN (SELECT value FROM json_each(?))
-        AND source_or_component_id NOT IN (SELECT value FROM json_each(?)))${build}`,
+        AND source_or_component_id NOT IN (SELECT value FROM json_each(?)))${build}${stored}`,
     args: [
       task.id,
       task.revision,
@@ -109,6 +122,14 @@ function guardOf(
       JSON.stringify(change.related),
       JSON.stringify(change.lifted),
       ...(staged ? [staged.id, staged.revision] : []),
+      ...(written && change.target
+        ? [
+            change.target,
+            ...(change.create
+              ? [change.target, change.create.members.length]
+              : []),
+          ]
+        : []),
     ],
   };
 }
@@ -178,27 +199,21 @@ function exclusionChanges(
   ];
 }
 
+/** The selection moves only after the task completed under the guard, and only if the selected
+ *  release is still the base: the task's completion and the selection stand or fall together. */
 function makeSelected(
   db: D1Database,
+  task: TaskRow,
+  base: string | null,
   change: Change,
-  guard: Guard,
 ): D1Statement {
-  const members = change.create
-    ? ` AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ?`
-    : '';
   return db
     .prepare(
       `UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = ?
-      WHERE singleton_id = 1 AND ? IS NOT current_release_id AND ${guard.sql}
-        AND EXISTS (SELECT 1 FROM releases WHERE id = ?)${members}`,
+      WHERE singleton_id = 1 AND current_release_id IS ?
+        AND EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND revision = ? AND state = 'completed')`,
     )
-    .bind(
-      change.target,
-      change.target,
-      ...guard.args,
-      change.target,
-      ...(change.create ? [change.target, change.create.members.length] : []),
-    );
+    .bind(change.target, base, task.id, task.revision + 1);
 }
 
 /** The task row after the change: its state, release references and outcome. */
@@ -212,15 +227,12 @@ function updateTask(
   after: Guard,
 ): D1Statement {
   const refs = change.refs ?? change.create;
-  const members = change.create
-    ? ` AND (SELECT COUNT(*) FROM release_outputs WHERE release_id = ?) = ?`
-    : '';
   return db
     .prepare(
       `UPDATE maintenance_tasks SET state = ?, revision = revision + 1, outcome_json = ?,
       base_release_id = COALESCE(?, base_release_id), candidate_release_id = COALESCE(?, candidate_release_id),
       quality_ref = COALESCE(?, quality_ref), scope_ref = COALESCE(?, scope_ref)
-      WHERE id = ? AND revision = ? AND ${after.sql}${members}`,
+      WHERE id = ? AND revision = ? AND ${after.sql}`,
     )
     .bind(
       state,
@@ -232,7 +244,6 @@ function updateTask(
       task.id,
       task.revision,
       ...after.args,
-      ...(change.create ? [change.target, change.create.members.length] : []),
     );
 }
 
@@ -268,28 +279,25 @@ function statementsOf(
   staged: Staged | null,
   outcome: Outcome,
 ): D1Statement[] {
-  const guard = guardOf(task, base, change, staged);
-  const created = change.create ? recordRelease(db, change.create, guard) : [];
+  const open = guardOf(task, base, change, staged);
+  const written = guardOf(task, base, change, staged, true);
+  const created = change.create ? recordRelease(db, change.create, open) : [];
   if (change.mode === 'stage')
     return [
       ...created,
-      updateTask(db, task, base, change, 'checked', outcome, guard),
+      updateTask(db, task, base, change, 'checked', outcome, written),
     ];
   if (change.mode === 'none')
     return [
-      ...exclusionChanges(db, task, change, guard),
-      updateTask(db, task, base, change, 'completed', outcome, guard),
+      ...exclusionChanges(db, task, change, open),
+      updateTask(db, task, base, change, 'completed', outcome, open),
     ];
-  // After the selection moves, the task completes only if the selection is the target.
-  const moved: Guard = {
-    sql: `state IN ${OPEN} AND (SELECT current_release_id FROM release_selection WHERE singleton_id = 1) = ?`,
-    args: [change.target],
-  };
+  // The task completes under the full guard first; the selection follows only if it did.
   return [
     ...created,
-    ...exclusionChanges(db, task, change, guard),
-    makeSelected(db, change, guard),
-    updateTask(db, task, base, change, 'completed', outcome, moved),
+    ...exclusionChanges(db, task, change, written),
+    updateTask(db, task, base, change, 'completed', outcome, written),
+    makeSelected(db, task, base, change),
     ...(staged ? [finishStaged(db, staged, task, change.target!)] : []),
   ];
 }

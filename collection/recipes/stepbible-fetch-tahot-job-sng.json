@@ -1,0 +1,36 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "stepbible-fetch-tahot-job-sng",
+  "revision": "stepbible-fetch-tahot-job-sng/5de0a47f35f0/1",
+  "adapter": {
+    "name": "stepbible-fetch",
+    "method_version": "stepbible-fetch/1"
+  },
+  "input_format": "stepbible/tagged-tsv",
+  "parameters": {
+    "source": "tahot",
+    "commit": "5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+    "component": "tahot-job-sng",
+    "path": "Translators Amalgamated OT+NT/TAHOT Job-Sng - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
+    "sha256": "e0416880bb78f46715bb17ce526b623c3051da0ef83f7bf83beaad350e6272e8",
+    "byte_count": 9540663
+  },
+  "native_extent": {
+    "component": "tahot-job-sng"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "stepbible-data:5de0a47f35f0:tahot-job-sng"
+  ],
+  "manifest_revision": "stepbible-data:5de0a47f35f0",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "tahot-job-sng"
+      },
+      "depends_on": []
+    }
+  ]
+}

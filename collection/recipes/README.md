@@ -9,22 +9,26 @@ adapters' own declarations and rejects anything that does not fit.
 
 ## STEPBible TAHOT and TAGNT
 
+`stepbible-fetch-<component>.json` fetches one pinned STEPBible-Data file for the
+`stepbible-fetch` adapter: its single `acquire` unit keeps the original in protected private
+storage only and registers its source revision and admission. One fetch of a file serves every
+book in it.
+
 `stepbible-tahot-<book>.json` and `stepbible-tagnt-<book>.json` are one recipe per book for
-the `stepbible-tagged` adapter. Each pins its STEPBible-Data commit, file path, SHA-256 and
-size, and lists its units: `acquire` (the pinned file, kept in protected private storage
-only), `prepare-NN` (at most 300 verses each, so one unit's rows fit one D1 batch), and
-`quality` over the whole book, which depends on every prepare unit (at most 12, so at most
-64 output references). A task for one book names the recipe in `constraints.recipe` and
+the `stepbible-tagged` adapter. Each pins the same STEPBible-Data commit, file path, SHA-256 and
+size as the fetch recipe of its file, and lists its units: `prepare-NN` (at most 300 verses
+each, so one unit's rows fit one D1 batch) and `quality` over the whole book, which depends on
+every prepare unit (at most 12, so at most 64 output references). It builds from the saved
+original and never fetches. A task for one book names the recipe in `constraints.recipe` and
 both inputs: the acquisition `stepbible-data:<commit12>:<component>` and the source
 revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decision.
 
-A recipe stays one file. Control runs it as separate tasks: an `acquire` task runs only the
-recipe's `acquire` unit and keeps the original; a build task (prepare, correct, replace) runs the
-`prepare` and `quality` units and never fetches, using the kept original of a finished acquire task
-named in `constraints.acquired`; a `release` task then makes the checked build current.
+A recipe says only how to do its step for that source. Control runs the fetch and the build as
+separate tasks for now; the task steps change in the same programme (P5c).
 
-The base recipes are written by `python -m css_preparation.adapters.stepbible.recipes` from local
-copies of the pinned files (see that module). They hold verse references, never wording.
+The fetch recipes and the base book recipes are written by
+`python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files
+(see that module). They hold verse references, never wording.
 
 The committed `-reader.json` recipes are maintained separately. Use the same pinned
 input and ordered book extent as the base recipe, but keep every reader reference

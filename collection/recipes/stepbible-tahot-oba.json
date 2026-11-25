@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tahot-oba",
-  "revision": "stepbible-tahot-oba/5de0a47f35f0/1",
+  "revision": "stepbible-tahot-oba/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -32,23 +32,13 @@
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [
     {
-      "unit_id": "acquire",
-      "kind": "acquire",
-      "native_extent": {
-        "component": "tahot-isa-mal"
-      },
-      "depends_on": []
-    },
-    {
       "unit_id": "prepare-01",
       "kind": "prepare",
       "native_extent": {
         "coordinate_version": "stepbible-tahot:hebrew-verses/1",
         "unit_ids": ["Oba.1.1", "Oba.1.2", "Oba.1.3", "Oba.1.4", "Oba.1.5", "Oba.1.6", "Oba.1.7", "Oba.1.8", "Oba.1.9", "Oba.1.10", "Oba.1.11", "Oba.1.12", "Oba.1.13", "Oba.1.14", "Oba.1.15", "Oba.1.16", "Oba.1.17", "Oba.1.18", "Oba.1.19", "Oba.1.20", "Oba.1.21"]
       },
-      "depends_on": [
-        "acquire"
-      ]
+      "depends_on": []
     },
     {
       "unit_id": "quality",

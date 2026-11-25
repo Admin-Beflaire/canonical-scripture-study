@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..adapters.stepbible import DECLARATION as STEPBIBLE, BookRecipe
+from ..adapters.stepbible.fetch import DECLARATION as STEPBIBLE_FETCH, ComponentFetch
 from ..adapters.acquire_only import DECLARATION as ACQUIRE_ONLY, AcquireRecipe
 from ..adapters.step_aids import DECLARATION as LANGUAGE_AIDS, AidRecipe
 from ..prepare.evidence import NativeText
@@ -54,11 +55,17 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         if identity == (STEPBIBLE.name, STEPBIBLE.method_version):
             book = BookRecipe.from_recipe(value)
             recipes[value["revision"]] = Recipe(
-                book.acquire,
-                book.prepare,
-                book.read_source,
-                book.declares,
-                book.read_reader_references if book.maps_reader_references else None,
+                prepare=book.prepare,
+                read_source=book.read_source,
+                declares=book.declares,
+                read_reader_references=book.read_reader_references
+                if book.maps_reader_references
+                else None,
+            )
+        elif identity == (STEPBIBLE_FETCH.name, STEPBIBLE_FETCH.method_version):
+            fetch = ComponentFetch.from_recipe(value)
+            recipes[value["revision"]] = Recipe(
+                acquire=fetch.acquire, declares=fetch.declares
             )
         elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
             source = AcquireRecipe.from_recipe(value)

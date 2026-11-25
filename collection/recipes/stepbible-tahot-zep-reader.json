@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-tahot-zep-reader",
-  "revision": "stepbible-tahot-zep-reader/5de0a47f35f0/1",
+  "revision": "stepbible-tahot-zep-reader/5de0a47f35f0/2",
   "adapter": {
     "name": "stepbible-tagged",
     "method_version": "stepbible-tagged/1"
@@ -28,23 +28,13 @@
   "manifest_revision": "stepbible-data:5de0a47f35f0",
   "units": [
     {
-      "unit_id": "acquire",
-      "kind": "acquire",
-      "native_extent": {
-        "component": "tahot-isa-mal"
-      },
-      "depends_on": []
-    },
-    {
       "unit_id": "prepare-01",
       "kind": "prepare",
       "native_extent": {
         "coordinate_version": "stepbible-tahot:hebrew-verses/1",
         "unit_ids": ["Zep.1.1", "Zep.1.2", "Zep.1.3", "Zep.1.4", "Zep.1.5", "Zep.1.6", "Zep.1.7", "Zep.1.8", "Zep.1.9", "Zep.1.10", "Zep.1.11", "Zep.1.12", "Zep.1.13", "Zep.1.14", "Zep.1.15", "Zep.1.16", "Zep.1.17", "Zep.1.18", "Zep.2.1", "Zep.2.2", "Zep.2.3", "Zep.2.4", "Zep.2.5", "Zep.2.6", "Zep.2.7", "Zep.2.8", "Zep.2.9", "Zep.2.10", "Zep.2.11", "Zep.2.12", "Zep.2.13", "Zep.2.14", "Zep.2.15", "Zep.3.1", "Zep.3.2", "Zep.3.3", "Zep.3.4", "Zep.3.5", "Zep.3.6", "Zep.3.7", "Zep.3.8", "Zep.3.9", "Zep.3.10", "Zep.3.11", "Zep.3.12", "Zep.3.13", "Zep.3.14", "Zep.3.15", "Zep.3.16", "Zep.3.17", "Zep.3.18", "Zep.3.19", "Zep.3.20"]
       },
-      "depends_on": [
-        "acquire"
-      ]
+      "depends_on": []
     },
     {
       "unit_id": "quality",

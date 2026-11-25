@@ -15,6 +15,7 @@ import {
 import {compareUtf8} from '../../services/study/src/read/bytes.ts';
 import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
+import {sourcesWith} from '../../services/study/src/operators/language.ts';
 
 const roomy = {
   ...limitsFor({}, 'passage'),
@@ -789,6 +790,89 @@ test('a release stores its summary when it is selected, for the current and the 
     stored().map(row => row.release_id),
     releases,
   );
+});
+
+/** The source list of a search is the same from the stored summary and from the coverage scan. */
+test('the sources a search covers are the same from the summary and from the scan, and the summary reads no coverage', async () => {
+  const fixture = buildFixture();
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  // One source has no available output left for the capability; the other keeps one.
+  const db = fixture.db.sqlite;
+  for (const {name} of db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'coverage'",
+    )
+    .all())
+    db.exec(`DROP TRIGGER ${name}`);
+  db.exec(
+    `UPDATE coverage SET state = 'partial', limitation = 'x' WHERE output_id = 'syn-src-2'`,
+  );
+  // A capability outside the search indexes, which the summary does not hold.
+  const columns = db
+    .prepare('PRAGMA table_info(coverage)')
+    .all()
+    .map(column => String(column.name));
+  db.exec(
+    `INSERT INTO coverage (${columns.join(', ')})
+     SELECT ${columns.map(c => (c === 'capability' ? "'source_context'" : c)).join(', ')}
+     FROM coverage WHERE output_id = 'syn-src-1' AND capability = 'word_exact'`,
+  );
+  storeSummary(fixture);
+  const listed = (name: 'release_sources' | 'release_sources_summary') =>
+    db
+      .prepare(QUERIES[name].sql)
+      .all('rel-2', 'word_exact', '', '', 41)
+      .map(row => [
+        row.source_revision_id,
+        row.capability,
+        row.outputs,
+        Number(row.available) > 0,
+      ]);
+  assert.deepEqual(
+    listed('release_sources_summary'),
+    listed('release_sources'),
+  );
+  assert.ok(listed('release_sources_summary').length > 0);
+  const allCapabilities = (
+    name: 'release_sources' | 'release_sources_summary',
+  ) =>
+    db
+      .prepare(QUERIES[name].sql)
+      .all('rel-2', null, '', '', 41)
+      .map(row => [
+        row.source_revision_id,
+        row.capability,
+        Number(row.available) > 0,
+      ]);
+  assert.deepEqual(
+    allCapabilities('release_sources_summary'),
+    allCapabilities('release_sources'),
+  );
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN ${QUERIES.release_sources_summary.sql}`)
+    .all('rel-2', 'word_exact', '', '', 41)
+    .map(row => String(row.detail))
+    .join('\n');
+  assert.match(plan, /SEARCH s USING PRIMARY KEY/);
+  assert.doesNotMatch(
+    plan,
+    /\b(coverage|release_outputs|prepared_outputs|index_routes|source_nodes)\b/,
+  );
+  const other: string[][] = [];
+  for (const summary of [true, false]) {
+    if (!summary) dropSummary(fixture);
+    const session = await ReadSession.open(fixture.env, roomy);
+    assert.equal(session.release.index_summary, summary);
+    assert.deepEqual(
+      await sourcesWith(session, 'word_exact'),
+      [A],
+      summary ? 'summary' : 'scan',
+    );
+    // A capability that is not a search capability is not in the summary: it keeps the scan.
+    other.push(await sourcesWith(session, 'source_context'));
+  }
+  assert.ok(other[0].length > 0, 'the fixture has source_context');
+  assert.deepEqual(other[0], other[1]);
 });
 
 /** Exhausting a key page by page returns the same answer by both paths, at a tight allowance. */

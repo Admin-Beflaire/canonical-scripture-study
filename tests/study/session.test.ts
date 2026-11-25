@@ -450,7 +450,7 @@ test('raw SQL, unknown queries and mutations are rejected; budget stops further 
     );
     assert.match(
       q.sql,
-      /release_outputs \w+ ON \w+\.output_id = \w+\.output_id AND \w+\.release_id = \?1|ro\.release_id = \?1|FROM release_index_summary s CROSS JOIN json_each\(s\.outputs_json\) j\s+WHERE s\.release_id = \?1/,
+      /release_outputs \w+ ON \w+\.output_id = \w+\.output_id AND \w+\.release_id = \?1|ro\.release_id = \?1|FROM release_index_summary s\s+(CROSS JOIN json_each\(s\.outputs_json\) j\s+)?WHERE s\.release_id = \?1/,
       name,
     );
   }

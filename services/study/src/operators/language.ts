@@ -30,6 +30,8 @@ const CAPABILITY: Record<string, string> = {
   lemma: 'lemma_exact',
   grammar: 'grammar_exact',
 };
+/** The capabilities the release summary holds: those of the search indexes. */
+const INDEX_CAPABILITIES = new Set(Object.values(CAPABILITY));
 
 export interface LanguageWorkload {
   mode: string;
@@ -114,7 +116,12 @@ export async function sourcesWith(
   let after: [string, string] | null = null;
   for (;;) {
     const {rows, more}: {rows: Record<string, unknown>[]; more: boolean} =
-      await session.query('release_sources', {capability, after});
+      await session.query(
+        session.release.index_summary && INDEX_CAPABILITIES.has(capability)
+          ? 'release_sources_summary'
+          : 'release_sources',
+        {capability, after},
+      );
     for (const row of rows)
       if (Number(row.available) > 0)
         sources.add(String(row.source_revision_id));

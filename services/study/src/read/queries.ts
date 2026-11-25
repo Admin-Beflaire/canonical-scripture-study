@@ -332,6 +332,20 @@ GROUP BY c.source_revision_id, c.capability
 ORDER BY c.source_revision_id, c.capability
 LIMIT ?5`;
 
+/** The same list read from the stored release summary, for the search capabilities: one row
+ *  per source and capability of the index outputs, with the number of outputs and whether one
+ *  of them is available (1 or 0). Used when the release stores its summary; an older release,
+ *  or a capability that is not an index capability, keeps the scan above. */
+const RELEASE_SOURCES_SUMMARY = `SELECT s.source_revision_id, s.capability,
+  json_array_length(s.outputs_json) AS outputs,
+  EXISTS (SELECT 1 FROM json_each(s.outputs_json) j
+    WHERE json_extract(j.value, '$.state') = 'available') AS available
+FROM release_index_summary s
+WHERE s.release_id = ?1 AND (?2 IS NULL OR s.capability = ?2)
+  AND (s.source_revision_id, s.capability) > (?3, ?4)
+ORDER BY s.source_revision_id, s.capability
+LIMIT ?5`;
+
 /** Drive both passage lookups from the requested units and use the verse-unit index.
  *  The fixed join order keeps the planner from starting with every output in the release.
  *  Check coverage membership only for matching verse spans. */
@@ -511,6 +525,11 @@ const indexSourcesParams = (i: IndexSourcesInput) => [
   key(i.key),
 ];
 
+const releaseSourcesParams = (i: ReleaseSourcesInput) => [
+  i.capability == null ? null : id(i.capability),
+  ...(optionalAfter(i.after, 2) ?? ['', '']),
+];
+
 export const QUERIES = {
   linked_aid_presence: {
     sql: `SELECT COALESCE(json_group_array(json(wanted.value)), '[]') AS keys
@@ -580,12 +599,10 @@ FROM json_each(?2) wanted WHERE EXISTS (
       return [];
     },
   },
-  release_sources: {
-    sql: RELEASE_SOURCES,
-    params: (i: ReleaseSourcesInput) => [
-      i.capability == null ? null : id(i.capability),
-      ...(optionalAfter(i.after, 2) ?? ['', '']),
-    ],
+  release_sources: {sql: RELEASE_SOURCES, params: releaseSourcesParams},
+  release_sources_summary: {
+    sql: RELEASE_SOURCES_SUMMARY,
+    params: releaseSourcesParams,
   },
   unit_presence: {
     sql: UNIT_PRESENCE,

@@ -195,7 +195,7 @@ async function advanceTask(
   }
   if (!has(scope, 'fetch') && !has(scope, 'build'))
     // Make a finished build's checked candidate current; no work is dispatched.
-    return resultOf(await releaseCandidate(db, objects, row));
+    return selectStep(db, objects, row);
   if (!github) {
     await setOutcome(db, row, outcome =>
       addLimitation(
@@ -221,10 +221,22 @@ const PIN: Record<Which, 'fetch_recipe_revision' | 'recipe_revision'> = {
   build: 'recipe_revision',
 };
 
-/** The fetch step, then the build step, as the task lists them. */
+/** The select step: make a finished build's checked candidate current. */
+async function selectStep(
+  db: D1Database,
+  objects: ObjectStore | null,
+  row: TaskRow,
+): Promise<Progress> {
+  return resultOf(await releaseCandidate(db, objects, row));
+}
+
+/** The steps the task lists, in order: fetch, then build, then select. Each runs only when listed;
+ *  a step that has more steps after it hands on to the next one instead of completing the task. */
 async function runRecipes(run: Run): Promise<Progress> {
   const fetched = has(run.scope, 'fetch') ? await fetchStep(run) : null;
-  return fetched ?? buildStep(run);
+  if (fetched) return fetched;
+  if (has(run.scope, 'build')) return buildStep(run);
+  return selectStep(run.db, run.objects, (await task(run.db, run.taskId))!);
 }
 
 /** The reviewed recipe for one step, pinned to the revision this task started with. */
@@ -412,7 +424,7 @@ async function fetchStep(run: Run): Promise<Progress | null> {
       taskId,
       'The acquired original and its admission were not recorded.',
     ).then(blocked => ({...blocked, limitation: 'acquisition_not_recorded'}));
-  if (has(scope, 'build')) return null;
+  if (has(scope, 'build') || has(scope, 'select')) return null; // the next step follows
   const row = (await task(db, taskId))!;
   const outcome = JSON.parse(row.outcome_json) as Outcome;
   outcome.completed_extent = scope.extent;

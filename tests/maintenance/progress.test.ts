@@ -974,21 +974,25 @@ function recordAcquiredOriginal(db: DatabaseSync) {
   );
 }
 
-test('an acquire task completes with the original recorded and never touches a release', async () => {
-  const ctx = await setup({
-    'collection/recipes/acquire-synthetic.json': acquireRecipe,
-  });
+type Context = Awaited<ReturnType<typeof setup>>;
+
+/** Request a task whose fetch step runs the synthetic acquire recipe. */
+async function requestAcquire(
+  ctx: Context,
+  steps: ('fetch' | 'select')[],
+  constraints: Record<string, unknown> = {},
+) {
   const created = await requestTask(ctx.db, owner, {
     request_key: 'acquire',
     instruction: 'Acquire the synthetic source',
-    steps: ['fetch'],
+    steps,
     inputs: [
       {kind: 'acquisition', id: 'route/1'},
       {kind: 'source_revision', id: 'revision/1'},
     ],
     extent: {component: 'revision/1'},
     capabilities: [],
-    constraints: {fetch_recipe: 'acquire-synthetic'},
+    constraints: {fetch_recipe: 'acquire-synthetic', ...constraints},
     decision_refs: [
       {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
       {kind: 'admission', ref: 'owner-decision:1', subject: 'revision/1'},
@@ -997,6 +1001,11 @@ test('an acquire task completes with the original recorded and never touches a r
   assert.equal(created.status, 'created');
   if (created.status !== 'created') throw new Error('task not created');
   await advance(ctx.db, ctx.github, created.task.id);
+  return created.task.id;
+}
+
+/** The acquire job runs, the original is recorded, and its result arrives. */
+async function finishAcquire(ctx: Context) {
   const {run, job, text} = dispatched(ctx.gh, 'acquire');
   const state = await ctx.post('/internal/jobs/state', {
     task_id: job.task_id,
@@ -1006,19 +1015,42 @@ test('an acquire task completes with the original recorded and never touches a r
     job_input_basis: sha(text),
   });
   assert.equal(state.status, 200);
-  const db = ctx.db.sqlite;
-  recordAcquiredOriginal(db);
+  recordAcquiredOriginal(ctx.db.sqlite);
   await ctx.post('/internal/jobs/result', {
     result: resultFor(job, String(run.id), {output_refs: []}),
     commit: ctx.gh.commit,
   });
-  const report = (await taskReport(ctx.db, owner, created.task.id))!;
+}
+
+const acquireContext = () =>
+  setup({'collection/recipes/acquire-synthetic.json': acquireRecipe});
+
+test('an acquire task completes with the original recorded and never touches a release', async () => {
+  const ctx = await acquireContext();
+  const id = await requestAcquire(ctx, ['fetch']);
+  await finishAcquire(ctx);
+  const report = (await taskReport(ctx.db, owner, id))!;
   assert.equal(report.state, 'completed');
   assert.equal(report.data_current, false);
   assert.equal(
-    db.prepare('SELECT current_release_id FROM release_selection').get()
-      ?.current_release_id,
+    ctx.db.sqlite
+      .prepare('SELECT current_release_id FROM release_selection')
+      .get()?.current_release_id,
     null,
+  );
+});
+
+test('a fetch followed by a select goes on to the select step instead of completing', async () => {
+  const ctx = await acquireContext();
+  const id = await requestAcquire(ctx, ['fetch', 'select'], {
+    candidate: 'task-that-does-not-exist',
+  });
+  await finishAcquire(ctx);
+  const report = (await taskReport(ctx.db, owner, id))!;
+  assert.equal(report.state, 'blocked', 'the select step ran and refused');
+  assert.ok(
+    report.limitations.some(text => text.includes('was not found')),
+    JSON.stringify(report.limitations),
   );
 });
 

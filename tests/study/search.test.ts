@@ -127,6 +127,19 @@ function routeFixture(fixture: Fixture, outputs: string[]) {
       .prepare('INSERT INTO index_routes (output_id, keys_json) VALUES (?, ?)')
       .run(output, JSON.stringify(keys));
   }
+  storeSummary(fixture);
+}
+
+/** Store the release summary as selecting the release does, from the routes now present. */
+function storeSummary(fixture: Fixture) {
+  fixture.db.sqlite.exec(
+    'DELETE FROM release_index_summary; UPDATE release_selection SET current_release_id = current_release_id',
+  );
+}
+
+/** Make the release look older than the summary: Study then keeps the full scan. */
+function dropSummary(fixture: Fixture) {
+  fixture.db.sqlite.exec('DELETE FROM release_index_summary');
 }
 
 test('index route access path uses the search-key primary index', () => {
@@ -255,6 +268,7 @@ test('routed coverage is retained when matching outputs span two D1 pages', asyn
   insertRoute.run('syn-src-skipped', '["not-alpha"]');
   db.exec(`INSERT INTO release_outputs (release_id, output_id)
     VALUES ('rel-2', 'syn-src-skipped')`);
+  storeSummary(fixture);
   const run = await all(
     fixture,
     {lookup: 'word', key: 'alpha', sources: [A]},
@@ -286,6 +300,7 @@ test('routing keeps incompatible matching and nonmatching outputs as limitations
         WHERE output_id = ?`,
       )
       .run(output);
+    storeSummary(fixture);
     const {result} = await once(fixture, {
       lookup: 'word',
       key: 'epsilon',
@@ -549,6 +564,7 @@ test('a manifest that disagrees with its D1 coverage or registration is withheld
   fixture.db.sqlite.exec(
     `UPDATE coverage SET state = 'partial', limitation = 'x' WHERE output_id = 'syn-src-2'`,
   );
+  storeSummary(fixture);
   const {result} = await once(fixture, {
     lookup: 'word',
     key: 'alpha',
@@ -697,4 +713,110 @@ test('R30-8: one output filling the whole D1 window is reported, not repeated as
     ),
     state('exceeds_limits'),
   );
+});
+
+/** The stored summary must answer both routing questions exactly as the full scan does. */
+test("the stored index summary gives the full scan's files and coverage, without scanning coverage", () => {
+  const fixture = buildFixture();
+  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+  const db = fixture.db.sqlite;
+  assert.ok(
+    db
+      .prepare(
+        'SELECT COUNT(*) AS n FROM release_index_summary WHERE release_id = ?',
+      )
+      .get('rel-2')!.n,
+  );
+  for (const key of ['alpha', 'unlisted']) {
+    const args = ['rel-2', JSON.stringify([A]), 'word_exact', key] as const;
+    const scan = db
+      .prepare(QUERIES.index_files.sql)
+      .all(...args, A, -1, '', 41);
+    const stored = db
+      .prepare(QUERIES.index_files_summary.sql)
+      .all(...args, A, -1, '', 41);
+    assert.deepEqual(stored, scan, key);
+    const extents = (rows: unknown[]) =>
+      rows.map(row => {
+        const r = row as {source_revision_id: string; extents: string};
+        return [
+          r.source_revision_id,
+          JSON.parse(r.extents)
+            .map((e: unknown) => JSON.stringify(e))
+            .sort(),
+        ];
+      });
+    assert.deepEqual(
+      extents(db.prepare(QUERIES.index_sources_summary.sql).all(...args, 41)),
+      extents(db.prepare(QUERIES.index_sources.sql).all(...args, 41)),
+      key,
+    );
+  }
+  for (const name of [
+    'index_files_summary',
+    'index_sources_summary',
+  ] as const) {
+    const values = name === 'index_files_summary' ? [A, -1, '', 41] : [41];
+    const plan = db
+      .prepare(`EXPLAIN QUERY PLAN ${QUERIES[name].sql}`)
+      .all('rel-2', JSON.stringify([A]), 'word_exact', 'alpha', ...values)
+      .map(row => String(row.detail))
+      .join('\n');
+    assert.match(plan, /SEARCH s USING PRIMARY KEY/, name);
+    assert.doesNotMatch(
+      plan,
+      /\b(coverage|release_outputs|prepared_outputs|index_routes)\b/,
+      name,
+    );
+  }
+});
+
+test('a release stores its summary when it is selected, for the current and the previous release', () => {
+  const fixture = buildFixture();
+  const db = fixture.db.sqlite;
+  const stored = () =>
+    db
+      .prepare(
+        'SELECT release_id, COUNT(*) AS n FROM release_index_summary GROUP BY release_id ORDER BY release_id',
+      )
+      .all();
+  const releases = stored().map(row => row.release_id);
+  assert.ok(releases.includes('rel-2'));
+  dropSummary(fixture);
+  assert.deepEqual(stored(), []);
+  storeSummary(fixture);
+  assert.deepEqual(
+    stored().map(row => row.release_id),
+    releases,
+  );
+});
+
+/** Exhausting a key page by page returns the same answer by both paths, at a tight allowance. */
+test('a search that is followed to its end returns the same answer from the summary and from the scan', async () => {
+  const tight = {...roomy, rowsPerQuery: 4};
+  for (const key of ['alpha', 'unlisted']) {
+    const request: SearchRequest = {lookup: 'word', key, sources: [A, B]};
+    const results = [];
+    for (const summary of [true, false]) {
+      clearSearchCache();
+      const fixture = buildFixture();
+      routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
+      if (!summary) dropSummary(fixture);
+      assert.equal(
+        (await ReadSession.open(fixture.env, roomy)).release.index_summary,
+        summary,
+      );
+      const followed = await all(fixture, request, tight);
+      assert.equal(followed.results.at(-1)!.remaining, null, 'exhausted');
+      results.push(followed);
+    }
+    const [stored, scanned] = results;
+    assert.ok(stored.results.length > 1 || key === 'unlisted', 'continued');
+    assert.deepEqual(stored.results, scanned.results, key);
+    assert.deepEqual(
+      stored.usage.map(u => u.d1Calls),
+      scanned.usage.map(u => u.d1Calls),
+      key,
+    );
+  }
 });

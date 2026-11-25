@@ -581,7 +581,10 @@ export class PagedIndexSearch implements SearchAdapter {
         start.output,
       ],
     };
-    const indexRows = await session.queryIfAvailable('index_files', indexInput);
+    const indexRows = await session.queryIfAvailable(
+      session.release.index_summary ? 'index_files_summary' : 'index_files',
+      indexInput,
+    );
     if (!indexRows) return null;
     const groups = groupRows(indexRows.rows);
     let next: Group | undefined;
@@ -632,11 +635,10 @@ export class PagedIndexSearch implements SearchAdapter {
       !groups.some(group => group.sourceHasRouting)
     )
       return true;
-    const covered = await session.queryIfAvailable('index_sources', {
-      source_revision_ids: sources,
-      capability,
-      key,
-    });
+    const covered = await session.queryIfAvailable(
+      session.release.index_summary ? 'index_sources_summary' : 'index_sources',
+      {source_revision_ids: sources, capability, key},
+    );
     if (!covered) return false;
     const found = new Set<string>();
     for (const row of covered.rows) {

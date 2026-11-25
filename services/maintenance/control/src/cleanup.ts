@@ -200,16 +200,20 @@ export async function tidyReleases(
     ).results;
     if (gone.length) {
       const removed = await db.batch(
-        gone.map(({id}) =>
+        gone.flatMap(({id}) =>
           // The release is checked again here: it may have become kept since it was listed.
-          db
-            .prepare(
-              `DELETE FROM release_outputs WHERE release_id = ? AND release_id NOT IN (${KEPT_RELEASES})`,
-            )
-            .bind(id),
+          // Its stored index summary goes with its memberships.
+          [
+            `DELETE FROM release_index_summary WHERE release_id = ? AND release_id NOT IN (${KEPT_RELEASES})`,
+            `DELETE FROM release_outputs WHERE release_id = ? AND release_id NOT IN (${KEPT_RELEASES})`,
+          ].map(sql => db.prepare(sql).bind(id)),
         ),
       );
-      done.memberships = removed.reduce((n, r) => n + (r.meta.changes ?? 0), 0);
+      // Statements come in pairs (summary, then membership); only memberships are counted.
+      done.memberships = removed.reduce(
+        (n, r, at) => n + (at % 2 ? (r.meta.changes ?? 0) : 0),
+        0,
+      );
       done.more = gone.length === RELEASES_PER_CALL;
     }
     // A job that is still running may have saved outputs it has not reported yet.

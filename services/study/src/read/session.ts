@@ -28,6 +28,8 @@ export const SUPPORTED_SCHEMA_VERSIONS: Readonly<
 export interface CurrentRelease {
   id: string;
   schema_versions: Record<string, string>;
+  /** The release stores its index summary (migration 0015); an older release keeps the full scan. */
+  index_summary: boolean;
 }
 type QueryResult = {rows: Record<string, unknown>[]; more: boolean};
 
@@ -40,7 +42,8 @@ const READ_CACHES = new WeakMap<
   {releaseId: string; results: Map<string, string>}
 >();
 
-const CURRENT = `SELECT s.current_release_id AS release_id, r.schema_versions_json
+const CURRENT = `SELECT s.current_release_id AS release_id, r.schema_versions_json,
+  EXISTS (SELECT 1 FROM release_index_summary i WHERE i.release_id = s.current_release_id) AS index_summary
 FROM release_selection s LEFT JOIN releases r ON r.id = s.current_release_id
 WHERE s.singleton_id = 1`;
 
@@ -139,6 +142,7 @@ export class ReadSession {
     const rows = await run<{
       release_id: string | null;
       schema_versions_json: string | null;
+      index_summary: number;
     }>(env.DATA_DB, budget, CURRENT, []);
     const row = rows[0];
     if (!row || row.release_id === null)
@@ -154,6 +158,7 @@ export class ReadSession {
     return new ReadSession(env.DATA_DB, env.PRIVATE_OBJECTS, budget, {
       id: row.release_id,
       schema_versions: checkVersions(row.schema_versions_json),
+      index_summary: row.index_summary === 1,
     });
   }
 

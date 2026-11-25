@@ -679,7 +679,12 @@ class RunnerFlowTest(unittest.TestCase):
 
     def test_gate_vouches_only_for_declared_unsaved_inputs(self):
         # Before acquisition, only the acquire unit may name the unsaved source revision.
-        self.assertEqual(self.job_run("prepare-01")["state"], "cancelled")
+        refused = self.job_run("prepare-01")
+        self.assertEqual(refused["state"], "cancelled")
+        # Control blocks at once on this code instead of retrying: the task's inputs are wrong.
+        self.assertEqual(
+            [item["code"] for item in refused["diagnostics"]], ["input_not_registered"]
+        )
         changed = [
             {
                 "kind": "acquisition",

@@ -35,6 +35,10 @@ class UnitNotRunnableError(ContractError):
     """The job is invalid, unregistered or no longer eligible to run."""
 
 
+class InputNotRegisteredError(UnitNotRunnableError):
+    """A job input or dependency is not saved as the task names it: retrying cannot help."""
+
+
 T = TypeVar("T")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}")
 _ACTIVE_JOBS = frozenset(("dispatched", "running"))
@@ -100,6 +104,8 @@ def execute_unit(
     )
     for ref in refs:
         if not registered(ref):
-            raise UnitNotRunnableError("Input or dependency is not registered")
+            raise InputNotRegisteredError(
+                f"Input or dependency is not registered: {ref['kind']} {ref['id']}"
+            )
 
     return process(job)

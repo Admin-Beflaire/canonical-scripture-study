@@ -25,7 +25,7 @@ from typing import Any, Mapping
 from css_shared.error_record import annotation, error_record
 
 from ..contracts import ContractError, parse_job_input, unit_result
-from ..executor import UnitNotRunnableError, execute_unit
+from ..executor import InputNotRegisteredError, UnitNotRunnableError, execute_unit
 from ..executor.unit import StopWorkError, UnitProgress, run_unit
 from ..executor.quality import check_candidate_quality
 from ..prepare.evidence import OutputBasis
@@ -225,14 +225,18 @@ def run_job(
         )
         return _from_progress(job, run_id, progress)
     except UnitNotRunnableError as error:
+        # An unregistered input is the task's own mistake: Control blocks at once instead of retrying.
+        code = (
+            "input_not_registered"
+            if isinstance(error, InputNotRegisteredError)
+            else "not_runnable"
+        )
         return unit_result(
             job,
             run_id,
             "cancelled",
             diagnostics=[
-                diagnostic(
-                    job, "control_check", "not_runnable", error, outcome="cancelled"
-                )
+                diagnostic(job, "control_check", code, error, outcome="cancelled")
             ],
         )
     except ProviderError as error:

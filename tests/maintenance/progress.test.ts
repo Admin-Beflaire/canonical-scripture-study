@@ -373,6 +373,36 @@ test('failed units retry up to the limit, then the task is blocked with the reas
   assert.equal(gh.runs.size, MAX_ATTEMPTS);
 });
 
+test('a unit whose input is not registered blocks the task at once and names the input', async () => {
+  const context = await setup();
+  const {db, gh, task} = context;
+  await advance(db, context.github, task.id);
+  const record = JSON.stringify({
+    v: 1,
+    message:
+      'Input or dependency is not registered: source_revision revision/9',
+  });
+  const {job} = await finish(context, 'prepare-u1', {
+    state: 'cancelled',
+    output_refs: [],
+    completed_extent: {},
+    remaining_extent: {},
+    diagnostics: [{code: 'input_not_registered', message: record}],
+  });
+  assert.equal(job.attempt, 1);
+  const report = (await taskReport(db, owner, task.id))!;
+  assert.equal(report.state, 'blocked');
+  assert.ok(
+    report.limitations.some(
+      text =>
+        text.includes('cannot run: Input or dependency is not registered') &&
+        text.includes('source_revision revision/9'),
+    ),
+    JSON.stringify(report.limitations),
+  );
+  assert.equal(gh.runs.size, 1, 'no second attempt is dispatched');
+});
+
 test('reconcile: lost dispatch with no claimable run is retried; a run that ended silently is retried', async () => {
   const context = await setup();
   const {db, gh, task} = context;

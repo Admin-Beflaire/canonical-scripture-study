@@ -316,7 +316,11 @@ function unitStatus(
   const latest = attempts[attempts.length - 1];
   if (succeeded.has(unit.unit_id) || (latest && ACTIVE.has(latest.state)))
     return 'wait';
-  if (latest && RETRYABLE.has(latest.state) && attempts.length >= MAX_ATTEMPTS)
+  if (
+    latest &&
+    (inputProblem(latest) ||
+      (RETRYABLE.has(latest.state) && attempts.length >= MAX_ATTEMPTS))
+  )
     return 'exhausted';
   return unit.depends_on.every(dependency => succeeded.has(dependency))
     ? 'dispatch'
@@ -401,7 +405,26 @@ async function runUnits(
   return ready ? {succeeded} : {done: stop(row.state, undefined, dispatched)};
 }
 
+/** What the runner said when a task's input is not saved as named: retrying cannot change that. */
+function inputProblem(job: JobView): string | null {
+  if (!job.result_json) return null;
+  let found: {code: string; message: string} | undefined;
+  try {
+    found = (JSON.parse(job.result_json) as JobResult).diagnostics.find(
+      diagnostic => diagnostic.code === 'input_not_registered',
+    );
+    if (!found) return null;
+    const {message} = JSON.parse(found.message) as {message?: unknown};
+    return typeof message === 'string' ? message : 'an input is not registered';
+  } catch {
+    return found ? 'an input is not registered' : null;
+  }
+}
+
 const exhausted = (unit: RecipeUnit, latest: JobView) => {
+  const input = inputProblem(latest);
+  if (input)
+    return `unit ${unit.unit_id} cannot run: ${input}. Check the task's input IDs against an earlier task for the same source and request it again`;
   const codes = latest.result_json
     ? (JSON.parse(latest.result_json) as JobResult).diagnostics
         .map(d => d.code)

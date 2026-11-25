@@ -246,7 +246,7 @@ function prepareTask(
   return {
     request_key: key,
     instruction: `Load ${book}`,
-    kind: 'prepare',
+    steps: ['build'],
     inputs: [{kind: 'source_revision', id: 'rev-1'}],
     extent: {book},
     capabilities: ['source_context', 'word_exact'],
@@ -346,7 +346,7 @@ async function runBook(
   if (
     options.release === false ||
     built.state !== 'checked' ||
-    !['prepare', 'correct', 'replace'].includes(request.kind)
+    !request.steps.includes('build')
   )
     return {taskId, task: built};
   // A build ends with a checked candidate; a separate release task makes it current.
@@ -362,7 +362,7 @@ async function releaseBuild(w: World, buildId: string, key: string) {
   const created = await requestTask(w.db, owner, {
     request_key: key,
     instruction: `Release ${buildId}`,
-    kind: 'release',
+    steps: ['select'],
     constraints: {candidate: buildId},
   });
   assert.equal(created.status, 'created', JSON.stringify(created));
@@ -517,7 +517,7 @@ test('a release records the catalogue version for reader mappings it adds or kee
     const remove = await requestTask(w.db, owner, {
       request_key: `remove-${revision}`,
       instruction: 'Remove a source',
-      kind: 'remove',
+      steps: ['remove'],
       inputs: [{kind: 'source_revision', id: revision}],
     });
     const removalId = (remove as {task: {id: string}}).task.id;
@@ -598,13 +598,7 @@ test('R34-1: rollback and restore never select a release the v2 reader cannot re
     `UPDATE release_selection SET previous_release_id = 'release-v1'`,
   );
   const before = selected(w);
-  const rollback = await requestTask(w.db, owner, {
-    request_key: 'rb-v1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const rollbackId = (rollback as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, rollbackId, w.objects);
+  const rollbackId = await rollBack(w, 'rb-v1');
   const rolled = (await taskReport(w.db, owner, rollbackId))!;
   assert.equal(rolled.data_current, false);
   assert.ok(
@@ -623,7 +617,7 @@ test('R34-1: rollback and restore never select a release the v2 reader cannot re
   const restore = await requestTask(w.db, owner, {
     request_key: 'vr-v1',
     instruction: 'Select the old release',
-    kind: 'validate_restore',
+    steps: ['validate_restore'],
     constraints: {select_release: 'release-v1'},
   });
   const restoreId = (restore as {task: {id: string}}).task.id;
@@ -677,7 +671,7 @@ test('re-preparing a book replaces its overlapping outputs and keeps the rest', 
   await runBook(w, prepareTask('exo', 'e1'));
   const before = membersOf(w, selected(w).current_release_id);
   await runBook(w, prepareTask('gen', 'g1'));
-  await runBook(w, prepareTask('gen', 'g2', {kind: 'correct'}), 'rev-1', {
+  await runBook(w, prepareTask('gen', 'g2', {steps: ['build']}), 'rev-1', {
     tag: 'corrected',
   });
   const after = membersOf(w, selected(w).current_release_id);
@@ -972,13 +966,7 @@ test('rollback validates the previous release and selects it through the same ga
   const first = await runBook(w, prepareTask('gen', 'g1'));
   await runBook(w, prepareTask('exo', 'e1'));
   const second = selected(w).current_release_id;
-  const created = await requestTask(w.db, owner, {
-    request_key: 'rb1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const id = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, id, w.objects);
+  const id = await rollBack(w, 'rb1');
   const task = (await taskReport(w.db, owner, id))!;
   assert.equal(task.state, 'completed');
   assert.equal(task.data_current, true);
@@ -993,7 +981,7 @@ test('rollback without an eligible previous release reports a limitation and cha
   const none = await requestTask(w.db, owner, {
     request_key: 'rb0',
     instruction: 'Roll back',
-    kind: 'rollback',
+    steps: ['rollback'],
   });
   await advance(
     w.db,
@@ -1017,13 +1005,7 @@ test('rollback without an eligible previous release reports a limitation and cha
       .prepare('SELECT registered_locator FROM artifacts WHERE output_id = ?')
       .all(id) as Array<{registered_locator: string}>)
       w.objects.sizes.delete(row.registered_locator);
-  const created = await requestTask(w.db, owner, {
-    request_key: 'rb1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const id = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, id, w.objects);
+  const id = await rollBack(w, 'rb1');
   task = (await taskReport(w.db, owner, id))!;
   assert.equal(task.data_current, false);
   assert.ok(task.limitations.some(text => text.includes('not eligible')));
@@ -1054,7 +1036,7 @@ test('removal drops a source, records the exclusion, and later candidates of tha
   const created = await requestTask(w.db, owner, {
     request_key: 'rm1',
     instruction: 'Remove the second source',
-    kind: 'remove',
+    steps: ['remove'],
     inputs: [{kind: 'source_revision', id: 'rev-2'}],
     decision_refs: [
       {kind: 'exclusion', ref: 'owner-decision:7', subject: 'rev-2'},
@@ -1079,13 +1061,7 @@ test('removal drops a source, records the exclusion, and later candidates of tha
   assert.ok(
     again.task.limitations.some(text => text.includes('excluded by the owner')),
   );
-  const rollback = await requestTask(w.db, owner, {
-    request_key: 'rb1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const rollbackId = (rollback as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, rollbackId, w.objects);
+  const rollbackId = await rollBack(w, 'rb1');
   assert.equal(
     (await taskReport(w.db, owner, rollbackId))!.data_current,
     false,
@@ -1114,13 +1090,7 @@ test('restore validation blocks restored open work and selects a restored releas
   const w = world();
   const first = await runBook(w, prepareTask('gen', 'g1'));
   await runBook(w, prepareTask('exo', 'e1'));
-  const open = await requestTask(
-    w.db,
-    owner,
-    prepareTask('gen', 'g9', {kind: 'correct'}),
-  );
-  const openId = (open as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, openId, w.objects);
+  const openId = await openBuild(w);
   const checkId = await validateRestore(w, 'vr1');
   const report1 = (await taskReport(w.db, owner, checkId))!;
   assert.equal(report1.state, 'completed');
@@ -1136,7 +1106,7 @@ test('restore validation blocks restored open work and selects a restored releas
   const select = await requestTask(w.db, owner, {
     request_key: 'vr2',
     instruction: 'Select the first release',
-    kind: 'validate_restore',
+    steps: ['validate_restore'],
     constraints: {select_release: first.task.selection.candidate_release_id},
   });
   const selectId = (select as {task: {id: string}}).task.id;
@@ -1442,7 +1412,7 @@ test('R25-4: removal records exclusions without a matching current source, may e
     const created = await requestTask(w.db, owner, {
       request_key: key,
       instruction: 'Remove rev-1',
-      kind: 'remove',
+      steps: ['remove'],
       inputs: [{kind: 'source_revision', id: 'rev-1'}],
       decision_refs: [
         {kind: 'exclusion', ref: `owner-decision:${key}`, subject: 'rev-1'},
@@ -1522,20 +1492,10 @@ test('R25-5: rollback refuses a release with a missing dependency, and removal r
   w.db.sqlite
     .prepare(`INSERT INTO release_outputs VALUES ('release-broken', ?)`)
     .run(index);
-  w.db.sqlite.exec(
-    `UPDATE release_selection SET previous_release_id = 'release-broken'`,
-  );
-  const created = await requestTask(w.db, owner, {
-    request_key: 'rb1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const id = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, id, w.objects);
-  const task = (await taskReport(w.db, owner, id))!;
-  assert.equal(task.data_current, false);
-  assert.ok(
-    task.limitations.some(text => text.includes('which is not in the release')),
+  await assertRollbackBlocked(
+    w,
+    'release-broken',
+    'which is not in the release',
   );
 
   const v = world();
@@ -1553,7 +1513,7 @@ test('R25-5: rollback refuses a release with a missing dependency, and removal r
   const removal = await requestTask(v.db, owner, {
     request_key: 'rm1',
     instruction: 'Remove rev-2',
-    kind: 'remove',
+    steps: ['remove'],
     inputs: [{kind: 'source_revision', id: 'rev-2'}],
   });
   const removalId = (removal as {task: {id: string}}).task.id;
@@ -1567,6 +1527,41 @@ test('R25-5: rollback refuses a release with a missing dependency, and removal r
   assert.deepEqual(selected(v), before);
 });
 
+/** Point the previous release at a faulty one; rolling back must be blocked with the reason. */
+async function assertRollbackBlocked(
+  w: ReturnType<typeof world>,
+  previous: string,
+  reason: string,
+) {
+  w.db.sqlite.exec(
+    `UPDATE release_selection SET previous_release_id = '${previous}'`,
+  );
+  const id = await rollBack(w, 'rb1');
+  const task = (await taskReport(w.db, owner, id))!;
+  assert.equal(task.data_current, false);
+  assert.ok(task.limitations.some(text => text.includes(reason)));
+}
+
+/** An unfinished build of Genesis, advanced once, so it is open work. */
+async function openBuild(w: ReturnType<typeof world>) {
+  const open = await requestTask(w.db, owner, prepareTask('gen', 'g9'));
+  const id = (open as {task: {id: string}}).task.id;
+  await advance(w.db, w.github, id, w.objects);
+  return id;
+}
+
+/** Request a rollback, advance it, and return its task ID. */
+async function rollBack(w: ReturnType<typeof world>, key = 'rb1') {
+  const created = await requestTask(w.db, owner, {
+    request_key: key,
+    instruction: 'Roll back',
+    steps: ['rollback'],
+  });
+  const id = (created as {task: {id: string}}).task.id;
+  await advance(w.db, w.github, id, w.objects);
+  return id;
+}
+
 /** Request a restore validation, advance it, and return its task ID. */
 async function validateRestore(
   w: ReturnType<typeof world>,
@@ -1576,7 +1571,7 @@ async function validateRestore(
   const created = await requestTask(w.db, owner, {
     request_key: key,
     instruction: 'Check the restore',
-    kind: 'validate_restore',
+    steps: ['validate_restore'],
     ...(constraints ? {constraints} : {}),
   });
   const id = (created as {task: {id: string}}).task.id;
@@ -1622,13 +1617,7 @@ function moveRevisionWhenBlocking(
 test('R25-6: restored tasks whose revision moves are read again and blocked; one that cannot be blocked fails validation', async () => {
   const w = world();
   await runBook(w, prepareTask('gen', 'g1'));
-  const open = await requestTask(
-    w.db,
-    owner,
-    prepareTask('gen', 'g9', {kind: 'correct'}),
-  );
-  const openId = (open as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, openId, w.objects);
+  const openId = await openBuild(w);
   let moves = 1;
   const prepare = w.db.prepare.bind(w.db);
   moveRevisionWhenBlocking(w, prepare, openId, () => moves-- > 0);
@@ -1680,22 +1669,10 @@ test('R25-7: an index output without its postings and manifest files makes a rel
     w.db.sqlite
       .prepare(`INSERT INTO release_outputs VALUES ('release-partial', ?)`)
       .run(output);
-  w.db.sqlite.exec(
-    `UPDATE release_selection SET previous_release_id = 'release-partial'`,
-  );
-  const created = await requestTask(w.db, owner, {
-    request_key: 'rb1',
-    instruction: 'Roll back',
-    kind: 'rollback',
-  });
-  const id = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, id, w.objects);
-  const task = (await taskReport(w.db, owner, id))!;
-  assert.equal(task.data_current, false);
-  assert.ok(
-    task.limitations.some(text =>
-      text.includes('has no application/json file'),
-    ),
+  await assertRollbackBlocked(
+    w,
+    'release-partial',
+    'has no application/json file',
   );
 });
 
@@ -1715,7 +1692,7 @@ test('R25-8: removal checks what stays against its new exclusions, and a stale c
   const wide = await requestTask(w.db, owner, {
     request_key: 'rm1',
     instruction: 'Remove rev-2',
-    kind: 'remove',
+    steps: ['remove'],
     inputs: [{kind: 'source_revision', id: 'rev-2'}],
     decision_refs: [
       {kind: 'exclusion', ref: 'owner-decision:w', subject: 'rev-1:work'},
@@ -1742,7 +1719,7 @@ test('R25-8: removal checks what stays against its new exclusions, and a stale c
   const noop = await requestTask(w.db, owner, {
     request_key: 'rm2',
     instruction: 'Exclude rev-3',
-    kind: 'remove',
+    steps: ['remove'],
     inputs: [{kind: 'source_revision', id: 'rev-3'}],
     decision_refs: [
       {kind: 'exclusion', ref: 'owner-decision:3', subject: 'rev-3'},

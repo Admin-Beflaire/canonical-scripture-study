@@ -16,7 +16,7 @@ import {localD1} from './d1.ts';
 /** Release cleanup (Proposal M2): what a release or open task needs stays, the rest goes.
  *  Synthetic records only. */
 const DIGEST = 'a'.repeat(64);
-const SCOPE = JSON.stringify({kind: 'prepare'});
+const SCOPE = JSON.stringify({steps: ['build']});
 const OUTCOME = JSON.stringify({limitations: []});
 
 /** A bucket that remembers what it holds and what was removed; `failures` removals fail first. */

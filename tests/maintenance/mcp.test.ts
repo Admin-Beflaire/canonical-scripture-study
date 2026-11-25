@@ -9,6 +9,7 @@ import {
   CONTROL_INSTRUCTIONS,
 } from '../../services/maintenance/control/src/mcp.ts';
 import {localD1} from './d1.ts';
+import {prepareGenesis} from './requests.ts';
 
 const owner = 'owner@example.invalid';
 async function call(
@@ -81,20 +82,10 @@ test('request, inspect, list and control a task through the protocol', async () 
   const missing = await tool(handler, 'request_task', {
     request_key: 'p1',
     instruction: 'Prepare Genesis',
-    kind: 'prepare',
+    steps: ['build'],
   });
   assert.equal(missing.data.status, 'needs_information');
-  const created = await tool(handler, 'request_task', {
-    request_key: 'p1',
-    instruction: 'Prepare Genesis',
-    kind: 'prepare',
-    inputs: [{kind: 'acquisition', id: 'route-1'}],
-    extent: {books: ['GEN']},
-    capabilities: ['source_text'],
-    decision_refs: [
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-    ],
-  });
+  const created = await tool(handler, 'request_task', {...prepareGenesis});
   assert.equal(created.data.status, 'created');
   assert.match(created.text, /is queued/);
   const report = await tool(handler, 'get_task', {
@@ -110,15 +101,17 @@ test('request, inspect, list and control a task through the protocol', async () 
     action: 'pause',
   });
   assert.equal(stale.result.isError, true);
+  // Reading the task noted that no dispatch is configured, which advanced its revision.
+  const read = await tool(handler, 'get_task', {task_id: created.data.task_id});
   const paused = await tool(handler, 'control_task', {
     task_id: created.data.task_id,
-    expected_revision: 1,
+    expected_revision: read.data.revision,
     action: 'pause',
   });
   assert.equal(paused.data.state, 'paused');
   const invalid = await call(handler, 'tools/call', {
     name: 'request_task',
-    arguments: {request_key: '../x', instruction: 'x', kind: 'promote'},
+    arguments: {request_key: '../x', instruction: 'x', steps: ['promote']},
   });
   assert.ok(invalid.error || invalid.result.isError);
   await handler.close();
@@ -133,7 +126,7 @@ test("another person or a service identity cannot read or create the owner's tas
   const created = await tool(ownerHandler, 'request_task', {
     request_key: 'r1',
     instruction: 'Roll back',
-    kind: 'rollback',
+    steps: ['rollback'],
   });
   const other = protocolHandler(
     () => controlServer(db, 'other@example.invalid', false),

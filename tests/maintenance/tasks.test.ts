@@ -9,7 +9,7 @@ import {
   requestTask,
   taskReport,
   PAGE_SIZE,
-  TASK_KINDS,
+  type Step,
   type TaskRequest,
 } from '../../services/maintenance/control/src/tasks.ts';
 
@@ -31,10 +31,11 @@ const admitted = (
 const prepare = (extra: Partial<TaskRequest> = {}): TaskRequest => ({
   request_key: 'prep-1',
   instruction: 'Prepare Genesis text',
-  kind: 'prepare',
+  steps: ['build'],
   inputs: [{kind: 'source_revision', id: 'src-rev-1'}],
   extent: {books: ['GEN']},
   capabilities: ['source_text'],
+  constraints: {recipe: 'r1'},
   ...extra,
 });
 
@@ -64,68 +65,96 @@ async function taskWithJobs(
   return {db, id: created.task.id};
 }
 
-test('every task kind normalizes, and missing information is named instead of guessed', () => {
-  for (const kind of TASK_KINDS) {
-    const {missing} = normalizeScope({
-      request_key: 'k',
-      instruction: 'x',
-      kind,
-      inputs: [
-        kind === 'remove'
-          ? {kind: 'source_revision', id: 'src-rev-1'}
-          : {kind: 'artifact', id: 'a1'},
-      ],
-      extent: {units: ['u1']},
-      capabilities: kind === 'acquire' ? [] : ['source_text'],
-      constraints:
-        kind === 'acquire'
-          ? {recipe: 'r1'}
-          : kind === 'release'
-            ? {candidate: 'task-1'}
-            : {},
-      decision_refs: [
-        {
-          kind: 'statement',
-          ref: 'owner-decision:9',
-          name: 'Character of God',
-          version: '1.0',
-        },
-      ],
-    });
-    assert.deepEqual(missing, [], kind);
-  }
+const STEP_SETS: Step[][] = [
+  ['fetch'],
+  ['build'],
+  ['select'],
+  ['fetch', 'build'],
+  ['build', 'select'],
+  ['fetch', 'build', 'select'],
+  ['remove'],
+  ['rollback'],
+  ['validate_restore'],
+];
+const request = (steps: Step[], change: Partial<TaskRequest> = {}) => {
+  const builds = steps.includes('build');
+  return {
+    request_key: 'k',
+    instruction: 'x',
+    steps,
+    inputs: [
+      steps.includes('remove')
+        ? {kind: 'source_revision' as const, id: 'src-rev-1'}
+        : {kind: 'artifact' as const, id: 'a1'},
+    ],
+    extent: {units: ['u1']},
+    capabilities: builds ? ['source_text'] : [],
+    constraints: {
+      ...(steps.includes('fetch') ? {fetch_recipe: 'f1'} : {}),
+      ...(builds ? {recipe: 'r1'} : {}),
+      ...(steps.includes('select') && !builds ? {candidate: 'task-1'} : {}),
+    },
+    ...change,
+  } satisfies TaskRequest;
+};
+
+test('every step list normalizes, and missing information is named instead of guessed', () => {
+  for (const steps of STEP_SETS)
+    assert.deepEqual(normalizeScope(request(steps)).missing, [], `${steps}`);
+  const statement = {
+    kind: 'statement' as const,
+    ref: 'owner-decision:9',
+    name: 'Character of God',
+    version: '1.0',
+  };
+  assert.deepEqual(
+    normalizeScope(request(['build', 'select'], {decision_refs: [statement]}))
+      .missing,
+    [],
+  );
+  // Nothing is mandatory, but the steps must be real, once each and in order.
+  for (const steps of [
+    [],
+    ['clean'],
+    ['select', 'build'],
+    ['build', 'build'],
+    ['remove', 'build'],
+    ['rollback', 'validate_restore'],
+  ])
+    assert.ok(
+      normalizeScope(request(steps as Step[])).missing[0].startsWith('steps:'),
+      `${steps}`,
+    );
   const {missing} = normalizeScope({
     request_key: 'k',
     instruction: 'Prepare something',
-    kind: 'prepare',
+    steps: ['build'],
   });
-  assert.equal(missing.length, 3);
-  // An acquire task names a recipe and no capabilities; a release names the build it releases.
-  assert.equal(
-    normalizeScope({
-      request_key: 'k',
-      instruction: 'x',
-      kind: 'acquire',
-      inputs: [{kind: 'acquisition', id: 'r'}],
-      extent: {component: 'c'},
-      capabilities: ['source_text'],
-    }).missing.length,
-    2,
+  assert.equal(missing.length, 4);
+  // A task that builds nothing names no capabilities and a fetch names its recipe; a select
+  // without a build names the build it makes current, and a build never does.
+  const named = (steps: Step[], change: Partial<TaskRequest>, text: string) =>
+    assert.ok(
+      normalizeScope(request(steps, change)).missing.some(item =>
+        item.includes(text),
+      ),
+      `${steps} ${text}`,
+    );
+  named(['fetch'], {capabilities: ['source_text']}, 'capabilities');
+  named(['fetch'], {constraints: {}}, 'fetch_recipe');
+  named(['build'], {constraints: {}}, 'constraints.recipe');
+  named(['select'], {constraints: {}}, 'candidate');
+  named(
+    ['build', 'select'],
+    {constraints: {recipe: 'r1', candidate: 'task-1'}},
+    'candidate',
   );
-  assert.ok(
-    normalizeScope({
-      request_key: 'k',
-      instruction: 'x',
-      kind: 'release',
-    }).missing[0].includes('candidate'),
+  named(
+    ['build', 'select'],
+    {decision_refs: [statement, {...statement, ref: 'o:2'}]},
+    'statement',
   );
-  assert.ok(
-    normalizeScope({
-      request_key: 'k',
-      instruction: 'x',
-      kind: 'incorporate_statement',
-    }).missing[0].includes('statement'),
-  );
+  named(['fetch'], {decision_refs: [statement]}, 'statement');
   const a = normalizeScope(prepare({capabilities: ['b', 'a', 'a']})).scope,
     b = normalizeScope(prepare({capabilities: ['a', 'b']})).scope;
   assert.deepEqual(a, b);
@@ -358,7 +387,7 @@ test('open and recent tasks are listed newest first in bounded pages', async () 
     await requestTask(db, owner, {
       request_key: `r-${i}`,
       instruction: `Rollback ${i} `.repeat(20),
-      kind: 'rollback',
+      steps: ['rollback'],
     });
   const first = await listTasks(db, owner);
   assert.equal(first.tasks.length, PAGE_SIZE);

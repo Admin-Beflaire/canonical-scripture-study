@@ -35,28 +35,12 @@
       "count": 1
     }
   },
-  "services/maintenance/control/src/progress.ts": {
-    "complexity": {
-      "count": 3
-    },
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
   "services/maintenance/control/src/selection.ts": {
     "complexity": {
       "count": 4
     },
     "max-lines-per-function": {
       "count": 7
-    }
-  },
-  "services/maintenance/control/src/tasks.ts": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines-per-function": {
-      "count": 2
     }
   },
   "services/study/src/coordinator.ts": {

@@ -15,6 +15,7 @@ import {
   controlTask,
   requestTask,
   taskReport,
+  type TaskRequest,
 } from '../../services/maintenance/control/src/tasks.ts';
 import {
   controlServer,
@@ -60,6 +61,19 @@ const recipe = {
   ],
 };
 
+const requestArguments: TaskRequest = {
+  request_key: 'p1',
+  instruction: 'Prepare it',
+  steps: ['build'],
+  inputs: [{kind: 'acquisition', id: 'route-1'}],
+  extent: {units: ['u1', 'u2']},
+  capabilities: ['source_text'],
+  constraints: {recipe: 'synthetic'},
+  decision_refs: [
+    {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
+  ],
+};
+
 async function setup(
   recipes: Record<string, unknown> = {
     'collection/recipes/synthetic.json': recipe,
@@ -72,16 +86,8 @@ async function setup(
     gh.fetcher,
   );
   const created = await requestTask(db, owner, {
-    request_key: 'p1',
+    ...requestArguments,
     instruction: 'Prepare the synthetic source',
-    kind: 'prepare',
-    inputs: [{kind: 'acquisition', id: 'route-1'}],
-    extent: {units: ['u1', 'u2']},
-    capabilities: ['source_text'],
-    constraints: {recipe: 'synthetic'},
-    decision_refs: [
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-    ],
   });
   assert.ok(created.status === 'created');
   const routes = jobRoutes(db, github);
@@ -545,18 +551,7 @@ test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to s
   });
   const created = await call('tools/call', {
     name: 'request_task',
-    arguments: {
-      request_key: 'p1',
-      instruction: 'Prepare it',
-      kind: 'prepare',
-      inputs: [{kind: 'acquisition', id: 'route-1'}],
-      extent: {units: ['u1', 'u2']},
-      capabilities: ['source_text'],
-      constraints: {recipe: 'synthetic'},
-      decision_refs: [
-        {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-      ],
-    },
+    arguments: {...requestArguments},
   });
   assert.match(created.result.content[0].text, /dispatched prepare-u1/);
   const taskId = JSON.parse(
@@ -586,7 +581,7 @@ test('R22-1: a GitHub outage postpones progression but never breaks or blocks th
     gh.state[mode] = true;
     const created = await call('tools/call', {
       name: 'request_task',
-      arguments: requestArguments,
+      arguments: {...requestArguments},
     });
     assert.equal(created.result.isError, undefined, mode);
     assert.match(created.result.content[0].text, /dispatch postponed/);
@@ -636,7 +631,7 @@ test('R22-2: failed cancellations are reported and retried', async () => {
     (
       await call('tools/call', {
         name: 'request_task',
-        arguments: requestArguments,
+        arguments: {...requestArguments},
       })
     ).result.content[0].text.split('\n\n')[1],
   );
@@ -714,19 +709,6 @@ test('R22-2: a run that GitHub starts for a cancelled task is cancelled', async 
     ),
   );
 });
-
-const requestArguments = {
-  request_key: 'p1',
-  instruction: 'Prepare it',
-  kind: 'prepare',
-  inputs: [{kind: 'acquisition', id: 'route-1'}],
-  extent: {units: ['u1', 'u2']},
-  capabilities: ['source_text'],
-  constraints: {recipe: 'synthetic'},
-  decision_refs: [
-    {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
-  ],
-};
 
 function mcpCaller(db: ReturnType<typeof localD1>, github: GitHubActions) {
   const handler = protocolHandler(
@@ -999,14 +981,14 @@ test('an acquire task completes with the original recorded and never touches a r
   const created = await requestTask(ctx.db, owner, {
     request_key: 'acquire',
     instruction: 'Acquire the synthetic source',
-    kind: 'acquire',
+    steps: ['fetch'],
     inputs: [
       {kind: 'acquisition', id: 'route/1'},
       {kind: 'source_revision', id: 'revision/1'},
     ],
     extent: {component: 'revision/1'},
     capabilities: [],
-    constraints: {recipe: 'acquire-synthetic'},
+    constraints: {fetch_recipe: 'acquire-synthetic'},
     decision_refs: [
       {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
       {kind: 'admission', ref: 'owner-decision:1', subject: 'revision/1'},
@@ -1077,11 +1059,12 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     const created = await requestTask(ctx.db, owner, {
       request_key: variant,
       instruction: 'Acquire',
-      kind: variant === 'build-kind' ? 'prepare' : 'acquire',
+      steps: variant === 'build-kind' ? ['build'] : ['fetch'],
       inputs,
       extent: {component: 'rev/1'},
       capabilities: variant === 'build-kind' ? ['source_text'] : [],
-      constraints: {recipe: 'only'},
+      constraints:
+        variant === 'build-kind' ? {recipe: 'only'} : {fetch_recipe: 'only'},
       decision_refs: inputs.map(ref => ({
         kind: 'admission' as const,
         ref: 'owner:1',
@@ -1095,7 +1078,7 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
     assert.match(
       result.limitation!,
       variant === 'build-kind'
-        ? /only be used by an acquire task/
+        ? /fetch recipe cannot build/
         : variant === 'missing-revision'
           ? /source_revision/
           : /omit sha256/,
@@ -1104,71 +1087,147 @@ test('acquire-only validation stops unsuitable recipes and incomplete references
   }
 });
 
-test('one recipe serves both tasks: acquire runs only its acquire unit, the build never fetches and uses the kept original', async () => {
-  const shared = {
+/** A task that fetches, then builds, from a fetch recipe and a build recipe. */
+async function chainedTask() {
+  const fetchRecipe = {
     ...recipe,
+    id: 'fetch-synthetic',
+    revision: 'fetch-synthetic/1',
+    native_extent: {component: 'c1'},
+    capabilities: [],
     units: [
-      {unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: []},
-      ...recipe.units.map(unit =>
-        unit.unit_id === 'prepare-u1'
-          ? {...unit, depends_on: ['acquire']}
-          : unit,
-      ),
+      {
+        unit_id: 'acquire',
+        kind: 'acquire',
+        native_extent: {component: 'c1'},
+        depends_on: [],
+      },
     ],
   };
-  const context = await setup({'collection/recipes/synthetic.json': shared});
-  const {db, gh, task} = context;
-  const admission = [
-    {kind: 'admission' as const, ref: 'owner-decision:1', subject: 'route-1'},
-  ];
-  // A build that names no finished acquire task is blocked and dispatches nothing.
-  const blocked = await advance(db, context.github, task.id);
-  assert.equal(blocked.state, 'blocked');
-  assert.ok(
-    blocked.limitation?.includes('constraints.acquired'),
-    blocked.limitation,
-  );
-  assert.equal(gh.runs.size, 0);
-  // The acquire task runs only the acquire unit and completes with it.
-  const fetched = await requestTask(db, owner, {
-    request_key: 'a1',
-    instruction: 'Acquire the synthetic source',
-    kind: 'acquire',
-    inputs: [{kind: 'acquisition', id: 'route-1'}],
-    extent: {units: ['u1', 'u2']},
-    capabilities: [],
-    constraints: {recipe: 'synthetic'},
-    decision_refs: admission,
+  const context = await setup({
+    'collection/recipes/synthetic.json': recipe,
+    'collection/recipes/fetch-synthetic.json': fetchRecipe,
   });
-  assert.ok(fetched.status === 'created');
-  const acquireId = fetched.task.id;
-  assert.deepEqual((await advance(db, context.github, acquireId)).dispatched, [
-    'acquire',
-  ]);
-  await finish(context, 'acquire');
-  assert.equal((await taskReport(db, owner, acquireId))?.state, 'completed');
-  // A build that names it dispatches no acquire unit and gets the kept original as its dependency.
-  const built = await requestTask(db, owner, {
-    request_key: 'b1',
-    instruction: 'Prepare the synthetic source',
-    kind: 'prepare',
+  const chained = await requestTask(context.db, owner, {
+    request_key: 'c1',
+    instruction: 'Fetch and prepare the synthetic source',
+    steps: ['fetch', 'build'],
     inputs: [{kind: 'acquisition', id: 'route-1'}],
     extent: {units: ['u1', 'u2']},
     capabilities: ['source_text'],
-    constraints: {recipe: 'synthetic', acquired: acquireId},
-    decision_refs: admission,
+    constraints: {fetch_recipe: 'fetch-synthetic', recipe: 'synthetic'},
+    decision_refs: [
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
+    ],
   });
-  assert.ok(built.status === 'created');
-  const progress = await advance(db, context.github, built.task.id);
-  assert.deepEqual(progress.dispatched, ['prepare-u1']);
-  const {job} = dispatched(gh, 'prepare-u1');
-  assert.equal(job.task_id, built.task.id);
-  assert.deepEqual(job.dependency_refs, [
-    {artifact_id: 'artifact-acquire', sha256: sha('acquire'), byte_count: 10},
+  assert.ok(chained.status === 'created');
+  return {context, id: chained.task.id};
+}
+
+test('one task chains its steps: the fetch runs first, the build never fetches and needs no link to another task', async () => {
+  const {context, id} = await chainedTask();
+  const {db, gh} = context;
+  // The fetch runs first and alone, without the build's capabilities.
+  assert.deepEqual((await advance(db, context.github, id)).dispatched, [
+    'acquire',
   ]);
+  const fetchJob = dispatched(gh, 'acquire').job;
+  assert.deepEqual(fetchJob.required_capabilities, []);
+  assert.equal(gh.runs.size, 1);
+  await finish(context, 'acquire');
+  // Once the original is kept, the same task goes on to the build, which has no fetch dependency.
+  const {job} = dispatched(gh, 'prepare-u1');
+  assert.equal(job.task_id, id);
+  assert.deepEqual(job.dependency_refs, []);
+  assert.equal((await taskReport(db, owner, id))!.state, 'running');
   assert.equal(
-    [...gh.runs.values()].length,
-    2,
-    'one acquire run and one build run',
+    (await advance(db, context.github, id)).dispatched.length,
+    0,
+    'nothing runs twice',
   );
+});
+
+test('each recipe step keeps its own pin: a changed fetch recipe blocks the task before the build starts', async () => {
+  const {context, id} = await chainedTask();
+  await advance(context.db, context.github, id);
+  const row = context.db.sqlite
+    .prepare('SELECT outcome_json FROM maintenance_tasks WHERE id = ?')
+    .get(id) as {outcome_json: string};
+  const pinned = JSON.parse(row.outcome_json) as Record<string, unknown>;
+  assert.equal(pinned.fetch_recipe_revision, 'fetch-synthetic/1');
+  assert.equal(
+    pinned.recipe_revision,
+    undefined,
+    'the build is not pinned yet',
+  );
+  context.db.sqlite
+    .prepare(
+      'UPDATE maintenance_tasks SET revision = revision + 1, outcome_json = ? WHERE id = ?',
+    )
+    .run(
+      JSON.stringify({...pinned, fetch_recipe_revision: 'fetch-synthetic/0'}),
+      id,
+    );
+  const next = await advance(context.db, context.github, id);
+  assert.equal(next.state, 'blocked');
+  assert.match(
+    next.limitation!,
+    /recipe changed from fetch-synthetic\/0 to fetch-synthetic\/1/,
+  );
+  assert.equal(context.gh.runs.size, 1, 'only the first fetch ran');
+});
+
+test('a task requested before tasks listed their steps is blocked, not guessed', async () => {
+  const context = await setup();
+  const old = {
+    kind: 'prepare',
+    inputs: [],
+    operations: [],
+    extent: {},
+    capabilities: [],
+    constraints: {recipe: 'synthetic'},
+    decision_refs: [],
+  };
+  context.db.sqlite.exec('DROP TRIGGER maintenance_task_identity_stable');
+  context.db.sqlite
+    .prepare(
+      'UPDATE maintenance_tasks SET revision = revision + 1, scope_json = ? WHERE id = ?',
+    )
+    .run(JSON.stringify(old), context.task.id);
+  const result = await advance(context.db, context.github, context.task.id);
+  assert.equal(result.state, 'blocked');
+  assert.match(result.limitation!, /request it again/);
+  assert.equal(context.gh.runs.size, 0);
+});
+
+test('a fetch recipe and a build recipe cannot be swapped, and a recipe does only one of them', async () => {
+  const mixed = {
+    ...recipe,
+    units: [
+      {unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: []},
+      ...recipe.units,
+    ],
+  };
+  const context = await setup({'collection/recipes/synthetic.json': mixed});
+  const blocked = await advance(context.db, context.github, context.task.id);
+  assert.equal(blocked.state, 'blocked');
+  assert.match(blocked.limitation!, /mixes fetch and build units/);
+  assert.equal(context.gh.runs.size, 0);
+  const swapped = await setup({'collection/recipes/synthetic.json': recipe});
+  const fetch = await requestTask(swapped.db, owner, {
+    request_key: 'f1',
+    instruction: 'Fetch',
+    steps: ['fetch'],
+    inputs: [{kind: 'acquisition', id: 'route-1'}],
+    extent: {units: ['u1', 'u2']},
+    constraints: {fetch_recipe: 'synthetic'},
+    decision_refs: [
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
+    ],
+  });
+  assert.ok(fetch.status === 'created');
+  const result = await advance(swapped.db, swapped.github, fetch.task.id);
+  assert.equal(result.state, 'blocked');
+  assert.match(result.limitation!, /nothing to fetch/);
+  assert.equal(swapped.gh.runs.size, 0);
 });

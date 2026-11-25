@@ -1,6 +1,13 @@
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import type {ArtifactRef, JobResult, Recipe} from './contracts.ts';
-import type {DecisionRef, Outcome, Scope, TaskRow} from './tasks.ts';
+import {
+  has,
+  statementOf,
+  type DecisionRef,
+  type Outcome,
+  type Scope,
+  type TaskRow,
+} from './tasks.ts';
 import readerCatalogue from '../../../../schemas/reader-references/nrsva-1.json' with {type: 'json'};
 
 /** Scope check, release construction and checked selection (Maintenance Control To-Be §4, MC-03).
@@ -637,13 +644,13 @@ export async function scopeCheck(
 
 /** Exclusions the owner lifts with this task: exclusion decisions on a task that adds data. */
 const liftedBy = (scope: Scope) =>
-  scope.kind === 'remove'
+  has(scope, 'remove')
     ? []
     : scope.decision_refs
         .filter(ref => ref.kind === 'exclusion' && ref.subject)
         .map(ref => ref.subject!);
 const recordedBy = (scope: Scope) =>
-  scope.kind === 'remove'
+  has(scope, 'remove')
     ? scope.decision_refs.filter(ref => ref.kind === 'exclusion' && ref.subject)
     : [];
 
@@ -1053,19 +1060,18 @@ export async function checkAndSelect(
   );
   const base = await members(db, current.current_release_id);
   // A new statement replaces the selected one; ordinary sources stay usable without one.
-  const replacedStatements =
-    scope.kind === 'incorporate_statement'
-      ? new Set(
-          (
-            await inChunks<{output_id: string}>(
-              db,
-              marks =>
-                `SELECT output_id FROM character_statements WHERE output_id IN (${marks})`,
-              base.map(item => item.id),
-            )
-          ).map(row => row.output_id),
-        )
-      : new Set<string>();
+  const replacedStatements = statementOf(scope)
+    ? new Set(
+        (
+          await inChunks<{output_id: string}>(
+            db,
+            marks =>
+              `SELECT output_id FROM character_statements WHERE output_id IN (${marks})`,
+            base.map(item => item.id),
+          )
+        ).map(row => row.output_id),
+      )
+    : new Set<string>();
   const built = membership(
     base.filter(item => !replacedStatements.has(item.id)),
     checked.candidate,
@@ -1074,10 +1080,7 @@ export async function checkAndSelect(
   );
   const whole = await validateMembers(db, stored, built.all, {
     added: new Set(checked.candidate.map(item => item.id)),
-    approved:
-      scope.kind === 'incorporate_statement'
-        ? (scope.decision_refs.find(ref => ref.kind === 'statement') ?? null)
-        : null,
+    approved: statementOf(scope),
     lifted: new Set(liftedBy(scope)),
   });
   const problems = [
@@ -1146,7 +1149,8 @@ export async function releaseCandidate(
   if (build.state === 'completed' && built.selection?.became_current)
     return refuse('This candidate is already current.');
   if (
-    !['prepare', 'correct', 'replace'].includes(buildScope.kind) ||
+    !has(buildScope, 'build') ||
+    has(buildScope, 'select') ||
     build.state !== 'checked' ||
     !built.candidate ||
     !built.checks ||
@@ -1477,7 +1481,7 @@ export async function selectDirect(
       current.current_release_id,
     );
 
-  if (scope.kind === 'remove') {
+  if (has(scope, 'remove')) {
     // The owner's exclusions are recorded even when the current release holds none of the sources,
     // so a later rollback or task cannot bring them back.
     const removes = new Set(
@@ -1541,7 +1545,7 @@ export async function selectDirect(
   }
 
   const stored = await storedSizes(objects);
-  if (scope.kind === 'rollback') {
+  if (has(scope, 'rollback')) {
     if (!current.previous_release_id)
       return unchanged(
         'No previous release is available; the current release is unchanged.',

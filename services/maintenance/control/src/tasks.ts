@@ -2,18 +2,11 @@ import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import type {InputRef} from './contracts.ts';
 
 /** Task scope, state and owner-instruction resolution (Maintenance Control To-Be §1–2). */
-export const TASK_KINDS = [
-  'acquire',
-  'prepare',
-  'correct',
-  'replace',
-  'release',
-  'remove',
-  'package',
-  'incorporate_statement',
-  'rollback',
-  'validate_restore',
-] as const;
+/** The steps Control offers. A task lists the ones it needs, in this order; nothing is mandatory.
+ *  `remove`, `rollback` and `validate_restore` act on the current data and stand alone. */
+export const CHAIN_STEPS = ['fetch', 'build', 'select'] as const;
+export const ALONE_STEPS = ['remove', 'rollback', 'validate_restore'] as const;
+export const STEPS = [...CHAIN_STEPS, ...ALONE_STEPS] as const;
 export const TASK_STATES = [
   'queued',
   'running',
@@ -31,7 +24,7 @@ export const OPEN_STATES = [
   'blocked',
   'checked',
 ] as const;
-export type TaskKind = (typeof TASK_KINDS)[number];
+export type Step = (typeof STEPS)[number];
 export type TaskState = (typeof TASK_STATES)[number];
 export type DecisionRef = {
   kind: 'admission' | 'statement' | 'exclusion' | 'other';
@@ -44,7 +37,7 @@ export type DecisionRef = {
 export interface TaskRequest {
   request_key: string;
   instruction: string;
-  kind: TaskKind;
+  steps: Step[];
   inputs?: InputRef[];
   operations?: string[];
   extent?: Record<string, unknown>;
@@ -55,7 +48,7 @@ export interface TaskRequest {
   supersedes?: string;
 }
 export interface Scope {
-  kind: TaskKind;
+  steps: Step[];
   inputs: InputRef[];
   operations: string[];
   extent: Record<string, unknown>;
@@ -85,6 +78,9 @@ export interface Outcome {
   restore_report?: Record<string, unknown>;
   /** Token of the invocation that completed the task; exclusion changes are tied to it. */
   completion?: string;
+  /** The recipe revisions this task started with, one per recipe step. */
+  recipe_revision?: string;
+  fetch_recipe_revision?: string;
 }
 export interface TaskRow {
   id: string;
@@ -110,114 +106,147 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const uniqueSorted = (values: string[]) => [...new Set(values)].sort();
 const inputKey = (ref: InputRef) => `${ref.kind}\u0000${ref.id}`;
 
+export const has = (scope: Pick<Scope, 'steps'>, step: Step) =>
+  scope.steps.includes(step);
+/** The owner's approval of the statement a task builds, if it carries one. */
+export const statementOf = (scope: Scope) =>
+  scope.decision_refs.find(ref => ref.kind === 'statement') ?? null;
+const text = (value: unknown) => typeof value === 'string' && ID.test(value);
+
+/** Which steps a task lists, and in which order. */
+function stepProblems(steps: Step[]): string[] {
+  if (
+    !Array.isArray(steps) ||
+    !steps.length ||
+    !steps.every(step => STEPS.includes(step))
+  )
+    return [`steps: one or more of ${STEPS.join(', ')}`];
+  const alone = steps.some(step => ALONE_STEPS.includes(step as never));
+  if (alone && steps.length > 1)
+    return [`steps: ${ALONE_STEPS.join(', ')} each stand alone`];
+  const order = steps.map(step => CHAIN_STEPS.indexOf(step as never));
+  if (!alone && order.some((place, i) => i && place <= order[i - 1]))
+    return [`steps: each step once, in this order: ${CHAIN_STEPS.join(', ')}`];
+  return [];
+}
+
+const identifierProblems = (scope: Scope) =>
+  [
+    ...scope.operations,
+    ...scope.capabilities,
+    ...scope.inputs.map(ref => ref.id),
+  ]
+    .filter(value => !ID.test(value))
+    .map(
+      value =>
+        `identifier "${value.slice(0, 40)}": letters, digits and . _ : / - only`,
+    );
+
+/** What the fetch and build steps need: sources, a finite extent, a recipe and the outputs wanted. */
+function sourceProblems(scope: Scope): string[] {
+  const fetches = has(scope, 'fetch');
+  const builds = has(scope, 'build');
+  if (!fetches && !builds && !has(scope, 'remove')) return [];
+  const missing: string[] = [];
+  if (!scope.inputs.length)
+    missing.push(
+      'inputs: which admitted source revisions, artifacts or acquisition routes this concerns',
+    );
+  if (has(scope, 'remove')) return missing;
+  if (Object.keys(scope.extent).length === 0)
+    missing.push(
+      'extent: the finite native extent (for example which books or units)',
+    );
+  if (fetches && typeof scope.constraints.fetch_recipe !== 'string')
+    missing.push('constraints.fetch_recipe: the reviewed fetch recipe');
+  if (builds && typeof scope.constraints.recipe !== 'string')
+    missing.push('constraints.recipe: the reviewed build recipe');
+  if (builds && scope.capabilities.length === 0)
+    missing.push(
+      'capabilities: which outputs are needed (for example source_text, word_index)',
+    );
+  if (!builds && scope.capabilities.length)
+    missing.push(
+      'capabilities: a task that builds nothing makes no outputs, so it names none',
+    );
+  return missing;
+}
+
+/** What the select and the stand-alone steps need. */
+function actionProblems(scope: Scope): string[] {
+  const missing: string[] = [];
+  const candidate = scope.constraints.candidate;
+  if (has(scope, 'select') && !has(scope, 'build') && !text(candidate))
+    missing.push(
+      'constraints.candidate: the task ID of the checked build to make current',
+    );
+  if (has(scope, 'build') && candidate !== undefined)
+    missing.push(
+      'constraints.candidate: only a task that makes current without building names a finished build',
+    );
+  if (
+    has(scope, 'remove') &&
+    scope.inputs.some(ref => ref.kind !== 'source_revision')
+  )
+    missing.push(
+      'inputs: name the source revisions to remove (kind "source_revision")',
+    );
+  const wanted = scope.constraints.select_release;
+  if (has(scope, 'validate_restore') && wanted !== undefined && !text(wanted))
+    missing.push(
+      'constraints.select_release: the ID of the restored release to select, only if the owner asked to select it',
+    );
+  return missing;
+}
+
+/** An owner statement approval belongs to the task that builds the statement. */
+function statementProblems(scope: Scope): string[] {
+  const statements = scope.decision_refs.filter(
+    ref => ref.kind === 'statement',
+  );
+  if (!statements.length) return [];
+  const [only] = statements;
+  return statements.length === 1 &&
+    only.name &&
+    only.version &&
+    has(scope, 'build')
+    ? []
+    : [
+        'decision_refs: exactly one owner statement approval with name and version, on a task that builds',
+      ];
+}
+
 /** Normalize the structured request into a finite scope, or say what is missing. */
 export function normalizeScope(request: TaskRequest): {
   scope: Scope;
   missing: string[];
 } {
-  const missing: string[] = [];
-  const inputs = [
-    ...new Map(
-      (request.inputs ?? []).map(ref => [inputKey(ref), ref]),
-    ).values(),
-  ].sort((a, b) => (inputKey(a) < inputKey(b) ? -1 : 1));
-  const decisions = [
-    ...new Map(
-      (request.decision_refs ?? []).map(ref => [canonicalJson(ref), ref]),
-    ).values(),
-  ].sort((a, b) => (canonicalJson(a) < canonicalJson(b) ? -1 : 1));
+  const byKey = <T>(items: T[] | undefined, key: (item: T) => string) =>
+    [...new Map((items ?? []).map(item => [key(item), item])).values()].sort(
+      (a, b) => (key(a) < key(b) ? -1 : 1),
+    );
   const scope: Scope = {
-    kind: request.kind,
-    inputs,
+    steps: Array.isArray(request.steps) ? request.steps : [],
+    inputs: byKey(request.inputs, inputKey),
     operations: uniqueSorted(request.operations ?? []),
     extent: request.extent ?? {},
     capabilities: uniqueSorted(request.capabilities ?? []),
     constraints: request.constraints ?? {},
-    decision_refs: decisions,
+    decision_refs: byKey(request.decision_refs, canonicalJson),
   };
-  if (!TASK_KINDS.includes(request.kind))
-    missing.push(`kind: one of ${TASK_KINDS.join(', ')}`);
+  const stepErrors = stepProblems(request.steps);
+  const missing = [...stepErrors];
   if (!ID.test(request.request_key ?? ''))
     missing.push('request_key: a short stable key for this instruction');
   if (!request.instruction?.trim())
     missing.push("instruction: the owner's instruction in his own words");
-  for (const value of [
-    ...scope.operations,
-    ...scope.capabilities,
-    ...inputs.map(ref => ref.id),
-  ])
-    if (!ID.test(value))
-      missing.push(
-        `identifier "${value.slice(0, 40)}": letters, digits and . _ : / - only`,
-      );
-  const needsInputs = [
-    'acquire',
-    'prepare',
-    'correct',
-    'replace',
-    'remove',
-    'package',
-  ].includes(request.kind);
-  if (needsInputs && inputs.length === 0)
+  if (!stepErrors.length)
     missing.push(
-      'inputs: which admitted source revisions, artifacts or acquisition routes this concerns',
+      ...identifierProblems(scope),
+      ...sourceProblems(scope),
+      ...actionProblems(scope),
+      ...statementProblems(scope),
     );
-  if (
-    ['acquire', 'prepare', 'correct', 'replace'].includes(request.kind) &&
-    Object.keys(scope.extent).length === 0
-  )
-    missing.push(
-      'extent: the finite native extent (for example which books or units)',
-    );
-  if (['prepare', 'correct', 'replace'].includes(request.kind)) {
-    if (scope.capabilities.length === 0)
-      missing.push(
-        'capabilities: which outputs are needed (for example source_text, word_index)',
-      );
-  }
-  if (request.kind === 'acquire') {
-    if (typeof scope.constraints.recipe !== 'string')
-      missing.push('constraints.recipe: the reviewed acquisition recipe');
-    if (scope.capabilities.length)
-      missing.push(
-        'capabilities: an acquire task makes no outputs, so it names none',
-      );
-  }
-  if (
-    request.kind === 'release' &&
-    (typeof scope.constraints.candidate !== 'string' ||
-      !ID.test(scope.constraints.candidate))
-  )
-    missing.push(
-      'constraints.candidate: the task ID of the checked build to make current',
-    );
-  if (
-    request.kind === 'remove' &&
-    inputs.some(ref => ref.kind !== 'source_revision')
-  )
-    missing.push(
-      'inputs: name the source revisions to remove (kind "source_revision")',
-    );
-  if (
-    request.kind === 'validate_restore' &&
-    scope.constraints.select_release !== undefined &&
-    (typeof scope.constraints.select_release !== 'string' ||
-      !ID.test(scope.constraints.select_release))
-  )
-    missing.push(
-      'constraints.select_release: the ID of the restored release to select, only if the owner asked to select it',
-    );
-  if (request.kind === 'incorporate_statement') {
-    const statements = decisions.filter(ref => ref.kind === 'statement');
-    if (
-      statements.length !== 1 ||
-      !statements[0].name ||
-      !statements[0].version
-    )
-      missing.push(
-        'decision_refs: exactly one owner statement approval with name and version',
-      );
-  }
   return {scope, missing};
 }
 
@@ -233,7 +262,7 @@ export async function admissionGaps(
       .map(ref => ref.subject),
   );
   const gaps: string[] = [];
-  if (scope.kind === 'remove') return gaps; // Removing data needs no admission.
+  if (has(scope, 'remove')) return gaps; // Removing data needs no admission.
   for (const ref of scope.inputs) {
     if (ref.kind === 'artifact' || decided.has(ref.id)) continue;
     if (ref.kind === 'source_revision') {
@@ -253,66 +282,48 @@ export async function admissionGaps(
   return gaps;
 }
 
-/** Create the task, or return the existing one for a repeated requester/key with the same scope. */
-export async function requestTask(
+type Replaced = Pick<TaskRow, 'id' | 'revision'>;
+
+/** The task an earlier request with the same key made, if any: the same scope is the same task. */
+async function existingRequest(
   db: D1Database,
   requester: string,
   request: TaskRequest,
-): Promise<RequestResult> {
-  const {scope, missing} = normalizeScope(request);
-  if (missing.length) return {status: 'needs_information', missing};
-  const basis = await sha256(canonicalJson(scope));
+  basis: string,
+): Promise<RequestResult | null> {
   const existing = await db
     .prepare(
       'SELECT * FROM maintenance_tasks WHERE requester = ? AND request_key = ?',
     )
     .bind(requester, request.request_key)
     .first<TaskRow>();
-  if (existing) {
-    if (existing.basis_digest === basis)
-      return {status: 'existing', task: existing, superseded: []};
-    return {
-      status: 'conflict',
-      task_id: existing.id,
-      message:
-        'This request key was already used with a different scope. Use a new request key for the changed instruction.',
-    };
-  }
-  const gaps = await admissionGaps(db, scope);
-  if (gaps.length) return {status: 'needs_information', missing: gaps};
-
-  const id = `task-${(await sha256(`${requester}\u0000${request.request_key}`)).slice(0, 24)}`;
-  const selection = await db
-    .prepare(
-      'SELECT current_release_id FROM release_selection WHERE singleton_id = 1',
-    )
-    .first<{current_release_id: string | null}>();
-  const outcome: Outcome = {
-    completed_extent: {},
-    remaining_extent: scope.extent,
-    limitations: [],
-    selection: null,
+  if (!existing) return null;
+  if (existing.basis_digest === basis)
+    return {status: 'existing', task: existing, superseded: []};
+  return {
+    status: 'conflict',
+    task_id: existing.id,
+    message:
+      'This request key was already used with a different scope. Use a new request key for the changed instruction.',
   };
-  // A changed instruction names the unfinished task it replaces; nothing is superseded by guesswork.
-  let replaced: Pick<TaskRow, 'id' | 'revision'> | null = null;
-  if (request.supersedes) {
-    replaced = await db
-      .prepare(
-        `SELECT id, revision FROM maintenance_tasks WHERE id = ? AND requester = ?
-      AND state IN ('queued','running','paused','blocked','checked')`,
-      )
-      .bind(request.supersedes, requester)
-      .first();
-    if (!replaced)
-      return {
-        status: 'needs_information',
-        missing: [
-          `supersedes: "${request.supersedes}" is not an unfinished task of this owner`,
-        ],
-      };
-  }
-  // All or nothing in one batch: the old task is superseded only if this request creates the new
-  // one, and the new one is created only if the named old task was superseded at the revision read.
+}
+
+/** The statements that record a task: the superseded task changes only if this request creates
+ *  the new one, and the new one is created only if the named old task was superseded at the
+ *  revision read. All or nothing in one batch. */
+function recordStatements(
+  db: D1Database,
+  task: {
+    id: string;
+    requester: string;
+    request: TaskRequest;
+    scope: Scope;
+    basis: string;
+    base: string | null;
+    outcome: Outcome;
+  },
+  replaced: Replaced | null,
+) {
   const supersede = replaced
     ? [
         db
@@ -321,7 +332,7 @@ export async function requestTask(
     WHERE id = ? AND revision = ? AND state IN ('queued','running','paused','blocked','checked')
       AND NOT EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ?)`,
           )
-          .bind(replaced.id, replaced.revision, id),
+          .bind(replaced.id, replaced.revision, task.id),
       ]
     : [];
   const insert = db
@@ -332,20 +343,84 @@ export async function requestTask(
       AND (? IS NULL OR EXISTS (SELECT 1 FROM maintenance_tasks WHERE id = ? AND state = 'superseded' AND revision = ?))`,
     )
     .bind(
-      id,
-      requester,
-      request.request_key,
-      request.instruction.trim(),
-      canonicalJson(scope),
-      basis,
-      selection?.current_release_id ?? null,
-      canonicalJson(outcome),
-      id,
+      task.id,
+      task.requester,
+      task.request.request_key,
+      task.request.instruction.trim(),
+      canonicalJson(task.scope),
+      task.basis,
+      task.base,
+      canonicalJson(task.outcome),
+      task.id,
       replaced?.id ?? null,
       replaced?.id ?? null,
       replaced ? replaced.revision + 1 : null,
     );
-  const results = await db.batch([...supersede, insert]);
+  return [...supersede, insert];
+}
+
+/** A changed instruction names the unfinished task it replaces; nothing is superseded by guesswork. */
+function unfinishedTask(db: D1Database, requester: string, id: string) {
+  return db
+    .prepare(
+      `SELECT id, revision FROM maintenance_tasks WHERE id = ? AND requester = ?
+    AND state IN ('queued','running','paused','blocked','checked')`,
+    )
+    .bind(id, requester)
+    .first<Replaced>();
+}
+
+/** Create the task, or return the existing one for a repeated requester/key with the same scope. */
+export async function requestTask(
+  db: D1Database,
+  requester: string,
+  request: TaskRequest,
+): Promise<RequestResult> {
+  const {scope, missing} = normalizeScope(request);
+  if (missing.length) return {status: 'needs_information', missing};
+  const basis = await sha256(canonicalJson(scope));
+  const earlier = await existingRequest(db, requester, request, basis);
+  if (earlier) return earlier;
+  const gaps = await admissionGaps(db, scope);
+  if (gaps.length) return {status: 'needs_information', missing: gaps};
+
+  const id = `task-${(await sha256(`${requester}\u0000${request.request_key}`)).slice(0, 24)}`;
+  const selected = await db
+    .prepare(
+      'SELECT current_release_id FROM release_selection WHERE singleton_id = 1',
+    )
+    .first<{current_release_id: string | null}>();
+  const outcome: Outcome = {
+    completed_extent: {},
+    remaining_extent: scope.extent,
+    limitations: [],
+    selection: null,
+  };
+  const replaced = request.supersedes
+    ? await unfinishedTask(db, requester, request.supersedes)
+    : null;
+  if (request.supersedes && !replaced)
+    return {
+      status: 'needs_information',
+      missing: [
+        `supersedes: "${request.supersedes}" is not an unfinished task of this owner`,
+      ],
+    };
+  const results = await db.batch(
+    recordStatements(
+      db,
+      {
+        id,
+        requester,
+        request,
+        scope,
+        basis,
+        base: selected?.current_release_id ?? null,
+        outcome,
+      },
+      replaced,
+    ),
+  );
   const inserted = results[results.length - 1];
   const task = await db
     .prepare('SELECT * FROM maintenance_tasks WHERE id = ?')

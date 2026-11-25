@@ -11,7 +11,7 @@ import {
   listTasks,
   requestTask,
   taskReport,
-  TASK_KINDS,
+  STEPS,
   type ControlAction,
   type Outcome,
   type TaskRequest,
@@ -27,11 +27,11 @@ Workflow:
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
 5. tidy_releases removes what no kept release and no open task needs (it also runs when a task ends). Each call does a bounded part: call it again while the result says more; skipped outputs are blocked by another output and are left.
 
-Preparation runs by itself in GitHub Actions: a task that names a reviewed recipe in constraints.recipe dispatches its units in order, each unit's result starts the next, and failed units are retried up to three times. The task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
+Preparation runs by itself in GitHub Actions: a task lists the steps it needs, in order, and nothing is mandatory. A fetch step runs the units of the reviewed recipe in constraints.fetch_recipe and keeps the original; a build step runs the units of the recipe in constraints.recipe. Each unit's result starts the next, and failed units are retried up to three times. For a build, the task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
 
-When every unit has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). If both pass, the result becomes current at once: the owner's instruction is the permission, no second go is needed. If a check fails, the task is blocked with the reasons and the current data is unchanged.
+When every unit of a build has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). A task that lists select then makes the result current at once: the owner's instruction is the permission, no second go is needed. If another build became current in between, Control builds the release again on the new current release, checks it again and retries a few times by itself. If a check fails, the task is blocked with the reasons and the current data is unchanged. A build without select ends checked and waits; a later task with steps ["select"] and constraints.candidate makes it current.
 
-Kinds: prepare (includes acquisition and index rebuilds), correct, replace (constraints.replaces lists the source revisions it replaces), remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later prepare task lifts it), package (source references only, never answers), incorporate_statement (needs the owner's named and versioned approval), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked).
+Steps that stand alone: remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later build lifts it), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked). constraints.replaces on a build lists the source revisions it replaces. An owner's statement approval (decision kind "statement", with name and version) belongs to the build of that statement. A package build holds source references only, never answers.
 Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 
 const id = {
@@ -67,7 +67,7 @@ const decisionRef = {
 const requestSchema = fromJsonSchema<TaskRequest>({
   type: 'object',
   additionalProperties: false,
-  required: ['request_key', 'instruction', 'kind'],
+  required: ['request_key', 'instruction', 'steps'],
   properties: {
     request_key: {
       ...id,
@@ -80,10 +80,13 @@ const requestSchema = fromJsonSchema<TaskRequest>({
       maxLength: 4000,
       description: "The owner's instruction in his own words.",
     },
-    kind: {
-      enum: [...TASK_KINDS],
+    steps: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 3,
+      items: {enum: [...STEPS]},
       description:
-        "acquire fetches and keeps an original and nothing else (constraints.recipe names its recipe). prepare, correct and replace build checked outputs and never make them current. release makes a finished build current (constraints.candidate is that build's task ID). The other kinds are as before.",
+        'The steps this task needs, in order, and nothing more: fetch (keeps an original; constraints.fetch_recipe names its recipe), build (builds checked outputs; constraints.recipe names its recipe), select (makes the build current; alone it makes a finished build current, constraints.candidate is that build\'s task ID). Examples: ["fetch"], ["build","select"], ["fetch","build","select"], ["select"]. remove, rollback and validate_restore each stand alone.',
     },
     inputs: {
       type: 'array',

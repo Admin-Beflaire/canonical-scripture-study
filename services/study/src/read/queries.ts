@@ -208,7 +208,7 @@ WHERE (t.mapped_span_id, a.id) > (?3, ?4)
 ORDER BY t.mapped_span_id, a.id LIMIT ?5`;
 
 /** Only an approved statement selected by this release; the approval reference stays private. */
-const STATEMENT = `SELECT cs.id, cs.name, cs.version, cs.scripture_basis_json
+const STATEMENT = `SELECT cs.id, cs.name, cs.version, cs.wording, cs.scripture_basis_json
 FROM release_outputs ro
 JOIN character_statements cs ON cs.output_id = ro.output_id
 WHERE ro.release_id = ?1 AND cs.status = 'approved'

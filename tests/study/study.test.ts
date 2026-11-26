@@ -337,11 +337,13 @@ test('modes without loaded evidence say so; conclusion_check returns the stateme
   assert.equal(absent.limitations[0].state, 'missing_evidence');
   const present = (await study(buildFixture().env, {
     mode: 'conclusion_check',
-  })) as {statement: {name: string; version: string}};
-  assert.deepEqual(
-    [present.statement.name, present.statement.version],
-    ['Synthetic statement', '1'],
-  );
+  })) as {statement: Record<string, unknown>};
+  assert.deepEqual(present.statement, {
+    name: 'Synthetic statement',
+    version: '1',
+    wording: 'Synthetic statement wording.',
+    scripture_basis: ['Gen 1:1'],
+  });
   assert.doesNotMatch(JSON.stringify(present), /private:approval-ref/);
   const [nothing] = await all(env, {mode: 'exegesis'});
   assert.equal(nothing.limitations[0].state, 'invalid_request');
@@ -746,7 +748,7 @@ test('study batches carry no translation rules; the rules and the full skill kee
   ])
     assert.match(full, needed);
   assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/25');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/26');
   for (const needed of [
     /### Working translation — <reference>/,
     /#### <chapter heading: book and chapter, only when several chapters>/,

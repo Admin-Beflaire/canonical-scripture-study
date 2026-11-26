@@ -387,6 +387,7 @@ test('selected statement withholds the private approval reference', async () => 
     'name',
     'scripture_basis_json',
     'version',
+    'wording',
   ]);
   assert.equal(
     JSON.stringify(statement).includes('private:approval-ref'),

@@ -322,6 +322,11 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'never present other words as the statement',
     'call this your own check, not the approved version',
     'Show points only when the reader asks',
+    'every sense possible here, which interpretation of part 7 each sense supports',
+    'An entry that gives only the chosen sense is incomplete when another sense is possible here',
+    'when only one sense is possible here, say why',
+    'every interpretation of part 7, not only the strongest',
+    'When there is another serious reading, a check of the favoured one alone is incomplete',
   ])
     assert.ok(text.includes(rule), rule);
 });
@@ -351,7 +356,7 @@ test('skills share one text for a rule two of them need', () => {
   );
   shared(
     '- Results with evidence do not carry the statement',
-    '- Without one',
+    '- Check every serious interpretation',
     'exegesis',
     'conclusion-check',
   );

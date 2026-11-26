@@ -16,7 +16,7 @@ import {
  *  text with get_guidance, and passes the code it ends with in every study call. The
  *  instructions only lead there. Every rule on using the study tool is complete in the tool's
  *  or a field's description. */
-export const GUIDANCE_VERSION = 'study-guidance/24';
+export const GUIDANCE_VERSION = 'study-guidance/25';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) at every detail level. In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise. In other study requests, summarise its argument before explaining the asked verses.

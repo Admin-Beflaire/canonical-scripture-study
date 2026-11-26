@@ -32,7 +32,8 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
  *  check both use it. */
 export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version and scriptural basis of the approved statement, or says that none is selected. It does not return the statement's wording yet.
 - With a statement: check your conclusions against its scriptural basis, say that its wording was not supplied, and never present other words as the statement. Agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
-- Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.`;
+- Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
+- Check every serious interpretation or alternative, not only the one you favour. For each say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why. When there is another serious reading, a check of the favoured one alone is incomplete.`;
 
 export const EXEGESIS = `Exegesis:
 
@@ -40,14 +41,14 @@ The answer
 - Read the whole literary unit, also when particular verses are asked; deliver the asked scope. Give your own working translation first, under the translation skill.
 - Then give, for each literary unit:
   1. Core summary (write it after weighing).
-  2. Words and meaning: the words whose meaning changes the reading, their options, which interpretation each option supports, and why.
+  2. Words and meaning: one entry for each word or construction whose meaning changes the reading, with the source word, every sense possible here, which interpretation of part 7 each sense supports, your choice and why. An entry that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
   3. Historical and cultural background and contrast.
   4. Literary context, with the structure and form of the text.
   5. Storyline through Scripture.
   6. Quotations, echoes and themes.
   7. Interpretations: the known ones that matter, each with its case and its difficulties, in order of likelihood; your own where there is reason; which is strongest, and why.
   8. Christ as anchor, without rewriting what the text meant in its own setting.
-  9. Check of the conclusions against God's revealed character, after interpreting.
+  9. Check of the conclusions against God's revealed character, after interpreting: every interpretation of part 7, not only the strongest.
 - An exegesis of a passage gets all nine parts; a limited question gets the parts that bear on it.
 - Weigh the interpretations by the points below before writing. A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support.
 - Study supplies no commentary or background evidence yet: mark what comes from your own knowledge or from outside sources you consulted, and say what was not supplied.

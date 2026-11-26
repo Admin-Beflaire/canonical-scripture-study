@@ -169,6 +169,7 @@ for (const mode of MODES)
     assert.equal(served.isError, false, JSON.stringify(served.data));
     assert.ok(reads > 0);
     assert.deepEqual(served.data, await ungated(request));
+    assert.equal(served.data.translation_rules, undefined);
     assert.equal(served.data.release_id, 'rel-p');
     if (mode === 'conclusion_check') {
       assert.equal(served.data.statement, null);
@@ -211,6 +212,7 @@ test('the code read from a skill file serves the whole study; a refused continua
     });
     assert.equal(isError, false);
     assert.deepEqual(data, await ungated(args));
+    assert.equal(data.translation_rules, undefined);
     delivered.push(...verses(data));
     continuation = data.continuation;
   } while (continuation && ++calls < 100);

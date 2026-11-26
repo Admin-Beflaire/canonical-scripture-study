@@ -33,7 +33,7 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
 export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version and scriptural basis of the approved statement, or says that none is selected. It does not return the statement's wording yet.
 - With a statement: check your conclusions against its scriptural basis, say that its wording was not supplied, and never present other words as the statement. Agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
-- Check every serious interpretation or alternative, not only the one you favour. For each say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why. A check that only confirms the favoured reading is incomplete.`;
+- Check every serious interpretation or alternative, not only the one you favour. For each say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why. When there is another serious reading, a check of the favoured one alone is incomplete.`;
 
 export const EXEGESIS = `Exegesis:
 
@@ -41,7 +41,7 @@ The answer
 - Read the whole literary unit, also when particular verses are asked; deliver the asked scope. Give your own working translation first, under the translation skill.
 - Then give, for each literary unit:
   1. Core summary (write it after weighing).
-  2. Words and meaning: one entry for each word or construction whose meaning changes the reading, with the source word, every sense possible here, which interpretation of part 7 each sense supports, your choice and why. An entry that gives only the chosen sense is incomplete.
+  2. Words and meaning: one entry for each word or construction whose meaning changes the reading, with the source word, every sense possible here, which interpretation of part 7 each sense supports, your choice and why. An entry that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
   3. Historical and cultural background and contrast.
   4. Literary context, with the structure and form of the text.
   5. Storyline through Scripture.

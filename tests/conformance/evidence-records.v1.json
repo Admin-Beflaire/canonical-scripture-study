@@ -650,19 +650,9 @@
         "version": "1",
         "status": "approved",
         "scripture_basis_json": [
-          {
-            "schema_version": "native-reference/1",
-            "source_revision_id": "synthetic:a:source_revision",
-            "coordinate_version": "synthetic:unicode-scalars/1",
-            "segments": [
-              {
-                "unit_id": "unit-a",
-                "start": 0,
-                "end": 4
-              }
-            ]
-          }
+          "Synthetic 1:1-4"
         ],
+        "wording": "Synthetic statement wording.",
         "owner_approval_ref": "synthetic:test-approval/1"
       },
       {
@@ -672,19 +662,9 @@
         "version": "2",
         "status": "approved",
         "scripture_basis_json": [
-          {
-            "schema_version": "native-reference/1",
-            "source_revision_id": "synthetic:a:source_revision",
-            "coordinate_version": "synthetic:unicode-scalars/1",
-            "segments": [
-              {
-                "unit_id": "unit-a",
-                "start": 0,
-                "end": 4
-              }
-            ]
-          }
+          "Synthetic 1:1-4"
         ],
+        "wording": "Synthetic statement wording.",
         "owner_approval_ref": "synthetic:test-approval/2"
       },
       {
@@ -694,19 +674,9 @@
         "version": "draft",
         "status": "draft",
         "scripture_basis_json": [
-          {
-            "schema_version": "native-reference/1",
-            "source_revision_id": "synthetic:a:source_revision",
-            "coordinate_version": "synthetic:unicode-scalars/1",
-            "segments": [
-              {
-                "unit_id": "unit-a",
-                "start": 0,
-                "end": 4
-              }
-            ]
-          }
+          "Synthetic 1:1-4"
         ],
+        "wording": "Synthetic statement wording.",
         "owner_approval_ref": null
       }
     ],

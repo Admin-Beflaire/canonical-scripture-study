@@ -910,6 +910,7 @@
         "version",
         "status",
         "scripture_basis_json",
+        "wording",
         "owner_approval_ref"
       ],
       "properties": {
@@ -942,9 +943,16 @@
         "scripture_basis_json": {
           "type": "array",
           "items": {
-            "$ref": "urn:css:native-reference:1"
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\uD800-\\uDFFF]*$"
           },
           "minItems": 1
+        },
+        "wording": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\uD800-\\uDFFF]*$"
         },
         "owner_approval_ref": {
           "anyOf": [

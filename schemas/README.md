@@ -36,8 +36,9 @@ provider-specific information without adding a table for each source.
 - Study packages hold attributed source references and dependencies. External/not-held
   references carry a locator, never an invented held revision. No answer field or
   general findings/teachings acceptance mechanism exists.
-- Character statements retain a named/versioned approval reference and Scripture
-  basis. Synthetic approval references in tests have no operational authority.
+- Character statements retain a named/versioned approval reference, the wording and
+  its Scripture basis as reader references. Synthetic approval references in tests
+  have no operational authority.
   Statement metadata must precede release membership; only an approved record can
   be included, with at most one per release. The statement is a conclusion check.
 

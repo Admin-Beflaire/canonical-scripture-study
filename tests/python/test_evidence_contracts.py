@@ -34,6 +34,10 @@ class EvidenceContractsTests(unittest.TestCase):
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.executescript((ROOT / "schemas" / MANIFEST["migration"]).read_text())
+        # The fixture records carry the statement wording a later migration adds.
+        self.db.executescript(
+            (ROOT / "schemas/migrations/0017_statement_wording.sql").read_text()
+        )
         self.addCleanup(self.db.close)
         for kind, records in FIXTURE["records"].items():
             if kind in ("release", "release_output", "release_selection"):

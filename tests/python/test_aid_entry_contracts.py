@@ -141,7 +141,9 @@ class CompactEvidenceMigrationTests(unittest.TestCase):
         self.addCleanup(db.close)
         db.execute("PRAGMA foreign_keys=ON")
         migrations = sorted((ROOT / "schemas/migrations").glob("*.sql"))
-        for path in migrations[:11]:
+        # 0017 only adds the statement wording that the fixture records carry.
+        wording = ROOT / "schemas/migrations/0017_statement_wording.sql"
+        for path in [*migrations[:11], wording]:
             db.executescript(path.read_text())
         records = RecordSet()
         for kind, rows in fixture["records"].items():

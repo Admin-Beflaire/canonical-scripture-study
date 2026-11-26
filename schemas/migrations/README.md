@@ -76,3 +76,8 @@ build reads the table when it opens a release.
 `maintenance_jobs`. Apply it with the Control deployment: the previous Control build
 writes the column. The `checkpointed` job state stays allowed by the table constraint
 and is never written.
+
+`0017_statement_wording.sql` adds the statement wording to `character_statements`;
+an approved statement requires it. Apply it with the Study deployment before a task
+prepares a statement: the new preparation writes the column and the new Study build
+reads it. Earlier builds ignore it.

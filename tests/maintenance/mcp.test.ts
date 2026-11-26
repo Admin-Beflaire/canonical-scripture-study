@@ -7,6 +7,7 @@ import {
 import {
   controlServer,
   CONTROL_INSTRUCTIONS,
+  DECISION_REF_MAX,
 } from '../../services/maintenance/control/src/mcp.ts';
 import {STEPS} from '../../services/maintenance/control/src/tasks.ts';
 import {readFileSync, readdirSync} from 'node:fs';
@@ -40,6 +41,17 @@ test('the instructions name every step and constraint a task can use, and no rem
     assert.ok(!CONTROL_INSTRUCTIONS.includes(removed), removed);
   assert.match(CONTROL_INSTRUCTIONS, /Starting a task/);
   assert.match(CONTROL_INSTRUCTIONS, /get_recipe/);
+  // An admission is the owner's decision about a source, quoted by a short reference the field accepts.
+  assert.match(
+    CONTROL_INSTRUCTIONS,
+    /A general instruction to run a task is not an admission/,
+  );
+  assert.doesNotMatch(CONTROL_INSTRUCTIONS, /exact words/);
+  assert.ok(
+    CONTROL_INSTRUCTIONS.includes(`at most ${DECISION_REF_MAX} characters`),
+  );
+  // One task chains fetch and build; the instructions no longer say they need separate tasks.
+  assert.doesNotMatch(CONTROL_INSTRUCTIONS, /separate tasks/);
 });
 
 async function call(
@@ -284,18 +296,114 @@ test('get_recipe lists recipes by word and answers with a request that request_t
   await handler.close();
 });
 
-test('get_recipe says what is missing first and refuses what is not a recipe on main', async () => {
-  const handler = recipeHandler(localD1(), realRecipes('stepbible-tahot-sng'));
-  const build = await tool(handler, 'get_recipe', {
-    recipe: 'stepbible-tahot-sng',
+/** Save a source revision (and its admission) as the fetch of an original leaves it. */
+function saveOriginal(db: ReturnType<typeof localD1>, revision: string) {
+  const details = JSON.stringify({
+    sha256: 'a'.repeat(64),
+    byte_count: 7,
+    locator: `originals/${revision}/${'a'.repeat(64)}/original`,
   });
-  assert.ok(
-    build.data.notes.some((note: string) => note.includes('not saved yet')),
-    JSON.stringify(build.data.notes),
-  );
+  for (const [id, kind, parent, detail] of [
+    ['work', 'work', null, '{}'],
+    ['edition', 'edition', 'work', '{}'],
+    ['representation', 'representation', 'edition', '{}'],
+    [revision, 'source_revision', 'representation', details],
+  ]) {
+    db.sqlite
+      .prepare('INSERT INTO source_nodes VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, kind, parent, id, 'synthetic', 'synthetic', detail);
+  }
+  db.sqlite
+    .prepare('INSERT INTO admissions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(
+      'admission',
+      revision,
+      'a',
+      'synthetic',
+      '[]',
+      '[]',
+      '[]',
+      1,
+      'unresolved',
+    );
+}
+
+test('get_recipe refuses what is not a recipe on main and answers a build without a fetch when none is needed', async () => {
+  const handler = recipeHandler(localD1(), realRecipes('stepbible-tahot-sng'));
   const missing = await tool(handler, 'get_recipe', {recipe: 'nothing-here'});
   assert.equal(missing.result.isError, true);
   assert.match(missing.text, /not on main/);
+  // No fetch recipe is on main here: the guide says so instead of sending the AI looking.
+  const build = await tool(handler, 'get_recipe', {
+    recipe: 'stepbible-tahot-sng',
+  });
+  assert.equal(build.data.request_with_fetch, undefined);
+  assert.ok(
+    build.data.notes.some((note: string) => note.includes('No fetch recipe')),
+    JSON.stringify(build.data.notes),
+  );
+  await handler.close();
+});
+
+test('a book build names the fetch recipe of its own file, even when another file of the same source is saved', async () => {
+  const db = localD1();
+  // The source revision is shared by every file of the source; one saved file proves nothing for another.
+  saveOriginal(db, 'stepbible-tahot:5de0a47f35f0');
+  const handler = recipeHandler(
+    db,
+    realRecipes(
+      'stepbible-tahot-sng',
+      'stepbible-fetch-tahot-job-sng',
+      'stepbible-fetch-tahot-gen-deu',
+    ),
+  );
+  const answer = await tool(handler, 'get_recipe', {
+    recipe: 'stepbible-tahot-sng',
+  });
+  assert.equal(
+    answer.data.request_with_fetch.constraints.fetch_recipe,
+    'stepbible-fetch-tahot-job-sng',
+  );
+  assert.deepEqual(answer.data.request_with_fetch.steps, ['fetch', 'build']);
+  // One task fetches and builds, although the two recipes have different extents.
+  assert.notDeepEqual(answer.data.request_with_fetch.extent, {
+    component: 'tahot-job-sng',
+  });
+  const sent = await sendAnswered(
+    handler,
+    'sng-fetch',
+    answer.data.request_with_fetch,
+  );
+  assert.equal(sent.data.status, 'created', sent.text);
+  assert.deepEqual(sent.data.limitations ?? [], []);
+  await handler.close();
+});
+
+test('a language-aid build names its fetch recipe although that recipe id has no "fetch", and none once the original is kept', async () => {
+  const db = localD1();
+  const recipes = realRecipes('language-aids-tbesg', 'stepdata-tbesg-5de0a47f');
+  const handler = recipeHandler(db, recipes);
+  const before = await tool(handler, 'get_recipe', {
+    recipe: 'language-aids-tbesg',
+  });
+  assert.equal(
+    before.data.request_with_fetch.constraints.fetch_recipe,
+    'stepdata-tbesg-5de0a47f',
+  );
+  const sent = await sendAnswered(
+    handler,
+    'aids-fetch',
+    before.data.request_with_fetch,
+  );
+  assert.equal(sent.data.status, 'created', sent.text);
+  saveOriginal(db, 'stepdata-tbesg-5de0a47f/1');
+  const after = await tool(handler, 'get_recipe', {
+    recipe: 'language-aids-tbesg',
+  });
+  assert.equal(after.data.request_with_fetch, undefined);
+  assert.ok(
+    !after.data.notes.some((note: string) => note.includes('fetch recipe')),
+  );
   await handler.close();
 });
 

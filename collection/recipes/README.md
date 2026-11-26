@@ -25,8 +25,9 @@ original and never fetches. A task for one book names the recipe in `constraints
 both inputs: the acquisition `stepbible-data:<commit12>:<component>` and the source
 revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decision.
 
-A recipe says only how to do its step for that source. Control runs the fetch and the build as
-separate tasks for now; the task steps change in the same programme (P5c).
+A recipe says only how to do its step for that source. One task can chain the steps
+(`steps: ["fetch", "build", "select"]`, with `constraints.fetch_recipe` and `constraints.recipe`);
+Control's `get_recipe` answers with the request for a recipe and the fetch recipe its original needs.
 
 The fetch recipes and the base book recipes are written by
 `python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files

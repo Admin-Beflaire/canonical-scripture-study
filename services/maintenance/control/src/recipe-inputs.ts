@@ -5,6 +5,10 @@ export interface RecipeInput {
   id: string;
 }
 
+/** A recipe whose units only acquire fetches an original; any other recipe builds. */
+export const fetchesOnly = (recipe: Recipe) =>
+  (recipe.units ?? []).every(unit => unit.kind === 'acquire');
+
 /** The inputs a task for this recipe must name: the recipe's own list, or for an acquire-only
  *  recipe the acquisition route and the source revision it keeps. Other recipes list none. */
 export function recipeInputs(recipe: Recipe): RecipeInput[] {

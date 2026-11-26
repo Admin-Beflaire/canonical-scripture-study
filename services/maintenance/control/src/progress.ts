@@ -8,7 +8,7 @@ import {
   type RecipeUnit,
 } from './contracts.ts';
 import {tidyReleases} from './cleanup.ts';
-import {recipeInputs} from './recipe-inputs.ts';
+import {fetchesOnly, recipeInputs} from './recipe-inputs.ts';
 import {dispatchUnit, type DispatchResult, type UnitPlan} from './dispatch.ts';
 import {
   FileEncodingError,
@@ -425,7 +425,7 @@ function inputProblem(job: JobView): string | null {
 const exhausted = (unit: RecipeUnit, latest: JobView) => {
   const input = inputProblem(latest);
   if (input)
-    return `unit ${unit.unit_id} cannot run: ${input}. Check the task's input IDs against an earlier task for the same source and request it again`;
+    return `unit ${unit.unit_id} cannot run: ${input}. Ask get_recipe for the recipe's exact input IDs, then request the task again under a new request_key with supersedes set to this task`;
   const codes = latest.result_json
     ? (JSON.parse(latest.result_json) as JobResult).diagnostics
         .map(d => d.code)
@@ -491,7 +491,7 @@ function acquireOnlyRevision(scope: Scope, recipe: Recipe): string | null {
 }
 
 /** The source revision is saved with its original's digest and size and is admitted for both hosts. */
-async function originalRecorded(
+export async function originalRecorded(
   db: D1Database,
   revision: string,
 ): Promise<boolean> {
@@ -575,7 +575,7 @@ function recipeFit(
   recipe: Recipe,
   which: Which,
 ): string | undefined {
-  const fetches = (recipe.units ?? []).every(unit => unit.kind === 'acquire');
+  const fetches = fetchesOnly(recipe);
   if (which === 'fetch' && !fetches)
     return 'the recipe has nothing to fetch; a fetch step names a fetch recipe';
   if (which === 'build' && fetches)

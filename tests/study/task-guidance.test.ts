@@ -41,7 +41,10 @@ for (const enhancements of [false, true])
       () => studyServer(env, enhancements),
       enhancements,
     );
-    const skills = await readSkills(handler);
+    const skills = await readSkills(
+      handler,
+      enhancements ? '2026-07-28' : '2025-11-25',
+    );
     assert.deepEqual(
       skills.map(skill => skill.name),
       NAMES,

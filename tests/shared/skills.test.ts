@@ -30,7 +30,10 @@ function fixture(serve: ReturnType<typeof taskSkills>, enhancements: boolean) {
 for (const enhancements of [false, true])
   test(`skills are listed and read with their digest, newer features ${enhancements ? 'on' : 'off'}`, async () => {
     const handler = fixture(taskSkills('study', SKILLS), enhancements);
-    const read = await readSkills(handler);
+    const read = await readSkills(
+      handler,
+      enhancements ? '2026-07-28' : '2025-11-25',
+    );
     assert.deepEqual(
       read,
       SKILLS.map(skill => ({

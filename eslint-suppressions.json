@@ -35,11 +35,6 @@
       "count": 1
     }
   },
-  "services/study/src/coordinator.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "services/study/src/operators/aids.ts": {
     "complexity": {
       "count": 1

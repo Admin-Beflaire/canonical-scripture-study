@@ -15,7 +15,8 @@ export type ReadState =
   | 'temporary_failure' // a provider read failed; retry may succeed
   | 'budget' // the request allowance is used; continue in another request
   | 'exceeds_limits' // one stored item is larger than any request may read; withheld
-  | 'invalid_request'; // malformed input or continuation
+  | 'invalid_request' // malformed input or continuation
+  | 'skill_required'; // the call lacks the code of the skill for its mode
 
 export class ReadError extends OwnMessageError {
   readonly state: ReadState;

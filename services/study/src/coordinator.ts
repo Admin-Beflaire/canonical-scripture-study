@@ -1,9 +1,10 @@
 import type {StudyReadEnvironment} from './read/bindings.ts';
 import {ReadSession} from './read/session.ts';
-import {limitsFor, type BudgetUsage} from './read/budget.ts';
+import {limitsFor, type BudgetUsage, type ReadWorkload} from './read/budget.ts';
+import {SUPPORTED_LOOKUPS, type LookupKind} from './read/search.ts';
 import {ReadError, limitation, type Limitation} from './read/states.ts';
 import type {Batch} from './results/batch.ts';
-import {GUIDANCE_VERSION, TRANSLATION_RULES} from './guidance.ts';
+import {GUIDANCE_VERSION} from './guidance.ts';
 import {
   EVIDENCE_FOCUS,
   languageBatch,
@@ -45,14 +46,6 @@ export interface StudyRequest {
   continuation?: string;
   focus?: EvidenceFocus;
 }
-
-/** Modes whose answer includes a translation: their first batch carries the key translation rules. */
-const TRANSLATING = new Set<Mode>([
-  'translation',
-  'passage',
-  'exegesis',
-  'comparison',
-]);
 
 /** What this version cannot supply, stated rather than returned as an empty result. */
 const NOT_OFFERED: Partial<Record<Mode, Limitation[]>> = {
@@ -110,7 +103,7 @@ function checkRequest(request: StudyRequest) {
 }
 
 /** Error batch: the request could not be served. The state says why (never an empty success). */
-function failure(
+export function failure(
   error: ReadError,
   request: StudyRequest,
 ): Record<string, unknown> {
@@ -123,6 +116,43 @@ function failure(
   };
 }
 
+/** What a request asks to read: passage references, or else a search lead. */
+interface Asked {
+  references: string[];
+  leads: SearchLead[];
+}
+
+function asked(request: StudyRequest): Asked {
+  const references =
+    request.references?.filter(r => typeof r === 'string' && r.trim()) ?? [];
+  const leads = request.search_leads ?? [];
+  if (
+    request.mode !== 'conclusion_check' &&
+    !references.length &&
+    !leads.length
+  )
+    throw new ReadError(
+      'invalid_request',
+      'Give references (for passages) or search_leads (for words); for example references ["Gen 1:1-2:3"] or search_leads [{"lookup":"lemma","key":"H7225"}]',
+    );
+  return {references, leads};
+}
+
+/** Which read allowance the request draws on. */
+function readKind({references, leads}: Asked): ReadWorkload {
+  if (references.length || leads.length !== 1) return 'passage';
+  const lookup = leads[0]?.lookup;
+  if (AID_LOOKUPS.includes(lookup as (typeof AID_LOOKUPS)[number]))
+    return 'aid';
+  return SUPPORTED_LOOKUPS.includes(lookup as LookupKind) ? 'word' : 'passage';
+}
+
+const baseOf = (request: StudyRequest) => ({
+  mode: request.mode,
+  depth: request.depth ?? 'standard',
+  language: request.language ?? 'en',
+});
+
 /** Routes one study request to its operator and returns one bounded batch. Passage references
  *  are read first; otherwise the first search lead is searched. The coordinator routes reads;
  *  it never produces an interpretation. */
@@ -134,76 +164,55 @@ export async function study(
   let session: ReadSession | undefined;
   try {
     checkRequest(request);
-    const mode = request.mode;
-    const base = {
-      mode,
-      depth: request.depth ?? 'standard',
-      language: request.language ?? 'en',
-    };
-    const continuation = request.continuation ?? null;
-    const refs =
-      request.references?.filter(r => typeof r === 'string' && r.trim()) ?? [];
-    const leads = request.search_leads ?? [];
-    if (mode !== 'conclusion_check' && !refs.length && !leads.length)
-      throw new ReadError(
-        'invalid_request',
-        'Give references (for passages) or search_leads (for words); for example references ["Gen 1:1-2:3"] or search_leads [{"lookup":"lemma","key":"H7225"}]',
-      );
-    const aidRequest =
-      !refs.length &&
-      leads.length === 1 &&
-      AID_LOOKUPS.includes(leads[0]?.lookup as (typeof AID_LOOKUPS)[number]);
-    const wordRequest =
-      !refs.length &&
-      leads.length === 1 &&
-      ['word', 'form', 'lemma', 'grammar'].includes(leads[0]?.lookup);
-    session = await ReadSession.open(
-      env,
-      limitsFor(env, wordRequest ? 'word' : aidRequest ? 'aid' : 'passage'),
-    );
-    if (mode === 'conclusion_check')
-      return await conclusionCheck(session, base);
-    // Notes go in before the batch is sized, so the whole envelope stays within the result cap.
-    // Only on the first batch, so a continued study does not repeat them.
-    const notes: Limitation[] = continuation
-      ? []
-      : [...(NOT_OFFERED[mode] ?? [])];
-    if (!refs.length)
-      return await searchLead(
-        session,
-        request,
-        base,
-        leads,
-        continuation,
-        notes,
-      );
-    if (leads.length && !continuation)
-      notes.push(
-        limitation(
-          'invalid_request',
-          'search_leads',
-          'Search leads are not run together with references; call study again with the leads alone',
-        ),
-      );
-    return await passageBatch(
-      session,
-      {
-        ...base,
-        references: refs,
-        sources: request.sources ?? null,
-        context: mode !== 'inspect_source' && request.depth !== 'focused',
-      },
-      continuation,
-      GUIDANCE_VERSION,
-      notes,
-      !continuation && TRANSLATING.has(mode) ? TRANSLATION_RULES : null,
-    );
+    const wanted = asked(request);
+    session = await ReadSession.open(env, limitsFor(env, readKind(wanted)));
+    if (request.mode === 'conclusion_check')
+      return await conclusionCheck(session, baseOf(request));
+    return await evidenceBatch(session, request, wanted);
   } catch (error) {
     if (error instanceof ReadError) return failure(error, request);
     throw error;
   } finally {
     if (session) reportUsage?.(session.budget.usage());
   }
+}
+
+/** Reads the passages, or else searches the first lead. */
+async function evidenceBatch(
+  session: ReadSession,
+  request: StudyRequest,
+  {references, leads}: Asked,
+): Promise<Batch> {
+  const mode = request.mode;
+  const base = baseOf(request);
+  const continuation = request.continuation ?? null;
+  // Notes go in before the batch is sized, so the whole envelope stays within the result cap.
+  // Only on the first batch, so a continued study does not repeat them.
+  const notes: Limitation[] = continuation
+    ? []
+    : [...(NOT_OFFERED[mode] ?? [])];
+  if (!references.length)
+    return searchLead(session, request, base, leads, continuation, notes);
+  if (leads.length && !continuation)
+    notes.push(
+      limitation(
+        'invalid_request',
+        'search_leads',
+        'Search leads are not run together with references; call study again with the leads alone',
+      ),
+    );
+  return passageBatch(
+    session,
+    {
+      ...base,
+      references,
+      sources: request.sources ?? null,
+      context: mode !== 'inspect_source' && request.depth !== 'focused',
+    },
+    continuation,
+    GUIDANCE_VERSION,
+    notes,
+  );
 }
 
 function searchLead(
@@ -276,10 +285,9 @@ async function conclusionCheck(
           limitation(
             'missing_evidence',
             'statement',
-            'No approved character-of-God statement is selected. Ordinary sources remain usable; the conclusion is checked against Scripture only.',
+            'No approved character-of-God statement is selected. Ordinary sources remain usable.',
           ),
         ],
-    note: 'The statement checks a conclusion after interpretation; it is not a premise, and agreement proves nothing.',
     continuation: null,
     guidance_version: GUIDANCE_VERSION,
   };

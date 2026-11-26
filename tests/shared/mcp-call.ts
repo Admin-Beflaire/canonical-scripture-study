@@ -21,6 +21,11 @@ export async function call(
       body: JSON.stringify({jsonrpc: '2.0', id, method, params}),
     }),
   );
+  return responseBody(response);
+}
+
+/** The JSON-RPC message of a response, sent as plain JSON or as one server event. */
+export async function responseBody(response: Response) {
   const text = await response.text();
   return response.headers.get('Content-Type')?.includes('text/event-stream')
     ? JSON.parse(

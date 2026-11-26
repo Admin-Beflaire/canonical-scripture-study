@@ -2,6 +2,8 @@
 
 Reusable native-reference and versification helpers belong here. This package must not import an application, perform storage access or execute preparation. Domain-specific builders and readers stay with their owning service.
 
+`src/skills.ts` serves an application's fixed task texts as skills through the MCP Skills extension. The texts stay with the owning application.
+
 This is the Workers' TypeScript implementation. Python preparation uses
 `packages/shared-python/`. Both suites consume the same JSON conformance cases
 in `tests/conformance/`; neither language implementation invokes the other.

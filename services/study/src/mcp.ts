@@ -2,7 +2,17 @@ import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {platformServer} from '../../../packages/shared/src/platform.ts';
 import {MODES, DEPTHS, study, type StudyRequest} from './coordinator.ts';
 import {EVIDENCE_FOCUS} from './operators/language.ts';
-import {guidance, GUIDANCE_TOPICS, STUDY_INSTRUCTIONS} from './guidance.ts';
+import {
+  ABSENCE_RULE,
+  guidance,
+  GUIDANCE_TOPICS,
+  LANGUAGE_AIDS,
+  PROPER_NAMES,
+  STUDY_INSTRUCTIONS,
+  SUPERSCRIPTION_RULE,
+  WORD_FOCUS,
+  WORD_LOOKUPS,
+} from './guidance.ts';
 import type {StudyReadEnvironment} from './read/bindings.ts';
 
 const text = (max: number) => ({type: 'string', minLength: 1, maxLength: max});
@@ -19,8 +29,7 @@ export const STUDY_SCHEMA = {
     },
     focus: {
       enum: [...EVIDENCE_FOCUS],
-      description:
-        'Which linked evidence to prioritize in a word search. Use lexicon, grammar, names or occurrences.',
+      description: WORD_FOCUS,
     },
     question: {
       ...text(2000),
@@ -39,7 +48,7 @@ export const STUDY_SCHEMA = {
       type: 'array',
       minItems: 1,
       maxItems: 1,
-      description: 'One search per call.',
+      description: `One search per call. ${WORD_LOOKUPS}`,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -60,7 +69,10 @@ export const STUDY_SCHEMA = {
               'fuzzy',
             ],
           },
-          key: text(256),
+          key: {
+            ...text(256),
+            description: `${PROPER_NAMES} ${LANGUAGE_AIDS}`,
+          },
         },
       },
     },
@@ -128,7 +140,8 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
     {
       title: 'Study Scripture evidence',
       description:
-        'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word occurrences with attributed lexicon, grammar and proper-name evidence. The optional focus prioritizes the evidence the user asked about. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
+        'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word occurrences with attributed lexicon, grammar and proper-name evidence. The optional focus prioritizes the evidence the user asked about. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation. ' +
+        `${ABSENCE_RULE} ${SUPERSCRIPTION_RULE}`,
       inputSchema: fromJsonSchema<StudyRequest>(
         STUDY_SCHEMA as unknown as Record<string, unknown>,
       ),

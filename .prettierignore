@@ -18,7 +18,6 @@ services/study/src/scope/books.ts
 services/study/src/scope/keys.ts
 services/study/src/scope/references.ts
 tests/maintenance/d1.ts
-tests/maintenance/github.ts
 tests/platform/deployment.test.ts
 tests/platform/platform.test.ts
 tests/platform/study-fit.test.ts

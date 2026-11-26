@@ -71,6 +71,7 @@ class BookRecipe:
             or set(extent) != {"book", "coordinate_version"}
             or extent["coordinate_version"] != component.coordinate_version
             or recipe.get("dependencies") != [component.acquisition_id]
+            or recipe.get("task_inputs") != component.task_inputs()
         ):
             raise RecordError(
                 f"Recipe {recipe['id']} does not match its STEPBible component"

@@ -487,11 +487,17 @@ class RecipeTest(unittest.TestCase):
                 component = ComponentFetch.from_recipe(value).component
                 self.assertEqual(path.stem, f"stepbible-fetch-{component.component}")
                 self.assert_pinned(value, component, manifest, pinned)
-                fetches[component.component] = value["parameters"]
+                fetches[component.component] = (
+                    value["parameters"],
+                    value["task_inputs"],
+                )
         # Every file a book recipe reads is fetched by exactly one recipe with the same pin.
         for path in sorted((ROOT / "collection/recipes").glob("stepbible-t*.json")):
-            book = json.loads(path.read_text(encoding="utf-8"))["parameters"]
-            self.assertEqual(fetches[book["component"]], book, path.stem)
+            value = json.loads(path.read_text(encoding="utf-8"))
+            book = value["parameters"]
+            self.assertEqual(
+                fetches[book["component"]], (book, value["task_inputs"]), path.stem
+            )
         self.assertEqual(set(fetches), {key for key in pinned if key in fetches})
 
     def test_fetch_recipe_must_match_its_component(self):
@@ -501,6 +507,8 @@ class RecipeTest(unittest.TestCase):
             {"native_extent": {"book": "Exo"}},
             {"capabilities": ["word_exact"]},
             {"dependencies": []},
+            {"task_inputs": []},
+            {"task_inputs": value["task_inputs"][:1]},
             {"parameters": {**value["parameters"], "commit": "main"}},
             {"units": []},
             {"units": [{**value["units"][0], "unit_id": "fetch"}]},
@@ -525,6 +533,7 @@ class RecipeTest(unittest.TestCase):
             },
             {"native_extent": {"book": "Exo", "coordinate_version": "other"}},
             {"dependencies": []},
+            {"task_inputs": []},
             {"parameters": {**value["parameters"], "commit": "main"}},
             {"parameters": {**value["parameters"], "script": "x"}},
             {
@@ -679,7 +688,12 @@ class RunnerFlowTest(unittest.TestCase):
 
     def test_gate_vouches_only_for_declared_unsaved_inputs(self):
         # Before acquisition, only the acquire unit may name the unsaved source revision.
-        self.assertEqual(self.job_run("prepare-01")["state"], "cancelled")
+        refused = self.job_run("prepare-01")
+        self.assertEqual(refused["state"], "cancelled")
+        # Control blocks at once on this code instead of retrying: the task's inputs are wrong.
+        self.assertEqual(
+            [item["code"] for item in refused["diagnostics"]], ["input_not_registered"]
+        )
         changed = [
             {
                 "kind": "acquisition",

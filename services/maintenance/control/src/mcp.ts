@@ -1,8 +1,9 @@
+import {describeRecipe, findRecipes} from './recipe-guide.ts';
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
-import type {GitHubActions} from './github.ts';
+import {GitHubError, type GitHubActions} from './github.ts';
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import type {ObjectStore} from './selection.ts';
@@ -18,20 +19,31 @@ import {
 } from './tasks.ts';
 
 /** Essential guidance sent to both hosts on initialize, so no separate skill is needed. */
+/** The longest decision reference request_task accepts; the instructions quote the same number. */
+export const DECISION_REF_MAX = 200;
+
 export const CONTROL_INSTRUCTIONS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction.
 
 Workflow:
+0. get_recipe (read only) tells you what a recipe needs and gives the request to send; see Starting a task below.
 1. request_task: send the owner's instruction in his own words plus the structured scope. Use a short request_key per instruction; repeating the same key with the same scope safely returns the same task. If the instruction changes, use a new key and pass the old unfinished task's ID in supersedes.
 2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
 4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
 5. tidy_releases removes what no kept release and no open task needs (it also runs when a task ends). Each call does a bounded part: call it again while the result says more; skipped outputs are blocked by another output and are left.
 
-Preparation runs by itself in GitHub Actions: a task lists the steps it needs, in order, and nothing is mandatory. A fetch step runs the units of the reviewed recipe in constraints.fetch_recipe and keeps the original; a build step runs the units of the recipe in constraints.recipe. Each unit's result starts the next, and failed units are retried up to three times. For a build, the task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
+Preparation runs by itself in GitHub Actions: a task lists the steps it needs, in order, and nothing is mandatory. A fetch step runs the units of the reviewed recipe in constraints.fetch_recipe and keeps the original; a build step runs the units of the recipe in constraints.recipe. Each unit's result starts the next, and failed units are retried up to three times; an input that is not registered is not retried, the task is blocked at once and the message names it. For a build, the task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
 
 When every unit of a build has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). A task that lists select then makes the result current at once: the owner's instruction is the permission, no second go is needed. If another build became current in between, Control builds the release again on the new current release, checks it again and retries a few times by itself. If a check fails, the task is blocked with the reasons and the current data is unchanged. A build without select ends checked and waits; a later task with steps ["select"] and constraints.candidate makes it current.
 
 Steps that stand alone: remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later build lifts it), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked). constraints.replaces on a build lists the source revisions it replaces. An owner's statement approval (decision kind "statement", with name and version) belongs to the build of that statement. A package build holds source references only, never answers.
+
+Starting a task: ask get_recipe first. Without a recipe it lists recipe IDs (add a word such as a book or source name in find); with a recipe it returns the request to send: steps, constraints, extent, capabilities and the exact input IDs. For a build that reads an original, it also names the fetch recipe that keeps it and gives request_with_fetch, which fetches and then builds in one task. Do not read code, designs or the repository for this, and never guess an ID. Then call request_task with that request, one request_key per instruction. An input is admitted only by the owner's decision to admit that source: give a short reference to that decision (for example the issue or comment where it is recorded, at most ${DECISION_REF_MAX} characters) as the ref of an admission decision_refs entry, with the input's id as subject. A general instruction to run a task is not an admission; when no admission is recorded, ask the owner.
+- A recipe either fetches or builds. One task can chain them, for example steps ["fetch","build","select"]: the fetch keeps the original under its own recipe extent, and the task's extent is the build recipe's native_extent. A build can add the step select to become current at once.
+- Make an earlier build current later: steps ["select"], constraints {candidate: the build task's ID}, no inputs.
+- Remove: steps ["remove"], inputs the source revisions, decision kind "exclusion" per subject.
+- A task that leaves out a recipe's input is blocked at once and the message names it; start it again under a new request_key with supersedes set to the blocked task.
+
 Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 
 const id = {
@@ -57,7 +69,7 @@ const decisionRef = {
   required: ['kind', 'ref'],
   properties: {
     kind: {enum: ['admission', 'statement', 'exclusion', 'other']},
-    ref: {type: 'string', minLength: 1, maxLength: 200},
+    ref: {type: 'string', minLength: 1, maxLength: DECISION_REF_MAX},
     subject: id,
     name: {type: 'string', maxLength: 200},
     version: {type: 'string', maxLength: 50},
@@ -127,6 +139,21 @@ const getSchema = fromJsonSchema<{task_id?: string; cursor?: string}>({
   properties: {
     task_id: id,
     cursor: {type: 'string', maxLength: 20, pattern: '^[0-9a-z]+$'},
+  },
+});
+const recipeSchema = fromJsonSchema<{recipe?: string; find?: string}>({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    recipe: {
+      ...id,
+      description: 'A recipe ID: returns the request to send for it.',
+    },
+    find: {
+      type: 'string',
+      maxLength: 60,
+      description: 'Without recipe: only recipe IDs containing this word.',
+    },
   },
 });
 const tidySchema = fromJsonSchema<Record<string, never>>({
@@ -300,6 +327,36 @@ async function getTaskTool(
   );
 }
 
+async function recipeTool(
+  tools: Tools,
+  args: {recipe?: string; find?: string},
+) {
+  tools.owner();
+  const {github} = tools;
+  if (!github)
+    return reply('Recipes are not available: GitHub is not set up.', {}, true);
+  try {
+    if (!args.recipe) {
+      const found = await findRecipes(github, args.find);
+      return reply(
+        `${found.recipes.length} recipe(s)${found.more ? `, ${found.more} more: add a word in find` : ''}. Ask again with one as recipe.`,
+        found,
+      );
+    }
+    const found = await describeRecipe(tools.db, github, args.recipe);
+    return reply(
+      found.found
+        ? `Recipe ${found.recipe} does a ${found.does}. Send the request below to request_task.`
+        : found.message,
+      found,
+      !found.found,
+    );
+  } catch (error) {
+    if (!(error instanceof GitHubError)) throw error;
+    return reply('GitHub did not answer; ask again in a moment.', {}, true);
+  }
+}
+
 async function tidyTool(tools: Tools) {
   tools.owner();
   const done = await tidyReleases(tools.db, tools.objects);
@@ -417,6 +474,15 @@ export function controlServer(
       inputSchema: getSchema,
     },
     args => getTaskTool(tools, args),
+  );
+  server.registerTool(
+    'get_recipe',
+    {
+      description:
+        'Read only. Without recipe: list recipe IDs (optionally containing a word, for example a book or source name). With recipe: what that recipe does (fetch or build) and the request_task fields to send for it: steps, constraints, extent, capabilities and the exact input IDs; for a build that reads an original, also the fetch recipe that keeps it and request_with_fetch.',
+      inputSchema: recipeSchema,
+    },
+    args => recipeTool(tools, args),
   );
   server.registerTool(
     'tidy_releases',

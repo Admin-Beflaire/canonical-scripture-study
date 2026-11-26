@@ -8,7 +8,12 @@ from pathlib import Path
 import unittest
 
 from css_preparation.contracts import ContractError
-from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
+from css_preparation.executor import (
+    ControlState,
+    InputNotRegisteredError,
+    UnitNotRunnableError,
+    execute_unit,
+)
 
 FIXTURE = json.loads(
     (
@@ -127,6 +132,14 @@ class ExecutorEntryTests(unittest.TestCase):
             self.assertEqual(self.observed, [])
         with self.assertRaises(UnitNotRunnableError):
             self.invoke(run_id="run-9\n")
+
+    def test_an_unregistered_input_is_named_and_has_its_own_error(self):
+        first = self.job["input_refs"][0]
+        with self.assertRaises(InputNotRegisteredError) as caught:
+            self.invoke(registered=lambda ref: False)
+        self.assertIn(f"{first['kind']} {first['id']}", str(caught.exception))
+        self.assertIsInstance(caught.exception, UnitNotRunnableError)
+        self.assertEqual(self.observed, [])
 
     def test_exact_dispatch_inputs_not_just_task_digest(self):
         modified = dict(self.job, manifest_revision="manifest-2")

@@ -232,6 +232,8 @@ export interface Recipe {
   adapter?: {name: string; method_version: string};
   native_extent?: Record<string, unknown>;
   capabilities?: string[];
+  /** The inputs a task for this recipe names, so they are never guessed. */
+  task_inputs?: {kind: string; id: string}[];
   units?: RecipeUnit[];
 }
 export function assertJobInput(value: unknown): asserts value is JobInput {

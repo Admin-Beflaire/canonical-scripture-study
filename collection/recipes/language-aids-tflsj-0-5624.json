@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "language-aids-tflsj-0-5624",
-  "revision": "language-aids-tflsj-0-5624/2",
+  "revision": "language-aids-tflsj-0-5624/3",
   "adapter": {
     "name": "language-aids",
     "method_version": "language-aids/2"
@@ -22,6 +22,12 @@
   ],
   "dependencies": [
     "stepdata-tflsj-0-5624-5de0a47f/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "source_revision",
+      "id": "stepdata-tflsj-0-5624-5de0a47f/1"
+    }
   ],
   "manifest_revision": "stepdata-tflsj-0-5624-5de0a47f/1",
   "units": [

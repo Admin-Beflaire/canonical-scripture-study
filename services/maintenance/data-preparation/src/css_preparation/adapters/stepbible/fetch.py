@@ -42,6 +42,7 @@ class ComponentFetch:
             recipe["native_extent"] != {"component": component.component}
             or recipe["capabilities"] != []
             or recipe.get("dependencies") != [component.acquisition_id]
+            or recipe.get("task_inputs") != component.task_inputs()
             or [(unit["unit_id"], unit["kind"]) for unit in recipe["units"]]
             != [("acquire", "acquire")]
         ):

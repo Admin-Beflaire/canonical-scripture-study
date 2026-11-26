@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "language-aids-bdb-index",
-  "revision": "language-aids-bdb-index/2",
+  "revision": "language-aids-bdb-index/3",
   "adapter": {
     "name": "language-aids",
     "method_version": "language-aids/2"
@@ -22,6 +22,12 @@
   ],
   "dependencies": [
     "oshb-index-21c9add1/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "source_revision",
+      "id": "oshb-index-21c9add1/1"
+    }
   ],
   "manifest_revision": "oshb-index-21c9add1/1",
   "units": [

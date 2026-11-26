@@ -9,6 +9,8 @@ adapters' own declarations and rejects anything that does not fit.
 
 ## STEPBible TAHOT and TAGNT
 
+STEPBible and language-aid recipes also list `task_inputs`: the inputs a task for them must name (STEPBible: the acquisition route and the source revision; language aids: the source revision). The adapter checks the list against its parameters. Acquire-only recipes need no list: their acquisition route is `manifest_revision` and their source revision is `native_extent.component`. Control's `get_recipe` returns these as a ready request, and blocks a task that leaves one out before anything runs.
+
 `stepbible-fetch-<component>.json` fetches one pinned STEPBible-Data file for the
 `stepbible-fetch` adapter: its single `acquire` unit keeps the original in protected private
 storage only and registers its source revision and admission. One fetch of a file serves every
@@ -23,8 +25,9 @@ original and never fetches. A task for one book names the recipe in `constraints
 both inputs: the acquisition `stepbible-data:<commit12>:<component>` and the source
 revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decision.
 
-A recipe says only how to do its step for that source. Control runs the fetch and the build as
-separate tasks for now; the task steps change in the same programme (P5c).
+A recipe says only how to do its step for that source. One task can chain the steps
+(`steps: ["fetch", "build", "select"]`, with `constraints.fetch_recipe` and `constraints.recipe`);
+Control's `get_recipe` answers with the request for a recipe and the fetch recipe its original needs.
 
 The fetch recipes and the base book recipes are written by
 `python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files

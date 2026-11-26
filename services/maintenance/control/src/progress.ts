@@ -8,6 +8,7 @@ import {
   type RecipeUnit,
 } from './contracts.ts';
 import {tidyReleases} from './cleanup.ts';
+import {fetchesOnly, recipeInputs} from './recipe-inputs.ts';
 import {dispatchUnit, type DispatchResult, type UnitPlan} from './dispatch.ts';
 import {
   FileEncodingError,
@@ -316,7 +317,11 @@ function unitStatus(
   const latest = attempts[attempts.length - 1];
   if (succeeded.has(unit.unit_id) || (latest && ACTIVE.has(latest.state)))
     return 'wait';
-  if (latest && RETRYABLE.has(latest.state) && attempts.length >= MAX_ATTEMPTS)
+  if (
+    latest &&
+    (inputProblem(latest) ||
+      (RETRYABLE.has(latest.state) && attempts.length >= MAX_ATTEMPTS))
+  )
     return 'exhausted';
   return unit.depends_on.every(dependency => succeeded.has(dependency))
     ? 'dispatch'
@@ -401,7 +406,26 @@ async function runUnits(
   return ready ? {succeeded} : {done: stop(row.state, undefined, dispatched)};
 }
 
+/** What the runner said when a task's input is not saved as named: retrying cannot change that. */
+function inputProblem(job: JobView): string | null {
+  if (!job.result_json) return null;
+  let found: {code: string; message: string} | undefined;
+  try {
+    found = (JSON.parse(job.result_json) as JobResult).diagnostics.find(
+      diagnostic => diagnostic.code === 'input_not_registered',
+    );
+    if (!found) return null;
+    const {message} = JSON.parse(found.message) as {message?: unknown};
+    return typeof message === 'string' ? message : 'an input is not registered';
+  } catch {
+    return found ? 'an input is not registered' : null;
+  }
+}
+
 const exhausted = (unit: RecipeUnit, latest: JobView) => {
+  const input = inputProblem(latest);
+  if (input)
+    return `unit ${unit.unit_id} cannot run: ${input}. Ask get_recipe for the recipe's exact input IDs, then request the task again under a new request_key with supersedes set to this task`;
   const codes = latest.result_json
     ? (JSON.parse(latest.result_json) as JobResult).diagnostics
         .map(d => d.code)
@@ -467,7 +491,7 @@ function acquireOnlyRevision(scope: Scope, recipe: Recipe): string | null {
 }
 
 /** The source revision is saved with its original's digest and size and is admitted for both hosts. */
-async function originalRecorded(
+export async function originalRecorded(
   db: D1Database,
   revision: string,
 ): Promise<boolean> {
@@ -551,11 +575,17 @@ function recipeFit(
   recipe: Recipe,
   which: Which,
 ): string | undefined {
-  const fetches = (recipe.units ?? []).every(unit => unit.kind === 'acquire');
+  const fetches = fetchesOnly(recipe);
   if (which === 'fetch' && !fetches)
     return 'the recipe has nothing to fetch; a fetch step names a fetch recipe';
   if (which === 'build' && fetches)
     return 'a fetch recipe cannot build; a build step names a build recipe';
+  const missing = recipeInputs(recipe).filter(
+    item =>
+      !scope.inputs.some(ref => ref.kind === item.kind && ref.id === item.id),
+  );
+  if (missing.length)
+    return `the recipe needs these inputs: ${missing.map(item => `${item.kind} ${item.id}`).join(', ')}`;
   return which === 'fetch' ? fetchFit(scope, recipe) : buildFit(scope, recipe);
 }
 
@@ -564,7 +594,7 @@ function fetchFit(scope: Scope, recipe: Recipe): string | undefined {
     recipe.adapter?.name === 'acquire-only' &&
     recipe.adapter.method_version === 'acquire-only/1'
   ) {
-    const problem = acquireOnlyFit(scope, recipe);
+    const problem = acquireOnlyFit(scope);
     if (problem) return problem;
   }
   // Alone, the fetch describes what it keeps; before a build, the build's extent is the task's.
@@ -576,21 +606,7 @@ function fetchFit(scope: Scope, recipe: Recipe): string | undefined {
   return undefined;
 }
 
-function acquireOnlyFit(scope: Scope, recipe: Recipe): string | undefined {
-  const revision = recipe.native_extent?.component;
-  if (
-    typeof revision !== 'string' ||
-    !scope.inputs.some(
-      ref => ref.kind === 'source_revision' && ref.id === revision,
-    )
-  )
-    return `acquire requires source_revision ${String(revision)}`;
-  if (
-    !scope.inputs.some(
-      ref => ref.kind === 'acquisition' && ref.id === recipe.manifest_revision,
-    )
-  )
-    return `acquire requires acquisition ${String(recipe.manifest_revision)}`;
+function acquireOnlyFit(scope: Scope): string | undefined {
   if (
     scope.inputs.some(
       ref =>

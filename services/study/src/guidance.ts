@@ -2,7 +2,8 @@
  *  server instructions, the tool and field descriptions, results and get_guidance; no host skill
  *  is needed. Hosts cut long text, so the order of the instructions matters: they open with the
  *  rules that must never be lost (first 512 characters), hold all that is needed within 2,048,
- *  and add only what may be missed up to 4,096. A rule for one field lives in its description.
+ *  and add only what may be missed up to 4,096. Every rule on using the tool is also complete
+ *  in the study tool's or a field's description.
  *  get_guidance returns the full text. */
 export const GUIDANCE_VERSION = 'study-guidance/23';
 
@@ -18,18 +19,18 @@ const METHOD = `Method:
 /** How to use the study tool, one rule each. The topic "tools" holds all of them. */
 export const SUPERSCRIPTION_RULE =
   'Present a source-authored superscription unnumbered and in italics above verse 1, separately from numbered text.';
-const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).`;
+export const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).`;
 export const ABSENCE_RULE =
   'Never present missing evidence as absent from Scripture.';
-const COVERAGE = `A batch being finished, the evidence being exhausted and the study being delivered are three different things. Read "limitations" and "remaining": they say what was not searched, not loaded or not read yet. ${ABSENCE_RULE}`;
-const NUMBERING = `When delivered_scope.numbering_notes is present, explain those numbering differences to the reader with the answer.`;
-const PASSAGES = `Passages: give NRSVA reader references such as "Mal 4:1-6" (up to 3 chapters per reference, 4 references per call). Checked mappings supply the reader reference alongside attributed native citations; missing mappings are limitations, never assumed equivalences. Without a mapping, show the verse by its native numbering and say that any native candidate the study returns is unverified, not a checked match. Only when exact native text is still needed, inspect native numbering with mode "inspect_source" and exactly one source revision in sources. ${SUPERSCRIPTION_RULE} Role "requested" marks asked verses and "context" the surrounding chapter. Textual notes come with their verse.`;
+export const COVERAGE = `A batch being finished, the evidence being exhausted and the study being delivered are three different things. Read "limitations" and "remaining": they say what was not searched, not loaded or not read yet. ${ABSENCE_RULE}`;
+export const NUMBERING = `When delivered_scope.numbering_notes is present, explain those numbering differences to the reader with the answer.`;
+export const PASSAGES = `Passages: give NRSVA reader references such as "Mal 4:1-6" (up to 3 chapters per reference, 4 references per call). Checked mappings supply the reader reference alongside attributed native citations; missing mappings are limitations, never assumed equivalences. Without a mapping, show the verse by its native numbering and say that any native candidate the study returns is unverified, not a checked match. Only when exact native text is still needed, inspect native numbering with mode "inspect_source" and exactly one source revision in sources. ${SUPERSCRIPTION_RULE} Role "requested" marks asked verses and "context" the surrounding chapter. Textual notes come with their verse.`;
 export const WORD_LOOKUPS = `Words: give search_leads with lookup and key. lookup "word" or "form" takes the word as written in Hebrew or Greek (accents are ignored as the index rule says); "lemma" takes a Strong's-style lemma such as H7225 or G3056; "grammar" takes a language and morphology code such as "greek:N-NSM" or "hebrew:Ncfsa". Results are exact occurrences in native order, not ranked; the batch lists the searched extent. When a routing_summary is marked, it reports selected index coverage proven to contain no matches for the key without opening those R2 pages, not a direct reading of those pages.`;
 export const WORD_FOCUS = `For a word study, focus optionally moves lexicon, grammar, names or occurrences to the front. Use names for a person question, grammar for a morphology question and occurrences for an enumeration. Follow linked-aid continuations before deciding what evidence is available.`;
 export const PROPER_NAMES = `TIPNR proper-name candidates: use lookup "proper_name" with the complete disambiguated Strong tag (for example G2264G). A word study delivers candidates and exact full-tag occurrences. In continued word searches, delivered_scope.linked_aid identifies the lookup and key of separately delivered evidence. Check each entry’s references, ambiguity link when present, and source before associating it with a specific occurrence. TIPNR OTHER categories and records without a named form are not prepared. Different identities and alternative name forms remain separate.`;
 export const LANGUAGE_AIDS = `Language aids: use lookup "lexicon" with a Strong number (e.g. H7307 or G3686), "grammar_info" with an exact source morphology code, and "lexicon_entry" with an exact entry key. For a compound Hebrew morphology code, split the components and use the H or A language prefix on each, for example HR/Ncfsa becomes HR and HNcfsa. For Greek compound codes, look up each source component separately. Word-search hits may include aid_matches per analysis, pointing to the attributed language_aid evidence returned with the hits. Across batches match separately delivered entries by lookup and key. Keep distinct entries and source attribution. An Open Scriptures index entry can provide linked_entry_keys: look up each with "lexicon_entry" to read the BDB articles. A gloss is not a full definition; missing entries and transcription limitations remain gaps. When delivery_part is present, join the ordered parts of that entry; obtain all continuations.`;
-const NOT_OFFERED = `Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.`;
-const SELECTED_DATA = `Each call reads the data selected at that moment; nothing is kept between conversations.`;
+export const NOT_OFFERED = `Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.`;
+export const SELECTED_DATA = `Each call reads the data selected at that moment; nothing is kept between conversations.`;
 
 const bullets = (...rules: string[]) =>
   rules.map(rule => `- ${rule}`).join('\n');

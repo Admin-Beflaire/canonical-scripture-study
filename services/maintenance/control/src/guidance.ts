@@ -11,7 +11,7 @@ export const ADMISSION_RULE =
   'A general instruction to run a task is not an admission; when no admission is recorded, ask the owner.';
 
 /** Needed to use Control correctly. */
-const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction. For a fetch or build, start with get_recipe and send its request to request_task. Never guess an ID or invent a value, and never create an approval: admission, exclusion and statement approvals are owner decision references he gives you. ${ADMISSION_RULE} If a result is "needs_information", ask him exactly the listed questions.
+const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction. For a fetch or build, start with get_recipe and send its request to request_task. Never guess an ID or value, and never create an approval: admission, exclusion and statement approvals are decision references the owner gives. ${ADMISSION_RULE} If a result is "needs_information", ask exactly the listed questions.
 
 Tools (each tool and field description holds its rules; read them before the call):
 - get_recipe (read only): lists recipe IDs, or gives the request for one recipe with its exact input IDs. Do not read code, designs or the repository for this.
@@ -35,7 +35,7 @@ export const CONTROL_INSTRUCTIONS = `${ESSENTIALS}\n\n${BACKGROUND}`;
 
 export const TOOL_DESCRIPTIONS = {
   request_task:
-    "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Ask get_recipe first and send its request, adding request_key, the instruction and the owner's decision references. Returns the task ID and state, or the information still needed.",
+    "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. For a fetch or build, ask get_recipe first and send its request, adding request_key, the instruction and the owner's decision references; select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed.",
   get_task:
     'Without task_id: list open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work.',
   get_recipe:
@@ -52,16 +52,16 @@ export const FIELD_DESCRIPTIONS = {
     'Short stable key, one per instruction. Repeating it with the same scope safely returns the same task; a changed instruction needs a new key.',
   instruction: "The owner's instruction in his own words.",
   steps:
-    'The steps this task needs, in order, and nothing more. fetch keeps an original (recipe in constraints.fetch_recipe). build makes checked outputs (recipe in constraints.recipe). select makes the build current; without it a build ends checked and waits, and a later task with only select and constraints.candidate, no inputs, makes it current. Examples: ["fetch"], ["build","select"], ["fetch","build","select"], ["select"]. Each of these stands alone: remove (inputs are the source revisions to remove), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks).',
+    'The steps this task needs, in order, and nothing more. fetch keeps an original (recipe in constraints.fetch_recipe). build makes checked outputs (recipe in constraints.recipe). select makes the build current; without it a build ends checked and waits, and a later task with only select and constraints.candidate, no inputs, makes it current. Examples: ["fetch"], ["build","select"], ["fetch","build","select"], ["select"]. Each of these stands alone: remove (inputs are the source revisions to remove; when the owner decided to exclude them, add one exclusion decision_ref per source revision), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks).',
   inputs:
-    'The exact input IDs get_recipe returns: admitted source revisions, registered artifacts or acquisition routes. A task that fetches and builds names the inputs of both.',
+    'For fetch and build, the exact input IDs get_recipe returns: admitted source revisions, registered artifacts or acquisition routes (a task that fetches and builds names the inputs of both). For remove, the source revisions to remove. A select, rollback or validate_restore task needs none.',
   extent:
     "Finite native extent. For a build, exactly the build recipe's native_extent, also when the task fetches first (the fetch keeps its original under its own recipe extent). For a fetch alone, as get_recipe returns it.",
   capabilities:
     'The outputs a build must make, only ones its recipe provides (get_recipe lists them). A task that builds nothing names none. A package build holds source references only, never answers.',
   constraints:
     'fetch_recipe: the reviewed recipe a fetch step runs. recipe: the reviewed recipe a build step runs. candidate: the task ID of the checked build to make current. replaces: on a build, the source revisions it replaces. select_release: with validate_restore, the restored release to select, only if the owner asked.',
-  decision_refs: `Owner decisions he gave you; never create one. admission: subject is the input id, ref a short reference to his decision to admit that source (for example the issue or comment recording it, at most ${DECISION_REF_MAX} characters). ${ADMISSION_RULE} exclusion: subject is a source revision; on a remove it keeps that source out of later releases and rollbacks, and on a later build it lifts that. statement: with name and version, on the build of that statement.`,
+  decision_refs: `Owner decisions he gave you; never create one. admission: subject is the input id, ref a short reference to his decision to admit that source (for example the issue or comment recording it, at most ${DECISION_REF_MAX} characters). ${ADMISSION_RULE} exclusion: only for an exclusion the owner decided, one per source revision as subject; on a remove it keeps that source out of later releases and rollbacks, and on a later build it lifts that. statement: with name and version, on the build of that statement.`,
   supersedes:
     "ID of the unfinished task this request replaces: a changed instruction, or a task blocked because it left out a recipe's input. Use a new request_key.",
 };

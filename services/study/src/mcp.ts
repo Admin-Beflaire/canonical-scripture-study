@@ -3,11 +3,16 @@ import {platformServer} from '../../../packages/shared/src/platform.ts';
 import {MODES, DEPTHS, study, type StudyRequest} from './coordinator.ts';
 import {EVIDENCE_FOCUS} from './operators/language.ts';
 import {
-  ABSENCE_RULE,
+  CONTINUATION,
+  COVERAGE,
   guidance,
   GUIDANCE_TOPICS,
   LANGUAGE_AIDS,
+  NOT_OFFERED,
+  NUMBERING,
+  PASSAGES,
   PROPER_NAMES,
+  SELECTED_DATA,
   STUDY_INSTRUCTIONS,
   SUPERSCRIPTION_RULE,
   WORD_FOCUS,
@@ -41,14 +46,13 @@ export const STUDY_SCHEMA = {
       minItems: 1,
       maxItems: 4,
       items: text(80),
-      description:
-        'Passages use NRSVA reader numbering by default, e.g. "Mal 4:1-6". For native numbering use inspect_source with exactly one source revision in sources (up to 3 chapters each).',
+      description: PASSAGES,
     },
     search_leads: {
       type: 'array',
       minItems: 1,
       maxItems: 1,
-      description: `One search per call. ${WORD_LOOKUPS}`,
+      description: `One search per call. ${WORD_LOOKUPS} ${NOT_OFFERED}`,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -139,9 +143,15 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
     'study',
     {
       title: 'Study Scripture evidence',
-      description:
-        'Returns one bounded batch of attributed original-language evidence for a study: passages by reference, or exact word occurrences with attributed lexicon, grammar and proper-name evidence. The optional focus prioritizes the evidence the user asked about. Read-only. If the result has a continuation, call again with the same arguments plus the continuation until none is returned, then deliver the complete study. Limitations say what was not searched, loaded or read. Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation. ' +
-        `${ABSENCE_RULE} ${SUPERSCRIPTION_RULE}`,
+      description: [
+        'Returns attributed original-language evidence for a study: passages by reference, or exact word occurrences with attributed lexicon, grammar and proper-name evidence. Read-only.',
+        CONTINUATION,
+        COVERAGE,
+        NUMBERING,
+        SUPERSCRIPTION_RULE,
+        SELECTED_DATA,
+        'Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
+      ].join(' '),
       inputSchema: fromJsonSchema<StudyRequest>(
         STUDY_SCHEMA as unknown as Record<string, unknown>,
       ),

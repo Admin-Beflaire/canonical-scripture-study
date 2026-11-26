@@ -5,7 +5,10 @@ import {ADMISSION_RULE} from '../../services/maintenance/control/src/guidance.ts
 import {studyServer} from '../../services/study/src/mcp.ts';
 import {
   ABSENCE_RULE,
+  CONTINUATION,
+  COVERAGE,
   guidance,
+  NUMBERING,
   SUPERSCRIPTION_RULE,
 } from '../../services/study/src/guidance.ts';
 import {localD1} from '../maintenance/d1.ts';
@@ -48,7 +51,7 @@ test('Control: the rules come first, then everything else that is needed', async
     'start with get_recipe',
     'never create an approval',
     ADMISSION_RULE,
-    'needs_information',
+    'If a result is "needs_information", ask exactly the listed questions.',
   ]);
   within(instructions, NEEDED, [
     ...tools.map(tool => tool.name),
@@ -56,6 +59,23 @@ test('Control: the rules come first, then everything else that is needed', async
     'check back with get_task',
     'received, prepared, quality-checked, scope-checked, partial or current',
   ]);
+});
+
+test('Control: only fetch and build start from a recipe, and exclusion stays an owner decision', async () => {
+  const {tools} = await delivered(control);
+  const request = tools.find(tool => tool.name === 'request_task')!;
+  within(request.description, NEEDED, [
+    'For a fetch or build, ask get_recipe first',
+    'select, remove, rollback and validate_restore on their own have no recipe',
+  ]);
+  const fields = fieldDescriptions(request.inputSchema).join('\n');
+  for (const rule of [
+    'For fetch and build, the exact input IDs get_recipe returns',
+    'A select, rollback or validate_restore task needs none.',
+    'when the owner decided to exclude them, add one exclusion decision_ref per source revision',
+    'only for an exclusion the owner decided, one per source revision as subject',
+  ])
+    assert.ok(fields.includes(rule), rule);
 });
 
 test('Study: the translation rules come first, then the whole method', async () => {
@@ -70,16 +90,18 @@ test('Study: the translation rules come first, then the whole method', async () 
   // A host that keeps less of the instructions still gets these with the study tool.
   const studyTool = tools.find(tool => tool.name === 'study')!;
   within(studyTool.description, NEEDED, [
-    'call again with the same arguments plus the continuation',
+    CONTINUATION,
+    COVERAGE,
     ABSENCE_RULE,
+    NUMBERING,
     SUPERSCRIPTION_RULE,
   ]);
 });
 
-test('Study: every rule on using the tool reaches the host on connect', async () => {
+test('Study: every rule on using the tool survives instructions cut at 2,048', async () => {
   const {instructions, tools} = await delivered(study);
   const connected = [
-    instructions,
+    instructions.slice(0, NEEDED),
     ...tools.flatMap(tool => [
       tool.description,
       ...fieldDescriptions(tool.inputSchema),

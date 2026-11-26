@@ -1,8 +1,9 @@
+import {describeRecipe, findRecipes} from './recipe-guide.ts';
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
-import type {GitHubActions} from './github.ts';
+import {GitHubError, type GitHubActions} from './github.ts';
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import type {ObjectStore} from './selection.ts';
@@ -21,6 +22,7 @@ import {
 export const CONTROL_INSTRUCTIONS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction.
 
 Workflow:
+0. get_recipe (read only) tells you what a recipe needs and gives the request to send; see Starting a task below.
 1. request_task: send the owner's instruction in his own words plus the structured scope. Use a short request_key per instruction; repeating the same key with the same scope safely returns the same task. If the instruction changes, use a new key and pass the old unfinished task's ID in supersedes.
 2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
 3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
@@ -32,13 +34,12 @@ Preparation runs by itself in GitHub Actions: a task lists the steps it needs, i
 When every unit of a build has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). A task that lists select then makes the result current at once: the owner's instruction is the permission, no second go is needed. If another build became current in between, Control builds the release again on the new current release, checks it again and retries a few times by itself. If a check fails, the task is blocked with the reasons and the current data is unchanged. A build without select ends checked and waits; a later task with steps ["select"] and constraints.candidate makes it current.
 
 Steps that stand alone: remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later build lifts it), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked). constraints.replaces on a build lists the source revisions it replaces. An owner's statement approval (decision kind "statement", with name and version) belongs to the build of that statement. A package build holds source references only, never answers.
-Starting a task (one request_key per instruction; the owner's go in chat is his admission decision, so give his exact words as the ref of each admission decision_refs entry, with the input's id as subject):
-- Fetch only: steps ["fetch"], constraints {fetch_recipe}, extent the recipe's native_extent, capabilities [], inputs the acquisition and the source revision.
-- Build and make current: steps ["build","select"], constraints {recipe}, extent and capabilities the recipe's, the same two inputs.
-- Build only: steps ["build"]. Make that build current later: steps ["select"], constraints {candidate: the build task's ID}, no inputs.
+
+Starting a task: ask get_recipe first. Without a recipe it lists recipe IDs (add a word such as a book or source name in find); with a recipe it returns the request to send: steps, constraints, extent, capabilities and the exact input IDs, and what must happen first (for example fetching the source). Do not read code, designs or the repository for this, and never guess an ID. Then call request_task with that request, one request_key per instruction. The owner's go in chat is his admission decision: give his exact words as the ref of an admission decision_refs entry, with the input's id as subject.
+- A recipe either fetches or builds. Fetch and build need separate tasks unless both recipes have the same extent; a build can add the step select to become current at once.
+- Make an earlier build current later: steps ["select"], constraints {candidate: the build task's ID}, no inputs.
 - Remove: steps ["remove"], inputs the source revisions, decision kind "exclusion" per subject.
-- One task has one extent, and each step's recipe has its own native_extent that it must equal. Chain two steps only when both recipes have the same extent; otherwise start one task per step.
-- Input IDs are never guessed. A recipe lists in task_inputs the inputs a task for it must name (kind and id); copy them exactly. If you do not have them, start the task with the inputs you know: it is blocked at once and the message names the exact missing ones. Then start it again under a new request_key, with supersedes set to the blocked task.
+- A task that leaves out a recipe's input is blocked at once and the message names it; start it again under a new request_key with supersedes set to the blocked task.
 
 Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 
@@ -135,6 +136,21 @@ const getSchema = fromJsonSchema<{task_id?: string; cursor?: string}>({
   properties: {
     task_id: id,
     cursor: {type: 'string', maxLength: 20, pattern: '^[0-9a-z]+$'},
+  },
+});
+const recipeSchema = fromJsonSchema<{recipe?: string; find?: string}>({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    recipe: {
+      ...id,
+      description: 'A recipe ID: returns the request to send for it.',
+    },
+    find: {
+      type: 'string',
+      maxLength: 60,
+      description: 'Without recipe: only recipe IDs containing this word.',
+    },
   },
 });
 const tidySchema = fromJsonSchema<Record<string, never>>({
@@ -308,6 +324,36 @@ async function getTaskTool(
   );
 }
 
+async function recipeTool(
+  tools: Tools,
+  args: {recipe?: string; find?: string},
+) {
+  tools.owner();
+  const {github} = tools;
+  if (!github)
+    return reply('Recipes are not available: GitHub is not set up.', {}, true);
+  try {
+    if (!args.recipe) {
+      const found = await findRecipes(github, args.find);
+      return reply(
+        `${found.recipes.length} recipe(s)${found.more ? `, ${found.more} more: add a word in find` : ''}. Ask again with one as recipe.`,
+        found,
+      );
+    }
+    const found = await describeRecipe(tools.db, github, args.recipe);
+    return reply(
+      found.found
+        ? `Recipe ${found.recipe} does a ${found.does}. Send the request below to request_task.`
+        : found.message,
+      found,
+      !found.found,
+    );
+  } catch (error) {
+    if (!(error instanceof GitHubError)) throw error;
+    return reply('GitHub did not answer; ask again in a moment.', {}, true);
+  }
+}
+
 async function tidyTool(tools: Tools) {
   tools.owner();
   const done = await tidyReleases(tools.db, tools.objects);
@@ -425,6 +471,15 @@ export function controlServer(
       inputSchema: getSchema,
     },
     args => getTaskTool(tools, args),
+  );
+  server.registerTool(
+    'get_recipe',
+    {
+      description:
+        'Read only. Without recipe: list recipe IDs (optionally containing a word, for example a book or source name). With recipe: what that recipe does (fetch or build) and the request_task fields to send for it: steps, constraints, extent, capabilities and the exact input IDs, plus what is still needed first.',
+      inputSchema: recipeSchema,
+    },
+    args => recipeTool(tools, args),
   );
   server.registerTool(
     'tidy_releases',

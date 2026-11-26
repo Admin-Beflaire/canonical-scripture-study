@@ -8,6 +8,7 @@ import {
   type RecipeUnit,
 } from './contracts.ts';
 import {tidyReleases} from './cleanup.ts';
+import {recipeInputs} from './recipe-inputs.ts';
 import {dispatchUnit, type DispatchResult, type UnitPlan} from './dispatch.ts';
 import {
   FileEncodingError,
@@ -579,7 +580,7 @@ function recipeFit(
     return 'the recipe has nothing to fetch; a fetch step names a fetch recipe';
   if (which === 'build' && fetches)
     return 'a fetch recipe cannot build; a build step names a build recipe';
-  const missing = (recipe.task_inputs ?? []).filter(
+  const missing = recipeInputs(recipe).filter(
     item =>
       !scope.inputs.some(ref => ref.kind === item.kind && ref.id === item.id),
   );
@@ -593,7 +594,7 @@ function fetchFit(scope: Scope, recipe: Recipe): string | undefined {
     recipe.adapter?.name === 'acquire-only' &&
     recipe.adapter.method_version === 'acquire-only/1'
   ) {
-    const problem = acquireOnlyFit(scope, recipe);
+    const problem = acquireOnlyFit(scope);
     if (problem) return problem;
   }
   // Alone, the fetch describes what it keeps; before a build, the build's extent is the task's.
@@ -605,21 +606,7 @@ function fetchFit(scope: Scope, recipe: Recipe): string | undefined {
   return undefined;
 }
 
-function acquireOnlyFit(scope: Scope, recipe: Recipe): string | undefined {
-  const revision = recipe.native_extent?.component;
-  if (
-    typeof revision !== 'string' ||
-    !scope.inputs.some(
-      ref => ref.kind === 'source_revision' && ref.id === revision,
-    )
-  )
-    return `acquire requires source_revision ${String(revision)}`;
-  if (
-    !scope.inputs.some(
-      ref => ref.kind === 'acquisition' && ref.id === recipe.manifest_revision,
-    )
-  )
-    return `acquire requires acquisition ${String(recipe.manifest_revision)}`;
+function acquireOnlyFit(scope: Scope): string | undefined {
   if (
     scope.inputs.some(
       ref =>

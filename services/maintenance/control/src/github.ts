@@ -196,6 +196,24 @@ export class GitHubActions implements WorkflowTransport {
     }
   }
 
+  /** The IDs of the recipes on main. */
+  async listRecipes(): Promise<string[]> {
+    const reply = (await this.call(
+      'GET',
+      `/contents/collection/recipes?ref=${BRANCH}`,
+    )) as Array<{name?: unknown; type?: unknown}> | null;
+    if (!Array.isArray(reply))
+      throw new GitHubError('Recipe list was not a list');
+    return reply
+      .filter(
+        (item): item is {name: string; type: 'file'} =>
+          item.type === 'file' &&
+          typeof item.name === 'string' &&
+          item.name.endsWith('.json'),
+      )
+      .map(item => item.name.slice(0, -'.json'.length));
+  }
+
   /** A reviewed file from main, for example a recipe. */
   async readFile(path: string): Promise<string | null> {
     if (

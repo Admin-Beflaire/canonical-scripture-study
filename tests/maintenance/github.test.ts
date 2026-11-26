@@ -107,6 +107,7 @@ test('active runs, cancellation, recipes and refusals', async () => {
     '{"id":"r"}',
   );
   assert.equal(await actions.readFile('collection/recipes/missing.json'), null);
+  assert.deepEqual(await actions.listRecipes(), ['r']);
   await assert.rejects(
     actions.readFile('.github/workflows/prepare.yml'),
     GitHubError,

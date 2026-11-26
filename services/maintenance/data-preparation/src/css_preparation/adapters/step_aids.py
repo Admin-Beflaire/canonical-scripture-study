@@ -107,6 +107,7 @@ class AidRecipe:
             or recipe["capabilities"] != [cap]
             or recipe["units"] != units
             or recipe.get("dependencies") != dependencies
+            or recipe.get("task_inputs") != [{"kind": "source_revision", "id": rev}]
         ):
             raise RecordError("Language-aid recipe differs from its declared units")
         return cls(recipe, name, commit, rev, cap, count)

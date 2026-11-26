@@ -9,7 +9,7 @@ adapters' own declarations and rejects anything that does not fit.
 
 ## STEPBible TAHOT and TAGNT
 
-Every STEPBible recipe also lists `task_inputs`: the acquisition route and the source revision a task for it must name. Control blocks a task that leaves one out, before anything runs.
+STEPBible and language-aid recipes also list `task_inputs`: the inputs a task for them must name (STEPBible: the acquisition route and the source revision; language aids: the source revision). The adapter checks the list against its parameters. Acquire-only recipes need no list: their acquisition route is `manifest_revision` and their source revision is `native_extent.component`. Control's `get_recipe` returns these as a ready request, and blocks a task that leaves one out before anything runs.
 
 `stepbible-fetch-<component>.json` fetches one pinned STEPBible-Data file for the
 `stepbible-fetch` adapter: its single `acquire` unit keeps the original in protected private

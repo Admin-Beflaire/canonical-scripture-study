@@ -375,6 +375,27 @@ class PreparationTest(unittest.TestCase):
         self.assertEqual((last["reading_kind"], last["text"]), ("gap", None))
         self.assertEqual(last["details"]["gloss"], "Sin")
 
+    def test_recipe_must_list_the_source_revision_a_task_names(self):
+        from pathlib import Path
+
+        raw = json.loads(
+            (
+                Path(__file__).resolve().parents[2]
+                / "collection/recipes/language-aids-bdb.json"
+            ).read_text()
+        )
+        self.assertEqual(
+            raw["task_inputs"],
+            [{"kind": "source_revision", "id": raw["parameters"]["source_revision"]}],
+        )
+        AidRecipe.from_recipe(raw)
+        for change in (
+            {"task_inputs": []},
+            {"task_inputs": [{"kind": "acquisition", "id": raw["dependencies"][0]}]},
+        ):
+            with self.subTest(change=change), self.assertRaises(RecordError):
+                AidRecipe.from_recipe({**raw, **change})
+
     def test_all_recipe_partitions_fit_the_runner_batch_at_observed_sizes(self):
         from pathlib import Path
         from unittest.mock import patch

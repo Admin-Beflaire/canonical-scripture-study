@@ -71,11 +71,6 @@
       "count": 1
     }
   },
-  "tests/maintenance/github.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "tests/study/aids.test.ts": {
     "max-lines-per-function": {
       "count": 2

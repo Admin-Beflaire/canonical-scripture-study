@@ -1,6 +1,6 @@
-/** The guidance texts of the study tasks other than translating, and the two rule blocks that
- *  translating shares with them. Each rule is written once here or in guidance.ts. The rules for
- *  using the tools stay with the tools. */
+/** The texts of the study skills other than translating, and the rule blocks that skills share.
+ *  Each rule is written once here or in guidance.ts. The rules for each tool argument stay with
+ *  the tools. */
 
 /** How witnesses are weighed; translating and comparing both use it. */
 export const WITNESS_POINTS = `- Witnesses are weighed, not counted: many copies of one family or text type count as one voice.
@@ -28,9 +28,16 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
 - torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
 - A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.`;
 
-/** The part of the exegesis guidance that travels with a first result; the rest builds on it. */
-export const EXEGESIS_KEY_RULES = `Key rules
-- Read the whole literary unit, also when particular verses are asked; deliver the asked scope. Give your own working translation first, under the translation guidance.
+/** How conclusions are checked against God's revealed character; exegesis and the conclusion
+ *  check both use it. */
+export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version and scriptural basis of the approved statement, or says that none is selected. It does not return the statement's wording yet.
+- With a statement: check your conclusions against its scriptural basis, say that its wording was not supplied, and never present other words as the statement. Agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
+- Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.`;
+
+export const EXEGESIS = `Exegesis:
+
+The answer
+- Read the whole literary unit, also when particular verses are asked; deliver the asked scope. Give your own working translation first, under the translation skill.
 - Then give, for each literary unit:
   1. Core summary (write it after weighing).
   2. Words and meaning: the words whose meaning changes the reading, their options, which interpretation each option supports, and why.
@@ -42,15 +49,9 @@ export const EXEGESIS_KEY_RULES = `Key rules
   8. Christ as anchor, without rewriting what the text meant in its own setting.
   9. Check of the conclusions against God's revealed character, after interpreting.
 - An exegesis of a passage gets all nine parts; a limited question gets the parts that bear on it.
-- Weigh the interpretations by the points in the full guidance before writing. A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support.
+- Weigh the interpretations by the points below before writing. A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support.
 - Study supplies no commentary or background evidence yet: mark what comes from your own knowledge or from outside sources you consulted, and say what was not supplied.
-- After weighing, call study with mode "conclusion_check" for part 9.`;
-
-export const EXEGESIS = `Exegesis:
-
-This adds to the core method (get_guidance topic "method"). The working translation follows the translation guidance.
-
-${EXEGESIS_KEY_RULES}
+- After weighing, read the conclusion-check skill and call study with mode "conclusion_check" for part 9.
 
 Work first
 - Follow every continuation. Investigate words, background, canon and interpretations, weigh them, check them against God's character, and only then write.
@@ -82,19 +83,14 @@ Sources
 - Attribute a reading to a person or tradition only when you are sure of it, and never as if you had read it firsthand.
 
 God's character
-- Results with evidence do not carry the statement. conclusion_check returns the name, version and scriptural basis of the approved statement, or says that none is selected. It does not return the statement's wording yet.
-- With a statement: check your conclusions against its scriptural basis, say that its wording was not supplied, and never present other words as the statement. Agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
-- Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.`;
-
-export const COMPARISON_KEY_RULES = `Key rules
-- Read each witness on its own, with its own coverage, also when one source combines witnesses. Keep its wording, order, attribution and the state of each correspondence (exact, partial, reordered, disputed or unknown).
-- Call something an omission only where the evidence attests it within that witness's recorded coverage; otherwise it is a gap. A shared verse number or a cross-reference alone does not establish correspondence.
-- Say which witnesses and relationships were not returned or compared. Knowledge from outside the returned evidence is marked as such and is not a witness.
-- Weigh witnesses only where suitable witness evidence is available, by the points in the full guidance. Show points only when the reader asks how a reading was chosen.`;
+${CHARACTER_CHECK}`;
 
 export const COMPARISON = `Comparison:
 
-${COMPARISON_KEY_RULES}
+- Read each witness on its own, with its own coverage, also when one source combines witnesses. Keep its wording, order, attribution and the state of each correspondence (exact, partial, reordered, disputed or unknown).
+- Call something an omission only where the evidence attests it within that witness's recorded coverage; otherwise it is a gap. A shared verse number or a cross-reference alone does not establish correspondence.
+- Say which witnesses and relationships were not returned or compared. Knowledge from outside the returned evidence is marked as such and is not a witness.
+- Weigh witnesses only where suitable witness evidence is available, by the points below. Show points only when the reader asks how a reading was chosen.
 
 Presenting witnesses
 - Present named manuscript readings in order of verified coverage and label gaps or uncertain coverage. The base edition organizes the evidence.
@@ -112,7 +108,7 @@ export const WORD_STUDY = `Word study:
 - Give the attributed lexical candidates, keep words that share a spelling apart, and keep each source's entry and attribution distinct.
 - List the occurrences you rely on with their surrounding wording, and state the searched extent. Call a list complete only within that extent.
 
-Translation key (for rendering words; the Key terms rules are in the translation guidance)
+Translation key (for rendering words; the Key terms rules are in the translation skill)
 ${TRANSLATION_KEY}`;
 
 export const THEME = `Theme and theological investigation:
@@ -122,3 +118,14 @@ export const THEME = `Theme and theological investigation:
 - A passage supports a claim only through its meaning in context; the number of citations does not make up for weak support.
 - Label ranked or relevance-based results as ranked leads, and never treat such a shortlist as exhaustive. Call a listing complete only for the coverage actually searched, and state that coverage.
 - Weigh traditional and scholarly explanations on their arguments and sources, and keep them apart from source evidence and your own conclusions.`;
+
+export const SOURCE_INSPECTION = `Source inspection:
+
+- Use it only when exact native text is still needed and the native reference is known: one source revision, read by its native numbering.
+- Say that the text was read by native numbering and not by a checked mapping.
+- A native candidate is unverified, not a checked match.`;
+
+export const CONCLUSION_CHECK = `Conclusion check:
+
+Run it after interpreting.
+${CHARACTER_CHECK}`;

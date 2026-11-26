@@ -1,21 +1,10 @@
 import type {StudyReadEnvironment} from './read/bindings.ts';
 import {ReadSession} from './read/session.ts';
-import {
-  limitsFor,
-  type BudgetLimits,
-  type BudgetUsage,
-  type ReadWorkload,
-} from './read/budget.ts';
-import {utf8Length} from './read/bytes.ts';
+import {limitsFor, type BudgetUsage, type ReadWorkload} from './read/budget.ts';
 import {SUPPORTED_LOOKUPS, type LookupKind} from './read/search.ts';
 import {ReadError, limitation, type Limitation} from './read/states.ts';
 import type {Batch} from './results/batch.ts';
-import {
-  GUIDANCE_VERSION,
-  taskGuidance,
-  TRANSLATION_RULES,
-  type TaskGuidance,
-} from './guidance.ts';
+import {GUIDANCE_VERSION} from './guidance.ts';
 import {
   EVIDENCE_FOCUS,
   languageBatch,
@@ -57,14 +46,6 @@ export interface StudyRequest {
   continuation?: string;
   focus?: EvidenceFocus;
 }
-
-/** Modes whose answer includes a translation: their first batch carries the key translation rules. */
-const TRANSLATING = new Set<Mode>([
-  'translation',
-  'passage',
-  'exegesis',
-  'comparison',
-]);
 
 /** What this version cannot supply, stated rather than returned as an empty result. */
 const NOT_OFFERED: Partial<Record<Mode, Limitation[]>> = {
@@ -122,7 +103,7 @@ function checkRequest(request: StudyRequest) {
 }
 
 /** Error batch: the request could not be served. The state says why (never an empty success). */
-function failure(
+export function failure(
   error: ReadError,
   request: StudyRequest,
 ): Record<string, unknown> {
@@ -134,9 +115,6 @@ function failure(
     guidance_version: GUIDANCE_VERSION,
   };
 }
-
-/** One batch as Study returns it. A first batch can also carry its task's guidance. */
-export type StudyBatch = Batch & {task_guidance?: TaskGuidance};
 
 /** What a request asks to read: passage references, or else a search lead. */
 interface Asked {
@@ -169,19 +147,6 @@ function readKind({references, leads}: Asked): ReadWorkload {
   return SUPPORTED_LOOKUPS.includes(lookup as LookupKind) ? 'word' : 'passage';
 }
 
-/** The request's read allowance. Attached guidance takes its room from the result, so the
- *  whole batch stays within the same cap. */
-function allowance(
-  env: StudyReadEnvironment,
-  kind: ReadWorkload,
-  attached: TaskGuidance | null,
-): BudgetLimits {
-  const limits = limitsFor(env, kind);
-  if (!attached) return limits;
-  const bytes = utf8Length(JSON.stringify({task_guidance: attached}));
-  return {...limits, resultBytes: limits.resultBytes - bytes};
-}
-
 const baseOf = (request: StudyRequest) => ({
   mode: request.mode,
   depth: request.depth ?? 'standard',
@@ -195,21 +160,15 @@ export async function study(
   env: StudyReadEnvironment,
   request: StudyRequest,
   reportUsage?: (usage: BudgetUsage) => void,
-): Promise<StudyBatch | Record<string, unknown>> {
+): Promise<Batch | Record<string, unknown>> {
   let session: ReadSession | undefined;
   try {
     checkRequest(request);
     const wanted = asked(request);
-    // Only a first batch carries guidance, so a continued study does not repeat it.
-    const attached = request.continuation ? null : taskGuidance(request.mode);
-    session = await ReadSession.open(
-      env,
-      allowance(env, readKind(wanted), attached),
-    );
+    session = await ReadSession.open(env, limitsFor(env, readKind(wanted)));
     if (request.mode === 'conclusion_check')
       return await conclusionCheck(session, baseOf(request));
-    const batch = await evidenceBatch(session, request, wanted);
-    return attached ? {...batch, task_guidance: attached} : batch;
+    return await evidenceBatch(session, request, wanted);
   } catch (error) {
     if (error instanceof ReadError) return failure(error, request);
     throw error;
@@ -253,7 +212,6 @@ async function evidenceBatch(
     continuation,
     GUIDANCE_VERSION,
     notes,
-    !continuation && TRANSLATING.has(mode) ? TRANSLATION_RULES : null,
   );
 }
 

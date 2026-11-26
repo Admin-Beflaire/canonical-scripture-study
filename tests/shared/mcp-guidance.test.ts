@@ -7,11 +7,16 @@ import {
   ABSENCE_RULE,
   CONTINUATION,
   COVERAGE,
-  guidance,
+  LANGUAGE_AIDS,
+  NOT_OFFERED,
   NUMBERING,
+  PASSAGES,
+  PROPER_NAMES,
+  SELECTED_DATA,
+  SKILLS,
   SUPERSCRIPTION_RULE,
-  TASK_ROUTES,
-  TASKS,
+  WORD_FOCUS,
+  WORD_LOOKUPS,
 } from '../../services/study/src/guidance.ts';
 import {localD1} from '../maintenance/d1.ts';
 import {buildPassageFixture} from '../study/passage-fixture.ts';
@@ -80,19 +85,22 @@ test('Control: only fetch and build start from a recipe, and exclusion stays an 
     assert.ok(fields.includes(rule), rule);
 });
 
-test('Study: the translation rules come first, then the whole method', async () => {
+test('Study: connecting leads to the skills first, and the study tool says so', async () => {
   const {instructions, tools} = await delivered(study);
   within(instructions, OPENING, [
     'you translate, reason and explain',
-    'call get_guidance with topic "translation"',
-    'your own working translation from the original',
-    'always write Yahweh for YHWH',
+    'Every question goes through a skill',
+    'call get_guidance with its name as topic',
+    'the skill_code that every study call requires',
   ]);
-  within(instructions, NEEDED, [guidance('method').text, TASK_ROUTES]);
-  for (const task of TASKS)
-    assert.ok(TASK_ROUTES.includes(task.name), task.name);
+  within(
+    instructions,
+    NEEDED,
+    SKILLS.map(skill => `- ${skill.name}: ${skill.modes.join(', ')}`),
+  );
   // A host that keeps less of the instructions still gets these with the study tool.
   const studyTool = tools.find(tool => tool.name === 'study')!;
+  within(studyTool.description, OPENING, ['Every study goes through a skill']);
   within(studyTool.description, NEEDED, [
     CONTINUATION,
     COVERAGE,
@@ -102,17 +110,22 @@ test('Study: the translation rules come first, then the whole method', async () 
   ]);
 });
 
-test('Study: every rule on using the tool survives instructions cut at 2,048', async () => {
-  const {instructions, tools} = await delivered(study);
-  const connected = [
-    instructions.slice(0, NEEDED),
-    ...tools.flatMap(tool => [
-      tool.description,
-      ...fieldDescriptions(tool.inputSchema),
-    ]),
-  ].join('\n');
-  const rules = guidance('tools').text.split('\n').slice(1);
-  assert.ok(rules.length > 0);
-  for (const rule of rules)
-    assert.ok(connected.includes(rule.slice(2)), rule.slice(0, 60));
+test('Study: every rule on using the tool arrives with the tools', async () => {
+  const {tools} = await delivered(study);
+  const connected = tools
+    .flatMap(tool => [tool.description, ...fieldDescriptions(tool.inputSchema)])
+    .join('\n');
+  for (const rule of [
+    CONTINUATION,
+    COVERAGE,
+    NUMBERING,
+    PASSAGES,
+    WORD_LOOKUPS,
+    WORD_FOCUS,
+    PROPER_NAMES,
+    LANGUAGE_AIDS,
+    NOT_OFFERED,
+    SELECTED_DATA,
+  ])
+    assert.ok(connected.includes(rule), rule.slice(0, 60));
 });

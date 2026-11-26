@@ -1,22 +1,21 @@
 import type {TaskSkill} from '../../../packages/shared/src/skills.ts';
+import type {Mode} from './coordinator.ts';
 import {
   COMPARISON,
-  COMPARISON_KEY_RULES,
+  CONCLUSION_CHECK,
   EXEGESIS,
-  EXEGESIS_KEY_RULES,
+  SOURCE_INSPECTION,
   THEME,
   TRANSLATION_KEY,
   WITNESS_POINTS,
   WORD_STUDY,
 } from './task-guidance.ts';
 
-/** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
- *  server instructions, the tool and field descriptions, results and get_guidance. Each task text
- *  is also served as a skill; no host skill is needed. Hosts cut long text, so the order of the
- *  instructions matters: they open with the rules that must never be lost (first 512
- *  characters), hold all that is needed within 2,048, and add only what may be missed up to
- *  4,096. Every rule on using the tool is also complete in the study tool's or a field's
- *  description. get_guidance returns the full text. */
+/** Essential study guidance (Study To-Be §6). Every study goes through the skill of its mode: the
+ *  whole way of working for that kind of question. A host loads it as a skill or reads the same
+ *  text with get_guidance, and passes the code it ends with in every study call. The
+ *  instructions only lead there. Every rule on using the study tool is complete in the tool's
+ *  or a field's description. */
 export const GUIDANCE_VERSION = 'study-guidance/24';
 
 const METHOD = `Method:
@@ -28,7 +27,7 @@ const METHOD = `Method:
 - Treat scholarship and outside concepts as attributed arguments, not missing biblical premises. Keep source evidence, your own translation and conclusions, and outside sources clearly separate.
 - An approved character-of-God statement, when one exists, checks conclusions after interpretation; it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
 
-/** How to use the study tool, one rule each. The topic "tools" holds all of them. */
+/** How to use the study tool, one rule each; they travel with the tool and field descriptions. */
 export const SUPERSCRIPTION_RULE =
   'Present a source-authored superscription unnumbered and in italics above verse 1, separately from numbered text.';
 export const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).`;
@@ -43,23 +42,11 @@ export const PROPER_NAMES = `TIPNR proper-name candidates: use lookup "proper_na
 export const LANGUAGE_AIDS = `Language aids: use lookup "lexicon" with a Strong number (e.g. H7307 or G3686), "grammar_info" with an exact source morphology code, and "lexicon_entry" with an exact entry key. For a compound Hebrew morphology code, split the components and use the H or A language prefix on each, for example HR/Ncfsa becomes HR and HNcfsa. For Greek compound codes, look up each source component separately. Word-search hits may include aid_matches per analysis, pointing to the attributed language_aid evidence returned with the hits. Across batches match separately delivered entries by lookup and key. Keep distinct entries and source attribution. An Open Scriptures index entry can provide linked_entry_keys: look up each with "lexicon_entry" to read the BDB articles. A gloss is not a full definition; missing entries and transcription limitations remain gaps. When delivery_part is present, join the ordered parts of that entry; obtain all continuations.`;
 export const NOT_OFFERED = `Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.`;
 export const SELECTED_DATA = `Each call reads the data selected at that moment; nothing is kept between conversations.`;
+export const SKILL_CODE =
+  'Required on every call, continuations included: the code at the end of the skill for the mode. Read that skill first, as a skill or with get_guidance and its name as topic.';
 
 const bullets = (...rules: string[]) =>
   rules.map(rule => `- ${rule}`).join('\n');
-
-const TOOLS = `Using the study tool:
-${bullets(
-  CONTINUATION,
-  COVERAGE,
-  NUMBERING,
-  PASSAGES,
-  WORD_LOOKUPS,
-  WORD_FOCUS,
-  PROPER_NAMES,
-  LANGUAGE_AIDS,
-  NOT_OFFERED,
-  SELECTED_DATA,
-)}`;
 
 /** The project's translation conventions, fitted to the governing principles (P-07 to P-19).
  *  Concrete on purpose: general principles alone let a host fall back on familiar wording. */
@@ -85,7 +72,7 @@ Evidence
 - When the study tool returns no text of a witness (for example the Septuagint (LXX), the Dead Sea Scrolls, the Samaritan Pentateuch, a Targum, the Vulgate or New Testament manuscripts) and the passage has a quotation of other Scripture or a textual difference, use your own knowledge of that witness to flag where it is known to differ and what it reads. It only flags: it never decides which reading is translated and earns no points; the reading follows the evidence the tool returned. Keep it out of every translation decision: reading choice, matching a New Testament quotation to a witness, and weighing key terms. Mark it "(outside knowledge, unchecked)". If you know of no difference, say nothing; never invent one. Unverified testimony about a witness (for example a Dead Sea Scrolls manuscript) is a lead to flag in the same way, never evidence, unless you cite checked evidence. At concise, put it in the "Limits:" line as a brief fragment instead of a footnote.
 - Name what the evidence is. A flag such as a TAGNT edition list shows which editions carry a reading; it is not manuscript evidence, and edition names do not show that witnesses are independent or dependent. Treat witnesses as one voice only where the evidence shows they go back to one text-form. Where only one source is returned or the evidence ties, call the reading provisional and say in a few words what it rests on (for example "edition flags only"); do not invent a winning case.
 - When a passage quotes other Scripture, or an Old Testament passage is quoted in the New Testament, read the quoted passages and the quoting passages: before awarding quotation priority or calling a witness match decisive, read the actual quotation and the candidate source wording, whichever passage the reader asked to translate. Limit this to relevant direct quotations and plausible source passages, read within available coverage with the same Study tool calls at every level; no broad cross-reference search is needed. Label the exact returned evidence, the candidate links and what remains unresolved, and say apart whether a comparison that could be made found no match, or could not be finished because a witness is missing. Where two or more passages are plausible sources (for example 2 Samuel 7:14 and 1 Chronicles 17:13 behind Hebrews 1:5), name them all.
-- When a checked reader mapping is missing, use any native candidates the study result returns and say they are unverified native candidates, not checked matches. Only when exact native text is still needed and the native reference is known, inspect the source by its native numbering, as the tools guidance describes, and say that the text was read by native numbering and not by a checked mapping.
+- When a checked reader mapping is missing, use any native candidates the study result returns and say they are unverified native candidates, not checked matches. Only when exact native text is still needed and the native reference is known, inspect the source by its native numbering, as the source-inspection skill describes, and say that the text was read by native numbering and not by a checked mapping.
 - First retrieve the current project's relevant lexical entries and their continuations; use them whenever available. If the returned entries or limitations show that relevant evidence is missing or insufficient, for a specific translation question consult only these agreed external websites as needed: STEP Bible (https://www.stepbible.org/), Logeion (https://logeion.uchicago.edu/), and Open Scriptures Hebrew Lexicon (https://github.com/openscriptures/HebrewLexicon). Keep outside research focused; do not claim to have consulted an inaccessible resource. Name the consulted resource and explain its relevant sense in your own words; do not reproduce its entry text. A lexicon gives possible senses, not a decision apart from context. The separate exegesis source list is not defined here.
 Working translation
 - Make your own working translation from the Hebrew, Aramaic or Greek evidence returned. Do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or any other standard translation. Keep a familiar rendering only where the original supports it, never because it is familiar; do not reject one only because it is traditional either.
@@ -180,7 +167,8 @@ Layout
 
 ---`;
 
-/** The rules a host most often misses; returned in the first batch of a translating study. */
+/** The translation rules a host most often misses; the skills of other studies that include a
+ *  translation carry them. */
 export const TRANSLATION_RULES: readonly string[] = Object.freeze([
   'Make your own working translation from the original-language evidence; do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or another standard translation. Title it "Working translation — <reference>" (Dutch: "Werkvertaling — <referentie>"): the reference is the unit actually translated, said once, with no level name.',
   'YHWH is always "Yahweh"; never LORD or HEERE.',
@@ -194,7 +182,7 @@ export const TRANSLATION_RULES: readonly string[] = Object.freeze([
   'When a passage quotes other Scripture, or an Old Testament passage is quoted in the New Testament, read the quoted passages and the quoting passages (the relevant direct quotations and plausible source passages, within available coverage, with the same Study tool calls at every level) before awarding quotation priority or calling a witness match decisive; label returned evidence, candidate links and what remains unresolved, and say apart when a comparison could not be finished because a witness is missing.',
   'Do not show scores, points or checks unless the reader asks how a reading was chosen; then show the points that decided it.',
   'When the asked verses depend on a larger unit, read it at every detail level. In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise.',
-  'Call get_guidance with topic "translation" for the full guidance before translating.',
+  'Read the translation skill (or call get_guidance with topic "translation") before translating.',
 ]);
 
 const DATA = `What is loaded can grow over time. The study tool reports which sources it read and with what coverage. At this version only original-language texts with word tagging are selected; manuscript-relationship comparisons, commentary and background search, study packages and word-by-word analysis of a whole passage are not offered yet, and the tool says so when a request needs them.`;
@@ -202,117 +190,124 @@ const DATA = `What is loaded can grow over time. The study tool reports which so
 const PURPOSE =
   'Canonical Scripture Study — original-language Bible evidence. The study tool supplies attributed source evidence; you translate, reason and explain.';
 
-const TRANSLATE_FIRST =
-  'Before translating, call get_guidance with topic "translation": make your own working translation from the original (not ESV, NASB or another standard one), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.';
+const THROUGH_SKILL =
+  'Every question goes through a skill. Before the first study call for a question, read the skill for its mode to its end: load it as a skill, or call get_guidance with its name as topic. It says how to work and how to answer, and ends with the skill_code that every study call requires.';
 
-/** Names the skill and topic of every task, within what a host keeps. */
-export const TASK_ROUTES =
-  "Read your task's skill or get_guidance topic first: translation, exegesis (also mode passage), comparison, word-study, theme.";
-
-/** One text per task. A host reads it as the skill of this name or as the get_guidance topic of
- *  this name; "attached" is what the first result of a study in these modes carries besides.
- *  Translating has its own key rules (TRANSLATION_RULES). */
-export interface Task extends TaskSkill {
-  modes: readonly string[];
-  attached?: string;
+/** One skill: the modes it serves and the code a study call under it must carry. */
+export interface StudySkill extends TaskSkill {
+  modes: readonly Mode[];
+  code: string;
 }
 
-export const TASKS: readonly Task[] = Object.freeze([
-  {
-    name: 'translation',
-    description:
-      'How to translate a Bible passage from Study evidence: reading, deciding key terms and textual readings, and writing the answer. Read before translating.',
-    modes: ['translation'],
-    text: TRANSLATION,
-  },
-  {
-    name: 'exegesis',
-    description:
-      "How to explain a Bible passage: background, interpretations weighed by points and the check against God's revealed character. Read before explaining a passage.",
-    modes: ['passage', 'exegesis'],
-    text: EXEGESIS,
-    attached: EXEGESIS_KEY_RULES,
-  },
-  {
-    name: 'comparison',
-    description:
-      'How to compare textual witnesses and passages, and how to weigh witnesses. Read before comparing.',
-    modes: ['comparison'],
-    text: COMPARISON,
-    attached: COMPARISON_KEY_RULES,
-  },
-  {
-    name: 'word-study',
-    description:
-      'How to study a Hebrew, Aramaic or Greek word: its range, its meaning in context and its occurrences. Read before a word study or word analysis.',
-    modes: ['word_study', 'word_analysis'],
-    text: WORD_STUDY,
-    attached: WORD_STUDY,
-  },
-  {
-    name: 'theme',
-    description:
-      'How to investigate a biblical theme or theological question across Scripture. Read before a theme study.',
-    modes: ['theme'],
-    text: THEME,
-    attached: THEME,
-  },
+/** A short mark of a skill's text (FNV-1a). It shows that the text was read to its end and
+ *  changes with the text; it is no secret. */
+function mark(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let at = 0; at < text.length; at++)
+    hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193);
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/** How a skill starts its work. The rules for each argument stay with the study tool. */
+function steps(modes: readonly Mode[], give: string): string {
+  const named = modes.map(mode => `"${mode}"`).join(' or ');
+  return `How to work:
+- Call study with mode ${named}${give}. Pass the skill code at the end of this text as skill_code, on continuations too.
+- Follow every continuation before answering, and say what "limitations" and "remaining" leave out.`;
+}
+
+const EVIDENCE = ': passages in references, or one word search in search_leads';
+
+const TRANSLATION_SECTION = `Working translation (key rules; the full rules are in the translation skill)
+Translate from the evidence of this study and keep this skill's mode and code.
+${bullets(...TRANSLATION_RULES)}`;
+
+/** A skill's one text: how to work, the core method, the task and, last, its code. */
+function skill(
+  name: string,
+  description: string,
+  modes: readonly Mode[],
+  parts: readonly string[],
+  give = EVIDENCE,
+): StudySkill {
+  const body = [steps(modes, give), METHOD, ...parts].join('\n\n');
+  const code = `${name}-${mark(body)}`;
+  const text = `${body}\n\nSkill code: ${code}\nPass it as skill_code in every study call made under this skill.`;
+  return Object.freeze({name, description, modes, code, text});
+}
+
+export const SKILLS: readonly StudySkill[] = Object.freeze([
+  skill(
+    'translation',
+    'Translating a Bible passage with Study: read before any study call in mode translation.',
+    ['translation'],
+    [TRANSLATION],
+  ),
+  skill(
+    'exegesis',
+    "Explaining a Bible passage with Study, with background, weighed interpretations and the check against God's revealed character: read before any study call in mode passage or exegesis.",
+    ['passage', 'exegesis'],
+    [EXEGESIS, TRANSLATION_SECTION],
+  ),
+  skill(
+    'comparison',
+    'Comparing textual witnesses and passages with Study: read before any study call in mode comparison.',
+    ['comparison'],
+    [COMPARISON, TRANSLATION_SECTION],
+  ),
+  skill(
+    'word-study',
+    'Studying a Hebrew, Aramaic or Greek word with Study: read before any study call in mode word_study or word_analysis.',
+    ['word_study', 'word_analysis'],
+    [WORD_STUDY],
+  ),
+  skill(
+    'theme',
+    'Investigating a biblical theme or theological question with Study: read before any study call in mode theme.',
+    ['theme'],
+    [THEME],
+  ),
+  skill(
+    'source-inspection',
+    'Reading exact native source text with Study: read before any study call in mode inspect_source.',
+    ['inspect_source'],
+    [SOURCE_INSPECTION],
+    ', the native reference in references and exactly one source revision in sources',
+  ),
+  skill(
+    'conclusion-check',
+    "Checking conclusions against God's revealed character with Study: read before any study call in mode conclusion_check.",
+    ['conclusion_check'],
+    [CONCLUSION_CHECK],
+    '; it needs no references',
+  ),
 ]);
 
-export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({
-  method: METHOD,
-  ...Object.fromEntries(TASKS.map(task => [task.name, task.text])),
-  tools: TOOLS,
-  data: DATA,
-});
-
-const MORE = `Call get_guidance for the full guidance text by topic (${Object.keys(GUIDANCE_TOPICS).join(', ')}).`;
-
-/** The guidance a first result carries for its task: the whole text or its key rules. */
-export interface TaskGuidance {
-  topic: string;
-  note: string;
-  text: string;
+/** Why a study call gets no evidence yet: it lacks the code of its mode's skill. The code is
+ *  only in the skill, so the message says what to read and never repeats it. */
+export function skillNeeded(mode: string, code?: string): string | null {
+  const needed = SKILLS.find(skill => skill.modes.some(m => m === mode));
+  if (!needed || code === needed.code) return null;
+  const problem = code
+    ? 'This skill_code is not the current one for'
+    : 'No skill_code was given for';
+  return `${problem} mode "${mode}". Read the "${needed.name}" skill to its end (load it, or call get_guidance with topic "${needed.name}"), then call study again with the same arguments and the skill_code it ends with.`;
 }
 
-export function taskGuidance(mode: string): TaskGuidance | null {
-  const task = TASKS.find(task => task.modes.includes(mode));
-  if (!task?.attached) return null;
-  const note =
-    task.attached === task.text
-      ? `This is the whole "${task.name}" guidance; follow it.`
-      : `These are key rules. Before answering, call get_guidance with topic "${task.name}" for the full guidance.`;
-  return {topic: task.name, note, text: task.attached};
-}
+export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(SKILLS.map(skill => [skill.name, skill.text])),
+);
 
-/** Sent on initialize to both hosts: the opening and the method first, then how to use the
- *  study tool. The word, name and language-aid rules travel with the fields they govern. */
-export const STUDY_INSTRUCTIONS = [
-  PURPOSE,
-  TRANSLATE_FIRST,
-  TASK_ROUTES,
-  METHOD,
-  `Using the study tool:\n${bullets(
-    CONTINUATION,
-    COVERAGE,
-    NUMBERING,
-    PASSAGES,
-    NOT_OFFERED,
-    SELECTED_DATA,
-  )}`,
-  MORE,
-].join('\n\n');
+const SKILL_ROUTES = `Skills and their study modes:
+${bullets(...SKILLS.map(skill => `${skill.name}: ${skill.modes.join(', ')}`))}`;
 
-/** The topic "all": everything but the full task texts, which have their own topics. */
-const OVERVIEW = [
-  PURPOSE,
-  TOOLS,
-  METHOD,
-  TRANSLATE_FIRST,
-  TASK_ROUTES,
-  DATA,
-  MORE,
-].join('\n\n');
+/** Sent on initialize to both hosts: they lead to the skill, which holds the way of working. */
+export const STUDY_INSTRUCTIONS = [PURPOSE, THROUGH_SKILL, SKILL_ROUTES].join(
+  '\n\n',
+);
+
+/** The topic "all": where to start and what is offered; each skill has its own topic. */
+const OVERVIEW = [STUDY_INSTRUCTIONS, DATA].join('\n\n');
 
 export function guidance(topic?: string | null): {
   version: string;

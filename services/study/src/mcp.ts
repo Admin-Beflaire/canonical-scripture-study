@@ -1,7 +1,13 @@
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {platformServer} from '../../../packages/shared/src/platform.ts';
 import {taskSkills} from '../../../packages/shared/src/skills.ts';
-import {MODES, DEPTHS, study, type StudyRequest} from './coordinator.ts';
+import {
+  MODES,
+  DEPTHS,
+  failure,
+  study,
+  type StudyRequest,
+} from './coordinator.ts';
 import {EVIDENCE_FOCUS} from './operators/language.ts';
 import {
   CONTINUATION,
@@ -14,13 +20,19 @@ import {
   PASSAGES,
   PROPER_NAMES,
   SELECTED_DATA,
+  SKILL_CODE,
+  skillNeeded,
+  SKILLS,
   STUDY_INSTRUCTIONS,
   SUPERSCRIPTION_RULE,
-  TASKS,
   WORD_FOCUS,
   WORD_LOOKUPS,
 } from './guidance.ts';
 import type {StudyReadEnvironment} from './read/bindings.ts';
+import {ReadError} from './read/states.ts';
+
+/** What a host sends to the study tool: a study request and the code of its mode's skill. */
+type ToolRequest = StudyRequest & {skill_code?: string};
 
 const text = (max: number) => ({type: 'string', minLength: 1, maxLength: max});
 
@@ -34,6 +46,8 @@ export const STUDY_SCHEMA = {
       description:
         'What the user wants: translation, passage, exegesis, comparison, word_analysis, word_study, theme, inspect_source or conclusion_check.',
     },
+    // Not required by the schema, so that a call without it learns which skill to read.
+    skill_code: {...text(64), description: SKILL_CODE},
     focus: {
       enum: [...EVIDENCE_FOCUS],
       description: WORD_FOCUS,
@@ -138,10 +152,10 @@ const reply = (data: unknown) => {
   };
 };
 
-const serveTaskSkills = taskSkills('study', TASKS);
+const serveTaskSkills = taskSkills('study', SKILLS);
 
-/** The Study MCP server for one authenticated request: two read-only tools, their guidance and
- *  the task texts as skills. */
+/** The Study MCP server for one authenticated request: two read-only tools and the skills every
+ *  study goes through. */
 export async function studyServer(
   env: StudyReadEnvironment,
   enhancements: boolean,
@@ -154,21 +168,23 @@ export async function studyServer(
       title: 'Study Scripture evidence',
       description: [
         'Returns attributed original-language evidence for a study: passages by reference, or exact word occurrences with attributed lexicon, grammar and proper-name evidence. Read-only.',
+        'Every study goes through a skill: before the first call, read the skill for your mode to its end (as a skill, or with get_guidance and its name) and pass the skill_code it ends with.',
         CONTINUATION,
         COVERAGE,
         NUMBERING,
         SUPERSCRIPTION_RULE,
         SELECTED_DATA,
-        'Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
-        'Follow task_guidance when a first result carries it.',
       ].join(' '),
-      inputSchema: fromJsonSchema<StudyRequest>(
+      inputSchema: fromJsonSchema<ToolRequest>(
         STUDY_SCHEMA as unknown as Record<string, unknown>,
       ),
       annotations: readOnly,
     },
-    async (request: StudyRequest) =>
-      reply(
+    async ({skill_code, ...request}: ToolRequest) => {
+      const needed = skillNeeded(request.mode, skill_code);
+      if (needed)
+        return reply(failure(new ReadError('skill_required', needed), request));
+      return reply(
         await study(env, request, usage => {
           // Only operational counts go to Workers Logs. Keep the tool response limited to study evidence.
           console.log({
@@ -179,13 +195,14 @@ export async function studyServer(
             d1_rows_read: usage.d1RowsRead,
           });
         }),
-      ),
+      );
+    },
   );
   server.registerTool(
     'get_guidance',
     {
-      title: 'Study guidance',
-      description: `Returns the versioned study guidance: method, the guidance of each study task, how to use the study tool, and what data is offered. Topics: ${Object.keys(GUIDANCE_TOPICS).join(', ')}, all.`,
+      title: 'Study skills',
+      description: `Reads a Study skill: the whole way of working for one kind of question, ending with the skill_code the study tool requires. The same text a host loads as a skill. Topics: ${Object.keys(GUIDANCE_TOPICS).join(', ')}; all (default) lists the skills and the data offered.`,
       inputSchema: fromJsonSchema<{topic?: string}>({
         type: 'object',
         additionalProperties: false,

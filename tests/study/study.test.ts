@@ -6,6 +6,7 @@ import {
 } from '../../packages/shared/src/platform.ts';
 import {study} from '../../services/study/src/coordinator.ts';
 import {
+  SKILLS,
   STUDY_INSTRUCTIONS,
   GUIDANCE_VERSION,
 } from '../../services/study/src/guidance.ts';
@@ -15,7 +16,6 @@ import {
   candidateUnits,
   parseReference,
 } from '../../services/study/src/scope/references.ts';
-import {allBatches} from './all-batches.ts';
 import {buildFixture, A} from './fixture.ts';
 import {buildPassageFixture, GRK, HEB, wording} from './passage-fixture.ts';
 import {call as rpc} from '../shared/mcp-call.ts';
@@ -39,11 +39,25 @@ type AnyBatch = {
   release_id?: string;
 };
 
-const all = (
+/** Calls study until no continuation is left, as the guidance tells a host to. */
+async function all(
   env: Parameters<typeof study>[0],
   request: Parameters<typeof study>[1],
-  max?: number,
-) => allBatches<AnyBatch>(env, request, max);
+  max = 20,
+) {
+  const batches: AnyBatch[] = [];
+  let continuation: string | undefined;
+  for (let i = 0; i < max; i++) {
+    const batch = (await study(env, {
+      ...request,
+      ...(continuation ? {continuation} : {}),
+    })) as AnyBatch;
+    batches.push(batch);
+    if (!batch.continuation) return batches;
+    continuation = batch.continuation;
+  }
+  throw new Error('Too many batches');
+}
 const units = (batches: AnyBatch[]) =>
   batches.flatMap(b => b.evidence.map(e => e.span.segments[0].unit_id));
 
@@ -333,6 +347,9 @@ test('modes without loaded evidence say so; conclusion_check returns the stateme
   assert.equal(nothing.limitations[0].state, 'invalid_request');
 });
 
+const codeFor = (mode: string) =>
+  SKILLS.find(skill => skill.modes.some(m => m === mode))!.code;
+
 test('both tools work on the baseline protocol, read-only, with guidance sent on initialize', async () => {
   const {env} = buildPassageFixture();
   const handler = protocolHandler(() => studyServer(env, false), false);
@@ -351,7 +368,12 @@ test('both tools work on the baseline protocol, read-only, with guidance sent on
     assert.equal(tool.annotations.readOnlyHint, true, tool.name);
   const called = await rpc(handler, 'tools/call', {
     name: 'study',
-    arguments: {mode: 'passage', depth: 'focused', references: ['Mat 1:1-3']},
+    arguments: {
+      mode: 'passage',
+      depth: 'focused',
+      references: ['Mat 1:1-3'],
+      skill_code: codeFor('passage'),
+    },
   });
   const batch = JSON.parse(called.result.content[0].text);
   assert.deepEqual(
@@ -361,12 +383,16 @@ test('both tools work on the baseline protocol, read-only, with guidance sent on
   assert.equal(batch.guidance_version, GUIDANCE_VERSION);
   const failed = await rpc(handler, 'tools/call', {
     name: 'study',
-    arguments: {mode: 'passage', references: ['Nowhere 1:1']},
+    arguments: {
+      mode: 'passage',
+      references: ['Nowhere 1:1'],
+      skill_code: codeFor('passage'),
+    },
   });
   assert.equal(failed.result.isError, true);
   const guide = await rpc(handler, 'tools/call', {
     name: 'get_guidance',
-    arguments: {topic: 'method'},
+    arguments: {topic: 'exegesis'},
   });
   assert.match(JSON.parse(guide.result.content[0].text).text, /circular/);
   const invalid = await rpc(handler, 'tools/call', {
@@ -404,7 +430,12 @@ test('Study MCP reuses a full passage, including notes, after its D1 allowance i
     });
     const args = {
       name: 'study',
-      arguments: {mode: 'passage', depth: 'focused', references: ['Gen 1:2']},
+      arguments: {
+        mode: 'passage',
+        depth: 'focused',
+        references: ['Gen 1:2'],
+        skill_code: codeFor('passage'),
+      },
     };
     const first = await rpc(handler, 'tools/call', args);
     const batch = JSON.parse(first.result.content[0].text) as AnyBatch;
@@ -588,7 +619,7 @@ test('R35-3 and R35-4: a missing first chapter and a named source without the ve
   );
 });
 
-test('a translating study carries the key translation rules in its first batch only', async () => {
+test('study batches carry no translation rules; the rules and the full skill keep their wording', async () => {
   const {env} = buildPassageFixture();
   const {TRANSLATION_RULES, guidance} =
     await import('../../services/study/src/guidance.ts');
@@ -597,14 +628,7 @@ test('a translating study carries the key translation rules in its first batch o
     references: ['Gen 1'],
   })) as (AnyBatch & {translation_rules?: string[]})[];
   assert.ok(batches.length > 1);
-  assert.deepEqual(batches[0].translation_rules, [...TRANSLATION_RULES]);
-  for (const later of batches.slice(1))
-    assert.equal(later.translation_rules, undefined);
-  const [inspect] = (await all(env, {
-    mode: 'inspect_source',
-    references: ['Gen 1:1'],
-  })) as (AnyBatch & {translation_rules?: string[]})[];
-  assert.equal(inspect.translation_rules, undefined);
+  for (const batch of batches) assert.equal(batch.translation_rules, undefined);
   const rules = TRANSLATION_RULES.join('\n');
   for (const needed of [
     /Yahweh/,
@@ -677,7 +701,7 @@ test('a translating study carries the key translation rules in its first batch o
     /only after checking their wording and source at that passage/,
   ])
     assert.match(full, needed);
-  assert.match(STUDY_INSTRUCTIONS, /topic "translation"/);
+  assert.match(STUDY_INSTRUCTIONS, /^- translation: translation$/m);
   for (const needed of [
     /numbered footnotes/i,
     /Sources: a one-line Sources line/,
@@ -757,7 +781,7 @@ test('a translating study carries the key translation rules in its first batch o
   assert.doesNotMatch(rules, /same translation/);
 });
 
-test('the first-batch translation rules and the full topic share their tested wording', async () => {
+test('the key translation rules and the translation skill share their tested wording', async () => {
   const {TRANSLATION_RULES, guidance} =
     await import('../../services/study/src/guidance.ts');
   const rules = TRANSLATION_RULES.join('\n');
@@ -790,14 +814,15 @@ test('the first-batch translation rules and the full topic share their tested wo
     'give its argument in one or two sentences before the translation',
     'could not be finished because a witness is missing',
   ]) {
-    assert.ok(rules.includes(phrase), `first-batch rules lack "${phrase}"`);
-    assert.ok(full.includes(phrase), `full topic lacks "${phrase}"`);
+    assert.ok(rules.includes(phrase), `key rules lack "${phrase}"`);
+    assert.ok(full.includes(phrase), `translation skill lacks "${phrase}"`);
   }
 });
 
-test('method and tools guidance state the context summary and the native candidate rules', async () => {
-  const {guidance} = await import('../../services/study/src/guidance.ts');
-  const method = guidance('method').text;
+test('the method and the tool rules state the context summary and the native candidate rules', async () => {
+  const {guidance, LANGUAGE_AIDS, NUMBERING, PASSAGES, PROPER_NAMES} =
+    await import('../../services/study/src/guidance.ts');
+  const method = guidance('theme').text;
   assert.match(
     method,
     /read that unit fully \(across batches\) at every detail level/,
@@ -811,7 +836,7 @@ test('method and tools guidance state the context summary and the native candida
     /In other study requests, summarise its argument before explaining the asked verses/,
   );
   assert.doesNotMatch(method, /summarise its argument before translating/);
-  const tools = guidance('tools').text;
+  const tools = [NUMBERING, PASSAGES, PROPER_NAMES, LANGUAGE_AIDS].join('\n');
   assert.match(
     tools,
     /delivered_scope\.numbering_notes.*explain those numbering differences to the reader/,

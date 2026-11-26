@@ -1,0 +1,31 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "character-statement-0-1-fetch",
+  "revision": "character-statement-0-1-fetch/1",
+  "adapter": {
+    "name": "acquire-only",
+    "method_version": "acquire-only/1"
+  },
+  "input_format": "archive/opaque",
+  "parameters": {
+    "manifest": "character-statement-0-1.json"
+  },
+  "native_extent": {
+    "component": "character-statement-0-1/1"
+  },
+  "capabilities": [],
+  "dependencies": [
+    "character-statement-0-1/1"
+  ],
+  "manifest_revision": "character-statement-0-1/1",
+  "units": [
+    {
+      "unit_id": "acquire",
+      "kind": "acquire",
+      "native_extent": {
+        "component": "character-statement-0-1/1"
+      },
+      "depends_on": []
+    }
+  ]
+}

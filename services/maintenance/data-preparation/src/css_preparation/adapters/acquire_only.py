@@ -24,6 +24,12 @@ DECLARATION = AdapterDeclaration(
     frozenset({"manifest"}),
 )
 MANIFESTS = SCHEMAS.parent / "collection" / "manifests"
+# Where a source's bytes may be. A third-party original stays private; the second value is
+# only for the owner's own file that the public repository holds.
+STORAGE = (
+    "Protected private storage only; never public Git",
+    "Owner file in the public repository; the acquired copy in protected private storage",
+)
 
 
 @dataclass(frozen=True)
@@ -96,7 +102,7 @@ class AcquireRecipe:
                     or not re.fullmatch(r"[0-9a-f]{64}", expected)
                 )
             )
-            or manifest["storage"] != "Protected private storage only; never public Git"
+            or manifest["storage"] not in STORAGE
             or manifest["admission"] != "Owner decision in the Maintenance Control task"
             or recipe.get("manifest_revision") != manifest["manifest_revision"]
             or recipe["dependencies"] != [manifest["manifest_revision"]]

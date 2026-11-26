@@ -6,6 +6,9 @@ Source manifests belong here. A manifest must retain the applicable admission an
 STEPBible recipes, their licence basis and storage rule. The owner's admission decision is
 given in the Maintenance Control task, not here.
 
+`character-statement-0-1.json` pins the owner's statement file in this repository. It is the
+only manifest whose source is a file of the public repository.
+
 B1 STEP language aids are listed in the pinned STEP inventory. Each also has a
 single-file `stepdata-*.json` manifest with the URL and rights fields the existing
-acquire-only runner needs. Source bytes are never committed to public Git.
+acquire-only runner needs. Third-party source bytes are never committed to public Git.

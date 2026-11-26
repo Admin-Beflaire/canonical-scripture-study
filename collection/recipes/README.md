@@ -48,3 +48,11 @@ TVTMS, TEHMC, TEGMC, TBESH, TBESG, TFLSJ 0–5624, TFLSJ extra and TIPNR.
 TFLSJ has two upstream files and therefore two acquisition tasks. Each task
 keeps one opaque original in protected R2; no parsing, building or release.
 The acquisition receipt captures SHA-256 of the downloaded bytes.
+
+## Character-of-God statement
+
+`character-statement-0-1-fetch.json` (acquire-only) keeps the pinned statement file.
+`character-statement-0-1.json` uses the `character-statement` adapter: one `prepare` unit
+copies the file's fields into one statement record, and `quality` rebuilds that record from
+the kept original and compares it. A task also needs the owner's statement approval (decision
+kind `statement`, with the file's name and version) and, the first time, the admission decision.

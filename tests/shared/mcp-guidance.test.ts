@@ -10,6 +10,8 @@ import {
   guidance,
   NUMBERING,
   SUPERSCRIPTION_RULE,
+  TASK_ROUTES,
+  TASKS,
 } from '../../services/study/src/guidance.ts';
 import {localD1} from '../maintenance/d1.ts';
 import {buildPassageFixture} from '../study/passage-fixture.ts';
@@ -86,7 +88,9 @@ test('Study: the translation rules come first, then the whole method', async () 
     'your own working translation from the original',
     'always write Yahweh for YHWH',
   ]);
-  within(instructions, NEEDED, [guidance('method').text]);
+  within(instructions, NEEDED, [guidance('method').text, TASK_ROUTES]);
+  for (const task of TASKS)
+    assert.ok(TASK_ROUTES.includes(task.name), task.name);
   // A host that keeps less of the instructions still gets these with the study tool.
   const studyTool = tools.find(tool => tool.name === 'study')!;
   within(studyTool.description, NEEDED, [

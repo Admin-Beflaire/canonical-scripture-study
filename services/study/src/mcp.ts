@@ -1,5 +1,6 @@
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {platformServer} from '../../../packages/shared/src/platform.ts';
+import {taskSkills} from '../../../packages/shared/src/skills.ts';
 import {MODES, DEPTHS, study, type StudyRequest} from './coordinator.ts';
 import {EVIDENCE_FOCUS} from './operators/language.ts';
 import {
@@ -15,6 +16,7 @@ import {
   SELECTED_DATA,
   STUDY_INSTRUCTIONS,
   SUPERSCRIPTION_RULE,
+  TASKS,
   WORD_FOCUS,
   WORD_LOOKUPS,
 } from './guidance.ts';
@@ -136,9 +138,16 @@ const reply = (data: unknown) => {
   };
 };
 
-/** The Study MCP server for one authenticated request: two read-only tools and their guidance. */
-export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
+const serveTaskSkills = taskSkills('study', TASKS);
+
+/** The Study MCP server for one authenticated request: two read-only tools, their guidance and
+ *  the task texts as skills. */
+export async function studyServer(
+  env: StudyReadEnvironment,
+  enhancements: boolean,
+) {
   const server = platformServer('study', enhancements, STUDY_INSTRUCTIONS);
+  await serveTaskSkills(server);
   server.registerTool(
     'study',
     {
@@ -175,7 +184,7 @@ export function studyServer(env: StudyReadEnvironment, enhancements: boolean) {
     'get_guidance',
     {
       title: 'Study guidance',
-      description: `Returns the versioned study guidance: method, how to use the study tool, and what data is offered. Topics: ${Object.keys(GUIDANCE_TOPICS).join(', ')}, all.`,
+      description: `Returns the versioned study guidance: method, the guidance of each study task, how to use the study tool, and what data is offered. Topics: ${Object.keys(GUIDANCE_TOPICS).join(', ')}, all.`,
       inputSchema: fromJsonSchema<{topic?: string}>({
         type: 'object',
         additionalProperties: false,

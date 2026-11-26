@@ -1,11 +1,23 @@
+import type {TaskSkill} from '../../../packages/shared/src/skills.ts';
+import {
+  COMPARISON,
+  COMPARISON_KEY_RULES,
+  EXEGESIS,
+  EXEGESIS_KEY_RULES,
+  THEME,
+  TRANSLATION_KEY,
+  WITNESS_POINTS,
+  WORD_STUDY,
+} from './task-guidance.ts';
+
 /** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
- *  server instructions, the tool and field descriptions, results and get_guidance; no host skill
- *  is needed. Hosts cut long text, so the order of the instructions matters: they open with the
- *  rules that must never be lost (first 512 characters), hold all that is needed within 2,048,
- *  and add only what may be missed up to 4,096. Every rule on using the tool is also complete
- *  in the study tool's or a field's description.
- *  get_guidance returns the full text. */
-export const GUIDANCE_VERSION = 'study-guidance/23';
+ *  server instructions, the tool and field descriptions, results and get_guidance. Each task text
+ *  is also served as a skill; no host skill is needed. Hosts cut long text, so the order of the
+ *  instructions matters: they open with the rules that must never be lost (first 512
+ *  characters), hold all that is needed within 2,048, and add only what may be missed up to
+ *  4,096. Every rule on using the tool is also complete in the study tool's or a field's
+ *  description. get_guidance returns the full text. */
+export const GUIDANCE_VERSION = 'study-guidance/24';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) at every detail level. In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise. In other study requests, summarise its argument before explaining the asked verses.
@@ -89,21 +101,7 @@ Text
 - This applies to every relevant source, witness, manuscript, edition or tradition; any names given here are examples, not a list.
 - Choose the reading to translate by weighing the available witnesses with the points below, then translate the winning reading faithfully. Explain the evidence and reasoning as a narrative; do not show scores, points or checks unless the reader asks how a reading was chosen; then show the points that decided it.
 - Old Testament: the basic comparison is the Septuagint against the Masoretic Text. The Dead Sea Scrolls, the Samaritan Pentateuch and other witnesses add weight to the side they agree with. In the kaige sections the Old Latin and Josephus may preserve the Greek from before that revision; use them as evidence only after checking their wording and source at that passage. The same points apply to New Testament variants.
-- Witnesses are weighed, not counted: many copies of one family or text type count as one voice.
-- Points for the likely original wording:
-  +2 the reading that best explains how the others arose.
-  +1 supported against the other side by an independent witness (for example the Dead Sea Scrolls agreeing with the Septuagint against the Masoretic Text, or with the Masoretic Text against the Septuagint). Witnesses that go back to one older text-form count once.
-  +1 the older witness.
-  +1 the shorter reading, measured in meaning: fewer words or less content once translated, not longer words for the same meaning or spelling. 0 when a copying slip explains the difference (the eye skipping between similar words, a repeated word, look-alike letters).
-  +1 the harder reading.
-  +1 the reading that fits the author's own vocabulary, grammar and argument. This balances "harder": a reading that makes no sense in context is not rewarded.
-  -1 a reading that removes an embarrassing or difficult element, smooths the text, or copies a parallel passage (for example Gospel harmonisation, or Samuel matched to Chronicles). Typical scribal additions count here too: an extra account of events already told, expanded divine names ("Jesus" to "the Lord Jesus Christ"), pious phrases, and a subject spelled out where the text left it implied.
-  -1 a reading that exaggerates or glorifies, such as inflated numbers or an enlarged hero (for example Goliath's height or army sizes).
-  -2 a reading that steers the theology (for example "sons of Israel" for "sons of God" in Deuteronomy 32:8, or softening God's human-like features). The scribal corrections the Masoretes themselves list (tiqqune sopherim) count here.
-  For smoothing, embarrassment, exaggeration and theological steering, follow established scholarly assessments where known (for example Tov, McCarthy on the tiqqune sopherim, Metzger), named as outside knowledge.
-  On a tie in the Old Testament, translate the Masoretic Text if it is one of the tied readings, and footnote the other reading. In any other unresolved case (a tie without the Masoretic Text, a New Testament tie, no Masoretic reading, or evidence too thin to prefer one reading), give the best-supported reading, or the main text returned here where nothing separates them, as a provisional translation; say plainly that the evidence does not settle it and footnote the significant alternatives.
-  A reading earns no points when it is evidently a revision toward the Hebrew, which takes two things. First, a flag: an operative kaige range (a debated boundary range is shown as possible kaige and not discounted) or a cited judgment that marks that reading as kaige. Second, a usable, attributable non-kaige Greek witness whose own reading differs, or whose clear omission is attested, at those words. Without such a witness the flagged reading is the only usable Greek reading: keep it and mark it with its actual label (kaige, Hexaplaric, Theodotion and so on). A range mark alone does not discount a reading the non-kaige witnesses share. A witness that is silent, damaged or unrelated at those words does not count as one, and neither does an edition that only names manuscripts. Other revisions, such as Hexaplaric additions, Theodotion, Aquila or Symmachus, are named as what they are.
-- New Testament quotations decide. Only a real quotation counts, not an allusion or echo. Where the New Testament quotes an Old Testament passage in a form that matches one witness (the Septuagint, the Masoretic Text or another), that reading wins, whichever witness it is. If New Testament quotations of the same passage follow different witnesses, or the New Testament wording matches no witness, no reading wins by quotation: the points decide, and a footnote explains the New Testament use.
+${WITNESS_POINTS}
 - Reconstruction: only where no witness makes sense, use the best scholarly reconstruction, mark it as a reconstruction in the translation, and footnote who proposed it and what the witnesses read.
 - Count only real textual differences. A Greek rendering that can come from the same Hebrew is translation technique, not a variant. A different vocalisation of the same Hebrew consonants is a different reading of the same text, not a different text. Longer text that does not win goes in [square brackets] with a footnote, whatever its kind or length, in the Old and the New Testament: a long extra story or account (1 Samuel 17-18), a Greek addition (the Prayer of Azariah, Susanna, Bel and the Dragon, the added parts of Esther) or a single added line (the ending of the Lord's Prayer in Matthew 6:13). Only when the difference is too large to bracket, as with the two editions of Jeremiah and Job, do not weigh word by word: most readers do not know such a book exists in two editions, so before translating a passage where they differ, explain the difference in one or two sentences and ask which edition to translate (Hebrew or Greek), and name the other edition once in a note.
 Footnote triggers (which choices get a footnote at standard and full; Part 2 says how)
@@ -115,13 +113,7 @@ Form and force
 - Keep Hebrew idioms in the text as written (for example merism such as "heaven and earth" for everything, or hendiadys, two words for one idea) and explain in a footnote what they mean.
 - Keep repetition, structure, speakers, participants, agency, negation, qualification and logical connections. Do not weaken or strengthen what the wording claims.
 Translation key
-- YHWH is always "Yahweh"; never LORD, the LORD, HEERE or de HEERE.
-- kyrios is Lord, lord or master by context. Identify it with Yahweh only where an Old Testament quotation or strong context warrants it, and say so.
-- Keep Sheol, Hades, Gehenna, the abyss and Tartarus-related verbs distinct; explain each in context without importing a later doctrine of hell or of the afterlife.
-- nephesh/psyche, ruach/pneuma/neshamah and basar/sarx/soma: decide each occurrence from its context (life, person, self, breath, wind, spirit, flesh, body ...) under the Key terms rules. One known trap: where a conventional rendering brings in Platonic soul-body dualism (an immortal, separable soul, such as "soul" for nephesh where the context means a living being or life), use the contextual meaning and note the conventional rendering. This concerns dualism only. It does not make ruach, pneuma or any other word suspect in itself, and does not rule out renderings such as "the Spirit of God" where the context supports them.
-- aion/aionios: by context and construction; neither "always endless" nor "always age-long".
-- torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
-- A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.
+${TRANSLATION_KEY}
 - Interlinear only when asked: original word order, the actual forms with transliteration and a contextual gloss; a gloss is an aid, not the translation.
 
 Part 2. The answer (the note level controls it)
@@ -208,19 +200,97 @@ export const TRANSLATION_RULES: readonly string[] = Object.freeze([
 const DATA = `What is loaded can grow over time. The study tool reports which sources it read and with what coverage. At this version only original-language texts with word tagging are selected; manuscript-relationship comparisons, commentary and background search, study packages and word-by-word analysis of a whole passage are not offered yet, and the tool says so when a request needs them.`;
 
 const PURPOSE =
-  'Canonical Scripture Study — evidence for studying the Bible in its original languages. The study tool supplies attributed source evidence; you translate, reason and explain.';
+  'Canonical Scripture Study — original-language Bible evidence. The study tool supplies attributed source evidence; you translate, reason and explain.';
 
 const TRANSLATE_FIRST =
-  'Before translating, call get_guidance with topic "translation". In short: make your own working translation from the original (not the ESV, NASB or another standard translation), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.';
+  'Before translating, call get_guidance with topic "translation": make your own working translation from the original (not ESV, NASB or another standard one), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.';
 
-const MORE =
-  'Call get_guidance for the full guidance text by topic (method, translation, tools, data).';
+/** Names the skill and topic of every task, within what a host keeps. */
+export const TASK_ROUTES =
+  "Read your task's skill or get_guidance topic first: translation, exegesis (also mode passage), comparison, word-study, theme.";
+
+/** One text per task. A host reads it as the skill of this name or as the get_guidance topic of
+ *  this name; "attached" is what the first result of a study in these modes carries besides.
+ *  Translating has its own key rules (TRANSLATION_RULES). */
+export interface Task extends TaskSkill {
+  modes: readonly string[];
+  attached?: string;
+}
+
+export const TASKS: readonly Task[] = Object.freeze([
+  {
+    name: 'translation',
+    description:
+      'How to translate a Bible passage from Study evidence: reading, deciding key terms and textual readings, and writing the answer. Read before translating.',
+    modes: ['translation'],
+    text: TRANSLATION,
+  },
+  {
+    name: 'exegesis',
+    description:
+      "How to explain a Bible passage: background, interpretations weighed by points and the check against God's revealed character. Read before explaining a passage.",
+    modes: ['passage', 'exegesis'],
+    text: EXEGESIS,
+    attached: EXEGESIS_KEY_RULES,
+  },
+  {
+    name: 'comparison',
+    description:
+      'How to compare textual witnesses and passages, and how to weigh witnesses. Read before comparing.',
+    modes: ['comparison'],
+    text: COMPARISON,
+    attached: COMPARISON_KEY_RULES,
+  },
+  {
+    name: 'word-study',
+    description:
+      'How to study a Hebrew, Aramaic or Greek word: its range, its meaning in context and its occurrences. Read before a word study or word analysis.',
+    modes: ['word_study', 'word_analysis'],
+    text: WORD_STUDY,
+    attached: WORD_STUDY,
+  },
+  {
+    name: 'theme',
+    description:
+      'How to investigate a biblical theme or theological question across Scripture. Read before a theme study.',
+    modes: ['theme'],
+    text: THEME,
+    attached: THEME,
+  },
+]);
+
+export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({
+  method: METHOD,
+  ...Object.fromEntries(TASKS.map(task => [task.name, task.text])),
+  tools: TOOLS,
+  data: DATA,
+});
+
+const MORE = `Call get_guidance for the full guidance text by topic (${Object.keys(GUIDANCE_TOPICS).join(', ')}).`;
+
+/** The guidance a first result carries for its task: the whole text or its key rules. */
+export interface TaskGuidance {
+  topic: string;
+  note: string;
+  text: string;
+}
+
+export function taskGuidance(mode: string): TaskGuidance | null {
+  const task = TASKS.find(task => task.modes.includes(mode));
+  if (!task?.attached) return null;
+  const note =
+    task.attached === task.text
+      ? `This is the whole "${task.name}" guidance; follow it.`
+      : `These are key rules. Before answering, call get_guidance with topic "${task.name}" for the full guidance.`;
+  return {topic: task.name, note, text: task.attached};
+}
 
 /** Sent on initialize to both hosts: the opening and the method first, then how to use the
  *  study tool. The word, name and language-aid rules travel with the fields they govern. */
 export const STUDY_INSTRUCTIONS = [
   PURPOSE,
   TRANSLATE_FIRST,
+  TASK_ROUTES,
   METHOD,
   `Using the study tool:\n${bullets(
     CONTINUATION,
@@ -233,17 +303,16 @@ export const STUDY_INSTRUCTIONS = [
   MORE,
 ].join('\n\n');
 
-/** The topic "all": everything but the full translation guidance, which has its own topic. */
-const OVERVIEW = [PURPOSE, TOOLS, METHOD, TRANSLATE_FIRST, DATA, MORE].join(
-  '\n\n',
-);
-
-export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({
-  method: METHOD,
-  translation: TRANSLATION,
-  tools: TOOLS,
-  data: DATA,
-});
+/** The topic "all": everything but the full task texts, which have their own topics. */
+const OVERVIEW = [
+  PURPOSE,
+  TOOLS,
+  METHOD,
+  TRANSLATE_FIRST,
+  TASK_ROUTES,
+  DATA,
+  MORE,
+].join('\n\n');
 
 export function guidance(topic?: string | null): {
   version: string;

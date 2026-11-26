@@ -30,8 +30,8 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
 
 /** How conclusions are checked against God's revealed character; exegesis and the conclusion
  *  check both use it. */
-export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version and scriptural basis of the approved statement, or says that none is selected. It does not return the statement's wording yet.
-- With a statement: check your conclusions against its scriptural basis, say that its wording was not supplied, and never present other words as the statement. Agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
+export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version, wording and scriptural basis (reader references) of the approved statement, or says that none is selected.
+- With a statement: check your conclusions against its wording and its scriptural basis, name it with its version, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
 - Check every serious interpretation or alternative, not only the one you favour. For each say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why. When there is another serious reading, a check of the favoured one alone is incomplete.`;
 

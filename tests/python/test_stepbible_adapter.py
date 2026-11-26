@@ -1,7 +1,5 @@
 """DP-05a: STEPBible tagged-text adapter, recipes and runner gate (synthetic files only)."""
 
-from copy import deepcopy
-import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -33,9 +31,14 @@ from css_preparation.adapters.stepbible.source import BOOK_STRIDE
 from css_preparation.contracts import contract_errors
 from css_preparation.prepare.evidence import NativeText
 from css_preparation.prepare.records import RecordError
-from css_preparation.runner import __main__ as runner
 from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
-from runner_doubles import LoopbackApi, control_client_for, storage_for
+from runner_doubles import (
+    LoopbackApi,
+    control_client_for,
+    dispatched_control,
+    run_recipe_unit,
+    storage_for,
+)
 import stepbible_fixture as fixture
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -581,29 +584,11 @@ class RunnerFlowTest(unittest.TestCase):
         self.fetch = Recipe(acquire=fetch.acquire, declares=fetch.declares)
         self.storage = storage_for(self.api)
         self.client = control_client_for(self.api)
-        self.api.control_handler = self.control
+        self.api.control_handler = dispatched_control(lambda: self.current, RUN_ID)
         self.inputs = [
             {"kind": "acquisition", "id": self.component.acquisition_id},
             {"kind": "source_revision", "id": self.component.revision_id},
         ]
-
-    def control(self, method, path, headers, body):
-        if path == "/internal/jobs/state":
-            job = json.loads(self.current)
-            digest = hashlib.sha256(self.current.encode("utf-8")).hexdigest()
-            return 200, {
-                "task_id": job["task_id"],
-                "task_revision": job["task_revision"],
-                "task_state": "running",
-                "task_basis_digest": job["basis_digest"],
-                "unit_id": job["unit_id"],
-                "attempt": job["attempt"],
-                "job_revision": job["task_revision"],
-                "job_input_basis": digest,
-                "run_id": RUN_ID,
-                "job_state": "dispatched",
-            }
-        return 200, {"status": "accepted", "eligible": True, "state": "succeeded"}
 
     def job_run(self, unit_id, **changes):
         value, recipe = (
@@ -611,31 +596,9 @@ class RunnerFlowTest(unittest.TestCase):
             if unit_id == "acquire"
             else (self.recipe_value, self.recipe)
         )
-        unit = next(item for item in value["units"] if item["unit_id"] == unit_id)
-        job = deepcopy(WIRE["job_input"])
-        job.update(
-            task_id="task-stepbible",
-            unit_id=unit_id,
-            kind=unit["kind"],
-            native_extent=unit["native_extent"],
-            recipe_revision=value["revision"],
-            input_refs=self.inputs,
-            dependency_refs=[],
-            required_capabilities=unit.get("required_capabilities", []),
-            constraints={},
-        )
-        job.update(changes)
-        self.current = json.dumps(
-            job, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        )
         with mock.patch.dict(RECIPES, {value["revision"]: recipe}):
-            return runner.run_job(
-                self.current,
-                unit["kind"],
-                run_id=RUN_ID,
-                control=self.client,
-                storage=self.storage,
-            )
+            changes.setdefault("task_id", "task-stepbible")
+            return run_recipe_unit(self, value, unit_id, RUN_ID, **changes)
 
     def test_acquire_prepare_and_quality_with_task_scoped_reads(self):
         def download(route, destination):

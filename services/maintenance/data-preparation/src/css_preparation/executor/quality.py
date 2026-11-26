@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Sequence
 
 from ..indexes.files import PAGE_CAP
 from ..contracts import parse_job_input, unit_result
 from ..prepare.evidence import NativeText
-from ..prepare.records import ReaderBoundaryError, RecordError, RecordSet
+from ..prepare.records import ReaderBoundaryError, RecordError
 from ..diagnostics import diagnostic
 from ..provider import ProviderError
 from ..validate.saved import CandidateInventory
-from ..validate.semantic import _canonical, check_saved_semantics
+from ..validate.semantic import Rebuild, _canonical, check_saved_semantics
 from . import ControlState, UnitNotRunnableError, execute_unit
 from .records import RecordStore, check_record_ref
 
@@ -32,8 +32,9 @@ def check_candidate_quality(
     read_source: Callable[[str], NativeText],
     receipts: RecordStore,
     max_page_bytes: int = PAGE_CAP,
-    read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
-    read_aid_entries: Callable[[Mapping[str, Any]], RecordSet] | None = None,
+    read_reader_references: Rebuild = None,
+    read_aid_entries: Rebuild = None,
+    read_statements: Rebuild = None,
 ) -> dict[str, Any]:
     """Read-only candidate check; Control alone checks scope and promotes data."""
     job = parse_job_input(job_json)
@@ -60,6 +61,7 @@ def check_candidate_quality(
                 max_page_bytes=max_page_bytes,
                 read_reader_references=read_reader_references,
                 read_aid_entries=read_aid_entries,
+                read_statements=read_statements,
             )
             if len(evidence.saved.artifact_refs) > 256 or len(evidence.coverage) > 256:
                 raise RecordError("Candidate exceeds result reference limits")
@@ -123,6 +125,7 @@ def check_candidate_quality(
                         else []
                     ),
                     *(["aid_entries"] if read_aid_entries is not None else []),
+                    *(["statements"] if read_statements is not None else []),
                 ],
                 "limitations": list(evidence.limitations),
                 "passed": True,

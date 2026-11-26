@@ -6,10 +6,12 @@ migrations) and a dictionary of objects. No real provider is contacted.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+from pathlib import Path
 import re
 import sqlite3
 import threading
@@ -20,8 +22,14 @@ from css_preparation.runner.cloudflare import CloudflareConfig, CloudflareStorag
 from css_preparation.runner.control import ControlClient, ControlConfig
 from css_preparation.runner.r2 import sign_v4
 from css_preparation.runner.web import Origin
+from css_preparation.runner import __main__ as runner
 
 TOKEN_ID = "0123456789abcdef0123456789abcdef"
+WIRE = json.loads(
+    (
+        Path(__file__).resolve().parents[1] / "conformance/dp04-control-wire.v1.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def storage_for(api, token="synthetic-token"):
@@ -44,6 +52,59 @@ def control_client_for(api):
     return ControlClient(
         ControlConfig(Origin(api.origin), "synthetic-id", "synthetic-secret"),
         sleep=lambda _: None,
+    )
+
+
+def dispatched_control(current, run_id):
+    """Control double for whole runs: every state read reports the job text `current()`
+    as dispatched to this run, and every submitted result is accepted."""
+
+    def control(method, path, headers, body):
+        if path != "/internal/jobs/state":
+            return 200, {"status": "accepted", "eligible": True, "state": "succeeded"}
+        text = current()
+        job = json.loads(text)
+        return 200, {
+            "task_id": job["task_id"],
+            "task_revision": job["task_revision"],
+            "task_state": "running",
+            "task_basis_digest": job["basis_digest"],
+            "unit_id": job["unit_id"],
+            "attempt": job["attempt"],
+            "job_revision": job["task_revision"],
+            "job_input_basis": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "run_id": run_id,
+            "job_state": "dispatched",
+        }
+
+    return control
+
+
+def run_recipe_unit(case, recipe, unit_id, run_id, **changes):
+    """Run one unit of a recipe file as Control would dispatch it, with the test case's
+    inputs, storage and Control client; the job text is kept on `case.current`."""
+    unit = next(item for item in recipe["units"] if item["unit_id"] == unit_id)
+    job = deepcopy(WIRE["job_input"])
+    job.update(
+        unit_id=unit_id,
+        kind=unit["kind"],
+        native_extent=unit["native_extent"],
+        recipe_revision=recipe["revision"],
+        input_refs=case.inputs,
+        dependency_refs=[],
+        required_capabilities=unit.get("required_capabilities", []),
+        constraints={},
+    )
+    job.update(changes)
+    case.current = json.dumps(
+        job, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return runner.run_job(
+        case.current,
+        unit["kind"],
+        run_id=run_id,
+        control=case.client,
+        storage=case.storage,
     )
 
 

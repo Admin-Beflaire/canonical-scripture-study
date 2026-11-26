@@ -17,6 +17,10 @@ from ..adapters.stepbible import DECLARATION as STEPBIBLE, BookRecipe
 from ..adapters.stepbible.fetch import DECLARATION as STEPBIBLE_FETCH, ComponentFetch
 from ..adapters.acquire_only import DECLARATION as ACQUIRE_ONLY, AcquireRecipe
 from ..adapters.step_aids import DECLARATION as LANGUAGE_AIDS, AidRecipe
+from ..adapters.character_statement import (
+    DECLARATION as CHARACTER_STATEMENT,
+    StatementRecipe,
+)
 from ..prepare.evidence import NativeText
 from ..prepare.records import RecordSet
 from ..validation import SCHEMAS
@@ -38,6 +42,7 @@ class Recipe:
     declares: Callable[[Mapping[str, Any], str], bool] | None = None
     read_reader_references: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
     read_aid_entries: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
+    read_statements: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
 
 
 def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
@@ -78,6 +83,16 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
                 prepare=source.prepare,
                 read_source=source.read_source,
                 read_aid_entries=source.read_aid_entries,
+            )
+        elif identity == (
+            CHARACTER_STATEMENT.name,
+            CHARACTER_STATEMENT.method_version,
+        ):
+            statement = StatementRecipe.from_recipe(value)
+            recipes[value["revision"]] = Recipe(
+                prepare=statement.prepare,
+                read_source=statement.read_source,
+                read_statements=statement.read_statements,
             )
         else:
             raise ValueError(f"Recipe {path.stem} names no registered adapter")

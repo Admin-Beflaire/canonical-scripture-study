@@ -49,7 +49,6 @@ exclude = [
   "tests/python/test_boundaries.py",
   "tests/python/test_conformance.py",
   "tests/python/test_diagnose_failed_state.py",
-  "tests/python/test_evidence_contracts.py",
   "tests/python/test_index_contracts.py",
   "tests/python/test_language_aid_entries.py",
   "tests/python/test_levinsohn_units.py",

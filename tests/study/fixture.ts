@@ -617,7 +617,8 @@ export function buildFixture({
     name: 'Synthetic statement',
     version: '1',
     status: 'approved',
-    scripture_basis_json: [{span_id: 'a-u1'}],
+    scripture_basis_json: ['Gen 1:1'],
+    wording: 'Synthetic statement wording.',
     owner_approval_ref: 'private:approval-ref',
   });
 

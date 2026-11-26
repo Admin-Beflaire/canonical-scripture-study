@@ -17,6 +17,9 @@ from ..prepare.evidence import NativeText, OutputBasis, span_wording
 from ..prepare.records import KEYS, ORDER, SHARED, RecordError, RecordSet, comparable
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
 
+# What a recipe rebuilds from the registered source to compare with the saved rows, if anything.
+Rebuild = Callable[[Mapping[str, Any]], RecordSet] | None
+
 
 def _canonical(value: Any) -> bytes:
     return json.dumps(
@@ -82,10 +85,34 @@ def _check_index_routes(
         raise RecordError("Saved indexed routing pairs differ from posting keys")
 
 
+def _check_rebuilt(job, inventory, included, rows, read, kind, table, what) -> None:
+    """Saved outputs of one rebuilt kind equal what the registered source rebuilds, and
+    such outputs never pass without that rebuild."""
+    ids = {
+        basis.output_id
+        for basis in (*inventory.added, *inventory.reused)
+        if basis.kind == kind
+    }
+    if read is not None:
+        expected = read(job)
+        if ids != included or set(expected.output_ids()) != included:
+            raise RecordError(f"Saved {what} outputs differ from the reviewed recipe")
+        _same_as_expected(rows, expected, what)
+    elif ids or rows[table]:
+        raise RecordError(f"No registered verification for saved {what}")
+
+
 def _check_expected_outputs(
-    job, inventory, included, rows, read_reader_references, read_aid_entries
+    job,
+    inventory,
+    included,
+    rows,
+    read_reader_references,
+    read_aid_entries,
+    read_statements,
 ) -> set[str]:
-    """Reader-reference and language-aid rows equal what the registered source rebuilds; returns the gaps."""
+    """Reader-reference, language-aid and statement rows equal what the registered source
+    rebuilds; returns the gaps."""
     mapping_ids = {
         basis.output_id
         for basis in (*inventory.added, *inventory.reused)
@@ -106,20 +133,11 @@ def _check_expected_outputs(
         }
     elif mapping_ids or rows["reader_reference_base"] or rows["reader_reference_link"]:
         raise RecordError("No registered verification for saved reader references")
-    aid_ids = {
-        basis.output_id
-        for basis in (*inventory.added, *inventory.reused)
-        if basis.kind == "aid_entries"
-    }
-    if read_aid_entries is not None:
-        expected = read_aid_entries(job)
-        if aid_ids != included or set(expected.output_ids()) != included:
-            raise RecordError(
-                "Saved language-aid outputs differ from the reviewed partition"
-            )
-        _same_as_expected(rows, expected, "language-aid entries")
-    elif aid_ids or rows["aid_entry"]:
-        raise RecordError("No registered verification for saved language-aid entries")
+    for read, kind, table, what in (
+        (read_aid_entries, "aid_entries", "aid_entry", "language-aid entries"),
+        (read_statements, "character_statement", "character_statement", "statements"),
+    ):
+        _check_rebuilt(job, inventory, included, rows, read, kind, table, what)
     return gaps
 
 
@@ -339,8 +357,9 @@ def check_saved_semantics(
     read_blob: Callable[[str], bytes],
     read_source: Callable[[str], NativeText],
     max_page_bytes: int = PAGE_CAP,
-    read_reader_references: Callable[[Mapping[str, Any]], RecordSet] | None = None,
-    read_aid_entries: Callable[[Mapping[str, Any]], RecordSet] | None = None,
+    read_reader_references: Rebuild = None,
+    read_aid_entries: Rebuild = None,
+    read_statements: Rebuild = None,
 ) -> SemanticEvidence:
     """Never substitute a builder's success flag for saved candidate evidence."""
     saved = verify_candidate_inventory(
@@ -364,7 +383,13 @@ def check_saved_semantics(
         kind: [dict(row) for row in read_rows(kind, saved.output_ids)] for kind in ORDER
     }
     gaps = _check_expected_outputs(
-        job, inventory, included, rows, read_reader_references, read_aid_entries
+        job,
+        inventory,
+        included,
+        rows,
+        read_reader_references,
+        read_aid_entries,
+        read_statements,
     )
     artifacts = {r["id"]: r for r in rows["artifact"] if r["output_id"] in included}
     blobs = _read_artifact_blobs(artifacts, read_blob)

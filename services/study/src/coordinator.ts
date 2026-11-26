@@ -270,6 +270,7 @@ async function conclusionCheck(
       ? {
           name: String(statement.name),
           version: String(statement.version),
+          wording: String(statement.wording),
           scripture_basis: (() => {
             try {
               return JSON.parse(String(statement.scripture_basis_json));

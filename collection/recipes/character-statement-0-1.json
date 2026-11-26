@@ -1,0 +1,59 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "character-statement-0-1",
+  "revision": "character-statement-0-1-build/1",
+  "adapter": {
+    "name": "character-statement",
+    "method_version": "character-statement/1"
+  },
+  "input_format": "character-statement/original",
+  "parameters": {
+    "source_revision": "character-statement-0-1/1"
+  },
+  "native_extent": {
+    "component": "character-statement-0-1/1",
+    "coordinate_version": "character-statement/1"
+  },
+  "capabilities": [
+    "character_statement"
+  ],
+  "dependencies": [
+    "character-statement-0-1/1"
+  ],
+  "manifest_revision": "character-statement-0-1/1",
+  "task_inputs": [
+    {
+      "kind": "source_revision",
+      "id": "character-statement-0-1/1"
+    }
+  ],
+  "units": [
+    {
+      "unit_id": "prepare",
+      "kind": "prepare",
+      "native_extent": {
+        "unit_ids": [
+          "statement"
+        ],
+        "coordinate_version": "character-statement/1"
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "unit_ids": [
+          "statement"
+        ],
+        "coordinate_version": "character-statement/1"
+      },
+      "depends_on": [
+        "prepare"
+      ],
+      "required_capabilities": [
+        "character_statement"
+      ]
+    }
+  ]
+}

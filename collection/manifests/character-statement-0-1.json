@@ -1,0 +1,20 @@
+{
+  "manifest_revision": "character-statement-0-1/1",
+  "source_revision": "character-statement-0-1/1",
+  "provider": "Canonical Scripture Study owner",
+  "origin": "collection/character-of-god-statement.json of the public application repository",
+  "version": "God's Character 0.1",
+  "licence": "Owner-supplied statement; the software licence does not cover it.",
+  "licence_basis": "The application owner supplies this statement as an input file of the public application repository and permits its public placement there (owner decision, 27 November 2026).",
+  "attribution": "God's Character, version 0.1, the application owner's statement",
+  "url": "https://raw.githubusercontent.com/Admin-Beflaire/canonical-scripture-study/main/collection/character-of-god-statement.json",
+  "allowed_hosts": [
+    "raw.githubusercontent.com"
+  ],
+  "max_bytes": 64000,
+  "expected_sha256": "0d8349da6bfe617946eeaf6b5a2e648d56f363280fbea04fc6e52615f5ba0001",
+  "byte_count": 1891,
+  "storage": "Owner file in the public repository; the acquired copy in protected private storage",
+  "admission": "Owner decision in the Maintenance Control task",
+  "format": "character-statement/1 JSON"
+}

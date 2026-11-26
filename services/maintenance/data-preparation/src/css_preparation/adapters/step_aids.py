@@ -12,10 +12,11 @@ from dataclasses import asdict
 from typing import Any, Mapping
 
 from ..prepare.aid_entries import AidLine, build_aid_records
-from ..prepare.evidence import NativeText, OutputBasis, SourceIdentity, SourceLevel
+from ..prepare.evidence import NativeText, OutputBasis
 from ..prepare.records import RecordError, RecordSet
 from . import AdapterDeclaration, AdapterRegistry
 from .language_aid_entries import bdb_entries, bdb_index_entries, step_entries
+from .retained import retained_identity, retained_original
 
 METHOD_VERSION = "language-aids/2"
 INPUT_FORMAT = "language-aids/original"
@@ -112,43 +113,8 @@ class AidRecipe:
             raise RecordError("Language-aid recipe differs from its declared units")
         return cls(recipe, name, commit, rev, cap, count)
 
-    @staticmethod
-    def _original(storage: Any, revision: str) -> bytes:
-        node = storage.read_row("source_node", revision)
-        if not node or node.get("kind") != "source_revision":
-            raise RecordError("Acquired source revision is not registered")
-        details = node.get("details_json", {})
-        if not isinstance(details, dict) or not all(
-            k in details for k in ("locator", "sha256", "byte_count")
-        ):
-            raise RecordError("Acquired source has no verified locator")
-        data = storage.read_blob(details["locator"])
-        if (
-            len(data) != details["byte_count"]
-            or hashlib.sha256(data).hexdigest() != details["sha256"]
-        ):
-            raise RecordError("Acquired original does not match its registration")
-        return data
-
-    def _identity(self, storage: Any) -> SourceIdentity:
-        nodes = []
-        current = self.revision
-        for kind in ("source_revision", "representation", "edition", "work"):
-            node = storage.read_row("source_node", current)
-            if not node or node.get("kind") != kind:
-                raise RecordError("Acquired source ancestry is incomplete")
-            nodes.append(node)
-            current = node["parent_id"]
-        if current is not None:
-            raise RecordError("Acquired source ancestry has an unexpected parent")
-        levels = [
-            SourceLevel(row["id"], row["name"], row["details_json"])
-            for row in reversed(nodes)
-        ]
-        return SourceIdentity(*levels, nodes[0]["attribution"], nodes[0]["origin"])
-
     def _native(self, storage: Any):
-        original = self._original(storage, self.revision)
+        original = retained_original(storage, self.revision)
         if self.component == "bdb":
             entries = bdb_entries(original, commit=self.commit)
         elif self.component == "bdb-index":
@@ -318,7 +284,7 @@ class AidRecipe:
         self, storage: Any, unit: str, coordinate_version: str, group: list[Any]
     ) -> RecordSet:
         """One partition's output: its entries file, one D1 row per entry and its coverage."""
-        identity = self._identity(storage)
+        identity = retained_identity(storage, self.revision)
         lines, offset = [], 0
         for entry in group:
             end = offset + len(entry.body)

@@ -1,0 +1,67 @@
+/** Everything Control tells an AI host: server instructions, tool and field descriptions.
+ *  No separate skill is needed. Hosts cut long text, so the order matters: the instructions
+ *  open with the rules that must never be lost (first 512 characters), hold all that is
+ *  needed within 2,048, and add only background that may be missed up to 4,096. A rule for
+ *  one tool or field lives in its description. */
+
+/** The longest decision reference request_task accepts; the guidance quotes the same number. */
+export const DECISION_REF_MAX = 200;
+
+export const ADMISSION_RULE =
+  'A general instruction to run a task is not an admission; when no admission is recorded, ask the owner.';
+
+/** Needed to use Control correctly. */
+const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction. For a fetch or build, start with get_recipe and send its request to request_task. Never guess an ID or invent a value, and never create an approval: admission, exclusion and statement approvals are owner decision references he gives you. ${ADMISSION_RULE} If a result is "needs_information", ask him exactly the listed questions.
+
+Tools (each tool and field description holds its rules; read them before the call):
+- get_recipe (read only): lists recipe IDs, or gives the request for one recipe with its exact input IDs. Do not read code, designs or the repository for this.
+- request_task: starts a task; one request_key per instruction.
+- get_task: the task list, or one task's state, checks and progress.
+- control_task: pause, cancel or resume.
+- tidy_releases: removes what nothing needs any more.
+
+A task lists only the steps it needs, in order: fetch, build, select; remove, rollback and validate_restore each stand alone. A task that lists select makes its checked result current at once: the owner's instruction is the permission, no second go is needed. Work runs by itself in GitHub Actions and continues without an open chat; check back with get_task.
+
+Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current.`;
+
+/** Useful to explain what a task is doing; correct use does not depend on it. */
+const BACKGROUND = `How a task runs:
+- Each unit's result starts the next, and failed units are retried up to three times. An input that is not registered is not retried: the task is blocked at once and the message names it.
+- When every unit of a build has passed the quality check, Control checks the scope itself: the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded. A failed check blocks the task with the reasons and leaves current data unchanged.
+- If another build became current in between, Control builds the release again on it, checks it again and retries a few times.`;
+
+/** Sent on initialize. */
+export const CONTROL_INSTRUCTIONS = `${ESSENTIALS}\n\n${BACKGROUND}`;
+
+export const TOOL_DESCRIPTIONS = {
+  request_task:
+    "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Ask get_recipe first and send its request, adding request_key, the instruction and the owner's decision references. Returns the task ID and state, or the information still needed.",
+  get_task:
+    'Without task_id: list open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work.',
+  get_recipe:
+    'Read only. Without recipe: list recipe IDs (optionally containing a word, for example a book or source name). With recipe: what that recipe does (fetch or build) and the request_task fields to send for it: steps, constraints, extent, capabilities and the exact input IDs; for a build that reads an original, also the fetch recipe that keeps it and request_with_fetch, which fetches and builds in one task.',
+  tidy_releases:
+    'Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. It also runs when a task ends. Each call does a bounded part: call again while more is true. Skipped outputs are blocked by another output and are left. Changes no task and no selection.',
+  control_task:
+    'Pause, cancel or resume a task. Pass the revision you last read; a conflict means the task changed, so read it again before deciding. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units. Saved outputs are kept.',
+};
+
+/** request_task's fields. */
+export const FIELD_DESCRIPTIONS = {
+  request_key:
+    'Short stable key, one per instruction. Repeating it with the same scope safely returns the same task; a changed instruction needs a new key.',
+  instruction: "The owner's instruction in his own words.",
+  steps:
+    'The steps this task needs, in order, and nothing more. fetch keeps an original (recipe in constraints.fetch_recipe). build makes checked outputs (recipe in constraints.recipe). select makes the build current; without it a build ends checked and waits, and a later task with only select and constraints.candidate, no inputs, makes it current. Examples: ["fetch"], ["build","select"], ["fetch","build","select"], ["select"]. Each of these stands alone: remove (inputs are the source revisions to remove), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks).',
+  inputs:
+    'The exact input IDs get_recipe returns: admitted source revisions, registered artifacts or acquisition routes. A task that fetches and builds names the inputs of both.',
+  extent:
+    "Finite native extent. For a build, exactly the build recipe's native_extent, also when the task fetches first (the fetch keeps its original under its own recipe extent). For a fetch alone, as get_recipe returns it.",
+  capabilities:
+    'The outputs a build must make, only ones its recipe provides (get_recipe lists them). A task that builds nothing names none. A package build holds source references only, never answers.',
+  constraints:
+    'fetch_recipe: the reviewed recipe a fetch step runs. recipe: the reviewed recipe a build step runs. candidate: the task ID of the checked build to make current. replaces: on a build, the source revisions it replaces. select_release: with validate_restore, the restored release to select, only if the owner asked.',
+  decision_refs: `Owner decisions he gave you; never create one. admission: subject is the input id, ref a short reference to his decision to admit that source (for example the issue or comment recording it, at most ${DECISION_REF_MAX} characters). ${ADMISSION_RULE} exclusion: subject is a source revision; on a remove it keeps that source out of later releases and rollbacks, and on a later build it lifts that. statement: with name and version, on the build of that statement.`,
+  supersedes:
+    "ID of the unfinished task this request replaces: a changed instruction, or a task blocked because it left out a recipe's input. Use a new request_key.",
+};

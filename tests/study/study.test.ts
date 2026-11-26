@@ -17,6 +17,7 @@ import {
 } from '../../services/study/src/scope/references.ts';
 import {buildFixture, A} from './fixture.ts';
 import {buildPassageFixture, GRK, HEB, wording} from './passage-fixture.ts';
+import {call as rpc} from '../shared/mcp-call.ts';
 
 type Item = {
   kind: string;
@@ -344,33 +345,6 @@ test('modes without loaded evidence say so; conclusion_check returns the stateme
   const [nothing] = await all(env, {mode: 'exegesis'});
   assert.equal(nothing.limitations[0].state, 'invalid_request');
 });
-
-async function rpc(
-  handler: ReturnType<typeof protocolHandler>,
-  method: string,
-  params: Record<string, unknown> = {},
-) {
-  const response = await handler.fetch(
-    new Request('https://study.example.invalid/mcp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': LEGACY_VERSIONS[0],
-      },
-      body: JSON.stringify({jsonrpc: '2.0', id: 1, method, params}),
-    }),
-  );
-  const text = await response.text();
-  return response.headers.get('Content-Type')?.includes('text/event-stream')
-    ? JSON.parse(
-        text
-          .split('\n')
-          .find(line => line.startsWith('data: '))!
-          .slice(6),
-      )
-    : JSON.parse(text);
-}
 
 test('both tools work on the baseline protocol, read-only, with guidance sent on initialize', async () => {
   const {env} = buildPassageFixture();

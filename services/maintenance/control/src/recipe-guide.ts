@@ -1,6 +1,7 @@
 import type {Recipe} from './contracts.ts';
 import type {D1Database} from './d1.ts';
 import type {GitHubActions} from './github.ts';
+import {ADMISSION_RULE} from './guidance.ts';
 import {loadRecipe, originalRecorded} from './progress.ts';
 import {fetchesOnly, recipeInputs, type RecipeInput} from './recipe-inputs.ts';
 
@@ -81,7 +82,7 @@ export async function describeRecipe(
   const fetches = fetchesOnly(recipe);
   const inputs = recipeInputs(recipe);
   const notes = [
-    'Each input needs an owner admission decision (kind "admission", subject the input id) unless request_task says it is already admitted.',
+    `Each input needs an owner admission decision (kind "admission", subject the input id) unless request_task says it is already admitted. ${ADMISSION_RULE}`,
   ];
   const request: TaskRequest = {
     steps: fetches ? ['fetch'] : ['build'],

@@ -746,7 +746,7 @@ test('study batches carry no translation rules; the rules and the full skill kee
   ])
     assert.match(full, needed);
   assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/24');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/25');
   for (const needed of [
     /### Working translation — <reference>/,
     /#### <chapter heading: book and chapter, only when several chapters>/,

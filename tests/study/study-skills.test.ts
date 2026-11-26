@@ -234,7 +234,7 @@ test('skills share one text for a rule two of them need', () => {
       start,
       text.indexOf('\n', text.indexOf(to, start)),
     );
-    assert.ok(start >= 0 && block.length > 300, from);
+    assert.ok(start >= 0 && block.length > 500, from);
     assert.ok(guidance(b).text.includes(block), b);
   };
   shared(

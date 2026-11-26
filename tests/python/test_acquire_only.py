@@ -195,6 +195,9 @@ class AcquireOnlyTest(unittest.TestCase):
         self.assertEqual(
             records.rows("admission")[0]["public_redistribution"], "unresolved"
         )
+        self.assertNotIn(
+            "git_history", records.rows("admission")[0]["permitted_uses_json"]
+        )
         self.assertEqual(records.rows("prepared_output"), [])
         bad = deepcopy(job)
         bad["input_refs"] = []

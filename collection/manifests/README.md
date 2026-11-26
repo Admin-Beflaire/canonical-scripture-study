@@ -7,7 +7,9 @@ STEPBible recipes, their licence basis and storage rule. The owner's admission d
 given in the Maintenance Control task, not here.
 
 `character-statement-0-1.json` pins the owner's statement file in this repository. It is the
-only manifest whose source is a file of the public repository.
+only manifest whose source is a file of the public repository. Its storage value records that
+the admission allows public placement, which its licence basis grounds in the owner's
+permission; every other acquire-only source stays unresolved for public redistribution.
 
 B1 STEP language aids are listed in the pinned STEP inventory. Each also has a
 single-file `stepdata-*.json` manifest with the URL and rights fields the existing

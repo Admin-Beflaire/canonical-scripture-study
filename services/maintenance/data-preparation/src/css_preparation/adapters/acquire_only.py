@@ -24,12 +24,11 @@ DECLARATION = AdapterDeclaration(
     frozenset({"manifest"}),
 )
 MANIFESTS = SCHEMAS.parent / "collection" / "manifests"
-# Where a source's bytes may be. A third-party original stays private; the second value is
-# only for the owner's own file that the public repository holds.
-STORAGE = (
-    "Protected private storage only; never public Git",
-    "Owner file in the public repository; the acquired copy in protected private storage",
-)
+# Where a source's bytes may be. A third-party original stays private. The second value is
+# only for the owner's own file that the public repository holds; its manifest's licence
+# basis records the owner's permission for that public placement.
+PRIVATE_STORAGE = "Protected private storage only; never public Git"
+OWNER_PUBLIC_STORAGE = "Owner file in the public repository; the acquired copy in protected private storage"
 
 
 @dataclass(frozen=True)
@@ -102,7 +101,7 @@ class AcquireRecipe:
                     or not re.fullmatch(r"[0-9a-f]{64}", expected)
                 )
             )
-            or manifest["storage"] not in STORAGE
+            or manifest["storage"] not in (PRIVATE_STORAGE, OWNER_PUBLIC_STORAGE)
             or manifest["admission"] != "Owner decision in the Maintenance Control task"
             or recipe.get("manifest_revision") != manifest["manifest_revision"]
             or recipe["dependencies"] != [manifest["manifest_revision"]]
@@ -188,6 +187,7 @@ class AcquireRecipe:
         records = RecordSet()
         for row in identity.rows():
             records.add("source_node", row)
+        public = m["storage"] == OWNER_PUBLIC_STORAGE
         records.add(
             "admission",
             {
@@ -198,6 +198,7 @@ class AcquireRecipe:
                 "permitted_uses_json": [
                     "acquire",
                     "retain",
+                    *(["git_history"] if public else []),
                     "backup",
                     "prepare",
                     "chatgpt",
@@ -206,7 +207,7 @@ class AcquireRecipe:
                 "restrictions_json": [m["storage"]],
                 "notices_json": [m["attribution"], m["licence"]],
                 "both_hosts_eligible": True,
-                "public_redistribution": "unresolved",
+                "public_redistribution": "allowed" if public else "unresolved",
             },
         )
         return records

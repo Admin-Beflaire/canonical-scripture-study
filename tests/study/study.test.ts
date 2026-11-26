@@ -15,6 +15,7 @@ import {
   candidateUnits,
   parseReference,
 } from '../../services/study/src/scope/references.ts';
+import {allBatches} from './all-batches.ts';
 import {buildFixture, A} from './fixture.ts';
 import {buildPassageFixture, GRK, HEB, wording} from './passage-fixture.ts';
 import {call as rpc} from '../shared/mcp-call.ts';
@@ -38,25 +39,11 @@ type AnyBatch = {
   release_id?: string;
 };
 
-/** Calls study until no continuation is left, as the guidance tells a host to. */
-async function all(
+const all = (
   env: Parameters<typeof study>[0],
   request: Parameters<typeof study>[1],
-  max = 20,
-) {
-  const batches: AnyBatch[] = [];
-  let continuation: string | undefined;
-  for (let i = 0; i < max; i++) {
-    const batch = (await study(env, {
-      ...request,
-      ...(continuation ? {continuation} : {}),
-    })) as AnyBatch;
-    batches.push(batch);
-    if (!batch.continuation) return batches;
-    continuation = batch.continuation;
-  }
-  throw new Error('Too many batches');
-}
+  max?: number,
+) => allBatches<AnyBatch>(env, request, max);
 const units = (batches: AnyBatch[]) =>
   batches.flatMap(b => b.evidence.map(e => e.span.segments[0].unit_id));
 

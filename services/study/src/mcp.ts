@@ -160,6 +160,7 @@ export async function studyServer(
         SUPERSCRIPTION_RULE,
         SELECTED_DATA,
         'Before translating, follow translation_rules in the result and get_guidance topic "translation": your own working translation from the original, not a standard translation.',
+        'Follow task_guidance when a first result carries it.',
       ].join(' '),
       inputSchema: fromJsonSchema<StudyRequest>(
         STUDY_SCHEMA as unknown as Record<string, unknown>,

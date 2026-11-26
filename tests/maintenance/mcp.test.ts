@@ -1,25 +1,34 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {protocolHandler} from '../../packages/shared/src/platform.ts';
+import {controlServer} from '../../services/maintenance/control/src/mcp.ts';
 import {
-  protocolHandler,
-  LEGACY_VERSIONS,
-} from '../../packages/shared/src/platform.ts';
-import {
-  controlServer,
+  ADMISSION_RULE,
   CONTROL_INSTRUCTIONS,
   DECISION_REF_MAX,
-} from '../../services/maintenance/control/src/mcp.ts';
+} from '../../services/maintenance/control/src/guidance.ts';
 import {STEPS} from '../../services/maintenance/control/src/tasks.ts';
 import {readFileSync, readdirSync} from 'node:fs';
 import {GitHubActions} from '../../services/maintenance/control/src/github.ts';
 import {fakeGitHub} from './github.ts';
 import {localD1} from './d1.ts';
+import {call, delivered} from '../shared/mcp-call.ts';
 import {prepareGenesis} from './requests.ts';
 
 const owner = 'owner@example.invalid';
-test('the instructions name every step and constraint a task can use, and no removed kind', () => {
+const control = () => controlServer(localD1(), owner, false);
+test('the guidance names every step, constraint and decision a task can use, where it is used', async () => {
+  const {tools} = await delivered(control);
+  const request = tools.find(t => t.name === 'request_task')!;
+  const fields = Object.fromEntries(
+    Object.entries(request.inputSchema.properties!).map(([name, field]) => [
+      name,
+      field.description ?? '',
+    ]),
+  );
   for (const step of STEPS)
-    assert.match(CONTROL_INSTRUCTIONS, new RegExp(`\\b${step}\\b`), step);
+    for (const text of [CONTROL_INSTRUCTIONS, fields.steps])
+      assert.match(text, new RegExp(`\\b${step}\\b`), step);
   for (const key of [
     'fetch_recipe',
     'recipe',
@@ -27,60 +36,30 @@ test('the instructions name every step and constraint a task can use, and no rem
     'replaces',
     'select_release',
   ])
-    assert.ok(
-      CONTROL_INSTRUCTIONS.includes(`constraints.${key}`) ||
-        CONTROL_INSTRUCTIONS.includes(`{${key}`) ||
-        (CONTROL_INSTRUCTIONS.includes(`{candidate`) && key === 'candidate'),
-      key,
-    );
+    assert.match(fields.constraints, new RegExp(`\\b${key}:`), key);
+  for (const kind of ['admission', 'exclusion', 'statement'])
+    assert.match(fields.decision_refs, new RegExp(`\\b${kind}:`), kind);
+  // An admission is the owner's decision about a source, quoted by a short reference the field accepts.
+  assert.ok(fields.decision_refs.includes(ADMISSION_RULE));
+  assert.ok(
+    fields.decision_refs.includes(`at most ${DECISION_REF_MAX} characters`),
+  );
+  const all = [
+    CONTROL_INSTRUCTIONS,
+    ...tools.map(tool => tool.description),
+    ...Object.values(fields),
+  ].join('\n');
+  // No removed step kind; one task chains fetch and build; a decision is referenced, not copied.
   for (const removed of [
     'incorporate_statement',
     'kind prepare',
     'prepare (includes',
+    'separate tasks',
+    'exact words',
   ])
-    assert.ok(!CONTROL_INSTRUCTIONS.includes(removed), removed);
-  assert.match(CONTROL_INSTRUCTIONS, /Starting a task/);
-  assert.match(CONTROL_INSTRUCTIONS, /get_recipe/);
-  // An admission is the owner's decision about a source, quoted by a short reference the field accepts.
-  assert.match(
-    CONTROL_INSTRUCTIONS,
-    /A general instruction to run a task is not an admission/,
-  );
-  assert.doesNotMatch(CONTROL_INSTRUCTIONS, /exact words/);
-  assert.ok(
-    CONTROL_INSTRUCTIONS.includes(`at most ${DECISION_REF_MAX} characters`),
-  );
-  // One task chains fetch and build; the instructions no longer say they need separate tasks.
-  assert.doesNotMatch(CONTROL_INSTRUCTIONS, /separate tasks/);
+    assert.ok(!all.includes(removed), removed);
 });
 
-async function call(
-  handler: ReturnType<typeof protocolHandler>,
-  method: string,
-  params: Record<string, unknown> = {},
-  id = 1,
-) {
-  const response = await handler.fetch(
-    new Request('https://control.example.invalid/mcp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': LEGACY_VERSIONS[0],
-      },
-      body: JSON.stringify({jsonrpc: '2.0', id, method, params}),
-    }),
-  );
-  const text = await response.text();
-  return response.headers.get('Content-Type')?.includes('text/event-stream')
-    ? JSON.parse(
-        text
-          .split('\n')
-          .find(line => line.startsWith('data: '))!
-          .slice(6),
-      )
-    : JSON.parse(text);
-}
 const tool = async (
   handler: ReturnType<typeof protocolHandler>,
   name: string,
@@ -92,31 +71,21 @@ const tool = async (
 };
 
 test('Control sends its usage guidance on initialize and lists exactly the five tools on the baseline protocol', async () => {
-  const handler = protocolHandler(
-    () => controlServer(localD1(), owner, false),
-    false,
-  );
-  const init = await call(handler, 'initialize', {
-    protocolVersion: LEGACY_VERSIONS[0],
-    capabilities: {},
-    clientInfo: {name: 'host', version: '1'},
-  });
-  assert.equal(init.result.instructions, CONTROL_INSTRUCTIONS);
-  assert.match(init.result.instructions, /never create an approval/);
-  const {result} = await call(handler, 'tools/list');
-  assert.deepEqual(result.tools.map((t: {name: string}) => t.name).sort(), [
+  const {instructions, tools} = await delivered(control);
+  assert.equal(instructions, CONTROL_INSTRUCTIONS);
+  assert.match(instructions, /never create an approval/);
+  assert.deepEqual(tools.map(t => t.name).sort(), [
     'control_task',
     'get_recipe',
     'get_task',
     'request_task',
     'tidy_releases',
   ]);
-  for (const t of result.tools)
+  for (const t of tools)
     assert.ok(
       t.description.length > 40 && t.inputSchema.type === 'object',
       t.name,
     );
-  await handler.close();
 });
 
 test('request, inspect, list and control a task through the protocol', async () => {

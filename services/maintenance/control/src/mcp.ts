@@ -6,6 +6,12 @@ import type {D1Database} from './d1.ts';
 import {GitHubError, type GitHubActions} from './github.ts';
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
+import {
+  CONTROL_INSTRUCTIONS,
+  DECISION_REF_MAX,
+  FIELD_DESCRIPTIONS,
+  TOOL_DESCRIPTIONS,
+} from './guidance.ts';
 import type {ObjectStore} from './selection.ts';
 import {
   controlTask,
@@ -17,34 +23,6 @@ import {
   type Outcome,
   type TaskRequest,
 } from './tasks.ts';
-
-/** Essential guidance sent to both hosts on initialize, so no separate skill is needed. */
-/** The longest decision reference request_task accepts; the instructions quote the same number. */
-export const DECISION_REF_MAX = 200;
-
-export const CONTROL_INSTRUCTIONS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction.
-
-Workflow:
-0. get_recipe (read only) tells you what a recipe needs and gives the request to send; see Starting a task below.
-1. request_task: send the owner's instruction in his own words plus the structured scope. Use a short request_key per instruction; repeating the same key with the same scope safely returns the same task. If the instruction changes, use a new key and pass the old unfinished task's ID in supersedes.
-2. If the result is "needs_information", ask the owner exactly the listed questions. Never invent values, and never create an approval: admission and statement approvals are owner decision references he gives you.
-3. get_task with task_id reports requested, completed and remaining scope, jobs, checks and whether data became current. Without task_id it lists open and recent tasks; pass the returned cursor for the next page.
-4. control_task pauses, cancels or resumes; pass the revision you last read. A conflict means the task changed: read it again before deciding.
-5. tidy_releases removes what no kept release and no open task needs (it also runs when a task ends). Each call does a bounded part: call it again while the result says more; skipped outputs are blocked by another output and are left.
-
-Preparation runs by itself in GitHub Actions: a task lists the steps it needs, in order, and nothing is mandatory. A fetch step runs the units of the reviewed recipe in constraints.fetch_recipe and keeps the original; a build step runs the units of the recipe in constraints.recipe. Each unit's result starts the next, and failed units are retried up to three times; an input that is not registered is not retried, the task is blocked at once and the message names it. For a build, the task's extent must be the recipe's native_extent exactly, and its capabilities only ones the recipe provides. Nothing needs an open chat. get_task also reconciles interrupted work. Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units.
-
-When every unit of a build has passed Preparation's quality check, Control checks the scope itself (the outputs are exactly what was instructed, from the named sources, over the whole extent, with the capabilities available, admitted, stored and not excluded). A task that lists select then makes the result current at once: the owner's instruction is the permission, no second go is needed. If another build became current in between, Control builds the release again on the new current release, checks it again and retries a few times by itself. If a check fails, the task is blocked with the reasons and the current data is unchanged. A build without select ends checked and waits; a later task with steps ["select"] and constraints.candidate makes it current.
-
-Steps that stand alone: remove (inputs are the source revisions to remove; an owner decision of kind "exclusion" with that subject keeps it out of later releases and rollbacks, and the same decision kind on a later build lifts it), rollback (selects the previous release if it still validates), validate_restore (checks restored releases and blocks restored open tasks; selects constraints.select_release only if the owner asked). constraints.replaces on a build lists the source revisions it replaces. An owner's statement approval (decision kind "statement", with name and version) belongs to the build of that statement. A package build holds source references only, never answers.
-
-Starting a task: ask get_recipe first. Without a recipe it lists recipe IDs (add a word such as a book or source name in find); with a recipe it returns the request to send: steps, constraints, extent, capabilities and the exact input IDs. For a build that reads an original, it also names the fetch recipe that keeps it and gives request_with_fetch, which fetches and then builds in one task. Do not read code, designs or the repository for this, and never guess an ID. Then call request_task with that request, one request_key per instruction. An input is admitted only by the owner's decision to admit that source: give a short reference to that decision (for example the issue or comment where it is recorded, at most ${DECISION_REF_MAX} characters) as the ref of an admission decision_refs entry, with the input's id as subject. A general instruction to run a task is not an admission; when no admission is recorded, ask the owner.
-- A recipe either fetches or builds. One task can chain them, for example steps ["fetch","build","select"]: the fetch keeps the original under its own recipe extent, and the task's extent is the build recipe's native_extent. A build can add the step select to become current at once.
-- Make an earlier build current later: steps ["select"], constraints {candidate: the build task's ID}, no inputs.
-- Remove: steps ["remove"], inputs the source revisions, decision kind "exclusion" per subject.
-- A task that leaves out a recipe's input is blocked at once and the message names it; start it again under a new request_key with supersedes set to the blocked task.
-
-Report to the owner plainly and separately: received, prepared, quality-checked, scope-checked, partial or current. Work continues without an open chat; check back with get_task.`;
 
 const id = {
   type: 'string',
@@ -81,56 +59,50 @@ const requestSchema = fromJsonSchema<TaskRequest>({
   additionalProperties: false,
   required: ['request_key', 'instruction', 'steps'],
   properties: {
-    request_key: {
-      ...id,
-      description:
-        'Short stable key for this instruction; reuse it only to repeat the same request.',
-    },
+    request_key: {...id, description: FIELD_DESCRIPTIONS.request_key},
     instruction: {
       type: 'string',
       minLength: 1,
       maxLength: 4000,
-      description: "The owner's instruction in his own words.",
+      description: FIELD_DESCRIPTIONS.instruction,
     },
     steps: {
       type: 'array',
       minItems: 1,
       maxItems: 3,
       items: {enum: [...STEPS]},
-      description:
-        'The steps this task needs, in order, and nothing more: fetch (keeps an original; constraints.fetch_recipe names its recipe), build (builds checked outputs; constraints.recipe names its recipe), select (makes the build current; alone it makes a finished build current, constraints.candidate is that build\'s task ID). Examples: ["fetch"], ["build","select"], ["fetch","build","select"], ["select"]. remove, rollback and validate_restore each stand alone.',
+      description: FIELD_DESCRIPTIONS.steps,
     },
     inputs: {
       type: 'array',
       maxItems: 64,
       items: inputRef,
-      description:
-        'Admitted source revisions, registered artifacts or acquisition routes.',
+      description: FIELD_DESCRIPTIONS.inputs,
     },
     operations: {type: 'array', maxItems: 32, items: id},
     extent: {
       type: 'object',
       maxProperties: 64,
-      description: 'Finite native extent, for example {"books":["GEN"]}.',
+      description: FIELD_DESCRIPTIONS.extent,
     },
     capabilities: {
       type: 'array',
       maxItems: 32,
       items: id,
-      description: 'Needed outputs, for example source_text or word_index.',
+      description: FIELD_DESCRIPTIONS.capabilities,
     },
-    constraints: {type: 'object', maxProperties: 32},
+    constraints: {
+      type: 'object',
+      maxProperties: 32,
+      description: FIELD_DESCRIPTIONS.constraints,
+    },
     decision_refs: {
       type: 'array',
       maxItems: 16,
       items: decisionRef,
-      description: 'Owner decision references the owner supplied.',
+      description: FIELD_DESCRIPTIONS.decision_refs,
     },
-    supersedes: {
-      ...id,
-      description:
-        'ID of the unfinished task this changed instruction replaces.',
-    },
+    supersedes: {...id, description: FIELD_DESCRIPTIONS.supersedes},
   },
 });
 const getSchema = fromJsonSchema<{task_id?: string; cursor?: string}>({
@@ -460,8 +432,7 @@ export function controlServer(
   server.registerTool(
     'request_task',
     {
-      description:
-        "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Returns the task ID and state, or the information still needed.",
+      description: TOOL_DESCRIPTIONS.request_task,
       inputSchema: requestSchema,
     },
     request => requestTaskTool(tools, request),
@@ -469,8 +440,7 @@ export function controlServer(
   server.registerTool(
     'get_task',
     {
-      description:
-        'Without task_id: list open and recent tasks (newest first, bounded pages). With task_id: requested, completed and remaining scope, jobs, checks, selection and limitations.',
+      description: TOOL_DESCRIPTIONS.get_task,
       inputSchema: getSchema,
     },
     args => getTaskTool(tools, args),
@@ -478,8 +448,7 @@ export function controlServer(
   server.registerTool(
     'get_recipe',
     {
-      description:
-        'Read only. Without recipe: list recipe IDs (optionally containing a word, for example a book or source name). With recipe: what that recipe does (fetch or build) and the request_task fields to send for it: steps, constraints, extent, capabilities and the exact input IDs; for a build that reads an original, also the fetch recipe that keeps it and request_with_fetch.',
+      description: TOOL_DESCRIPTIONS.get_recipe,
       inputSchema: recipeSchema,
     },
     args => recipeTool(tools, args),
@@ -487,8 +456,7 @@ export function controlServer(
   server.registerTool(
     'tidy_releases',
     {
-      description:
-        'Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. Bounded per call; call again while more is true. Changes no task and no selection.',
+      description: TOOL_DESCRIPTIONS.tidy_releases,
       inputSchema: tidySchema,
     },
     () => tidyTool(tools),
@@ -496,8 +464,7 @@ export function controlServer(
   server.registerTool(
     'control_task',
     {
-      description:
-        'Pause, cancel or resume a task. Pass the revision you last read; saved outputs are kept.',
+      description: TOOL_DESCRIPTIONS.control_task,
       inputSchema: controlSchema,
     },
     args => controlTaskTool(tools, args),

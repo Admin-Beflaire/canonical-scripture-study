@@ -1,6 +1,11 @@
 /** Essential study guidance (Study To-Be §6). The same core method reaches both hosts through the
- *  server instructions, the tool descriptions and get_guidance; no host skill is needed. */
-export const GUIDANCE_VERSION = 'study-guidance/22';
+ *  server instructions, the tool and field descriptions, results and get_guidance; no host skill
+ *  is needed. Hosts cut long text, so the order of the instructions matters: they open with the
+ *  rules that must never be lost (first 512 characters), hold all that is needed within 2,048,
+ *  and add only what may be missed up to 4,096. Every rule on using the tool is also complete
+ *  in the study tool's or a field's description.
+ *  get_guidance returns the full text. */
+export const GUIDANCE_VERSION = 'study-guidance/23';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) at every detail level. In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise. In other study requests, summarise its argument before explaining the asked verses.
@@ -11,17 +16,38 @@ const METHOD = `Method:
 - Treat scholarship and outside concepts as attributed arguments, not missing biblical premises. Keep source evidence, your own translation and conclusions, and outside sources clearly separate.
 - An approved character-of-God statement, when one exists, checks conclusions after interpretation; it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
 
+/** How to use the study tool, one rule each. The topic "tools" holds all of them. */
+export const SUPERSCRIPTION_RULE =
+  'Present a source-authored superscription unnumbered and in italics above verse 1, separately from numbered text.';
+export const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).`;
+export const ABSENCE_RULE =
+  'Never present missing evidence as absent from Scripture.';
+export const COVERAGE = `A batch being finished, the evidence being exhausted and the study being delivered are three different things. Read "limitations" and "remaining": they say what was not searched, not loaded or not read yet. ${ABSENCE_RULE}`;
+export const NUMBERING = `When delivered_scope.numbering_notes is present, explain those numbering differences to the reader with the answer.`;
+export const PASSAGES = `Passages: give NRSVA reader references such as "Mal 4:1-6" (up to 3 chapters per reference, 4 references per call). Checked mappings supply the reader reference alongside attributed native citations; missing mappings are limitations, never assumed equivalences. Without a mapping, show the verse by its native numbering and say that any native candidate the study returns is unverified, not a checked match. Only when exact native text is still needed, inspect native numbering with mode "inspect_source" and exactly one source revision in sources. ${SUPERSCRIPTION_RULE} Role "requested" marks asked verses and "context" the surrounding chapter. Textual notes come with their verse.`;
+export const WORD_LOOKUPS = `Words: give search_leads with lookup and key. lookup "word" or "form" takes the word as written in Hebrew or Greek (accents are ignored as the index rule says); "lemma" takes a Strong's-style lemma such as H7225 or G3056; "grammar" takes a language and morphology code such as "greek:N-NSM" or "hebrew:Ncfsa". Results are exact occurrences in native order, not ranked; the batch lists the searched extent. When a routing_summary is marked, it reports selected index coverage proven to contain no matches for the key without opening those R2 pages, not a direct reading of those pages.`;
+export const WORD_FOCUS = `For a word study, focus optionally moves lexicon, grammar, names or occurrences to the front. Use names for a person question, grammar for a morphology question and occurrences for an enumeration. Follow linked-aid continuations before deciding what evidence is available.`;
+export const PROPER_NAMES = `TIPNR proper-name candidates: use lookup "proper_name" with the complete disambiguated Strong tag (for example G2264G). A word study delivers candidates and exact full-tag occurrences. In continued word searches, delivered_scope.linked_aid identifies the lookup and key of separately delivered evidence. Check each entry’s references, ambiguity link when present, and source before associating it with a specific occurrence. TIPNR OTHER categories and records without a named form are not prepared. Different identities and alternative name forms remain separate.`;
+export const LANGUAGE_AIDS = `Language aids: use lookup "lexicon" with a Strong number (e.g. H7307 or G3686), "grammar_info" with an exact source morphology code, and "lexicon_entry" with an exact entry key. For a compound Hebrew morphology code, split the components and use the H or A language prefix on each, for example HR/Ncfsa becomes HR and HNcfsa. For Greek compound codes, look up each source component separately. Word-search hits may include aid_matches per analysis, pointing to the attributed language_aid evidence returned with the hits. Across batches match separately delivered entries by lookup and key. Keep distinct entries and source attribution. An Open Scriptures index entry can provide linked_entry_keys: look up each with "lexicon_entry" to read the BDB articles. A gloss is not a full definition; missing entries and transcription limitations remain gaps. When delivery_part is present, join the ordered parts of that entry; obtain all continuations.`;
+export const NOT_OFFERED = `Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.`;
+export const SELECTED_DATA = `Each call reads the data selected at that moment; nothing is kept between conversations.`;
+
+const bullets = (...rules: string[]) =>
+  rules.map(rule => `- ${rule}`).join('\n');
+
 const TOOLS = `Using the study tool:
-- One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).
-- A batch being finished, the evidence being exhausted and the study being delivered are three different things. Read "limitations" and "remaining": they say what was not searched, not loaded or not read yet. Never present missing evidence as absent from Scripture.
-- When delivered_scope.numbering_notes is present, explain those numbering differences to the reader with the answer.
-- Passages: give NRSVA reader references such as "Mal 4:1-6" (up to 3 chapters per reference, 4 references per call). Checked mappings supply the reader reference alongside attributed native citations; missing mappings are limitations, never assumed equivalences. Without a mapping, show the verse by its native numbering and say that any native candidate the study returns is unverified, not a checked match. Only when exact native text is still needed, inspect native numbering with mode "inspect_source" and exactly one source revision in sources. Present a source-authored superscription unnumbered and in italics above verse 1, separately from numbered text. Role "requested" marks asked verses and "context" the surrounding chapter. Textual notes come with their verse.
-- Words: give search_leads with lookup and key. lookup "word" or "form" takes the word as written in Hebrew or Greek (accents are ignored as the index rule says); "lemma" takes a Strong's-style lemma such as H7225 or G3056; "grammar" takes a language and morphology code such as "greek:N-NSM" or "hebrew:Ncfsa". Results are exact occurrences in native order, not ranked; the batch lists the searched extent. When a routing_summary is marked, it reports selected index coverage proven to contain no matches for the key without opening those R2 pages, not a direct reading of those pages.
-- For a word study, focus optionally moves lexicon, grammar, names or occurrences to the front. Use names for a person question, grammar for a morphology question and occurrences for an enumeration. Follow linked-aid continuations before deciding what evidence is available.
-- TIPNR proper-name candidates: use lookup "proper_name" with the complete disambiguated Strong tag (for example G2264G). A word study delivers candidates and exact full-tag occurrences. In continued word searches, delivered_scope.linked_aid identifies the lookup and key of separately delivered evidence. Check each entry’s references, ambiguity link when present, and source before associating it with a specific occurrence. TIPNR OTHER categories and records without a named form are not prepared. Different identities and alternative name forms remain separate.
-- Language aids: use lookup "lexicon" with a Strong number (e.g. H7307 or G3686), "grammar_info" with an exact source morphology code, and "lexicon_entry" with an exact entry key. For a compound Hebrew morphology code, split the components and use the H or A language prefix on each, for example HR/Ncfsa becomes HR and HNcfsa. For Greek compound codes, look up each source component separately. Word-search hits may include aid_matches per analysis, pointing to the attributed language_aid evidence returned with the hits. Across batches match separately delivered entries by lookup and key. Keep distinct entries and source attribution. An Open Scriptures index entry can provide linked_entry_keys: look up each with "lexicon_entry" to read the BDB articles. A gloss is not a full definition; missing entries and transcription limitations remain gaps. When delivery_part is present, join the ordered parts of that entry; obtain all continuations.
-- Phrase, proximity and fuzzy search are not offered; the tool says so instead of changing the query.
-- Each call reads the data selected at that moment; nothing is kept between conversations.`;
+${bullets(
+  CONTINUATION,
+  COVERAGE,
+  NUMBERING,
+  PASSAGES,
+  WORD_LOOKUPS,
+  WORD_FOCUS,
+  PROPER_NAMES,
+  LANGUAGE_AIDS,
+  NOT_OFFERED,
+  SELECTED_DATA,
+)}`;
 
 /** The project's translation conventions, fitted to the governing principles (P-07 to P-19).
  *  Concrete on purpose: general principles alone let a host fall back on familiar wording. */
@@ -181,18 +207,36 @@ export const TRANSLATION_RULES: readonly string[] = Object.freeze([
 
 const DATA = `What is loaded can grow over time. The study tool reports which sources it read and with what coverage. At this version only original-language texts with word tagging are selected; manuscript-relationship comparisons, commentary and background search, study packages and word-by-word analysis of a whole passage are not offered yet, and the tool says so when a request needs them.`;
 
-/** Sent on initialize to both hosts. */
-export const STUDY_INSTRUCTIONS = `Canonical Scripture Study — evidence for studying the Bible in its original languages. The study tool supplies attributed source evidence; you translate, reason and explain.
+const PURPOSE =
+  'Canonical Scripture Study — evidence for studying the Bible in its original languages. The study tool supplies attributed source evidence; you translate, reason and explain.';
 
-${TOOLS}
+const TRANSLATE_FIRST =
+  'Before translating, call get_guidance with topic "translation". In short: make your own working translation from the original (not the ESV, NASB or another standard translation), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.';
 
-${METHOD}
+const MORE =
+  'Call get_guidance for the full guidance text by topic (method, translation, tools, data).';
 
-Before translating, call get_guidance with topic "translation". In short: make your own working translation from the original (not the ESV, NASB or another standard translation), label it "Working translation" or "Werkvertaling", render poetic language poetically with its force and beauty, and always write Yahweh for YHWH.
+/** Sent on initialize to both hosts: the opening and the method first, then how to use the
+ *  study tool. The word, name and language-aid rules travel with the fields they govern. */
+export const STUDY_INSTRUCTIONS = [
+  PURPOSE,
+  TRANSLATE_FIRST,
+  METHOD,
+  `Using the study tool:\n${bullets(
+    CONTINUATION,
+    COVERAGE,
+    NUMBERING,
+    PASSAGES,
+    NOT_OFFERED,
+    SELECTED_DATA,
+  )}`,
+  MORE,
+].join('\n\n');
 
-${DATA}
-
-Call get_guidance for the full guidance text by topic (method, translation, tools, data).`;
+/** The topic "all": everything but the full translation guidance, which has its own topic. */
+const OVERVIEW = [PURPOSE, TOOLS, METHOD, TRANSLATE_FIRST, DATA, MORE].join(
+  '\n\n',
+);
 
 export const GUIDANCE_TOPICS: Readonly<Record<string, string>> = Object.freeze({
   method: METHOD,
@@ -207,7 +251,7 @@ export function guidance(topic?: string | null): {
   text: string;
 } {
   if (topic == null || topic === '' || topic === 'all')
-    return {version: GUIDANCE_VERSION, topic: 'all', text: STUDY_INSTRUCTIONS};
+    return {version: GUIDANCE_VERSION, topic: 'all', text: OVERVIEW};
   const text = GUIDANCE_TOPICS[topic];
   if (!text)
     return {

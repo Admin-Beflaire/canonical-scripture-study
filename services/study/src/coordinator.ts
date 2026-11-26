@@ -285,10 +285,9 @@ async function conclusionCheck(
           limitation(
             'missing_evidence',
             'statement',
-            'No approved character-of-God statement is selected. Ordinary sources remain usable; the conclusion is checked against Scripture only.',
+            'No approved character-of-God statement is selected. Ordinary sources remain usable.',
           ),
         ],
-    note: 'The statement checks a conclusion after interpretation; it is not a premise, and agreement proves nothing.',
     continuation: null,
     guidance_version: GUIDANCE_VERSION,
   };

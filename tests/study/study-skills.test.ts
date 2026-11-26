@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {protocolHandler} from '../../packages/shared/src/platform.ts';
 import {skillFile} from '../../packages/shared/src/skills.ts';
-import {MODES, type Mode} from '../../services/study/src/coordinator.ts';
+import {MODES, study, type Mode} from '../../services/study/src/coordinator.ts';
 import {
   guidance,
   SKILLS,
@@ -16,6 +16,7 @@ import {
   SKILLS_EXTENSION,
   skillSupport,
 } from '../shared/mcp-skills.ts';
+import {buildFixture} from './fixture.ts';
 import {buildPassageFixture, HEB} from './passage-fixture.ts';
 
 const NAMES = [
@@ -54,6 +55,16 @@ async function codeFor(handler: Handler, mode: Mode) {
   const {data} = await tool(handler, 'get_guidance', {topic: name});
   return CODE.exec(data.text)![1];
 }
+
+/** What a successful call returns besides the gate: the same result as the study without it. */
+async function ungated(request: Parameters<typeof study>[1]) {
+  const result = await study(buildPassageFixture().env, request);
+  return JSON.parse(JSON.stringify(result));
+}
+
+/** The verse labels of a result, with the role each has in it. */
+const verses = (data: {evidence: {span: {label: string}; role: string}[]}) =>
+  data.evidence.map(item => `${item.span.label} ${item.role}`);
 
 /** A request that returns something in this mode. */
 function requestFor(mode: Mode, source: string) {
@@ -157,35 +168,122 @@ for (const mode of MODES)
     const served = await tool(handler, 'study', {...request, skill_code});
     assert.equal(served.isError, false, JSON.stringify(served.data));
     assert.ok(reads > 0);
-    assert.equal(served.data.translation_rules, undefined);
+    assert.deepEqual(served.data, await ungated(request));
+    assert.equal(served.data.release_id, 'rel-p');
+    if (mode === 'conclusion_check') {
+      assert.equal(served.data.statement, null);
+      assert.equal(served.data.limitations[0].scope, 'statement');
+    } else if (mode === 'inspect_source')
+      assert.deepEqual(verses(served.data), ['Gen 1:1 requested']);
+    else {
+      const [asked, next] = verses(served.data);
+      assert.deepEqual([asked, next], ['Gen 1:1 requested', 'Gen 1:2 context']);
+    }
     await handler.close();
   });
 
-test('the code read from a skill file serves the study, and every continuation needs it', async () => {
+test('the code read from a skill file serves the whole study; a refused continuation can be repeated', async () => {
   const {handler} = server();
   const file = (await readSkills(handler)).find(
     skill => skill.name === 'translation',
   )!.file;
   const skill_code = CODE.exec(file)![1];
-  const request = {mode: 'translation', references: ['Gen 1']};
+  const request = {mode: 'translation' as const, references: ['Gen 1']};
   let continuation: string | null = null;
-  const units: string[] = [];
-  let batches = 0;
+  const delivered: string[] = [];
+  let calls = 0;
   do {
-    const args = {...request, ...(continuation ? {continuation} : {})};
-    if (continuation) {
-      const refused = await tool(handler, 'study', args);
+    const args: Parameters<typeof study>[1] = {
+      ...request,
+      ...(continuation ? {continuation} : {}),
+    };
+    for (const wrong of [undefined, 'translation-0']) {
+      const refused = await tool(handler, 'study', {
+        ...args,
+        skill_code: wrong,
+      });
       assert.equal(refused.data.limitations[0].state, 'skill_required');
+      assert.deepEqual(refused.data.evidence, []);
     }
-    const {data} = await tool(handler, 'study', {...args, skill_code});
-    assert.equal(data.translation_rules, undefined);
-    for (const item of data.evidence) units.push(item.span.segments[0].unit_id);
+    const {isError, data} = await tool(handler, 'study', {
+      ...args,
+      skill_code,
+    });
+    assert.equal(isError, false);
+    assert.deepEqual(data, await ungated(args));
+    delivered.push(...verses(data));
     continuation = data.continuation;
-  } while (continuation && ++batches < 20);
-  assert.ok(batches > 0);
-  assert.ok(units.includes('Gen.1.1') && units.includes('Gen.1.31'));
+  } while (continuation && ++calls < 100);
+  assert.equal(continuation, null, 'the study is exhausted');
+  assert.ok(calls > 1, 'the study needs several continuations');
+  // Genesis 1 has 31 verses; each arrives once, in reading order.
+  assert.deepEqual(
+    delivered,
+    Array.from({length: 31}, (_, index) => `Gen 1:${index + 1} requested`),
+  );
   await handler.close();
 });
+
+test('every skill, and the study tool, keep the step-by-step exception to following continuations', async () => {
+  const exception = 'unless the user asked to go step by step (interactive)';
+  const {tools} = await delivered(() =>
+    studyServer(buildPassageFixture().env, false),
+  );
+  assert.ok(
+    tools.find(tool => tool.name === 'study')!.description.includes(exception),
+  );
+  for (const skill of SKILLS) {
+    assert.ok(skill.text.includes(exception), skill.name);
+    for (const line of skill.text.split('\n'))
+      if (/continuation[^.]*before answering/i.test(line))
+        assert.ok(line.includes(exception), `${skill.name}: ${line}`);
+  }
+  assert.match(
+    guidance('exegesis').text,
+    /a study the user takes step by step, write a step when/,
+  );
+});
+
+for (const [name, fixture, limited] of [
+  [
+    'without a statement',
+    () => buildPassageFixture().env,
+    [
+      {
+        state: 'missing_evidence',
+        scope: 'statement',
+        detail:
+          'No approved character-of-God statement is selected. Ordinary sources remain usable.',
+      },
+    ],
+  ],
+  ['with a statement', () => buildFixture().env, []],
+] as const)
+  test(`the conclusion check ${name} returns facts and no guidance`, async () => {
+    const handler = protocolHandler(() => studyServer(fixture(), false), false);
+    const skill_code = await codeFor(handler, 'conclusion_check');
+    const {data} = await tool(handler, 'study', {
+      mode: 'conclusion_check',
+      skill_code,
+    });
+    assert.deepEqual(Object.keys(data).sort(), [
+      'continuation',
+      'depth',
+      'guidance_version',
+      'language',
+      'limitations',
+      'mode',
+      'release_id',
+      'statement',
+    ]);
+    assert.deepEqual(data.limitations, limited);
+    assert.equal(data.statement === null, limited.length === 1);
+    assert.match(
+      guidance('conclusion-check').text,
+      /it is never a premise, agreement proves nothing/,
+    );
+    await handler.close();
+  });
 
 test('the exegesis skill keeps the agreed order, points and statement check', () => {
   const text = guidance('exegesis').text;

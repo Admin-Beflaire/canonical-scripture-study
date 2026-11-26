@@ -54,7 +54,7 @@ The answer
 - After weighing, read the conclusion-check skill and call study with mode "conclusion_check" for part 9.
 
 Work first
-- Follow every continuation. Investigate words, background, canon and interpretations, weigh them, check them against God's character, and only then write.
+- Investigate words, background, canon and interpretations, weigh them, check them against God's character, and only then write. In a study the user takes step by step, write a step when the research it rests on is done.
 - In the exegesis itself, discuss a textual difference only where it changes the interpretation.
 - A wish for a shorter or longer answer changes the length of the parts, not the research.
 

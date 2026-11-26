@@ -30,7 +30,8 @@ const METHOD = `Method:
 /** How to use the study tool, one rule each; they travel with the tool and field descriptions. */
 export const SUPERSCRIPTION_RULE =
   'Present a source-authored superscription unnumbered and in italics above verse 1, separately from numbered text.';
-export const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, unless the user asked to go step by step (interactive).`;
+const STEP_BY_STEP = 'unless the user asked to go step by step (interactive)';
+export const CONTINUATION = `One call returns one bounded batch. If it returns a continuation, call study again with the same arguments plus that continuation until it returns none. Do not ask the user before each batch; deliver the complete requested study, ${STEP_BY_STEP}.`;
 export const ABSENCE_RULE =
   'Never present missing evidence as absent from Scripture.';
 export const COVERAGE = `A batch being finished, the evidence being exhausted and the study being delivered are three different things. Read "limitations" and "remaining": they say what was not searched, not loaded or not read yet. ${ABSENCE_RULE}`;
@@ -213,7 +214,8 @@ function steps(modes: readonly Mode[], give: string): string {
   const named = modes.map(mode => `"${mode}"`).join(' or ');
   return `How to work:
 - Call study with mode ${named}${give}. Pass the skill code at the end of this text as skill_code, on continuations too.
-- Follow every continuation before answering, and say what "limitations" and "remaining" leave out.`;
+- Follow every continuation before answering, ${STEP_BY_STEP}; then answer step by step and say what is still to be read.
+- Say what "limitations" and "remaining" leave out.`;
 }
 
 const EVIDENCE = ': passages in references, or one word search in search_leads';

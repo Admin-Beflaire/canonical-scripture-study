@@ -466,6 +466,10 @@ test('every skill holds the one list of agreed websites and names those consulte
       'name each of them in a Sources line at the end of the answer',
       'stop looking and report the gap',
       'Put a gap that the agreed websites left in a Limits line there',
+      'only when the question needs it and the evidence the tool returned for it is missing or insufficient',
+      'Use each site only for what its line names, and open only those the question needs',
+      'on GitHub only this repository',
+      'Naming or linking a source of the study tool, as its attribution and licence require, stays',
     ])
       assert.equal(
         skill.text.split(rule).length - 1,
@@ -475,15 +479,16 @@ test('every skill holds the one list of agreed websites and names those consulte
   }
 });
 
-test('a rejected reading is named with the texts that speak against it', () => {
-  const text = guidance('exegesis').text;
-  assert.equal(
-    text.split('with the reason and the Bible texts that speak against it')
-      .length - 1,
-    2,
-  );
+test('every skill names a rejected interpretation with the texts that speak against it', () => {
+  // One rule for every study, so a conclusion check asked for on its own has it too.
+  const rule =
+    'When an answer rejects an interpretation of Scripture, it names that interpretation, the reason and the Bible texts that speak against it';
+  for (const skill of SKILLS)
+    assert.equal(skill.text.split(rule).length - 1, 1, skill.name);
   assert.ok(
-    text.includes('claim to have read a work only when you opened and read it'),
+    guidance('exegesis').text.includes(
+      'claim to have read a work only when you opened and read it',
+    ),
   );
 });
 

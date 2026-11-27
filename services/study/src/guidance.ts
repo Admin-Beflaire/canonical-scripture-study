@@ -26,6 +26,7 @@ const METHOD = `Method:
 - Read Christ-centred without rewriting what earlier texts meant in their own setting.
 - Look for alternatives and contrary evidence. Name doctrinal premises that need independent support and how they depend on each other. Watch for direct or indirect circular reasoning and unsupported assumptions.
 - Compare explanations by contextual support, explanatory strength and difficulties. Where support is comparable, prefer the one with fewer unsupported assumptions, and say where uncertainty remains.
+- When an answer rejects an interpretation of Scripture, it names that interpretation, the reason and the Bible texts that speak against it.
 - Treat scholarship and outside concepts as attributed arguments, not missing biblical premises. Keep source evidence, your own translation and conclusions, and outside sources clearly separate.
 - God's character is the light in which you work out your own explanation of what Scripture means, from the start, and the test for every explanation and for every theological conclusion of your finished answer. The conclusion-check skill gives the approved statement of it, when one exists: it never decides a translation, it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
 

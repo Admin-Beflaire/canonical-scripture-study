@@ -115,6 +115,18 @@ class RoutingTests(unittest.TestCase):
             ["python", "repository", "standards", "typescript"],
         )
 
+    def test_typescript_tests_follow_the_imports_of_the_changed_files(self):
+        study = profiles.typescript_tests(["services/study/src/index.ts", "README.md"])
+        self.assertIn("tests/study/search.test.ts", study)
+        self.assertNotIn("tests/maintenance/tasks.test.ts", study)
+        control = profiles.typescript_tests(
+            ["services/maintenance/control/src/index.ts"]
+        )
+        self.assertNotIn("tests/study/search.test.ts", control)
+        every = profiles.typescript_tests(None)
+        # A change that no test imports cannot be narrowed.
+        self.assertEqual(profiles.typescript_tests(["schemas/new.json"]), every)
+
     def test_locked_python_tools_run_only_the_code_standards(self):
         self.assertEqual(
             profiles.select_profiles(["requirements-dev.txt"]), ["standards"]
@@ -131,14 +143,19 @@ class RoutingTests(unittest.TestCase):
         ):
             self.assertIn("standards", profiles.select_profiles([path]))
 
-    def test_standards_profile_runs_the_checks_and_their_tests(self):
-        with patch.object(profiles.subprocess, "run") as execute:
-            profiles.run("standards")
-        commands = [call.args[0] for call in execute.call_args_list]
-        self.assertEqual(
-            commands,
-            [["npm", "run", "check:standards"], ["npm", "run", "test:standards"]],
-        )
+    def test_checker_tests_run_only_when_the_checkers_change(self):
+        for changed, commands in (
+            (["services/study/src/index.ts"], ["check:standards"]),
+            (["eslint.config.mjs"], ["check:standards", "test:standards"]),
+        ):
+            with (
+                patch.object(profiles, "changed_paths", return_value=changed),
+                patch.object(profiles.subprocess, "run") as execute,
+            ):
+                profiles.run("standards")
+            self.assertEqual(
+                [call.args[0][-1] for call in execute.call_args_list], commands
+            )
 
     def test_public_workflow_cannot_access_privileged_inputs(self):
         workflow = (ROOT / ".github/workflows/checks.yml").read_text()
@@ -159,8 +176,8 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("package-manager-cache: false", workflow)
         self.assertIn("npm ci --ignore-scripts", workflow)
         self.assertIn("pip install --require-hashes --only-binary=:all:", workflow)
-        self.assertIn("run_test_profile.py standards", workflow)
-        # The standards step needs the base commit, as the routing step does.
+        self.assertIn("run_test_profile.py selected", workflow)
+        # The checks need the base commit, as the routing step does.
         base = "CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}"
         self.assertEqual(workflow.count(base), 2)
         for line in workflow.splitlines():

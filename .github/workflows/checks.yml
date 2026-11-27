@@ -38,20 +38,11 @@ jobs:
         if: steps.route.outputs.standards == 'true'
         run: |
           python3 -m pip install --require-hashes --only-binary=:all: --no-deps --disable-pip-version-check -r requirements-dev.txt
-      - name: TypeScript and Worker checks
-        if: steps.route.outputs.typescript == 'true'
-        run: python3 tools/repository/run_test_profile.py typescript
-      - name: Python preparation and common contracts
-        if: steps.route.outputs.python == 'true'
-        run: python3 tools/repository/run_test_profile.py python
-      - name: Code standards
-        if: steps.route.outputs.standards == 'true'
+      - name: Selected checks
+        if: steps.route.outputs.typescript == 'true' || steps.route.outputs.python == 'true' || steps.route.outputs.repository == 'true' || steps.route.outputs.standards == 'true'
         env:
           CHECK_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python3 tools/repository/run_test_profile.py standards
-      - name: Repository routing and configuration checks
-        if: steps.route.outputs.repository == 'true'
-        run: python3 tools/repository/run_test_profile.py repository
+        run: python3 tools/repository/run_test_profile.py selected
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         if: steps.route.outputs.repository == 'true'
         with:

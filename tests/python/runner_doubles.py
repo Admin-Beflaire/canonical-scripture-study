@@ -266,7 +266,10 @@ class LoopbackApi(HTTPServer):
         self.redirect_once = False
         self.signed_paths: list = []
         self.control_handler = None
-        self._thread = threading.Thread(target=self.serve_forever, daemon=True)
+        # A short poll lets shutdown return at once; the default waits half a second per test.
+        self._thread = threading.Thread(
+            target=self.serve_forever, args=(0.01,), daemon=True
+        )
 
     @property
     def origin(self):

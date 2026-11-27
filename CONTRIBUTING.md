@@ -5,9 +5,8 @@ Use Node.js 24 and Python 3.12 (the checked patch version is recorded in
 Python tests use only the standard library. The code standard checks use Ruff,
 installed with `python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.txt`.
 
-```sh
-npm run check
-```
+The pull request checks on GitHub are the test, so no local test run is needed.
+`npm run check` runs everything, when that is wanted.
 
 The Study and Maintenance Control Worker scaffolds build independently:
 
@@ -108,9 +107,11 @@ still adds nothing:
 - Copied code is recorded in `.jscpd-baseline.json`. After removing a copy, run
   `npx jscpd --update-baseline`.
 
-Public CI uses `tools/repository/run_test_profile.py` to route TypeScript,
-Python and repository checks by changed paths. Run `npm run check:repository`
-for routing/credential-boundary tests. Shared schema/conformance changes run both
+Public CI uses `tools/repository/run_test_profile.py` to run only what the
+changed paths need, with the selected profiles at the same time. TypeScript runs
+the test files that import a changed file, and all of them when a change is not
+imported code; the tests of the standard checkers run only when the checkers or
+their settings change. Shared schema/conformance changes run both
 language consumers. Documentation-only PRs still complete the required
 `Application checks` gate without rerunning application suites. Terraform checks
 and mocked two-repository settings tests are described in `infrastructure/github/`.

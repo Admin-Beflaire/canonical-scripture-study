@@ -171,6 +171,32 @@ test('the recipes of one book are named together, reader references first; equal
   await w.handler.close();
 });
 
+test('the answer text gives one next action, in the order and choice the answer names', async () => {
+  const w = world(...SNG);
+  const said = async (recipe: string) =>
+    (await w.ask({recipe})).text.split('\n\n')[0];
+  const send = 'Send the request below to request_task';
+  assert.ok(
+    (await said('stepbible-tahot-sng-reader')).endsWith(`${send}.`),
+    'the first of the order sends at once',
+  );
+  assert.ok(
+    (await said('stepbible-tahot-sng')).endsWith(
+      `${send} only after stepbible-tahot-sng-reader has completed for this instruction. Where that has not happened, first call get_recipe for stepbible-tahot-sng-reader and run it, then call get_recipe for stepbible-tahot-sng again.`,
+    ),
+  );
+  w.server.recipes.set('collection/recipes/stepbible-tahot-sng-other.json', {
+    ...recipeFile(w.files, 'stepbible-tahot-sng'),
+    id: 'stepbible-tahot-sng-other',
+  });
+  assert.ok(
+    (await said('stepbible-tahot-sng')).includes(
+      `${send} only after the owner has chosen stepbible-tahot-sng over stepbible-tahot-sng-other and stepbible-tahot-sng-reader has completed for this instruction.`,
+    ),
+  );
+  await w.handler.close();
+});
+
 test('an exclusion over a source of the build is listed, and the release check agrees', async () => {
   const w = world(...SNG);
   const source = fetched(

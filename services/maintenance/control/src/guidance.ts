@@ -67,6 +67,8 @@ export const TIDY = 'To clean up, call tidy_releases again while more is true.';
 
 export const SEND_IN_ORDER =
   'Send the requests in the listed order, one task each with its own request_key, and each only after get_task shows the one before has completed.';
+export const TURN =
+  "Send a recipe's requests only in its turn: after every recipe before it in run_order has completed for this instruction and, where alternatives are listed, after the owner chose it.";
 export const ALREADY_OBTAINED =
   'Already obtained: the original is kept and its recorded admission still applies, so there is nothing to send.';
 export const ASK_FIRST =
@@ -75,6 +77,44 @@ export const admissionQuestion = (id: string, why: string) =>
   `Does the owner admit ${id}? ${why[0].toUpperCase()}${why.slice(1)}. His decision goes in decision_refs: kind "admission", subject "${id}".`;
 export const exclusionQuestion = (id: string) =>
   `The owner excluded ${id}, which covers a source of this build. Does he lift that exclusion? Only his decision in decision_refs (kind "exclusion", subject "${id}") on the request lifts it.`;
+/** What to do with the requests of one recipe, in agreement with its run_order and
+ *  alternatives: what has to happen before they may be sent. */
+export function nextAction(found: {
+  recipe: string;
+  requests: unknown[];
+  owner_decisions: unknown[];
+  run_order?: string[];
+  alternatives?: string[];
+}) {
+  const count = found.requests.length;
+  if (!count) return 'There is nothing to send; read the notes.';
+  const {recipe, run_order = [], alternatives = []} = found;
+  const earlier = run_order.slice(0, Math.max(0, run_order.indexOf(recipe)));
+  const first = earlier.join(' and ');
+  const after = [
+    ...(alternatives.length
+      ? [`the owner has chosen ${recipe} over ${alternatives.join(', ')}`]
+      : []),
+    ...(earlier.length
+      ? [
+          `${first} ${earlier.length === 1 ? 'has' : 'have'} completed for this instruction`,
+        ]
+      : []),
+  ];
+  const what =
+    count === 1
+      ? 'the request below'
+      : `the ${count} requests below, in order,`;
+  return [
+    ...(found.owner_decisions.length ? [ASK_FIRST] : []),
+    `Send ${what} to request_task${after.length ? ` only after ${after.join(' and ')}` : ''}.`,
+    ...(earlier.length
+      ? [
+          `Where that has not happened, first call get_recipe for ${first} and run it, then call get_recipe for ${recipe} again.`,
+        ]
+      : []),
+  ].join(' ');
+}
 export const STATEMENT_QUESTION =
   'Which statement name and version does the owner approve? His approval goes in decision_refs: kind "statement", with name and version.';
 export const unlistedNote = (kind: string, id: string) =>
@@ -126,7 +166,7 @@ export const CONTROL_INSTRUCTIONS = `${ESSENTIALS}\n\n${BACKGROUND}`;
 export const TOOL_DESCRIPTIONS = {
   request_task: `Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. For a fetch or build, ask get_recipe first and send its requests, adding request_key, the instruction and the owner's decision references; select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed. ${STATEMENT_NEEDS} ${CANDIDATE} ${REMOVE} ${ROLLBACK} ${VALIDATE}`,
   get_task: `${FOLLOW} Without task_id: open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work.`,
-  get_recipe: `Read only. Without recipe: list recipe IDs, optionally containing a word (for example a book or source name); with find, also the source revisions in current data whose ID contains it, with the capabilities and extent held, in pages. With recipe: whether it fetches or builds, requests (the request_task fields to send: steps, constraints, extent, capabilities, exact input IDs) and owner_decisions (what to ask first). A build's requests fetch each original that is not kept, build and select; with prepare_only none selects. ${EMPTY_LIST} ${ASK_FIRST} ${SEND_IN_ORDER} ${BELONGING} ${PREPARE} ${NO_RECIPE}`,
+  get_recipe: `Read only. Without recipe: list recipe IDs, optionally containing a word (for example a book or source name); with find, also the source revisions in current data whose ID contains it, with the capabilities and extent held, in pages. With recipe: whether it fetches or builds, requests (the request_task fields to send: steps, constraints, extent, capabilities, exact input IDs) and owner_decisions (what to ask first). A build's requests fetch each original that is not kept, build and select; with prepare_only none selects. ${EMPTY_LIST} ${ASK_FIRST} ${TURN} ${SEND_IN_ORDER} ${BELONGING} ${PREPARE} ${NO_RECIPE}`,
   tidy_releases: `Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. It also runs when a task ends. Each call does a bounded part. ${TIDY} Skipped outputs are blocked by another output and are left. Changes no task and no selection.`,
   control_task: `${CONTROL_RULE} Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units. Saved outputs are kept.`,
 };

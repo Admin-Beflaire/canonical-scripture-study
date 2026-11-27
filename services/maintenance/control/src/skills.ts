@@ -26,6 +26,7 @@ import {
   STATEMENT_NEEDS,
   SUPERSEDE,
   TIDY,
+  TURN,
   VALIDATE,
   type SKILL_NAMES,
 } from './guidance.ts';
@@ -65,6 +66,7 @@ export const CONTROL_SKILLS: readonly TaskSkill[] = Object.freeze([
       BELONGING,
       PREPARE,
       ASK_FIRST,
+      TURN,
       SEND_IN_ORDER,
       EMPTY_LIST,
       STATEMENT_NEEDS,

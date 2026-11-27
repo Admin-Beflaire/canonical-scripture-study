@@ -14,7 +14,7 @@ import {
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import {
-  ASK_FIRST,
+  nextAction,
   CONTROL_INSTRUCTIONS,
   DECISION_REF_MAX,
   FIELD_DESCRIPTIONS,
@@ -356,11 +356,10 @@ async function recipeAnswer(
     prepareOnly,
   );
   if (!found.found) return reply(found.message, found, true);
-  const count = found.requests.length;
-  const next = count
-    ? `${found.owner_decisions.length ? `${ASK_FIRST} ` : ''}Send ${count === 1 ? 'the request below' : `the ${count} requests below, in order,`} to request_task.`
-    : 'There is nothing to send; read the notes.';
-  return reply(`Recipe ${found.recipe} does a ${found.does}. ${next}`, found);
+  return reply(
+    `Recipe ${found.recipe} does a ${found.does}. ${nextAction(found)}`,
+    found,
+  );
 }
 
 async function recipeTool(tools: Tools, args: RecipeArgs) {

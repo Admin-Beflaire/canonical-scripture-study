@@ -355,6 +355,20 @@ test('find lists what current data holds from each matching source revision', as
   await w.handler.close();
 });
 
+test('a removal names the source revision find lists, and Control takes it', async () => {
+  const w = world('stepbible-tahot-sng');
+  currentRelease(w.db, [['text:1', 'source_context', ['Gen.1.1']]]);
+  const [listed] = (await w.ask({find: 'text'})).data.current_sources;
+  const sent = await callTool(w.handler, 'request_task', {
+    request_key: 'remove-text',
+    instruction: 'Remove it',
+    steps: ['remove'],
+    inputs: [{kind: 'source_revision', id: listed.source_revision}],
+  });
+  assert.equal(sent.data.status, 'created', sent.text);
+  await w.handler.close();
+});
+
 test('current sources come in bounded pages', async () => {
   const w = world('stepbible-tahot-sng');
   const revisions = Array.from(

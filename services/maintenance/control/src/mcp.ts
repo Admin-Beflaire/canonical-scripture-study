@@ -3,6 +3,7 @@ import {describeRecipe, findRecipes} from './recipe-guide.ts';
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
+import {taskSkills} from '../../../../packages/shared/src/skills.ts';
 import type {D1Database} from './d1.ts';
 import {
   GitHubError,
@@ -19,6 +20,7 @@ import {
   FIELD_DESCRIPTIONS,
   TOOL_DESCRIPTIONS,
 } from './guidance.ts';
+import {CONTROL_SKILLS} from './skills.ts';
 import type {ObjectStore} from './selection.ts';
 import {
   controlTask,
@@ -462,8 +464,11 @@ async function controlTaskTool(
   );
 }
 
-/** The single Maintenance MCP server for one authenticated request. */
-export function controlServer(
+const serveTaskSkills = taskSkills('control', CONTROL_SKILLS);
+
+/** The single Maintenance MCP server for one authenticated request: the task tools and the skill
+ *  for each kind of request. */
+export async function controlServer(
   db: D1Database,
   requester: string | undefined,
   enhancements: boolean,
@@ -471,6 +476,7 @@ export function controlServer(
   objects: ObjectStore | null = null,
 ) {
   const server = platformServer('control', enhancements, CONTROL_INSTRUCTIONS);
+  await serveTaskSkills(server);
   const owner = () => {
     if (!requester) throw new Error('Task tools need the authenticated owner.');
     return requester;

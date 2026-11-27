@@ -173,26 +173,52 @@ test('the recipes of one book are named together, reader references first; equal
 
 test('the answer text gives one next action, in the order and choice the answer names', async () => {
   const w = world(...SNG);
-  const said = async (recipe: string) =>
-    (await w.ask({recipe})).text.split('\n\n')[0];
-  const send = 'Send the request below to request_task';
+  const said = async (recipe: string, args: object = {}) =>
+    (await w.ask({recipe, ...args})).text.split('\n\n')[0];
+  const send = 'send the request below to request_task.';
+  const first = await said('stepbible-tahot-sng-reader');
   assert.ok(
-    (await said('stepbible-tahot-sng-reader')).endsWith(`${send}.`),
-    'the first of the order sends at once',
+    first.endsWith(`before you send anything. S${send.slice(1)}`),
+    first,
   );
+  const second = await said('stepbible-tahot-sng');
   assert.ok(
-    (await said('stepbible-tahot-sng')).endsWith(
-      `${send} only after stepbible-tahot-sng-reader has completed for this instruction. Where that has not happened, first call get_recipe for stepbible-tahot-sng-reader and run it, then call get_recipe for stepbible-tahot-sng again.`,
+    second.endsWith(
+      `Before this recipe, stepbible-tahot-sng-reader must be done for this instruction (get_task shows completed). Where that is not so, call get_recipe for stepbible-tahot-sng-reader and run it, then call get_recipe for stepbible-tahot-sng again and go by that newer answer. Only then ask the owner every question in owner_decisions. Then ${send}`,
     ),
+    second,
   );
   w.server.recipes.set('collection/recipes/stepbible-tahot-sng-other.json', {
     ...recipeFile(w.files, 'stepbible-tahot-sng'),
     id: 'stepbible-tahot-sng-other',
   });
+  const choice = await said('stepbible-tahot-sng');
   assert.ok(
-    (await said('stepbible-tahot-sng')).includes(
-      `${send} only after the owner has chosen stepbible-tahot-sng over stepbible-tahot-sng-other and stepbible-tahot-sng-reader has completed for this instruction.`,
+    choice.includes(
+      'First ask the owner whether to run stepbible-tahot-sng or stepbible-tahot-sng-other; go on with this answer only if he chooses stepbible-tahot-sng. Before this recipe,',
     ),
+    choice,
+  );
+  await w.handler.close();
+});
+
+test('preparing two recipes of one book waits for checked, keeps prepare_only and asks nothing twice', async () => {
+  const w = world(...SNG);
+  // The earlier recipe's task has fetched the original and recorded its admission.
+  fetched(w.db, w.stored, w.files, 'stepbible-fetch-tahot-job-sng');
+  const {text, data} = await w.ask({
+    recipe: 'stepbible-tahot-sng',
+    prepare_only: true,
+  });
+  assert.deepEqual(data.requests[0].steps, ['build']);
+  assert.deepEqual(data.owner_decisions, []);
+  assert.ok(
+    text
+      .split('\n\n')[0]
+      .endsWith(
+        'Before this recipe, stepbible-tahot-sng-reader must be done for this instruction (get_task shows checked, with quality and scope passed). Where that is not so, call get_recipe for stepbible-tahot-sng-reader with prepare_only and run it, then call get_recipe for stepbible-tahot-sng with prepare_only again and go by that newer answer. Then send the request below to request_task.',
+      ),
+    text,
   );
   await w.handler.close();
 });

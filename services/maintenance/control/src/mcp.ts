@@ -357,7 +357,7 @@ async function recipeAnswer(
   );
   if (!found.found) return reply(found.message, found, true);
   return reply(
-    `Recipe ${found.recipe} does a ${found.does}. ${nextAction(found)}`,
+    `Recipe ${found.recipe} does a ${found.does}. ${nextAction(found, !!prepareOnly)}`,
     found,
   );
 }

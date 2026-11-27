@@ -436,6 +436,57 @@ test('every skill gets the presentation rules; three have an answer template', (
   }
 });
 
+test('every skill holds the one list of agreed websites and names those consulted', () => {
+  const sites = [
+    'https://www.stepbible.org/',
+    'https://logeion.uchicago.edu/',
+    'https://github.com/openscriptures/HebrewLexicon',
+    'https://bibleproject.com/',
+    'https://www.bibleodyssey.org/',
+    'https://www.thetorah.com/',
+    'https://tyndalebulletin.org/',
+    'https://www.vatican.va/',
+    'https://www.goarch.org/',
+    'https://www.oca.org/',
+    'https://opc.org/',
+    'https://bookofconcord.cph.org/',
+    'https://ccel.org/',
+  ];
+  for (const skill of SKILLS) {
+    assert.deepEqual(
+      skill.text.match(/https:\/\/[^\s(),;]+/g),
+      sites,
+      skill.name,
+    );
+    for (const rule of [
+      'consult only these agreed external websites and limit every web search to them',
+      'Do not open, use or cite any other website',
+      'only for reporting it accurately',
+      'A website never decides what the text means',
+      'name each of them in a Sources line at the end of the answer',
+      'stop looking and report the gap',
+      'Put a gap that the agreed websites left in a Limits line there',
+    ])
+      assert.equal(
+        skill.text.split(rule).length - 1,
+        1,
+        `${skill.name}: ${rule}`,
+      );
+  }
+});
+
+test('a rejected reading is named with the texts that speak against it', () => {
+  const text = guidance('exegesis').text;
+  assert.equal(
+    text.split('with the reason and the Bible texts that speak against it')
+      .length - 1,
+    2,
+  );
+  assert.ok(
+    text.includes('claim to have read a work only when you opened and read it'),
+  );
+});
+
 test('research duties are in the task texts, not in the presentation', async () => {
   const {presentation} =
     await import('../../services/study/src/presentation.ts');

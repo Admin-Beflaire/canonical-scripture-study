@@ -10,11 +10,31 @@ export const DECISION_REF_MAX = 200;
 export const ADMISSION_RULE =
   'A general instruction to run a task is not an admission; when no admission is recorded, ask the owner.';
 
+/** Sentences the answers share with the instructions, the descriptions and the skills. */
+export const SEND_IN_ORDER =
+  'Send the requests in the listed order, one task each with its own request_key, and each only after get_task shows the one before has completed.';
+export const ALREADY_OBTAINED =
+  'Already obtained: the original is kept and its recorded admission still applies, so there is nothing to send.';
+export const ASK_FIRST =
+  'Ask the owner every question in owner_decisions before you send anything.';
+export const admissionQuestion = (id: string, why: string) =>
+  `Does the owner admit ${id}? ${why[0].toUpperCase()}${why.slice(1)}. His decision goes in decision_refs: kind "admission", subject "${id}".`;
+export const exclusionQuestion = (id: string) =>
+  `The owner excluded ${id}, which covers a source of this build. Does he lift that exclusion? Only his decision in decision_refs (kind "exclusion", subject "${id}") on the request lifts it.`;
+export const STATEMENT_QUESTION =
+  'Which statement name and version does the owner approve? His approval goes in decision_refs: kind "statement", with name and version.';
+export const unlistedNote = (kind: string, id: string) =>
+  `No fetch recipe on main lists ${kind} ${id}; ask the owner how that original is obtained.`;
+export const runOrderNote = (names: string[]) =>
+  `These recipes read the same original over the same extent and give other capabilities: ${names.join(', ')}. Adding or refreshing the source runs each, in this order, with get_recipe for each.`;
+export const alternativesNote = (id: string, others: string[]) =>
+  `${others.join(', ')} gives the same capabilities over the same extent as ${id}: ask the owner which one to run.`;
+
 /** Needed to use Control correctly. */
-const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction. For a fetch or build, start with get_recipe and send its request to request_task. Never guess an ID or value, and never create an approval: admission, exclusion and statement approvals are decision references the owner gives. ${ADMISSION_RULE} If a result is "needs_information", ask exactly the listed questions.
+const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. Use these tools only on the owner's explicit instruction. For a fetch or build, start with get_recipe and send its requests to request_task. Never guess an ID or value, and never create an approval: admission, exclusion and statement approvals are decision references the owner gives. ${ADMISSION_RULE} If a result is "needs_information", ask exactly the listed questions.
 
 Tools (each tool and field description holds its rules; read them before the call):
-- get_recipe (read only): lists recipe IDs, or gives the request for one recipe with its exact input IDs. Do not read code, designs or the repository for this.
+- get_recipe (read only): lists recipes and current sources, or gives one recipe's requests in order, with exact input IDs and the decisions to ask first. Do not read code, designs or the repository for this.
 - request_task: starts a task; one request_key per instruction.
 - get_task: the task list, or one task's state, checks and progress.
 - control_task: pause, cancel or resume.
@@ -35,11 +55,10 @@ export const CONTROL_INSTRUCTIONS = `${ESSENTIALS}\n\n${BACKGROUND}`;
 
 export const TOOL_DESCRIPTIONS = {
   request_task:
-    "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. For a fetch or build, ask get_recipe first and send its request, adding request_key, the instruction and the owner's decision references; select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed.",
+    "Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. For a fetch or build, ask get_recipe first and send its requests, adding request_key, the instruction and the owner's decision references; select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed.",
   get_task:
     'Without task_id: list open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work.',
-  get_recipe:
-    'Read only. Without recipe: list recipe IDs (optionally containing a word, for example a book or source name). With recipe: what that recipe does (fetch or build) and the request_task fields to send for it: steps, constraints, extent, capabilities and the exact input IDs; for a build that reads an original, also the fetch recipe that keeps it and request_with_fetch, which fetches and builds in one task.',
+  get_recipe: `Read only. Without recipe: list recipe IDs, optionally containing a word (for example a book or source name); with find, also the source revisions in current data whose ID contains it, with the capabilities and extent held, in pages. With recipe: whether it fetches or builds, requests (the request_task fields to send: steps, constraints, extent, capabilities, exact input IDs) and owner_decisions (what to ask first). A build's requests fetch each original that is not kept, build and select; with prepare_only none selects. An empty list means there is nothing to send. ${SEND_IN_ORDER}`,
   tidy_releases:
     'Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. It also runs when a task ends. Each call does a bounded part: call again while more is true. Skipped outputs are blocked by another output and are left. Changes no task and no selection.',
   control_task:

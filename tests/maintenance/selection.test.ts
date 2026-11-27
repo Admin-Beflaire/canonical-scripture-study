@@ -600,6 +600,59 @@ test('a release records the catalogue version for reader mappings it adds or kee
   }
 });
 
+test('a reader-reference build is selected before the text build of its book, and both stay', async () => {
+  const w = world();
+  const recipe = recipeFor('exo-reader', [['Exo.1.1']]);
+  w.gh.recipes.set('collection/recipes/exo-reader.json', {
+    ...recipe,
+    native_extent: {book: 'exo'},
+    capabilities: ['reader_reference'],
+    units: recipe.units.map(unit =>
+      unit.kind === 'quality'
+        ? {...unit, required_capabilities: ['reader_reference']}
+        : unit,
+    ),
+  });
+  source(w.db, 'rev-2');
+  const inputs = [{kind: 'source_revision' as const, id: 'rev-2'}];
+  const created = await requestTask(
+    w.db,
+    owner,
+    prepareTask('exo', 'reader', {
+      inputs,
+      capabilities: ['reader_reference'],
+      constraints: {recipe: 'exo-reader'},
+    }),
+  );
+  assert.ok(created.status === 'created', JSON.stringify(created));
+  const id = created.task.id;
+  await advance(w.db, w.github, id, w.objects);
+  const refs: {artifact_id: string; sha256: string; byte_count: number}[] = [];
+  const mapping = 'reader_reference:exo';
+  saveReaderMapping(w, mapping, 'nrsva/1', ['Exo.1.1'], refs);
+  w.db.sqlite
+    .prepare(
+      `INSERT INTO coverage VALUES (?, 'rev-2', ?, 'reader_reference', 'available', 'm1', NULL, '[]', NULL)`,
+    )
+    .run(
+      mapping,
+      JSON.stringify({coordinate_version: C, unit_ids: ['Exo.1.1']}),
+    );
+  await report(w, id, 'prepare-1', {output_refs: refs});
+  await report(w, id, 'quality', {
+    output_refs: refs,
+    quality_receipt_ref: receipt(w, id),
+  });
+  const reader = await releaseBuild(w, id, 'release-reader');
+  assert.equal(reader.report.state, 'completed');
+
+  const text = await runBook(w, prepareTask('exo', 'text', {inputs}), 'rev-2');
+  assert.equal(text.task.state, 'completed', text.task.limitations.join(' | '));
+  const members = membersOf(w, selected(w).current_release_id);
+  assert.equal(members.length, 3);
+  assert.ok(members.includes(mapping));
+});
+
 test('a second book is added to the current release; parallel tasks each rebuild from current at check time', async () => {
   const w = world();
   const first = await runBook(w, prepareTask('gen', 'g1'));

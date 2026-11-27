@@ -385,7 +385,7 @@ async function sourceChecks(
 }
 
 /** For each source revision: itself, its ancestors and its admitted components. */
-async function relatedIds(db: D1Database, revisions: string[]) {
+export async function relatedIds(db: D1Database, revisions: string[]) {
   const related = new Map(revisions.map(id => [id, new Set<string>([id])]));
   const ancestors = await inChunks<{rev: string; id: string}>(
     db,
@@ -405,6 +405,16 @@ async function relatedIds(db: D1Database, revisions: string[]) {
   return related;
 }
 
+/** What the owner's active exclusions name. */
+export async function activeExclusions(db: D1Database) {
+  const rows = await db
+    .prepare(
+      'SELECT source_or_component_id FROM maintenance_exclusions WHERE active = 1',
+    )
+    .all<{source_or_component_id: string}>();
+  return rows.results.map(row => row.source_or_component_id);
+}
+
 /** Active exclusions apply to a source revision, any of its ancestors or an admitted component.
  *  An owner exclusion decision on a task that adds data lifts that exclusion. */
 async function exclusionChecks(
@@ -413,15 +423,9 @@ async function exclusionChecks(
   options: MemberOptions,
 ) {
   const related = await relatedIds(db, revisions);
-  const active = (
-    await db
-      .prepare(
-        'SELECT source_or_component_id FROM maintenance_exclusions WHERE active = 1',
-      )
-      .all<{source_or_component_id: string}>()
-  ).results
-    .map(row => row.source_or_component_id)
-    .filter(id => !options.lifted?.has(id));
+  const active = (await activeExclusions(db)).filter(
+    id => !options.lifted?.has(id),
+  );
   const excluded = new Set([...active, ...(options.adding ?? [])]);
   const problems: string[] = [];
   for (const [revision, ids] of related) {

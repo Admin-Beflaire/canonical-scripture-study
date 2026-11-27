@@ -1,6 +1,6 @@
 import type {InputRef} from './contracts.ts';
 import type {D1Database} from './d1.ts';
-import {GitHubError, type GitHubActions} from './github.ts';
+import {GitHubError, type RecipeFiles} from './github.ts';
 import {findFetchRecipe, originalState, readOriginal} from './originals.ts';
 import type {ObjectStore} from './release-check.ts';
 import type {Scope} from './tasks.ts';
@@ -11,7 +11,7 @@ import type {Scope} from './tasks.ts';
 
 /** What the check reads besides the database; without it an acquisition is always asked. */
 export interface AdmissionSources {
-  github: GitHubActions | null;
+  github: RecipeFiles | null;
   objects: ObjectStore | null;
 }
 

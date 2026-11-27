@@ -1,12 +1,19 @@
+import {currentSources} from './current-sources.ts';
 import {describeRecipe, findRecipes} from './recipe-guide.ts';
 import {fromJsonSchema} from '@modelcontextprotocol/server';
 import {reportError} from '../../../../packages/shared/src/error-record.ts';
 import {platformServer} from '../../../../packages/shared/src/platform.ts';
 import type {D1Database} from './d1.ts';
-import {GitHubError, type GitHubActions} from './github.ts';
+import {
+  GitHubError,
+  readOnce,
+  type GitHubActions,
+  type RecipeFiles,
+} from './github.ts';
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import {
+  ASK_FIRST,
   CONTROL_INSTRUCTIONS,
   DECISION_REF_MAX,
   FIELD_DESCRIPTIONS,
@@ -113,18 +120,35 @@ const getSchema = fromJsonSchema<{task_id?: string; cursor?: string}>({
     cursor: {type: 'string', maxLength: 20, pattern: '^[0-9a-z]+$'},
   },
 });
-const recipeSchema = fromJsonSchema<{recipe?: string; find?: string}>({
+interface RecipeArgs {
+  recipe?: string;
+  find?: string;
+  sources_after?: string;
+  prepare_only?: boolean;
+}
+const recipeSchema = fromJsonSchema<RecipeArgs>({
   type: 'object',
   additionalProperties: false,
   properties: {
     recipe: {
       ...id,
-      description: 'A recipe ID: returns the request to send for it.',
+      description: 'A recipe ID: returns the requests to send for it.',
     },
     find: {
       type: 'string',
       maxLength: 60,
-      description: 'Without recipe: only recipe IDs containing this word.',
+      description:
+        'Without recipe: only recipe IDs and current source revisions containing this word.',
+    },
+    sources_after: {
+      ...id,
+      description:
+        'With find: next_sources_after from the page before, for more current sources.',
+    },
+    prepare_only: {
+      type: 'boolean',
+      description:
+        'With a build recipe: the owner wants it prepared without making it current.',
     },
   },
 });
@@ -302,30 +326,50 @@ async function getTaskTool(
   );
 }
 
-async function recipeTool(
-  tools: Tools,
-  args: {recipe?: string; find?: string},
+async function recipeList(
+  db: D1Database,
+  github: RecipeFiles,
+  args: RecipeArgs,
 ) {
+  const found = await findRecipes(github, args.find);
+  const current = args.find
+    ? await currentSources(db, args.find, args.sources_after)
+    : {};
+  return reply(
+    `${found.recipes.length} recipe(s)${found.more ? `, ${found.more} more: add a word in find` : ''}. Ask again with one as recipe.`,
+    {...found, ...current},
+  );
+}
+
+async function recipeAnswer(
+  tools: Tools,
+  github: RecipeFiles,
+  id: string,
+  prepareOnly?: boolean,
+) {
+  const {db, objects} = tools;
+  const found = await describeRecipe(
+    {db, github: readOnce(github), objects},
+    id,
+    prepareOnly,
+  );
+  if (!found.found) return reply(found.message, found, true);
+  const count = found.requests.length;
+  const next = count
+    ? `${found.owner_decisions.length ? `${ASK_FIRST} ` : ''}Send ${count === 1 ? 'the request below' : `the ${count} requests below, in order,`} to request_task.`
+    : 'There is nothing to send; read the notes.';
+  return reply(`Recipe ${found.recipe} does a ${found.does}. ${next}`, found);
+}
+
+async function recipeTool(tools: Tools, args: RecipeArgs) {
   tools.owner();
-  const {github} = tools;
+  const {db, github} = tools;
   if (!github)
     return reply('Recipes are not available: GitHub is not set up.', {}, true);
   try {
-    if (!args.recipe) {
-      const found = await findRecipes(github, args.find);
-      return reply(
-        `${found.recipes.length} recipe(s)${found.more ? `, ${found.more} more: add a word in find` : ''}. Ask again with one as recipe.`,
-        found,
-      );
-    }
-    const found = await describeRecipe(tools.db, github, args.recipe);
-    return reply(
-      found.found
-        ? `Recipe ${found.recipe} does a ${found.does}. Send the request below to request_task.`
-        : found.message,
-      found,
-      !found.found,
-    );
+    return args.recipe
+      ? await recipeAnswer(tools, github, args.recipe, args.prepare_only)
+      : await recipeList(db, github, args);
   } catch (error) {
     if (!(error instanceof GitHubError)) throw error;
     return reply('GitHub did not answer; ask again in a moment.', {}, true);

@@ -36,8 +36,8 @@ function world(name: string, ...more: string[]) {
 }
 type World = ReturnType<typeof world>;
 
-const inputsOf = (files: Files, name: string) =>
-  recipeInputs(recipeFile(files, name)) as InputRef[];
+const inputsOf = (files: Files, name: string): InputRef[] =>
+  recipeInputs(recipeFile(files, name));
 
 const fetchRequest = (w: World, name: string, key = 'k') => ({
   request_key: key,

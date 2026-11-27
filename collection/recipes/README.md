@@ -28,7 +28,7 @@ revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decisi
 
 A recipe says only how to do its step for that source. One task can chain the steps
 (`steps: ["fetch", "build", "select"]`, with `constraints.fetch_recipe` and `constraints.recipe`);
-Control's `get_recipe` answers with the request for a recipe and the fetch recipe its original needs.
+Control's `get_recipe` answers with the requests to send for a recipe, in order, fetching an original that is not kept, and names the other build recipes over the same original and extent (recipe IDs that start with the same name, such as `…-reader`).
 
 The fetch recipes and the base book recipes are written by
 `python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files

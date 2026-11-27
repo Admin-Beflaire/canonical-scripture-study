@@ -24,6 +24,17 @@ export async function call(
   return responseBody(response);
 }
 
+/** A tool call and its answer: the text a host reads, and the data after its first paragraph. */
+export async function callTool(
+  handler: ReturnType<typeof protocolHandler>,
+  name: string,
+  args: Record<string, unknown>,
+) {
+  const {result} = await call(handler, 'tools/call', {name, arguments: args});
+  const text: string = result.content[0].text;
+  return {result, text, data: JSON.parse(text.slice(text.indexOf('\n\n') + 2))};
+}
+
 /** The JSON-RPC message of a response, sent as plain JSON or as one server event. */
 export async function responseBody(response: Response) {
   const text = await response.text();

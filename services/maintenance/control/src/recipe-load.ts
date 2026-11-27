@@ -1,9 +1,9 @@
 import {recipeErrors, type Recipe} from './contracts.ts';
-import {FileEncodingError, type GitHubActions} from './github.ts';
+import {FileEncodingError, type RecipeFiles} from './github.ts';
 
 /** Read and check the recipe named in the task, from reviewed main. */
 export async function loadRecipe(
-  github: GitHubActions,
+  github: RecipeFiles,
   id: unknown,
 ): Promise<{recipe?: Recipe; problem?: string}> {
   if (typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,150}$/.test(id))

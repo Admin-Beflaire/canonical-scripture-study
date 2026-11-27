@@ -45,6 +45,23 @@ export class GitHubError extends OwnMessageError {
   }
 }
 
+/** Reading recipes and source manifests from main. */
+export type RecipeFiles = Pick<GitHubActions, 'listRecipes' | 'readFile'>;
+
+/** The same reads, each asked of GitHub once; for one answer that looks at a file repeatedly. */
+export function readOnce(files: RecipeFiles): RecipeFiles {
+  let names: Promise<string[]> | undefined;
+  const read = new Map<string, Promise<string | null>>();
+  return {
+    listRecipes: () => (names ??= files.listRecipes()),
+    readFile(path) {
+      const file = read.get(path) ?? files.readFile(path);
+      read.set(path, file);
+      return file;
+    },
+  };
+}
+
 /** GitHub REST access for dispatch, run identity and cancellation. Credentials go only to
  *  api.github.com, never follow redirects, and never appear in errors. */
 export class GitHubActions implements WorkflowTransport {

@@ -1,6 +1,6 @@
 import type {Recipe} from './contracts.ts';
 import {canonicalJson, type D1Database} from './d1.ts';
-import type {GitHubActions} from './github.ts';
+import type {RecipeFiles} from './github.ts';
 import {loadRecipe} from './recipe-load.ts';
 import {
   fetchesOnly,
@@ -84,7 +84,7 @@ function pinnedComponent(recipe: Recipe): Original | null {
 
 /** An acquire-only recipe's manifest states the route and the admission record. */
 async function manifestSource(
-  github: GitHubActions,
+  github: RecipeFiles,
   recipe: Recipe,
 ): Promise<Original | null> {
   const name = recipe.parameters?.manifest;
@@ -116,7 +116,7 @@ async function manifestSource(
 
 /** What a fetch recipe states about its original; null when it states no usable one. */
 export async function readOriginal(
-  github: GitHubActions,
+  github: RecipeFiles,
   recipe: Recipe,
 ): Promise<Original | null> {
   const adapter = recipe.adapter?.method_version;
@@ -133,7 +133,7 @@ export interface FetchRecipe {
 /** The fetch recipe that keeps this input's original: the preferred ones first, then those whose
  *  ID holds the input's own name. Only one that lists the same input is accepted. */
 export async function findFetchRecipe(
-  github: GitHubActions,
+  github: RecipeFiles,
   input: RecipeInput,
   preferred: string[] = [],
 ): Promise<FetchRecipe | undefined> {

@@ -139,7 +139,7 @@ export function stated(files: Files, name: string) {
 
 type Database = ReturnType<typeof localD1>;
 
-function saveSource(db: Database, revision: string, details: unknown) {
+export function saveSource(db: Database, revision: string, details: unknown) {
   const insert = db.sqlite.prepare(
     'INSERT OR IGNORE INTO source_nodes VALUES (?, ?, ?, ?, ?, ?, ?)',
   );

@@ -46,7 +46,7 @@ export const REPLACE_ORDER =
 export const REPLACE_STOP =
   'A failed or blocked task ends a replacement: report what became current and what did not, as a partial result.';
 export const REPLACE_PART =
-  'Part of a revision cannot be replaced: send nothing with replaces and say so. Adding the new version beside the old one and removing data are separate instructions that only the owner gives.';
+  'Part of a revision cannot be replaced, nor can a language aid, whose records do not show which content a new version keeps: send nothing with replaces and say so. Adding the new version beside the old one and removing data are separate instructions that only the owner gives.';
 
 export const REMOVE =
   'To remove a source, call get_recipe with find, confirm with the owner which current source revisions he means, then send request_task with steps ["remove"] and those source revisions as inputs.';

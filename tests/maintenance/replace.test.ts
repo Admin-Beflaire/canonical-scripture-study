@@ -194,6 +194,74 @@ test('making a prepared build current applies the same replacement check', async
   assert.deepEqual(currentRevisions(w), [NEW]);
 });
 
+/** One saved output with its coverage of the same units. */
+function saveOutput(
+  w: World,
+  id: string,
+  revision: string,
+  coordinate: string,
+  unit: string,
+  capability: string,
+) {
+  const extent = JSON.stringify({
+    coordinate_version: coordinate,
+    unit_ids: [unit],
+  });
+  w.db.sqlite
+    .prepare(
+      `INSERT INTO prepared_outputs VALUES (?, 'evidence', ?, 'm1', '{}', ?, '{}')`,
+    )
+    .run(id, JSON.stringify([revision]), extent);
+  w.db.sqlite
+    .prepare(
+      `INSERT INTO coverage VALUES (?, ?, ?, ?, 'available', 'm1', NULL, '[]', NULL)`,
+    )
+    .run(id, revision, JSON.stringify({unit_ids: [unit]}), capability);
+  return outputs(w.db, [id]);
+}
+
+test('equal page IDs of a language aid cannot show that a newer revision keeps its content', async () => {
+  const w = world();
+  source(w.db, 'rev-2');
+  const page = async (revision: string) =>
+    saveOutput(
+      w,
+      `evidence:${revision}`,
+      revision,
+      'language-aids/bdb/1',
+      'p000',
+      'lexicon_entry',
+    );
+  const old = await page('rev-1');
+  const next = await page('rev-2');
+  assert.deepEqual(
+    await replacementProblems(w.db, new Set(['rev-1']), old, next, next),
+    [
+      'replaces rev-1 is refused: its lexicon_entry is listed by technical parts such as p000, not by content, so the records cannot show that rev-2 keeps it',
+    ],
+  );
+});
+
+test('a newer whole statement replaces the older one', async () => {
+  const w = world();
+  source(w.db, 'rev-2');
+  const statement = async (revision: string) =>
+    saveOutput(
+      w,
+      `evidence:${revision}`,
+      revision,
+      'character-statement/1',
+      'statement',
+      'character_statement',
+    );
+  const old = await statement('rev-1');
+  const next = await statement('rev-2');
+  assert.deepEqual(
+    await replacementProblems(w.db, new Set(['rev-1']), old, next, next),
+    [],
+  );
+});
+
 test('replaces is refused when the records cannot show that the new data covers the old', async () => {
   const w = world();
   source(w.db, 'rev-2');

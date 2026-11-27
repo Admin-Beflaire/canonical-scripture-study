@@ -4,7 +4,8 @@ import {partOf, units} from './release-members.ts';
 
 /** `replaces` drops a whole source revision. That is allowed only when the release that results
  *  gives, from the build's own source revisions, every capability the dropped data gave, over
- *  every native unit it covered. */
+ *  every native unit it covered. Data listed by units that do not name content cannot be shown
+ *  to be covered, so it is not dropped this way. */
 
 interface CoverageRow {
   output_id: string;
@@ -20,9 +21,19 @@ interface Given {
   revision: string;
   capability: string;
   units: string[];
+  /** Whether every unit names content, so that another revision can be compared by it. */
+  comparable: boolean;
 }
 
 const PARTS = 20;
+
+const VERSE = /^[1-3]?[A-Za-z]{2,8}\.\d{1,3}\.\d{1,3}$/;
+
+/** A native verse or the whole statement names content. A technical part, such as a page of a
+ *  language aid, holds other content in each revision under the same name. */
+const namesContent = (unit: string, coordinates: unknown) =>
+  VERSE.test(unit) ||
+  (unit === 'statement' && coordinates === 'character-statement/1');
 
 /** What one coverage row says, comparable between source revisions: a row about the output's own
  *  revision matches the same row about another own revision; a row about a third revision keeps
@@ -44,6 +55,9 @@ function given(row: CoverageRow, output: Output): Given | null {
     revision,
     capability: row.capability,
     units: list,
+    comparable: list.every(unit =>
+      namesContent(unit, output.extent.coordinate_version),
+    ),
   };
 }
 
@@ -65,13 +79,14 @@ async function dataDropped(db: D1Database, dropped: Output[]) {
   const recorded = new Set(rows.map(item => item.output.id));
   const unclear = dropped.filter(item => !recorded.has(item.id));
   const gave: Given[] = [];
+  const parts: Given[] = [];
   for (const {row, output} of rows) {
     if (row.state === 'missing') continue;
     const found = given(row, output);
-    if (found) gave.push(found);
-    else unclear.push(output);
+    if (!found) unclear.push(output);
+    else (found.comparable ? gave : parts).push(found);
   }
-  return {gave, unclear};
+  return {gave, parts, unclear};
 }
 
 /** Units that are available, by key. */
@@ -116,6 +131,17 @@ function lost(gave: Given[], have: Map<string, Set<string>>, from: string[]) {
   });
 }
 
+/** One problem for each capability that only technical parts record. */
+function incomparable(parts: Given[], from: string[]) {
+  const each = new Map(
+    parts.map(item => [`${item.revision} ${item.capability}`, item]),
+  );
+  return [...each.values()].map(
+    ({revision, capability, units}) =>
+      `replaces ${revision} is refused: its ${capability} is listed by technical parts such as ${units[0]}, not by content, so the records cannot show that ${from.join(', ')} keeps it`,
+  );
+}
+
 /** Why the sources a build `replaces` may not be dropped. `current` holds the members before,
  *  `result` the members after, `built` the build's own outputs. */
 export async function replacementProblems(
@@ -131,7 +157,7 @@ export async function replacementProblems(
   );
   if (!dropped.length) return [];
   const from = [...new Set(built.map(item => item.revisions[0]))].sort();
-  const {gave, unclear} = await dataDropped(db, dropped);
+  const {gave, parts, unclear} = await dataDropped(db, dropped);
   const have = await dataAvailable(
     db,
     result.filter(item => from.includes(item.revisions[0])),
@@ -143,6 +169,7 @@ export async function replacementProblems(
         id =>
           `replaces is refused: the records do not show what output ${id} covers`,
       ),
+    ...incomparable(parts, from),
     ...lost(gave, have, from),
   ];
 }

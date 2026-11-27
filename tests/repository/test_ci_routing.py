@@ -116,11 +116,13 @@ class RoutingTests(unittest.TestCase):
         )
 
     def test_typescript_tests_follow_the_imports_of_the_changed_files(self):
-        study = profiles.typescript_tests(["services/study/src/index.ts", "README.md"])
+        study = profiles.typescript_tests(
+            ["services/study/src/read/search.ts", "README.md"]
+        )
         self.assertIn("tests/study/search.test.ts", study)
         self.assertNotIn("tests/maintenance/tasks.test.ts", study)
         control = profiles.typescript_tests(
-            ["services/maintenance/control/src/index.ts"]
+            ["services/maintenance/control/src/tasks.ts"]
         )
         self.assertNotIn("tests/study/search.test.ts", control)
         every = profiles.typescript_tests(None)

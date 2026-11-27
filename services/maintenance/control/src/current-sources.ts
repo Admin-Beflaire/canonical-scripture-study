@@ -7,11 +7,12 @@ import {partOf} from './release-members.ts';
 const REVISIONS = 10;
 const PARTS = 100;
 
-/** The current release's available coverage. */
+/** The current release's coverage. */
 const CURRENT = `release_selection s
   JOIN release_outputs ro ON ro.release_id = s.current_release_id
   JOIN coverage c ON c.output_id = ro.output_id`;
-const AVAILABLE = `s.singleton_id = 1 AND c.state = 'available'`;
+/** Everything held, partial coverage included, as the replacement check counts it. */
+const HELD = `s.singleton_id = 1 AND c.state <> 'missing'`;
 
 /** One stored extent of a source revision and the capabilities available over it. */
 interface HeldRow {
@@ -29,7 +30,7 @@ async function heldRows(db: D1Database, revisions: string[]) {
       .prepare(
         `SELECT c.source_revision_id AS revision, c.native_extent_json AS extent,
     json_group_array(DISTINCT c.capability) AS capabilities
-    FROM ${CURRENT} WHERE ${AVAILABLE} AND c.source_revision_id IN (${marks})
+    FROM ${CURRENT} WHERE ${HELD} AND c.source_revision_id IN (${marks})
     GROUP BY 1, 2`,
       )
       .bind(...revisions)
@@ -82,7 +83,7 @@ export async function currentSources(db: D1Database, find: string, after = '') {
     await db
       .prepare(
         `SELECT DISTINCT c.source_revision_id AS id FROM ${CURRENT}
-    WHERE ${AVAILABLE} AND instr(lower(c.source_revision_id), ?) > 0 AND c.source_revision_id > ?
+    WHERE ${HELD} AND instr(lower(c.source_revision_id), ?) > 0 AND c.source_revision_id > ?
     ORDER BY c.source_revision_id LIMIT ?`,
       )
       .bind(find.toLowerCase(), after, REVISIONS + 1)

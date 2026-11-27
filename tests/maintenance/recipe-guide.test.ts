@@ -330,16 +330,18 @@ test('find lists what current data holds from each matching source revision', as
       ['text:1', 'source_context', ['Exo.1.1']],
       ['text:1', 'reader_reference', ['Gen.1.1']],
       ['text:1', 'lemma_exact', ['Lev.1.1'], 'partial'],
+      ['text:1', 'form_exact', ['Deu.1.1'], 'missing'],
       ['aids:1', 'lexicon_entry', []],
       ['text:old', 'source_context', ['Num.1.1']],
     ],
-    index => index !== 6,
+    index => index !== 7,
   );
   const answer = (await w.ask({find: 'TEXT'})).data;
   assert.deepEqual(answer.current_sources, [
     {
       source_revision: 'text:1',
       holds: [
+        {capabilities: ['lemma_exact'], units: 1, parts: ['Lev']},
         {capabilities: ['reader_reference'], units: 1, parts: ['Gen']},
         {capabilities: ['source_context'], units: 3, parts: ['Exo', 'Gen']},
         {capabilities: ['word_exact'], units: 2, parts: ['Gen']},

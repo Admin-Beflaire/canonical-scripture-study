@@ -290,15 +290,11 @@ for (const [name, fixture, limited] of [
 test('the exegesis skill keeps the agreed order, points and statement check', () => {
   const text = guidance('exegesis').text;
   const order = [
-    'Core summary',
-    'Words and meaning',
-    'Historical and cultural background',
-    'Literary context',
-    'Storyline through Scripture',
-    'Quotations, echoes and themes',
-    'Interpretations:',
-    'Christ as anchor',
-    "Check of the conclusions against God's revealed character",
+    'Working translation',
+    'The text itself',
+    'Your interpretation',
+    'Comparison with the known interpretations',
+    'Closing',
   ].map((part, index) => text.indexOf(`${index + 1}. ${part}`));
   assert.ok(
     order.every(at => at >= 0),
@@ -313,23 +309,51 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     ['+2', '+2', '+1', '+1', '+1', '-1', '-1', '-2'],
   );
   for (const rule of [
+    // The text first, then the own reading, then the others.
+    'name every place where the passage seems to contradict itself or other Scripture',
+    'come at the verse where they matter, not in blocks of their own',
+    'form your own interpretation before you turn to known ones',
+    'Coming first gives it no advantage',
+    'every sense possible here, what each sense does to the reading',
+    'gives only the chosen sense is incomplete when another sense is possible here',
+    'when only one sense is possible here, say why',
+    // Plain language and no talk about the work.
+    'Write in everyday language and short sentences',
+    'Write about the text, not about your work',
+    'the Sources and Limits lines once, at the end of the whole answer',
+    // Points.
     'never counts as support',
     'not named strongest, whatever its total',
     "God's character gives no points: it is a check, never a premise",
+    'Show points only when the reader asks',
+    // The statement check: part of the weighing, shown only on request.
     'read the conclusion-check skill',
     'mode "conclusion_check"',
     'returns the name, version, wording and scriptural basis (reader references)',
     'present only its own wording as the statement',
     'It is never a premise and agreement proves nothing',
     'call this your own check, not the approved version',
-    'Show points only when the reader asks',
-    'every sense possible here, which interpretation of part 7 each sense supports',
-    'An entry that gives only the chosen sense is incomplete when another sense is possible here',
-    'when only one sense is possible here, say why',
-    'every interpretation of part 7, not only the strongest',
-    'When there is another serious reading, a check of the favoured one alone is incomplete',
+    'Check every serious interpretation',
+    'a check of the favoured one alone is incomplete',
+    'do not write about the check, the statement or an outcome for each reading',
+    'When no statement is selected, the Limits line says so',
+    'after both have been examined again',
+    'is never named strongest',
+    'give the reason with that reading',
+    'Show the check only when the reader asks; then name the statement with its version',
   ])
     assert.ok(text.includes(rule), rule);
+});
+
+test('a conclusion check shows its outcome for every interpretation', () => {
+  const text = guidance('conclusion-check').text;
+  for (const rule of [
+    'Name the statement with its version',
+    'For each interpretation say what it implies about God',
+    'if you find no tension, say so and why',
+  ])
+    assert.ok(text.includes(rule), rule);
+  assert.doesNotMatch(text, /do not write about the check/);
 });
 
 test('skills share one text for a rule two of them need', () => {

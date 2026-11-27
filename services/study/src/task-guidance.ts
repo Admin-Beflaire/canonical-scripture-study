@@ -28,33 +28,33 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
 - torah, hesed, emet, and the vocabulary of faith, works, righteousness, justification, testing and temptation: follow the argument, subject, object and agency; no single universal gloss.
 - A word's lexical range is not its meaning here; etymology is not proof; one English word may hide different source words, and one source word may carry different senses.`;
 
-/** How conclusions are checked against God's revealed character; exegesis and the conclusion
- *  check both use it. */
+/** What the check against God's revealed character is; exegesis and the conclusion check both
+ *  use it, and each says what the answer shows of it. */
 export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version, wording and scriptural basis (reader references) of the approved statement, or says that none is selected.
-- With a statement: check your conclusions against its wording and its scriptural basis, name it with its version, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
+- With a statement: check your conclusions against its wording and its scriptural basis, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
-- Check every serious interpretation or alternative, not only the one you favour. For each say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why. When there is another serious reading, a check of the favoured one alone is incomplete.`;
+- Check every serious interpretation or alternative, not only the one you favour; when there is another serious reading, a check of the favoured one alone is incomplete.`;
 
 export const EXEGESIS = `Exegesis:
 
 The answer
-- Read the whole literary unit, also when particular verses are asked; deliver the asked scope. Give your own working translation first, under the translation skill.
-- Then give, for each literary unit:
-  1. Core summary (write it after weighing).
-  2. Words and meaning: one entry for each word or construction whose meaning changes the reading, with the source word, every sense possible here, which interpretation of part 7 each sense supports, your choice and why. An entry that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
-  3. Historical and cultural background and contrast.
-  4. Literary context, with the structure and form of the text.
-  5. Storyline through Scripture.
-  6. Quotations, echoes and themes.
-  7. Interpretations: the known ones that matter, each with its case and its difficulties, in order of likelihood; your own where there is reason; which is strongest, and why.
-  8. Christ as anchor, without rewriting what the text meant in its own setting.
-  9. Check of the conclusions against God's revealed character, after interpreting: every interpretation of part 7, not only the strongest.
-- An exegesis of a passage gets all nine parts; a limited question gets the parts that bear on it.
-- Weigh the interpretations by the points below before writing. A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support.
-- Study supplies no commentary or background evidence yet: mark what comes from your own knowledge or from outside sources you consulted, and say what was not supplied.
-- After weighing, read the conclusion-check skill and call study with mode "conclusion_check" for part 9.
+- Read the whole literary unit, also when particular verses are asked; deliver the asked scope.
+- Give, for each literary unit, in this order:
+  1. Working translation, under the translation skill. Here it has no footnotes, also where the translation rules below ask for them: what a footnote would explain belongs at its verse in part 2.
+  2. The text itself. When the asked verses depend on a larger unit, give its argument first. Then name every place where the passage seems to contradict itself or other Scripture, including cases that seem to break one of its general statements. Then follow the writer's line of thought and explain what the passage says and how its parts fit. Words, literary form, historical and cultural background, quotations and echoes come at the verse where they matter, not in blocks of their own.
+  3. Your interpretation, drawn from the text, and how it deals with each of those places.
+  4. Comparison with the known interpretations that matter: for each, where it agrees or differs, what speaks for and against it and how it deals with those places. Give them in order of likelihood, and say which is strongest, yours or another, and why.
+  5. Closing: briefly the line through Scripture and to Christ, without rewriting what the text meant in its own setting.
+- For each word or construction whose meaning changes the reading, give the source word, every sense possible here, what each sense does to the reading, your choice and why. An explanation that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
+- An exegesis of a passage gets all five parts; a limited question gets the parts that bear on it.
+
+Language
+- Write in everyday language and short sentences, for a reader who does not know the source languages. Use a technical term or a source-language word only where the reader needs it, and explain it where it first appears.
+- Write about the text, not about your work: say nothing about this method, the points, the checks or what you looked up, and put no source tags or links in the running text. Say plainly where the text leaves a question open.
+- Put the Sources and Limits lines once, at the end of the whole answer, not under the translation. Say only there which sources you used, what rests on your own knowledge or on outside works, and what was not supplied; only the short mark that the translation rules require for a witness known from outside also stands in the text. Study supplies no commentary or background evidence yet.
 
 Work first
+- Start with the text: read it closely and form your own interpretation before you turn to known ones.
 - Investigate words, background, canon and interpretations, weigh them, check them against God's character, and only then write. In a study the user takes step by step, write a step when the research it rests on is done.
 - In the exegesis itself, discuss a textual difference only where it changes the interpretation.
 - A wish for a shorter or longer answer changes the length of the parts, not the research.
@@ -70,7 +70,7 @@ Weighing interpretations (points)
   +1 it fits the author's usage.
   +1 it fits the first audience and their world.
   +1 it is supported by other Scripture read in its own context (the strength of the support, not the number of passages).
-  -1 it leaves a significant difficulty unexplained.
+  -1 it leaves a significant difficulty unexplained, such as a place named in part 2.
   -1 it needs a later system or outside concept to supply a premise.
   -2 it reasons in a circle.
 - A reading that cannot stand without a premise that never counts as support is not named strongest, whatever its total. Historical and linguistic evidence may still illuminate the context.
@@ -78,13 +78,19 @@ Weighing interpretations (points)
 - The number of scholars and the age of a tradition give no points. God's character gives no points: it is a check, never a premise.
 - Before delivering, check for each point which reading the evidence supports best, not merely whether it fits the one you chose.
 - Show points only when the reader asks; then show the points that decided.
-- Your own reading competes on the same points and leads when it scores best. Mark it as your own, never attribute it to others, say what speaks against it, and give it nothing for being new.
+- Your own interpretation is weighed by the same points. Coming first gives it no advantage: when another scores higher, name that one strongest and say why.
+- Mark your own interpretation as your own and never attribute it to others; when it matches a known one, say so. Say what speaks against it, and give it nothing for being new.
 
 Sources
 - Attribute a reading to a person or tradition only when you are sure of it, and never as if you had read it firsthand.
 
 God's character
-${CHARACTER_CHECK}`;
+- After weighing the points and before naming the strongest reading, read the conclusion-check skill and call study with mode "conclusion_check".
+${CHARACTER_CHECK}
+- In an exegesis this check is part of the weighing, like the points: do not write about the check, the statement or an outcome for each reading. When no statement is selected, the Limits line says so.
+- A reading that still conflicts with God's character as Scripture reveals it, after both have been examined again, is never named strongest.
+- When this affects which reading is strongest or how sure you are, give the reason with that reading, as a plain statement about the text and God.
+- Show the check only when the reader asks; then name the statement with its version and say for each interpretation what it implies about God, where that fits his revealed character and where it creates tension, or why you find no tension.`;
 
 export const COMPARISON = `Comparison:
 
@@ -129,4 +135,5 @@ export const SOURCE_INSPECTION = `Source inspection:
 export const CONCLUSION_CHECK = `Conclusion check:
 
 Run it after interpreting.
-${CHARACTER_CHECK}`;
+${CHARACTER_CHECK}
+- Name the statement with its version. For each interpretation say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why.`;

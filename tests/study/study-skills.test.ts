@@ -353,7 +353,7 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'It is never a premise and agreement proves nothing: what a reading says must come from the text',
     'call this your own check, not the approved version',
     "Test every known interpretation that matters against God's character, not only the ones close to yours",
-    'do not write about the check, the statement or an outcome for each reading',
+    'do not write about the check, the statement or an outcome for each reading unless the reader asks to see the check',
     'When no statement is selected, the Limits line says so',
     'tests a reading; a reading never redefines that character',
     'Good, just and loving keep their meaning when used of God',
@@ -447,6 +447,19 @@ test('research duties are in the task texts, not in the presentation', async () 
     assert.ok(guidance(name).text.includes(duty), name);
     assert.ok(!presentation(name).join('\n').includes(duty), name);
   }
+});
+
+test('the exegesis template keeps the exceptions of the task', async () => {
+  const {presentation} =
+    await import('../../services/study/src/presentation.ts');
+  const template = presentation('exegesis').join('\n');
+  for (const phrase of [
+    "show the points or the check against God's character only when the reader asks",
+    'Give the acceptable ones in order of likelihood',
+    'a rejected one comes after them, as not acceptable',
+  ])
+    assert.ok(template.includes(phrase), phrase);
+  assert.doesNotMatch(template, /say nothing about this method, the points/);
 });
 
 test('a conclusion check asked for on its own shows every interpretation', () => {

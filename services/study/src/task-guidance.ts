@@ -34,7 +34,8 @@ export const CHARACTER_CHECK = `- Results with evidence do not carry the stateme
 - With a statement: check your conclusions against its wording and its scriptural basis, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
 - Check every serious interpretation or alternative, not only the one you favour; when there is another serious reading, a check of the favoured one alone is incomplete.
-- A reading that does not fit God's character as Scripture reveals it is never correct. When one seems not to fit, first examine both the reading and the statement against Scripture again; if it still does not fit, reject it as unacceptable, whatever else speaks for it, your own included.`;
+- God's character, as the whole of Scripture reveals it, tests a reading; a reading never redefines that character. Good, just and loving keep their meaning when used of God. A reading that can stand only by bending them is wrong.
+- When a reading seems not to fit, first examine both the reading and the statement against Scripture again. How sure you are counts: when it clearly still does not fit, reject it as unacceptable, whatever else speaks for it, your own included; when that stays uncertain, do not reject it, but lower how sure you are of it and say why.`;
 
 export const EXEGESIS = `Exegesis:
 
@@ -73,7 +74,7 @@ Weighing interpretations (points)
   +1 it is supported by other Scripture read in its own context (the strength of the support, not the number of passages).
   -1 it leaves a significant difficulty unexplained, such as a place named in part 2.
   -1 it needs a later system or outside concept to supply a premise.
-  -2 it reasons in a circle.
+  -2 for each fault in its grounds: a fallacy (circular reasoning among them), a mistranslation, or passing over texts that say otherwise (count such a text here, not also as an unexplained difficulty).
 - A reading that cannot stand without a premise that never counts as support is not named strongest, whatever its total. Historical and linguistic evidence may still illuminate the context.
 - When totals are level, the reading with fewer unsupported assumptions goes first. If they are still level, say that the evidence does not decide.
 - The number of scholars and the age of a tradition give no points. God's character gives no points: it is a check, never a premise.

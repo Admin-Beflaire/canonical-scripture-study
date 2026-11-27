@@ -4,7 +4,8 @@
 /** For every skill. */
 const GENERAL = `Presentation:
 - Presentation shows the outcome; it never changes what is investigated, weighed or concluded.
-- Write in everyday language and short sentences, for a reader who does not know the source languages. Use a technical term or a source-language word only where the reader needs it, and explain it where it first appears.
+- Write in everyday language and short sentences, to explain, for a reader who does not know the source languages and has not studied theology. Use a technical term or a source-language word only where the reader needs it, and explain it where it first appears.
+- Write each language as a native speaker would: Dutch must not read like translated English, and English too is plain and natural. Choose the ordinary word over an academic or formal church word, also in headings and in the names of interpretations. A working translation follows this as far as the meaning, force and poetry of the source allow.
 - When an answer sets interpretations beside each other, give each, yours included, a short name that says what it holds, and use exactly that name wherever you mean it.
 - When you consulted websites, name each of them in a Sources line at the end of the answer. Put a gap that the agreed websites left in a Limits line there, in a few words.`;
 

@@ -487,6 +487,21 @@ test('a rejected reading is named with the texts that speak against it', () => {
   );
 });
 
+test('every skill writes plain, natural language to explain', () => {
+  for (const skill of SKILLS)
+    for (const rule of [
+      'to explain, for a reader who does not know the source languages and has not studied theology',
+      'Dutch must not read like translated English, and English too is plain and natural',
+      'Choose the ordinary word over an academic or formal church word',
+      'as far as the meaning, force and poetry of the source allow',
+    ])
+      assert.equal(
+        skill.text.split(rule).length - 1,
+        1,
+        `${skill.name}: ${rule}`,
+      );
+});
+
 test('research duties are in the task texts, not in the presentation', async () => {
   const {presentation} =
     await import('../../services/study/src/presentation.ts');

@@ -378,6 +378,8 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
 test('a conclusion check asked for on its own shows every interpretation', () => {
   const text = guidance('conclusion-check').text;
   for (const rule of [
+    'check each conclusion against every part of the statement',
+    'Read a passage from the scriptural basis only when the part of the statement it supports matters for that conclusion',
     'Asked for on its own, name the statement with its version',
     'for each interpretation say what it implies about God',
     'Run as part of an exegesis, the answer shows of this check only what the exegesis skill says',

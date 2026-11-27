@@ -34,7 +34,7 @@ from ..diagnostics import diagnostic, job_ids
 from ..validate.saved import CandidateInventory
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
-from .recipes import RECIPES, Recipe
+from .recipes import RECIPES, Recipe, declared_input
 from .web import Origin, ProviderError
 
 KINDS = ("acquire", "prepare", "quality")
@@ -155,12 +155,8 @@ def run_job(
         )
 
     def registered(reference: dict[str, Any]) -> bool:
-        # Saved inputs, or inputs the reviewed recipe itself declares (its acquisition route,
-        # and the source revision that only its acquire unit may create).
-        return storage.registered(reference) or (
-            recipe is not None
-            and recipe.declares is not None
-            and recipe.declares(reference, kind)
+        return storage.registered(reference) or declared_input(
+            reference, kind, recipe, recipes
         )
 
     gate = dict(run_id=run_id, read_control=read_control, registered=registered)

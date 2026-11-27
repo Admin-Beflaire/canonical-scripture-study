@@ -87,13 +87,6 @@ class BookRecipe:
         return READER_REFERENCE in self.recipe["capabilities"]
 
     # Gate --------------------------------------------------------------------
-    def declares(self, reference: Mapping[str, Any], kind: str) -> bool:
-        """Inputs this reviewed recipe vouches for before they are saved: the acquisition route.
-
-        The source revision is created by fetching the file (see `fetch.py`); a build needs it saved.
-        """
-        return self.component.declares_acquisition(reference)
-
     def _original(self, storage: Any) -> bytes:
         try:
             return self.component.check_original(

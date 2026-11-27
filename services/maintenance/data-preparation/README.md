@@ -60,8 +60,10 @@ quality receipts under `prepared/receipts/`, and submits the result to Control
 diagnostic message of the result that Control stores and `get_task` shows. A job's `recipe_revision` must belong to a
 reviewed recipe in `collection/recipes/` that resolves against a declared adapter
 (`runner/recipes.py`); any other job ends as `failed` with `no_registered_recipe`.
-Job inputs must be saved, except those the recipe itself declares: its acquisition
-route, and the source revision that only its acquire unit creates. A quality job
+Job inputs must be saved, except what a reviewed recipe declares: an acquisition route
+that any reviewed fetch recipe declares (Control gives every unit of a task all its
+inputs, so a build after a fetch names it too), and the source revision that only a
+fetch recipe's own acquire unit creates. A quality job
 names its candidate in `constraints.candidate` (`added`, `reused`, `omitted` output
 IDs). Quality checks read only the candidate's own rows (by output,
 through its spans and relationships, and its source ancestry), in pages and in

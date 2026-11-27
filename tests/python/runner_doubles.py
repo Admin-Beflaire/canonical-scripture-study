@@ -285,3 +285,5 @@ class LoopbackApi(HTTPServer):
     def __exit__(self, *exc):
         self.shutdown()
         self.server_close()
+        # Left open, a later test's captured output can receive the ResourceWarning.
+        self.db.close()

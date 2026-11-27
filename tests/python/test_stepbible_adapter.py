@@ -576,9 +576,7 @@ class RunnerFlowTest(unittest.TestCase):
             "tahot", groups=[["Exo.1.1"], ["Exo.1.3"]]
         )
         book = BookRecipe.from_recipe(self.recipe_value)
-        self.recipe = Recipe(
-            prepare=book.prepare, read_source=book.read_source, declares=book.declares
-        )
+        self.recipe = Recipe(prepare=book.prepare, read_source=book.read_source)
         self.fetch_value = fetch_recipe(self.component)
         fetch = ComponentFetch.from_recipe(self.fetch_value)
         self.fetch = Recipe(acquire=fetch.acquire, declares=fetch.declares)
@@ -591,12 +589,13 @@ class RunnerFlowTest(unittest.TestCase):
         ]
 
     def job_run(self, unit_id, **changes):
-        value, recipe = (
-            (self.fetch_value, self.fetch)
-            if unit_id == "acquire"
-            else (self.recipe_value, self.recipe)
-        )
-        with mock.patch.dict(RECIPES, {value["revision"]: recipe}):
+        value = self.fetch_value if unit_id == "acquire" else self.recipe_value
+        # The registry holds the book's fetch and build recipe, as the reviewed files do.
+        registry = {
+            self.fetch_value["revision"]: self.fetch,
+            self.recipe_value["revision"]: self.recipe,
+        }
+        with mock.patch.dict(RECIPES, registry):
             changes.setdefault("task_id", "task-stepbible")
             return run_recipe_unit(self, value, unit_id, RUN_ID, **changes)
 

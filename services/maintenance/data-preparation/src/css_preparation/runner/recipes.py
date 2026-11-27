@@ -32,8 +32,8 @@ RECIPE_DIRECTORY = SCHEMAS.parent / "collection" / "recipes"
 class Recipe:
     """Module entry points for one recipe revision. `storage` is the run's CloudflareStorage.
 
-    `declares(reference, kind)` vouches for job inputs that are declared by the reviewed
-    recipe but not yet saved (an acquisition route; the source revision its acquire unit creates).
+    `declares(reference, kind)` is a fetch recipe's own inputs that are not saved: its
+    acquisition route, and the source revision its acquire unit creates.
     """
 
     acquire: Callable[[dict[str, Any], Any], RecordSet] | None = None
@@ -62,7 +62,6 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
             recipes[value["revision"]] = Recipe(
                 prepare=book.prepare,
                 read_source=book.read_source,
-                declares=book.declares,
                 read_reader_references=book.read_reader_references
                 if book.maps_reader_references
                 else None,
@@ -100,3 +99,30 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
 
 
 RECIPES: dict[str, Recipe] = load_recipes()
+
+
+def declared_input(
+    reference: Mapping[str, Any],
+    kind: str,
+    recipe: Recipe | None,
+    recipes: Mapping[str, Recipe],
+) -> bool:
+    """Does a reviewed recipe vouch for a job input that is not saved?
+
+    The unit's own recipe declares what its acquire unit reads and creates. An acquisition
+    route is never saved: it counts when any reviewed fetch recipe declares it (DP-05).
+    Control gives every unit of a task all its inputs, so the build units of a task that
+    fetches first name that route too.
+    """
+
+    def declares(candidate: Recipe | None, unit_kind: str) -> bool:
+        return (
+            candidate is not None
+            and candidate.declares is not None
+            and candidate.declares(reference, unit_kind)
+        )
+
+    return declares(recipe, kind) or (
+        reference.get("kind") == "acquisition"
+        and any(declares(other, "acquire") for other in recipes.values())
+    )

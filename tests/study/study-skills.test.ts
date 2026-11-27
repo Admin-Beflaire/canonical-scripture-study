@@ -343,18 +343,17 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     // Points.
     'A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support',
     'not named strongest, whatever its total',
-    "God's character gives no points: it is a check, never a premise",
+    "God's character gives no points and is never a premise",
     'Show points only when the reader asks',
-    // The statement check: part of the weighing, shown only on request.
+    // God's character: part of the work, shown only on request.
     'read the conclusion-check skill',
     'mode "conclusion_check"',
     'returns the name, version, wording and scriptural basis (reader references)',
     'present only its own wording as the statement',
-    'It is never a premise and agreement proves nothing',
+    'It is never a premise and agreement proves nothing: what a reading says must come from the text',
     'call this your own check, not the approved version',
-    'Check every serious interpretation',
-    'a check of the favoured one alone is incomplete',
-    'do not write about the check, the statement or an outcome for each reading',
+    "Test every known interpretation that matters against God's character, not only the ones close to yours",
+    'do not write about the check, the statement or an outcome for each reading unless the reader asks to see the check',
     'When no statement is selected, the Limits line says so',
     'tests a reading; a reading never redefines that character',
     'Good, just and loving keep their meaning when used of God',
@@ -369,10 +368,98 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'Name a rejected reading in part 5, after the others, as not acceptable',
     'such as a place named in part 3',
     'leave the question open',
-    'give the reason with that reading',
+    'give that reason there, as a plain statement about the text and God',
     'Show the check only when the reader asks; then name the statement with its version',
   ])
     assert.ok(text.includes(rule), rule);
+});
+
+test("the exegesis works out its own interpretation in the light of God's character", () => {
+  const text = guidance('exegesis').text;
+  for (const rule of [
+    'Before you form your own interpretation, read the conclusion-check skill',
+    "in the light of God's character from start to end: working it out and testing it go together",
+    'Before you deliver, test every theological conclusion that the finished answer draws or leaves possible against every part of the statement',
+    'in your interpretation, the explanation of the text, the background, the comparison and the closing, with everything the weighing changed',
+    'Rework from the text what clearly does not fit and test it again',
+    'test again every conclusion that a later step changes',
+    'An explanation that clearly clashes with any part of it is not an option',
+    'still comes from the text and accounts for everything the text says',
+    'say what remains uncertain, and bend neither of them',
+    'with yours as one of them',
+    'also how it deals with those places and exactly where it differs from yours',
+    'as one of its own beside the known ones, also when it is close to one of them',
+    'not an interpretation to rank',
+  ])
+    assert.ok(text.includes(rule), rule);
+  // One order of work: text, statement, research, own reading, others, test.
+  const steps = [
+    'Start with the text',
+    "Read the statement of God's character",
+    'In its light, investigate the words, background and canon',
+    'form your own interpretation before you turn to known ones',
+    'Investigate the known interpretations',
+    'test it as a whole before you deliver it',
+  ].map(step => text.indexOf(step));
+  assert.ok(
+    steps.every((at, index) => at > (steps[index - 1] ?? 0)),
+    String(steps),
+  );
+  assert.doesNotMatch(text, /After weighing the points/);
+  for (const skill of SKILLS)
+    assert.doesNotMatch(skill.text, /after interpreting/i, skill.name);
+});
+
+test('every skill gets the presentation rules; three have an answer template', () => {
+  const templates = {
+    translation: 'Part 2. The answer (the note level controls it)',
+    exegesis: 'Exegesis answer\n- Give, for each literary unit',
+    comparison: 'Presenting witnesses\n',
+  };
+  for (const skill of SKILLS) {
+    assert.ok(
+      skill.text.includes(
+        'Presentation shows the outcome; it never changes what is investigated, weighed or concluded',
+      ),
+      skill.name,
+    );
+    assert.ok(
+      skill.text.includes('use exactly that name wherever you mean it'),
+      skill.name,
+    );
+    for (const [name, template] of Object.entries(templates))
+      assert.equal(
+        skill.text.split(template).length - 1,
+        skill.name === name ? 1 : 0,
+        `${skill.name}: ${name}`,
+      );
+  }
+});
+
+test('research duties are in the task texts, not in the presentation', async () => {
+  const {presentation} =
+    await import('../../services/study/src/presentation.ts');
+  for (const [name, duty] of [
+    ['translation', 'follow every continuation, read the same evidence'],
+    ['exegesis', 'gives only the chosen sense is incomplete'],
+    ['comparison', 'stays outside the manuscript stream'],
+  ]) {
+    assert.ok(guidance(name).text.includes(duty), name);
+    assert.ok(!presentation(name).join('\n').includes(duty), name);
+  }
+});
+
+test('the exegesis template keeps the exceptions of the task', async () => {
+  const {presentation} =
+    await import('../../services/study/src/presentation.ts');
+  const template = presentation('exegesis').join('\n');
+  for (const phrase of [
+    "show the points or the check against God's character only when the reader asks",
+    'Give the acceptable ones in order of likelihood',
+    'a rejected one comes after them, as not acceptable',
+  ])
+    assert.ok(template.includes(phrase), phrase);
+  assert.doesNotMatch(template, /say nothing about this method, the points/);
 });
 
 test('a conclusion check asked for on its own shows every interpretation', () => {
@@ -388,6 +475,9 @@ test('a conclusion check asked for on its own shows every interpretation', () =>
     'reject it as unacceptable',
     'a reading never redefines that character',
     'when that stays uncertain, do not reject it',
+    'check every serious interpretation or alternative, not only the one you favour',
+    'a check of the favoured one alone is incomplete',
+    'Read the statement with it before you form an explanation of your own',
   ])
     assert.ok(text.includes(rule), rule);
   assert.doesNotMatch(text, /do not write about the check/);

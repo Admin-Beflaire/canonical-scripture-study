@@ -255,8 +255,9 @@ function searchLead(
   return batch(session, workload, continuation, GUIDANCE_VERSION, notes);
 }
 
-/** The selected approved statement and its scriptural basis, or its explicit absence. It checks
- *  conclusions after interpretation and never supplies a premise. */
+/** The selected approved statement and its scriptural basis, or its explicit absence. The host
+ *  works out its own explanation in its light and tests it, and others, against it; it is
+ *  never a premise. */
 async function conclusionCheck(
   session: ReadSession,
   base: {mode: string; depth: string; language: string},

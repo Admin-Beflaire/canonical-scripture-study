@@ -291,6 +291,7 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
   const text = guidance('exegesis').text;
   const order = [
     'Working translation',
+    'Background',
     'The text itself',
     'Your interpretation',
     'Comparison with the known interpretations',
@@ -312,10 +313,16 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     // The text first, then the own reading, then the others.
     'name every place where the passage seems to contradict itself or other Scripture',
     'come at the verse where they matter, not in blocks of their own',
+    // The background the explanation rests on.
+    'the kind of writing (genre)',
+    'who writes to whom and why, in which historical and cultural situation',
+    'what the book as a whole argues or tells; and where this passage stands in it',
+    'When the asked verses depend on a larger unit, give its argument here',
+    'gets all six parts',
     'form your own interpretation before you turn to known ones',
     'Coming first gives it no advantage',
     'its footnote gives the source word, every sense possible here, your choice and why',
-    'part 2 says what each of those senses does to the reading',
+    'part 3 says what each of those senses does to the reading',
     'gives only the chosen sense is incomplete when another sense is possible here',
     'when only one sense is possible here, say why',
     // Plain language and no talk about the work.
@@ -323,7 +330,7 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'Write about the text, not about your work',
     // The translation keeps its footnotes; the exegesis comes on top.
     'Working translation with its footnotes',
-    'built on top of the translation: parts 2 to 5 do not repeat its footnotes',
+    'built on top of the translation: parts 2 to 6 do not repeat its footnotes',
     'always with footnotes (standard level, or full when the reader asks for more depth)',
     'the argument of a larger unit is not written before it, because part 2 gives it',
     'the Sources and Limits lines stand once, at the end of the whole answer',
@@ -355,7 +362,8 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'count such a text here, not also as an unexplained difficulty',
     'examine both the reading and the statement against Scripture again',
     'reject it as unacceptable, whatever else speaks for it, your own included',
-    'Name a rejected reading in part 4, after the others, as not acceptable',
+    'Name a rejected reading in part 5, after the others, as not acceptable',
+    'such as a place named in part 3',
     'leave the question open',
     'give the reason with that reading',
     'Show the check only when the reader asks; then name the statement with its version',

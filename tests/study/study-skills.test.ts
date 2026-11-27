@@ -436,6 +436,19 @@ test('every skill gets the presentation rules; three have an answer template', (
   }
 });
 
+test('research duties are in the task texts, not in the presentation', async () => {
+  const {presentation} =
+    await import('../../services/study/src/presentation.ts');
+  for (const [name, duty] of [
+    ['translation', 'follow every continuation, read the same evidence'],
+    ['exegesis', 'gives only the chosen sense is incomplete'],
+    ['comparison', 'stays outside the manuscript stream'],
+  ]) {
+    assert.ok(guidance(name).text.includes(duty), name);
+    assert.ok(!presentation(name).join('\n').includes(duty), name);
+  }
+});
+
 test('a conclusion check asked for on its own shows every interpretation', () => {
   const text = guidance('conclusion-check').text;
   for (const rule of [

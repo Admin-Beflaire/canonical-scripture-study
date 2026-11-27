@@ -48,6 +48,9 @@ Work first, in this order
 - In a study the user takes step by step, write a step when the research it rests on is done, test it before you deliver it, and test again every conclusion that a later step changes.
 - A wish for a shorter or longer answer changes the length of the parts, not the research.
 
+Word meanings
+- For each word or construction whose meaning changes the reading, work out every sense possible here, what each does to the reading, and which you choose and why. An explanation that gives only the chosen sense is incomplete when another sense is possible here.
+
 God's character
 - Before you form your own interpretation, read the conclusion-check skill and call study with mode "conclusion_check".
 - Work out your own interpretation of every passage in the light of God's character from start to end: working it out and testing it go together. An explanation that clearly clashes with any part of it is not an option: look further in the wording, grammar, background and canon for one that fits.
@@ -96,6 +99,7 @@ export const COMPARISON = `Comparison:
 
 Weighing witnesses
 - Cite the evidence for each judgment, and keep a judgment about a range apart from a judgment about a single reading.
+- An editorial comparison is no manuscript witness: it stays outside the manuscript stream, the attestation counts, the witness grades and the witness coverage.
 ${WITNESS_POINTS}`;
 
 export const WORD_STUDY = `Word study:

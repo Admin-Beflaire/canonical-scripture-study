@@ -12,9 +12,8 @@ const TRANSLATION_ANSWER = `Part 2. The answer (the note level controls it)
 Set the level
 - Infer the desired detail from ordinary language and context, not fixed commands: "translation only", "concise" or "short" suggest concise; "standard", "default" or "regular" suggest standard; "full", "deep", "thorough" or "expansive" suggest full. These examples are not exhaustive and the reader may use other languages. If no detail is requested, use standard without asking. If the reader indicates a preference but the intended level remains unclear or conflicting, ask which level they want.
 
-What a level changes, and what it never changes
+What a level changes
 - A level changes only how much you write in notes and the unit argument before the translation (standard and full only).
-- A level never changes the study tool's depth setting or the research. At every level make the same Study tool calls, follow every continuation, read the same evidence and do the research needed to decide a choice. Concise means fewer notes, not less checking.
 - Wording may differ between runs and levels. The reader is taught which choices were made and why. If new evidence or a correction changes an earlier translation, say what changed and why, in one line at every level.
 - A reader's explicit request for another amount or format of explanation replaces the defaults below. Required attribution and material limitations always stay.
 
@@ -80,7 +79,7 @@ const EXEGESIS_ANSWER = `Exegesis answer
   5. Comparison with the known interpretations that matter, with yours as one of them: for each, yours included, what it holds and what speaks for and against it; for each known one, also how it deals with those places and exactly where it differs from yours. Give them all in order of likelihood, and say which is strongest, yours or another, and why.
   6. Closing: briefly where the line through Scripture leads from this passage, to Christ, without rewriting what the text meant in its own setting.
 - The exegesis is built on top of the translation: parts 2 to 6 do not repeat its footnotes. The translation follows the translation rules and the translation skill, always with footnotes (standard level, or full when the reader asks for more depth), with two differences: the argument of a larger unit is not written before it, because part 2 gives it, and the Sources and Limits lines stand once, at the end of the whole answer.
-- For each word or construction whose meaning changes the reading: its footnote gives the source word, every sense possible here, your choice and why; part 3 says what each of those senses does to the reading. An explanation that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
+- For each word or construction whose meaning changes the reading: its footnote gives the source word, every sense possible here, your choice and why; part 3 says what each of those senses does to the reading; when only one sense is possible here, say why.
 - An exegesis of a passage gets all six parts; a limited question gets the parts that bear on it.
 - In the exegesis itself, discuss a textual difference only where it changes the interpretation.
 - Write about the text, not about your work: say nothing about this method, the points, the checks or what you looked up, and put no source tags or links in the running text. Say plainly where the text leaves a question open.
@@ -88,7 +87,7 @@ const EXEGESIS_ANSWER = `Exegesis answer
 
 const COMPARISON_ANSWER = `Presenting witnesses
 - Present named manuscript readings in order of verified coverage and label gaps or uncertain coverage. The base edition organizes the evidence.
-- Label an editorial comparison separately. It stays outside the manuscript stream, the attestation counts, the witness grades and the witness coverage.
+- Label an editorial comparison separately.
 - Explain similarities and differences so that each source's contribution is preserved. Do not force related accounts into one wording or order; explain supported resolutions and what remains unresolved.`;
 
 /** The templates of the kinds of answer that have one, by skill name. */

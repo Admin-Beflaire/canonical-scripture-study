@@ -436,6 +436,77 @@ test('every skill gets the presentation rules; three have an answer template', (
   }
 });
 
+test('every skill holds the one list of agreed websites and names those consulted', () => {
+  const sites = [
+    'https://www.stepbible.org/',
+    'https://logeion.uchicago.edu/',
+    'https://github.com/openscriptures/HebrewLexicon',
+    'https://bibleproject.com/',
+    'https://www.bibleodyssey.org/',
+    'https://www.thetorah.com/',
+    'https://tyndalebulletin.org/',
+    'https://www.vatican.va/',
+    'https://www.goarch.org/',
+    'https://www.oca.org/',
+    'https://opc.org/',
+    'https://bookofconcord.cph.org/',
+    'https://ccel.org/',
+  ];
+  for (const skill of SKILLS) {
+    assert.deepEqual(
+      skill.text.match(/https:\/\/[^\s(),;]+/g),
+      sites,
+      skill.name,
+    );
+    for (const rule of [
+      'consult only these agreed external websites and limit every web search to them',
+      'Do not open, use or cite any other website',
+      'only for reporting it accurately',
+      'A website never decides what the text means',
+      'name each of them in a Sources line at the end of the answer',
+      'stop looking and report the gap',
+      'Put a gap that the agreed websites left in a Limits line there',
+      'only when the question needs it and the evidence the tool returned for it is missing or insufficient',
+      'Use each site only for what its line names, and open only those the question needs',
+      'on GitHub only this repository',
+      'Naming or linking a source of the study tool, as its attribution and licence require, stays',
+    ])
+      assert.equal(
+        skill.text.split(rule).length - 1,
+        1,
+        `${skill.name}: ${rule}`,
+      );
+  }
+});
+
+test('every skill names a rejected interpretation with the texts that speak against it', () => {
+  // One rule for every study, so a conclusion check asked for on its own has it too.
+  const rule =
+    'When an answer rejects an interpretation of Scripture, it names that interpretation, the reason and the Bible texts that speak against it';
+  for (const skill of SKILLS)
+    assert.equal(skill.text.split(rule).length - 1, 1, skill.name);
+  assert.ok(
+    guidance('exegesis').text.includes(
+      'claim to have read a work only when you opened and read it',
+    ),
+  );
+});
+
+test('every skill writes plain, natural language to explain', () => {
+  for (const skill of SKILLS)
+    for (const rule of [
+      'to explain, for a reader who does not know the source languages and has not studied theology',
+      'Dutch must not read like translated English, and English too is plain and natural',
+      'Choose the ordinary word over an academic or formal church word',
+      'as far as the meaning, force and poetry of the source allow',
+    ])
+      assert.equal(
+        skill.text.split(rule).length - 1,
+        1,
+        `${skill.name}: ${rule}`,
+      );
+});
+
 test('research duties are in the task texts, not in the presentation', async () => {
   const {presentation} =
     await import('../../services/study/src/presentation.ts');

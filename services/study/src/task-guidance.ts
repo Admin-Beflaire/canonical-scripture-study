@@ -2,6 +2,16 @@
  *  Each rule is written once here or in guidance.ts. The rules for each tool argument stay with
  *  the tools. */
 
+/** The websites a host may consult besides the study tool; every skill holds this one list. */
+export const OUTSIDE_WEBSITES = `Outside websites
+- Look something up outside the study tool only when the question needs it and the evidence the tool returned for it is missing or insufficient.
+- In every study, consult only these agreed external websites and limit every web search to them. Do not open, use or cite any other website, also when a search lists it. Use each site only for what its line names, and open only those the question needs. When these do not give what is needed, stop looking and report the gap. Your own knowledge stays usable under the other rules and is never presented as something you looked up.
+- Word meanings: STEP Bible (https://www.stepbible.org/), Logeion (https://logeion.uchicago.edu/), Open Scriptures Hebrew Lexicon (https://github.com/openscriptures/HebrewLexicon; on GitHub only this repository).
+- Words, background and interpretations: BibleProject (https://bibleproject.com/), Bible Odyssey (https://www.bibleodyssey.org/), TheTorah.com (https://www.thetorah.com/), Tyndale Bulletin (https://tyndalebulletin.org/).
+- What a tradition or classic writer teaches, only for reporting it accurately: Roman Catholic (https://www.vatican.va/); Eastern Orthodox (https://www.goarch.org/, https://www.oca.org/); the Westminster standards (https://opc.org/); the Lutheran confessions (https://bookofconcord.cph.org/); Augustine, Luther, Calvin and other classic writers (https://ccel.org/).
+- A website never decides what the text means. Put what it holds in your own words and do not copy its text. Never claim to have consulted a page you could not open.
+- These rules are about looking things up. Naming or linking a source of the study tool, as its attribution and licence require, stays; it is not a website you consulted.`;
+
 /** How witnesses are weighed; translating and comparing both use it. */
 export const WITNESS_POINTS = `- Witnesses are weighed, not counted: many copies of one family or text type count as one voice.
 - Points for the likely original wording:
@@ -60,7 +70,7 @@ God's character
 ${CHARACTER_RULES}
 - God's character is part of the work, like the points: do not write about the check, the statement or an outcome for each reading unless the reader asks to see the check. When no statement is selected, the Limits line says so.
 - Where God's character shapes how a place is explained, or which reading is strongest or how sure you are, give that reason there, as a plain statement about the text and God.
-- Name a rejected reading in part 5, after the others, as not acceptable, with the reason; never offer it as strongest or as possible. If no reading remains, say that none is acceptable yet and leave the question open.
+- Name a rejected reading in part 5, after the others, as not acceptable; never offer it as strongest or as possible. If no reading remains, say that none is acceptable yet and leave the question open.
 - Show the check only when the reader asks; then name the statement with its version and say for each interpretation what it implies about God, where that fits his revealed character and where it creates tension, or why you find no tension.
 
 Background layers
@@ -88,7 +98,7 @@ Weighing interpretations (points)
 - Mark your own interpretation as your own and never attribute it to others; when it matches a known one, say so. Say what speaks against it, and give it nothing for being new.
 
 Sources
-- Attribute a reading to a person or tradition only when you are sure of it, and never as if you had read it firsthand.`;
+- Attribute a reading to a person or tradition only when you are sure of it, and claim to have read a work only when you opened and read it.`;
 
 export const COMPARISON = `Comparison:
 

@@ -4,6 +4,7 @@ import {
   COMPARISON,
   CONCLUSION_CHECK,
   EXEGESIS,
+  OUTSIDE_WEBSITES,
   SOURCE_INSPECTION,
   THEME,
   TRANSLATION_KEY,
@@ -17,7 +18,7 @@ import {presentation} from './presentation.ts';
  *  text with get_guidance, and passes the code it ends with in every study call. The
  *  instructions only lead there. Every rule on using the study tool is complete in the tool's
  *  or a field's description. */
-export const GUIDANCE_VERSION = 'study-guidance/29';
+export const GUIDANCE_VERSION = 'study-guidance/30';
 
 const METHOD = `Method:
 - Read the wording and grammar in the original language first, then the literary and historical context. When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) at every detail level. In a translation, give its argument in one or two sentences before the translation at standard and full, and do not write it at concise. In other study requests, summarise its argument before explaining the asked verses.
@@ -25,6 +26,7 @@ const METHOD = `Method:
 - Read Christ-centred without rewriting what earlier texts meant in their own setting.
 - Look for alternatives and contrary evidence. Name doctrinal premises that need independent support and how they depend on each other. Watch for direct or indirect circular reasoning and unsupported assumptions.
 - Compare explanations by contextual support, explanatory strength and difficulties. Where support is comparable, prefer the one with fewer unsupported assumptions, and say where uncertainty remains.
+- When an answer rejects an interpretation of Scripture, it names that interpretation, the reason and the Bible texts that speak against it.
 - Treat scholarship and outside concepts as attributed arguments, not missing biblical premises. Keep source evidence, your own translation and conclusions, and outside sources clearly separate.
 - God's character is the light in which you work out your own explanation of what Scripture means, from the start, and the test for every explanation and for every theological conclusion of your finished answer. The conclusion-check skill gives the approved statement of it, when one exists: it never decides a translation, it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
 
@@ -70,15 +72,15 @@ Evidence
 - Call study again with each continuation until none is returned, and read the limitations and remaining fields. Do this, and read the enclosing unit the translation needs, at every level.
 - When the asked verses depend on a larger enclosing or preceding unit, read that unit fully (across batches) at every detail level and use its argument to decide the translation. Then give its argument in one or two sentences before the translation at standard and full; at concise do not write it (Part 2).
 - A level never changes the study tool's depth setting or the research. At every level make the same Study tool calls, follow every continuation, read the same evidence and do the research needed to decide a choice. Concise means fewer notes, not less checking.
-- Make outside lookups only for a question that needs one. Explain only sources you consulted.
+- Explain only sources you consulted.
 - When the study tool returns no text of a witness (for example the Septuagint (LXX), the Dead Sea Scrolls, the Samaritan Pentateuch, a Targum, the Vulgate or New Testament manuscripts) and the passage has a quotation of other Scripture or a textual difference, use your own knowledge of that witness to flag where it is known to differ and what it reads. It only flags: it never decides which reading is translated and earns no points; the reading follows the evidence the tool returned. Keep it out of every translation decision: reading choice, matching a New Testament quotation to a witness, and weighing key terms. Mark it "(outside knowledge, unchecked)". If you know of no difference, say nothing; never invent one. Unverified testimony about a witness (for example a Dead Sea Scrolls manuscript) is a lead to flag in the same way, never evidence, unless you cite checked evidence. At concise, put it in the "Limits:" line as a brief fragment instead of a footnote.
 - Name what the evidence is. A flag such as a TAGNT edition list shows which editions carry a reading; it is not manuscript evidence, and edition names do not show that witnesses are independent or dependent. Treat witnesses as one voice only where the evidence shows they go back to one text-form. Where only one source is returned or the evidence ties, call the reading provisional and say in a few words what it rests on (for example "edition flags only"); do not invent a winning case.
 - When a passage quotes other Scripture, or an Old Testament passage is quoted in the New Testament, read the quoted passages and the quoting passages: before awarding quotation priority or calling a witness match decisive, read the actual quotation and the candidate source wording, whichever passage the reader asked to translate. Limit this to relevant direct quotations and plausible source passages, read within available coverage with the same Study tool calls at every level; no broad cross-reference search is needed. Label the exact returned evidence, the candidate links and what remains unresolved, and say apart whether a comparison that could be made found no match, or could not be finished because a witness is missing. Where two or more passages are plausible sources (for example 2 Samuel 7:14 and 1 Chronicles 17:13 behind Hebrews 1:5), name them all.
 - When a checked reader mapping is missing, use any native candidates the study result returns and say they are unverified native candidates, not checked matches. Only when exact native text is still needed and the native reference is known, inspect the source by its native numbering, as the source-inspection skill describes, and say that the text was read by native numbering and not by a checked mapping.
-- First retrieve the current project's relevant lexical entries and their continuations; use them whenever available. If the returned entries or limitations show that relevant evidence is missing or insufficient, for a specific translation question consult only these agreed external websites as needed: STEP Bible (https://www.stepbible.org/), Logeion (https://logeion.uchicago.edu/), and Open Scriptures Hebrew Lexicon (https://github.com/openscriptures/HebrewLexicon). Keep outside research focused; do not claim to have consulted an inaccessible resource. Name the consulted resource and explain its relevant sense in your own words; do not reproduce its entry text. A lexicon gives possible senses, not a decision apart from context. The separate exegesis source list is not defined here.
+- First retrieve the current project's relevant lexical entries and their continuations; use them whenever available. If the returned entries or limitations show that relevant evidence is missing or insufficient, for a specific translation question look the word up on the word-meaning websites under "Outside websites". A lexicon gives possible senses, not a decision apart from context.
 Working translation
 - Make your own working translation from the Hebrew, Aramaic or Greek evidence returned. Do not reproduce or lightly adapt the ESV, NASB, NIV, KJV, Statenvertaling, NBV or any other standard translation. Keep a familiar rendering only where the original supports it, never because it is familiar; do not reject one only because it is traditional either.
-- Label it "Working translation" (Dutch: "Werkvertaling"), with the reference in the title (Part 2). Write natural prose in the answer language; Dutch must read as Dutch, not as English in Dutch words.
+- Label it "Working translation" (Dutch: "Werkvertaling"), with the reference in the title (Part 2).
 - Supplied words: set in italics each word in the answer language that has no source word, inflection or construction behind it, including "is" or "are" in a verbless clause. Do not italicize a word that only renders an inflection or construction ("he said" from one verb, "will", "of" for a genitive). The same distinction applies in Dutch. Inside a small-cap quotation, supplied words are italic small caps.
 - Before presenting the translation, reason through consequential lexical, grammatical and textual choices from the evidence and their context. Ensure the chosen rendering follows from the evidence and reasons given; where the evidence does not decide, acknowledge the uncertainty. Do not import a wider theological conclusion into the translation.
 Key terms
@@ -174,6 +176,7 @@ function skill(
   const body = [
     steps(modes, give),
     METHOD,
+    OUTSIDE_WEBSITES,
     task,
     ...presentation(name),
     ...carried,

@@ -740,7 +740,7 @@ test('study batches carry no translation rules; the rules and the full skill kee
     /unclear or conflicting/,
     /A level never changes the study tool's depth setting/,
     /At every level make the same Study tool calls, follow every continuation, read the same evidence/,
-    /Make outside lookups only for a question that needs one/,
+    /Look something up outside the study tool only when the question needs it/,
     /the unit argument before the translation \(standard and full only\)/,
     /Concise exceptions/,
     /Part 1\. Read and decide/,
@@ -748,7 +748,7 @@ test('study batches carry no translation rules; the rules and the full skill kee
   ])
     assert.match(full, needed);
   assert.doesNotMatch(full, /section A|decision 0019|proposal/i);
-  assert.equal(GUIDANCE_VERSION, 'study-guidance/29');
+  assert.equal(GUIDANCE_VERSION, 'study-guidance/30');
   for (const needed of [
     /### Working translation — <reference>/,
     /#### <chapter heading: book and chapter, only when several chapters>/,

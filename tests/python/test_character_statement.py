@@ -71,11 +71,14 @@ class StatementPreparationTest(unittest.TestCase):
         self.storage = storage_for(self.api)
         self.client = control_client_for(self.api)
 
-    def run_unit(self, recipe, unit_id, **changes):
-        kinds = ("source_revision",)
-        if recipe is FETCH:
-            kinds = ("acquisition", "source_revision")
-        self.inputs = [{"kind": kind, "id": SOURCE} for kind in kinds]
+    def run_unit(self, recipe, unit_id, kinds=None, route=SOURCE, **changes):
+        # Control gives every unit of a task all its inputs: a task that fetches and builds
+        # names the acquisition route and the source revision on its build units too.
+        kinds = kinds or ("acquisition", "source_revision")
+        self.inputs = [
+            {"kind": kind, "id": route if kind == "acquisition" else SOURCE}
+            for kind in kinds
+        ]
         return run_recipe_unit(
             self,
             recipe,
@@ -105,10 +108,26 @@ class StatementPreparationTest(unittest.TestCase):
         [output] = self.api.db.execute("SELECT id FROM prepared_outputs").fetchall()
         return output["id"]
 
-    def quality(self, output_id):
+    def quality(self, output_id, **changes):
         return self.run_unit(
-            BUILD, "quality", constraints={"candidate": {"added": [output_id]}}
+            BUILD,
+            "quality",
+            constraints={"candidate": {"added": [output_id]}},
+            **changes,
         )
+
+    def test_a_later_build_task_names_the_source_revision_only(self):
+        output_id = self.fetch_and_prepare()
+        later = ("source_revision",)
+        prepared = self.run_unit(BUILD, "prepare", kinds=later, attempt=2)
+        self.assertEqual(prepared["state"], "succeeded", prepared["diagnostics"])
+        checked = self.quality(output_id, kinds=later)
+        self.assertEqual(checked["state"], "succeeded", checked["diagnostics"])
+
+    def test_a_route_no_fetch_recipe_declares_is_refused(self):
+        self.fetch_and_prepare()
+        refused = self.run_unit(BUILD, "prepare", route="unreviewed:route", attempt=2)
+        self.assertEqual(refused["diagnostics"][0]["code"], "input_not_registered")
 
     def test_fetch_prepare_and_quality_keep_the_approved_record(self):
         output_id = self.fetch_and_prepare()

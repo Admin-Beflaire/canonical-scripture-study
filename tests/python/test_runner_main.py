@@ -18,7 +18,13 @@ from css_preparation.prepare.records import RecordError, RecordSet
 from css_preparation.prepare.records import ReaderBoundaryError
 from css_preparation.runner import __main__ as runner
 from css_preparation.runner.cloudflare import CloudflareConfig
-from css_preparation.runner.recipes import RECIPES, Recipe, load_recipes
+from css_preparation.runner.recipes import (
+    RECIPE_DIRECTORY,
+    RECIPES,
+    Recipe,
+    declared_input,
+    load_recipes,
+)
 from css_preparation.runner.web import Origin, ProviderError
 from preparation_fixture import evidence_a, text_a
 from runner_doubles import TOKEN_ID, LoopbackApi, control_client_for, storage_for
@@ -525,6 +531,49 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(
             (record["tool"], record["stage"]), ("prepare", "building_output")
         )
+
+
+class DeclaredInputTest(unittest.TestCase):
+    """Which unsaved job inputs the reviewed recipe files vouch for."""
+
+    def setUp(self):
+        self.files = {
+            path.stem: json.loads(path.read_text(encoding="utf-8"))
+            for path in RECIPE_DIRECTORY.glob("*.json")
+        }
+        self.build = RECIPES[self.files["character-statement-0-1"]["revision"]]
+
+    def test_every_route_a_recipe_file_names_counts_on_a_build_unit(self):
+        routes = set()
+        for value in self.files.values():
+            # Without task_inputs (acquire-only), Control names the manifest as the route.
+            inputs = value.get("task_inputs") or [
+                {"kind": "acquisition", "id": value["manifest_revision"]}
+            ]
+            routes.update(ref["id"] for ref in inputs if ref["kind"] == "acquisition")
+        self.assertGreater(len(routes), 1)
+        for route in sorted(routes):
+            reference = {"kind": "acquisition", "id": route}
+            self.assertTrue(
+                declared_input(reference, "prepare", self.build, RECIPES), route
+            )
+
+    def test_nothing_else_is_vouched_for(self):
+        fetch = self.files["character-statement-0-1-fetch"]
+        source = fetch["manifest_revision"]
+        # A source revision is vouched for only by the acquire unit that creates it.
+        created = {"kind": "source_revision", "id": source}
+        self.assertTrue(
+            declared_input(created, "acquire", RECIPES[fetch["revision"]], RECIPES)
+        )
+        for reference in (
+            created,
+            {"kind": "acquisition", "id": "unreviewed:route"},
+            {"kind": "artifact", "id": source},
+        ):
+            self.assertFalse(
+                declared_input(reference, "prepare", self.build, RECIPES), reference
+            )
 
 
 if __name__ == "__main__":

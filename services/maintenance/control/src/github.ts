@@ -214,14 +214,14 @@ export class GitHubActions implements WorkflowTransport {
       .map(item => item.name.slice(0, -'.json'.length));
   }
 
-  /** A reviewed file from main, for example a recipe. */
+  /** A reviewed file from main: a recipe, or the source manifest it names. */
   async readFile(path: string): Promise<string | null> {
     if (
-      !/^collection\/recipes\/[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.json$/.test(
+      !/^collection\/(?:recipes|manifests)\/[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.json$/.test(
         path,
       )
     )
-      throw new GitHubError('Only recipes can be read');
+      throw new GitHubError('Only recipes and source manifests can be read');
     try {
       const reply = (await this.call(
         'GET',

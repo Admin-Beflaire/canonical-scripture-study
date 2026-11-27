@@ -181,14 +181,14 @@ class FakeGitHubServer {
     if (path === '/contents/collection/recipes?ref=main')
       return json(
         200,
-        [...this.recipes.keys()].map(key => ({
-          name: key.split('/').pop(),
-          type: 'file',
-        })),
+        [...this.recipes.keys()]
+          .filter(key => key.startsWith('collection/recipes/'))
+          .map(key => ({name: key.split('/').pop(), type: 'file'})),
       );
-    const match = /^\/contents\/(collection\/recipes\/[^?]+)\?ref=main$/.exec(
-      path,
-    );
+    const match =
+      /^\/contents\/(collection\/(?:recipes|manifests)\/[^?]+)\?ref=main$/.exec(
+        path,
+      );
     if (!match) return undefined;
     await this.state.onRecipeRead?.();
     const raw = this.state.rawRecipes.get(match[1]);

@@ -5,6 +5,9 @@ export interface RecipeInput {
   id: string;
 }
 
+export const sameInput = (a: RecipeInput, b: RecipeInput) =>
+  a.kind === b.kind && a.id === b.id;
+
 /** A recipe whose units only acquire fetches an original; any other recipe builds. */
 export const fetchesOnly = (recipe: Recipe) =>
   (recipe.units ?? []).every(unit => unit.kind === 'acquire');

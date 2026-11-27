@@ -2,7 +2,8 @@ import type {Recipe} from './contracts.ts';
 import type {D1Database} from './d1.ts';
 import type {GitHubActions} from './github.ts';
 import {ADMISSION_RULE} from './guidance.ts';
-import {loadRecipe, originalRecorded} from './progress.ts';
+import {originalRecorded} from './progress.ts';
+import {loadRecipe} from './recipe-load.ts';
 import {fetchesOnly, recipeInputs, type RecipeInput} from './recipe-inputs.ts';
 
 const PAGE = 50;

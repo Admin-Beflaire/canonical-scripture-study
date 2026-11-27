@@ -214,7 +214,10 @@ interface Tools {
 
 async function requestTaskTool(tools: Tools, request: TaskRequest) {
   const {db, github, objects} = tools;
-  const result = await requestTask(db, tools.owner(), request);
+  const result = await requestTask(db, tools.owner(), request, {
+    github,
+    objects,
+  });
   if (result.status === 'needs_information')
     return reply(
       'More information is needed from the owner before this task can start.',

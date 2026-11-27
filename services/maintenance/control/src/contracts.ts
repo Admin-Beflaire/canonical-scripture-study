@@ -230,6 +230,7 @@ export interface Recipe {
   revision: string;
   manifest_revision?: string;
   adapter?: {name: string; method_version: string};
+  parameters?: Record<string, unknown>;
   native_extent?: Record<string, unknown>;
   capabilities?: string[];
   /** The inputs a task for this recipe names, so they are never guessed. */

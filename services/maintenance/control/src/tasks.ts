@@ -1,4 +1,5 @@
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
+import {admissionGaps, type AdmissionSources} from './admission.ts';
 import type {InputRef} from './contracts.ts';
 
 /** Task scope, state and owner-instruction resolution (Maintenance Control To-Be §1–2). */
@@ -247,38 +248,6 @@ export function normalizeScope(request: TaskRequest): {
   return {scope, missing};
 }
 
-/** Admission check: a source revision without an eligible admission, or a new acquisition,
- *  needs an explicit owner admission decision reference. Never inferred. */
-export async function admissionGaps(
-  db: D1Database,
-  scope: Scope,
-): Promise<string[]> {
-  const decided = new Set(
-    scope.decision_refs
-      .filter(ref => ref.kind === 'admission' && ref.subject)
-      .map(ref => ref.subject),
-  );
-  const gaps: string[] = [];
-  if (has(scope, 'remove')) return gaps; // Removing data needs no admission.
-  for (const ref of scope.inputs) {
-    if (ref.kind === 'artifact' || decided.has(ref.id)) continue;
-    if (ref.kind === 'source_revision') {
-      const row = await db
-        .prepare(
-          `SELECT COUNT(*) AS total, SUM(both_hosts_eligible = 1) AS eligible
-        FROM admissions WHERE source_revision_id = ?`,
-        )
-        .bind(ref.id)
-        .first<{total: number; eligible: number | null}>();
-      if (row && row.total > 0 && row.eligible === row.total) continue;
-    }
-    gaps.push(
-      `decision_refs: owner admission decision (kind "admission", subject "${ref.id}") — this source is not admitted for both hosts`,
-    );
-  }
-  return gaps;
-}
-
 type Replaced = Pick<TaskRow, 'id' | 'revision'>;
 
 /** The task an earlier request with the same key made, if any: the same scope is the same task. */
@@ -372,13 +341,14 @@ export async function requestTask(
   db: D1Database,
   requester: string,
   request: TaskRequest,
+  sources: AdmissionSources = {github: null, objects: null},
 ): Promise<RequestResult> {
   const {scope, missing} = normalizeScope(request);
   if (missing.length) return {status: 'needs_information', missing};
   const basis = await sha256(canonicalJson(scope));
   const earlier = await existingRequest(db, requester, request, basis);
   if (earlier) return earlier;
-  const gaps = await admissionGaps(db, scope);
+  const gaps = await admissionGaps(db, scope, sources);
   if (gaps.length) return {status: 'needs_information', missing: gaps};
 
   const id = `task-${(await sha256(`${requester}\u0000${request.request_key}`)).slice(0, 24)}`;

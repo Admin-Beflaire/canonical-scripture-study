@@ -17,7 +17,10 @@ Worker nor TypeScript runtime code. Standard library only.
 | `prepare.literary` | Literary units (discontinuous, disputed with alternatives) and attributed relationships from admitted versification mappings. |
 | `runner` | GitHub Actions entry (`python -m css_preparation.runner`) for one Control-dispatched job: Cloudflare REST storage, Control's internal job routes and the reviewed recipe registry. |
 
-Preparation records the owner's admission decisions; it makes none. Unresolved
+Preparation records the owner's admission decisions; it makes none. The reviewed fetch recipe
+(STEPBible) or manifest (acquire-only) states the admission record, and Preparation saves it as
+stated. A fetch verifies an original that is already kept and downloads nothing; bytes that
+differ from those a source revision records are saved neither as an original nor as a record. Unresolved
 eligibility blocks the input. No source is chosen in code, and no
 real acquisition runs from these modules without an owner-instructed Maintenance task.
 

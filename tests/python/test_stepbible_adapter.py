@@ -22,6 +22,7 @@ from css_preparation.adapters.stepbible.prepare import (
     read_component,
 )
 from css_preparation.adapters.stepbible.recipes import (
+    admission_record,
     MAX_PREPARE_UNITS,
     MAX_VERSES,
     dumps,
@@ -490,10 +491,11 @@ class RecipeTest(unittest.TestCase):
                 component = ComponentFetch.from_recipe(value).component
                 self.assertEqual(path.stem, f"stepbible-fetch-{component.component}")
                 self.assert_pinned(value, component, manifest, pinned)
-                fetches[component.component] = (
-                    value["parameters"],
-                    value["task_inputs"],
+                pins = dict(value["parameters"])
+                self.assertEqual(
+                    pins.pop("admission_record"), admission_record(component)
                 )
+                fetches[component.component] = (pins, value["task_inputs"])
         # Every file a book recipe reads is fetched by exactly one recipe with the same pin.
         for path in sorted((ROOT / "collection/recipes").glob("stepbible-t*.json")):
             value = json.loads(path.read_text(encoding="utf-8"))
@@ -524,6 +526,20 @@ class RecipeTest(unittest.TestCase):
         ):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 ComponentFetch.from_recipe({**value, **change})
+
+    def test_fetch_recipe_states_the_admission_record_of_its_own_file(self):
+        value = fetch_recipe(fixture.component("tahot")[0])
+        stated = value["parameters"]["admission_record"]
+        for change in (
+            None,
+            {**stated, "both_hosts_eligible": False},
+            {**stated, "terms_basis": "CC BY 4.0"},
+            {**stated, "notices": ["Another source"]},
+            {**stated, "restrictions": []},
+        ):
+            parameters = {**value["parameters"], "admission_record": change}
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                ComponentFetch.from_recipe({**value, "parameters": parameters})
 
     def test_recipe_must_match_its_component(self):
         value, _, _ = fixture.recipe("tahot")
@@ -556,7 +572,7 @@ class RecipeTest(unittest.TestCase):
                 f"originals/{component.revision_id}/{component.sha256}/"
             )
         )
-        row = component.admission_row()
+        row = ComponentFetch.from_recipe(fetch_recipe(component)).admission
         # CC BY 4.0 allows redistribution; STEPBible's request not to repost is a notice, and the
         # owner keeps the originals in private R2 only.
         self.assertEqual(row["public_redistribution"], "allowed")

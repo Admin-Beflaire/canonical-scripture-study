@@ -4,9 +4,26 @@
   "provider": "Charles C. Bing / GraceLife Ministries",
   "origin": "https://gracelife.org/resources/bibletools/NewTestamentOutlines.pdf",
   "version": "GraceLife Edition 2024",
-  "licence": "These pages may be copied and distributed freely; we only ask that if you quote from this work you give the appropriate credit.",
-  "licence_basis": "PDF page 1: https://gracelife.org/resources/bibletools/NewTestamentOutlines.pdf",
-  "attribution": "Charles C. Bing, New Testament Introductions and Analytical Outlines, GraceLife Edition © 2024, GraceLife Ministries.",
+  "admission_record": {
+    "terms_basis": "PDF page 1: https://gracelife.org/resources/bibletools/NewTestamentOutlines.pdf",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Protected private storage only; never public Git"
+    ],
+    "notices": [
+      "Charles C. Bing, New Testament Introductions and Analytical Outlines, GraceLife Edition © 2024, GraceLife Ministries.",
+      "These pages may be copied and distributed freely; we only ask that if you quote from this work you give the appropriate credit."
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "unresolved"
+  },
   "url": "https://gracelife.org/resources/bibletools/NewTestamentOutlines.pdf",
   "allowed_hosts": [
     "gracelife.org",
@@ -15,7 +32,6 @@
   "max_bytes": 4000000,
   "expected_sha256": "5f7c0ef2a1af623df74f4fb30dc05e1ae48066e2ac6a00486b38d87a2ab8bfcf",
   "byte_count": 1971950,
-  "storage": "Protected private storage only; never public Git",
   "admission": "Owner decision in the Maintenance Control task",
   "format": "PDF (261 pages); outlines and prose, not a columnar dataset."
 }

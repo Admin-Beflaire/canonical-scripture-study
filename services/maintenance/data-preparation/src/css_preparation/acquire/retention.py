@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 from css_shared.error_record import OwnMessage
 
@@ -70,3 +70,45 @@ def assert_usable(record: InputRecord) -> None:
         )
     if not record.complete:
         raise BlockedInputError(f"{record.source_revision_id}: original is incomplete")
+
+
+_LISTS = ("permitted_uses", "restrictions", "notices")
+_FIELDS = {"terms_basis", "both_hosts_eligible", "public_redistribution", *_LISTS}
+
+
+def _stated(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def declared_admission(block: Any, revision: str, component: str) -> dict[str, Any]:
+    """The admission row a reviewed recipe or manifest states, saved as it stands.
+
+    Control compares the same statement with the saved record, so its content is stated there
+    and not in code.
+    """
+    if (
+        not isinstance(block, Mapping)
+        or set(block) != _FIELDS
+        or not _stated(block["terms_basis"])
+        or not all(
+            isinstance(block[name], list)
+            and block[name]
+            and all(_stated(item) for item in block[name])
+            for name in _LISTS
+        )
+        or block["both_hosts_eligible"] is not True
+        or block["public_redistribution"]
+        not in ("allowed", "not_allowed", "unresolved")
+    ):
+        raise BlockedInputError(
+            f"{revision}: the stated admission record is incomplete or not eligible"
+        )
+    return {
+        "id": f"{revision}:{component}",
+        "source_revision_id": revision,
+        "component": component,
+        "terms_basis": block["terms_basis"],
+        **{f"{name}_json": list(block[name]) for name in _LISTS},
+        "both_hosts_eligible": True,
+        "public_redistribution": block["public_redistribution"],
+    }

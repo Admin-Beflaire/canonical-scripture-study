@@ -4,9 +4,26 @@
   "provider": "STEPBible.org, based on work at Tyndale House Cambridge",
   "origin": "https://github.com/STEPBible/STEPBible-Data",
   "version": "STEPBible-Data commit 5de0a47f35f0fc13dfe1430d104e5db8a4285f9c; TEGMC",
-  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
-  "licence_basis": "https://github.com/STEPBible/STEPBible-Data/blob/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/README.md (CC BY 4.0; source file also names CC BY)",
-  "attribution": "STEP Bible (STEPBible.org), based on work at Tyndale House Cambridge; CC BY 4.0; https://stepbible.github.io/STEPBible-Data/; note any changes",
+  "admission_record": {
+    "terms_basis": "https://github.com/STEPBible/STEPBible-Data/blob/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/README.md (CC BY 4.0; source file also names CC BY)",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Protected private storage only; never public Git"
+    ],
+    "notices": [
+      "STEP Bible (STEPBible.org), based on work at Tyndale House Cambridge; CC BY 4.0; https://stepbible.github.io/STEPBible-Data/; note any changes",
+      "Creative Commons Attribution 4.0 International (CC BY 4.0)"
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "unresolved"
+  },
   "url": "https://raw.githubusercontent.com/STEPBible/STEPBible-Data/5de0a47f35f0fc13dfe1430d104e5db8a4285f9c/Morphology%20codes/TEGMC%20-%20Translators%20Expansion%20of%20Greek%20Morphhology%20Codes%20-%20STEPBible.org%20CC%20BY.txt",
   "allowed_hosts": [
     "raw.githubusercontent.com"
@@ -17,6 +34,5 @@
   "upstream_blob_sha": "bd97fa1a9815fb2e75082c3e2b39b7ee6b8c0f78",
   "upstream_byte_count": 467126,
   "format": "UTF-8 tab-separated text; acquire opaque original only",
-  "storage": "Protected private storage only; never public Git",
   "admission": "Owner decision in the Maintenance Control task"
 }

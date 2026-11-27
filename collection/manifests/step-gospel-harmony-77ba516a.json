@@ -4,9 +4,26 @@
   "provider": "STEPBible.org",
   "origin": "https://github.com/STEPBible/step/tree/77ba516a9c1995f3820a6b64a16b5d74c01298b0",
   "version": "step commit 77ba516a9c1995f3820a6b64a16b5d74c01298b0; no separate dataset version",
-  "licence": "BSD 3-Clause (stated in step repository); no separate licence stated in this JSON",
-  "licence_basis": "https://github.com/STEPBible/step/blob/77ba516a9c1995f3820a6b64a16b5d74c01298b0/LICENSE.md",
-  "attribution": "STEPBible.org Harmony of the Gospels; retain BSD notice",
+  "admission_record": {
+    "terms_basis": "https://github.com/STEPBible/step/blob/77ba516a9c1995f3820a6b64a16b5d74c01298b0/LICENSE.md",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Protected private storage only; never public Git"
+    ],
+    "notices": [
+      "STEPBible.org Harmony of the Gospels; retain BSD notice",
+      "BSD 3-Clause (stated in step repository); no separate licence stated in this JSON"
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "unresolved"
+  },
   "url": "https://raw.githubusercontent.com/STEPBible/step/77ba516a9c1995f3820a6b64a16b5d74c01298b0/step-web/src/main/webapp/html/json/gospel_harmony.json",
   "allowed_hosts": [
     "raw.githubusercontent.com"
@@ -14,6 +31,5 @@
   "max_bytes": 100000,
   "expected_sha256": null,
   "format": "JSON table of 174 Gospel events across Matthew, Mark, Luke and John",
-  "storage": "Protected private storage only; never public Git",
   "admission": "Owner decision in the Maintenance Control task"
 }

@@ -4,9 +4,26 @@
   "provider": "Society of Biblical Literature and Logos Bible Software",
   "origin": "https://github.com/Faithlife/SBLGNT",
   "version": "d7f35adca9ec410e1d1499c63b4dd989d76c8d4d",
-  "licence": "CC BY 4.0",
-  "licence_basis": "Source README states CC BY 4.0: https://github.com/Faithlife/SBLGNT/blob/d7f35adca9ec410e1d1499c63b4dd989d76c8d4d/README.md",
-  "attribution": "SBL Greek New Testament, copyright 2010 Society of Biblical Literature and Logos Bible Software, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; https://github.com/Faithlife/SBLGNT; changes must be indicated.",
+  "admission_record": {
+    "terms_basis": "Source README states CC BY 4.0: https://github.com/Faithlife/SBLGNT/blob/d7f35adca9ec410e1d1499c63b4dd989d76c8d4d/README.md",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Protected private storage only; never public Git"
+    ],
+    "notices": [
+      "SBL Greek New Testament, copyright 2010 Society of Biblical Literature and Logos Bible Software, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; https://github.com/Faithlife/SBLGNT; changes must be indicated.",
+      "CC BY 4.0"
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "unresolved"
+  },
   "url": "https://github.com/Faithlife/SBLGNT/archive/d7f35adca9ec410e1d1499c63b4dd989d76c8d4d.zip",
   "allowed_hosts": [
     "github.com",
@@ -14,6 +31,5 @@
   ],
   "max_bytes": 32000000,
   "expected_sha256": null,
-  "storage": "Protected private storage only; never public Git",
   "admission": "Owner decision in the Maintenance Control task"
 }

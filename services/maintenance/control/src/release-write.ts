@@ -78,6 +78,13 @@ export const liftedBy = (scope: Scope) =>
     : scope.decision_refs
         .filter(ref => ref.kind === 'exclusion' && ref.subject)
         .map(ref => ref.subject!);
+/** The source revisions a build drops as a whole. */
+export const replacedBy = (scope: Scope) =>
+  new Set(
+    Array.isArray(scope.constraints.replaces)
+      ? (scope.constraints.replaces as string[])
+      : [],
+  );
 export const recordedBy = (scope: Scope) =>
   has(scope, 'remove')
     ? scope.decision_refs.filter(ref => ref.kind === 'exclusion' && ref.subject)

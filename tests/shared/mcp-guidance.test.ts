@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {controlServer} from '../../services/maintenance/control/src/mcp.ts';
-import {ADMISSION_RULE} from '../../services/maintenance/control/src/guidance.ts';
+import * as rules from '../../services/maintenance/control/src/guidance.ts';
+import {protocolHandler} from '../../packages/shared/src/platform.ts';
 import {studyServer} from '../../services/study/src/mcp.ts';
 import {
   ABSENCE_RULE,
@@ -21,6 +22,7 @@ import {
 import {localD1} from '../maintenance/d1.ts';
 import {buildPassageFixture} from '../study/passage-fixture.ts';
 import {delivered, fieldDescriptions} from './mcp-call.ts';
+import {readSkills} from './mcp-skills.ts';
 
 /** Lengths at which AI hosts are measured or reported to cut long text; what lies beyond
  *  a host's limit never reaches the AI. */
@@ -57,7 +59,7 @@ test('Control: the rules come first, then everything else that is needed', async
     "only on the owner's explicit instruction",
     'start with get_recipe',
     'never create an approval',
-    ADMISSION_RULE,
+    rules.ADMISSION_RULE,
     'If a result is "needs_information", ask exactly the listed questions.',
   ]);
   within(instructions, NEEDED, [
@@ -83,6 +85,75 @@ test('Control: only fetch and build start from a recipe, and exclusion stays an 
     'only for an exclusion the owner decided, one per source revision as subject',
   ])
     assert.ok(fields.includes(rule), rule);
+});
+
+/** What a host without skills receives on connect. */
+async function connected() {
+  const {instructions, tools} = await delivered(control);
+  return [
+    instructions,
+    ...tools.flatMap(tool => [
+      tool.description,
+      ...fieldDescriptions(tool.inputSchema),
+    ]),
+  ].join('\n');
+}
+
+async function controlSkills() {
+  const handler = protocolHandler(control, false);
+  const skills = await readSkills(handler);
+  await handler.close();
+  return skills;
+}
+
+test('Control: exactly four skills with digests, named within what hosts keep', async () => {
+  const names = (await controlSkills()).map(skill => skill.name);
+  assert.deepEqual(names.sort(), [
+    'add-source',
+    'follow-tasks',
+    'remove-source',
+    'restore-data',
+  ]);
+  const {instructions} = await delivered(control);
+  within(instructions, NEEDED, names);
+});
+
+test('Control: every rule in a skill also reaches a host without skills', async () => {
+  const received = await connected();
+  for (const {name, file} of await controlSkills()) {
+    const body = file.slice(file.indexOf('\n---\n') + 5).split('\n');
+    const lines = body.filter(line => line && !line.endsWith(':'));
+    assert.ok(lines.length, name);
+    for (const line of lines) {
+      assert.ok(line.startsWith('- '), `${name}: not a rule: ${line}`);
+      assert.ok(received.includes(line.slice(2)), `${name}: ${line}`);
+    }
+  }
+});
+
+test('Control: each kind of request has its way in exactly one skill', async () => {
+  const skills = await controlSkills();
+  const ways: [rule: string, skill: string][] = [
+    [rules.BELONGING, 'add-source'],
+    [rules.STATEMENT_NEEDS, 'add-source'],
+    [rules.PREPARE, 'add-source'],
+    [rules.CANDIDATE, 'add-source'],
+    [rules.REPLACE_ORDER, 'add-source'],
+    [rules.REPLACE_PART, 'add-source'],
+    [rules.REMOVE, 'remove-source'],
+    [rules.EXCLUDE, 'remove-source'],
+    [rules.ROLLBACK, 'restore-data'],
+    [rules.VALIDATE, 'restore-data'],
+    [rules.CONTROL_RULE, 'follow-tasks'],
+    [rules.SUPERSEDE, 'follow-tasks'],
+    [rules.TIDY, 'follow-tasks'],
+  ];
+  for (const [rule, name] of ways)
+    assert.deepEqual(
+      skills.filter(item => item.file.includes(rule)).map(item => item.name),
+      [name],
+      rule,
+    );
 });
 
 test('Study: connecting leads to the skills first, and the study tool says so', async () => {

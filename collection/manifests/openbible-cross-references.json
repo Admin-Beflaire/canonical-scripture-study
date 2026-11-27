@@ -4,9 +4,26 @@
   "provider": "OpenBible.info",
   "origin": "https://www.openbible.info/labs/cross-references/",
   "version": "Snapshot downloaded 2026-11-20; file header dated 2026-11-16",
-  "licence": "Creative Commons Attribution 4.0 International (CC BY 4.0): share and adapt with attribution, licence link and indication of changes.",
-  "licence_basis": "https://www.openbible.info/labs/cross-references/ links https://creativecommons.org/licenses/by/4.0/",
-  "attribution": "OpenBible.info, Bible Cross References, https://www.openbible.info/labs/cross-references/, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; indicate changes.",
+  "admission_record": {
+    "terms_basis": "https://www.openbible.info/labs/cross-references/ links https://creativecommons.org/licenses/by/4.0/",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Protected private storage only; never public Git"
+    ],
+    "notices": [
+      "OpenBible.info, Bible Cross References, https://www.openbible.info/labs/cross-references/, CC BY 4.0, https://creativecommons.org/licenses/by/4.0/; indicate changes.",
+      "Creative Commons Attribution 4.0 International (CC BY 4.0): share and adapt with attribution, licence link and indication of changes."
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "unresolved"
+  },
   "url": "https://a.openbible.info/data/cross-references.zip",
   "allowed_hosts": [
     "a.openbible.info"
@@ -16,6 +33,5 @@
   "observed_sha256": "b54a2a381e3eb587ca4ea34ba3f1d052923c49625d857014041f3254eb7c4f1e",
   "byte_count": 1982822,
   "format": "ZIP containing cross_references.txt, tab-separated text. Header: From Verse, To Verse, Votes, followed by a comment with site, licence and date. Live download may change; receipt records actual acquired hash and size.",
-  "storage": "Protected private storage only; never public Git",
   "admission": "Owner decision in the Maintenance Control task"
 }

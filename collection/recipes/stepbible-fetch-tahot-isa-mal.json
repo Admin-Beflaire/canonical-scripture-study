@@ -1,7 +1,7 @@
 {
   "recipe_version": "preparation-recipe/1",
   "id": "stepbible-fetch-tahot-isa-mal",
-  "revision": "stepbible-fetch-tahot-isa-mal/5de0a47f35f0/2",
+  "revision": "stepbible-fetch-tahot-isa-mal/5de0a47f35f0/3",
   "adapter": {
     "name": "stepbible-fetch",
     "method_version": "stepbible-fetch/1"
@@ -13,7 +13,28 @@
     "component": "tahot-isa-mal",
     "path": "Translators Amalgamated OT+NT/TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt",
     "sha256": "d5a609f5a4b9f7757a2615e55877b07f9f6931a8afccef012c0b4bf662caf540",
-    "byte_count": 17977558
+    "byte_count": 17977558,
+    "admission_record": {
+      "terms_basis": "CC BY 4.0 licence notice in Translators Amalgamated OT+NT/TAHOT Isa-Mal - Translators Amalgamated Hebrew OT - STEPBible.org CC BY.txt at STEPBible-Data commit 5de0a47f35f0fc13dfe1430d104e5db8a4285f9c",
+      "permitted_uses": [
+        "acquire",
+        "retain",
+        "backup",
+        "prepare",
+        "chatgpt",
+        "claude"
+      ],
+      "restrictions": [
+        "Attribute Tyndale House and STEPBible.org with a link to STEPBible.github.io/STEPBible-Data",
+        "Make changes to the data visible to its users"
+      ],
+      "notices": [
+        "Translators Amalgamated Hebrew OT (TAHOT) by STEPBible.org, based on work at Tyndale House Cambridge; CC BY 4.0; https://STEPBible.github.io/STEPBible-Data",
+        "STEPBible asks: please do not post copies of this data file elsewhere, so that it remains the single up-to-date source"
+      ],
+      "both_hosts_eligible": true,
+      "public_redistribution": "allowed"
+    }
   },
   "native_extent": {
     "component": "tahot-isa-mal"

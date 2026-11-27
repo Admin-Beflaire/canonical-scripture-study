@@ -1,9 +1,9 @@
-import type {Recipe} from './contracts.ts';
+import type {InputRef, Recipe} from './contracts.ts';
 
-export interface RecipeInput {
-  kind: string;
-  id: string;
-}
+export type RecipeInput = Pick<InputRef, 'kind' | 'id'>;
+
+export const sameInput = (a: RecipeInput, b: RecipeInput) =>
+  a.kind === b.kind && a.id === b.id;
 
 /** A recipe whose units only acquire fetches an original; any other recipe builds. */
 export const fetchesOnly = (recipe: Recipe) =>

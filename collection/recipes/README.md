@@ -13,8 +13,9 @@ STEPBible and language-aid recipes also list `task_inputs`: the inputs a task fo
 
 `stepbible-fetch-<component>.json` fetches one pinned STEPBible-Data file for the
 `stepbible-fetch` adapter: its single `acquire` unit keeps the original in protected private
-storage only and registers its source revision and admission. One fetch of a file serves every
-book in it.
+storage only and registers its source revision and the admission record the recipe states in
+`parameters.admission_record`. One fetch of a file serves every book in it. A fetch that finds
+the original already kept verifies it and downloads nothing.
 
 `stepbible-tahot-<book>.json` and `stepbible-tagnt-<book>.json` are one recipe per book for
 the `stepbible-tagged` adapter. Each pins the same STEPBible-Data commit, file path, SHA-256 and
@@ -27,7 +28,7 @@ revision `stepbible-<tahot|tagnt>:<commit12>`, with the owner's admission decisi
 
 A recipe says only how to do its step for that source. One task can chain the steps
 (`steps: ["fetch", "build", "select"]`, with `constraints.fetch_recipe` and `constraints.recipe`);
-Control's `get_recipe` answers with the request for a recipe and the fetch recipe its original needs.
+Control's `get_recipe` answers with the requests to send for a recipe, in order, fetching an original that is not kept, and names the other build recipes over the same original and extent (recipe IDs that start with the same name, such as `…-reader`).
 
 The fetch recipes and the base book recipes are written by
 `python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files

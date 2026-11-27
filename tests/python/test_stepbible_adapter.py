@@ -1,5 +1,7 @@
 """DP-05a: STEPBible tagged-text adapter, recipes and runner gate (synthetic files only)."""
 
+from dataclasses import replace
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -22,6 +24,7 @@ from css_preparation.adapters.stepbible.prepare import (
     read_component,
 )
 from css_preparation.adapters.stepbible.recipes import (
+    admission_record,
     MAX_PREPARE_UNITS,
     MAX_VERSES,
     dumps,
@@ -490,10 +493,11 @@ class RecipeTest(unittest.TestCase):
                 component = ComponentFetch.from_recipe(value).component
                 self.assertEqual(path.stem, f"stepbible-fetch-{component.component}")
                 self.assert_pinned(value, component, manifest, pinned)
-                fetches[component.component] = (
-                    value["parameters"],
-                    value["task_inputs"],
+                pins = dict(value["parameters"])
+                self.assertEqual(
+                    pins.pop("admission_record"), admission_record(component)
                 )
+                fetches[component.component] = (pins, value["task_inputs"])
         # Every file a book recipe reads is fetched by exactly one recipe with the same pin.
         for path in sorted((ROOT / "collection/recipes").glob("stepbible-t*.json")):
             value = json.loads(path.read_text(encoding="utf-8"))
@@ -524,6 +528,20 @@ class RecipeTest(unittest.TestCase):
         ):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 ComponentFetch.from_recipe({**value, **change})
+
+    def test_fetch_recipe_states_the_admission_record_of_its_own_file(self):
+        value = fetch_recipe(fixture.component("tahot")[0])
+        stated = value["parameters"]["admission_record"]
+        for change in (
+            None,
+            {**stated, "both_hosts_eligible": False},
+            {**stated, "terms_basis": "CC BY 4.0"},
+            {**stated, "notices": ["Another source"]},
+            {**stated, "restrictions": []},
+        ):
+            parameters = {**value["parameters"], "admission_record": change}
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                ComponentFetch.from_recipe({**value, "parameters": parameters})
 
     def test_recipe_must_match_its_component(self):
         value, _, _ = fixture.recipe("tahot")
@@ -556,7 +574,7 @@ class RecipeTest(unittest.TestCase):
                 f"originals/{component.revision_id}/{component.sha256}/"
             )
         )
-        row = component.admission_row()
+        row = ComponentFetch.from_recipe(fetch_recipe(component)).admission
         # CC BY 4.0 allows redistribution; STEPBible's request not to repost is a notice, and the
         # owner keeps the originals in private R2 only.
         self.assertEqual(row["public_redistribution"], "allowed")
@@ -675,6 +693,47 @@ class RunnerFlowTest(unittest.TestCase):
             self.job_run("acquire", input_refs=other)["state"], "cancelled"
         )
         self.assertEqual(self.api.batches, [])
+
+    def test_another_file_under_a_recorded_component_saves_nothing(self):
+        def serve(data):
+            def download(route, destination):
+                destination.write_bytes(data)
+                return mock.Mock(complete=True, path=destination)
+
+            return mock.patch(
+                "css_preparation.acquire.fetch.transfer", side_effect=download
+            )
+
+        with serve(self.raw):
+            self.assertEqual(self.job_run("acquire")["state"], "succeeded")
+        stored, batches = dict(self.api.objects), len(self.api.batches)
+        other = self.raw + b"changed\n"
+        changed = {
+            "sha256": hashlib.sha256(other).hexdigest(),
+            "byte_count": len(other),
+        }
+        job = {"input_refs": self.inputs}
+
+        # Another path: the recipe states another record than the saved one.
+        moved = replace(self.component, path="Translators/other.txt", **changed)
+        with serve(other) as fetched, self.assertRaisesRegex(RecordError, "new source"):
+            ComponentFetch.from_recipe(fetch_recipe(moved)).acquire(job, self.storage)
+        fetched.assert_not_called()
+        # Another digest for the same commit and path: that route still holds the old bytes.
+        repinned = replace(self.component, **changed)
+        with serve(self.raw), self.assertRaisesRegex(RecordError, "pinned component"):
+            ComponentFetch.from_recipe(fetch_recipe(repinned)).acquire(
+                job, self.storage
+            )
+        self.assertEqual(self.api.objects, stored)
+        self.assertEqual(len(self.api.batches), batches)
+
+        # The recorded file itself is fetched again when its stored copy is missing.
+        del self.api.objects[self.component.original_key]
+        with serve(self.raw) as fetched:
+            ComponentFetch.from_recipe(self.fetch_value).acquire(job, self.storage)
+        self.assertEqual(fetched.call_count, 1)
+        self.assertEqual(self.api.objects, stored)
 
     def test_task_without_both_inputs_is_refused(self):
         with mock.patch("css_preparation.acquire.fetch.transfer") as fetched:

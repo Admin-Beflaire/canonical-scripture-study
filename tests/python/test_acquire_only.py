@@ -9,14 +9,71 @@ import unittest
 from unittest.mock import patch
 
 from css_preparation.acquire.transfer import TransferResult
-from css_preparation.adapters.acquire_only import AcquireRecipe
+from css_preparation.adapters.acquire_only import (
+    PRIVATE_STORAGE,
+    AcquireRecipe,
+)
 from css_preparation.prepare.records import RecordError
 from css_preparation.runner.recipes import load_recipes
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
+class Storage:
+    """The runner storage an acquire unit uses: private objects and saved source rows."""
+
+    def __init__(self):
+        self.blobs, self.rows = {}, {}
+
+    def put_blob(self, key, payload):
+        self.blobs[key] = payload
+
+    def read_blob(self, key):
+        return self.blobs[key]
+
+    def read_row(self, kind, identity):
+        return self.rows.get(identity) if kind == "source_node" else None
+
+    def save(self, records):
+        self.rows.update({row["id"]: row for row in records.rows("source_node")})
+
+
+def recipe_value(name):
+    return json.loads((ROOT / f"collection/recipes/{name}.json").read_text())
+
+
+def job_for(recipe):
+    manifest = recipe.manifest
+    return {
+        "unit_id": "acquire",
+        "native_extent": recipe.recipe["native_extent"],
+        "input_refs": [
+            {"kind": "acquisition", "id": manifest["manifest_revision"]},
+            {"kind": "source_revision", "id": manifest["source_revision"]},
+        ],
+    }
+
+
+def serving(data, upstream="etag:synthetic"):
+    """A transfer that delivers these bytes, as the bounded transfer reports them."""
+
+    def transfer(route, destination):
+        destination.write_bytes(data)
+        digest = hashlib.sha256(data).hexdigest()
+        return TransferResult(
+            destination, len(data), digest, upstream, True, False, False
+        )
+
+    return patch("css_preparation.acquire.fetch.transfer", side_effect=transfer)
+
+
 class AcquireOnlyTest(unittest.TestCase):
+    def assert_private(self, manifest):
+        record = manifest["admission_record"]
+        self.assertEqual(record["restrictions"], [PRIVATE_STORAGE])
+        self.assertEqual(record["public_redistribution"], "unresolved")
+        self.assertNotIn("git_history", record["permitted_uses"])
+
     def test_recipes_resolve_and_unknown_adapter_is_refused(self):
         recipes = load_recipes()
         for name in ("berean-bsb-v5-24", "sblgnt-d7f35adca9ec"):
@@ -50,10 +107,7 @@ class AcquireOnlyTest(unittest.TestCase):
                     (ROOT / "collection/recipes" / (name + ".json")).read_text()
                 )
                 manifest = AcquireRecipe.from_recipe(recipe).manifest
-                self.assertEqual(
-                    manifest["storage"],
-                    "Protected private storage only; never public Git",
-                )
+                self.assert_private(manifest)
                 self.assertEqual(
                     manifest["admission"],
                     "Owner decision in the Maintenance Control task",
@@ -104,10 +158,7 @@ class AcquireOnlyTest(unittest.TestCase):
                     manifest["allowed_hosts"], ["raw.githubusercontent.com"]
                 )
                 self.assertLess(manifest["upstream_byte_count"], manifest["max_bytes"])
-                self.assertEqual(
-                    manifest["storage"],
-                    "Protected private storage only; never public Git",
-                )
+                self.assert_private(manifest)
                 self.assertEqual(
                     manifest["admission"],
                     "Owner decision in the Maintenance Control task",
@@ -145,10 +196,7 @@ class AcquireOnlyTest(unittest.TestCase):
                 self.assertEqual(manifest["upstream_blob_sha"], blob)
                 self.assertEqual(manifest["upstream_byte_count"], size)
                 self.assertLess(size, manifest["max_bytes"])
-                self.assertEqual(
-                    manifest["storage"],
-                    "Protected private storage only; never public Git",
-                )
+                self.assert_private(manifest)
                 self.assertEqual([unit["kind"] for unit in raw["units"]], ["acquire"])
 
     def test_private_original_and_receipt(self):
@@ -167,15 +215,6 @@ class AcquireOnlyTest(unittest.TestCase):
         }
         data = b"synthetic archive bytes"
         digest = hashlib.sha256(data).hexdigest()
-
-        class Storage:
-            blobs = {}
-
-            def put_blob(self, key, payload):
-                self.blobs[key] = payload
-
-            def read_blob(self, key):
-                return self.blobs[key]
 
         storage = Storage()
 
@@ -203,6 +242,100 @@ class AcquireOnlyTest(unittest.TestCase):
         bad["input_refs"] = []
         with self.assertRaises(RecordError):
             recipe.acquire(bad, storage)
+
+    def test_a_kept_original_is_verified_and_nothing_is_downloaded(self):
+        # A real route that pins no digest: the saved revision records what was kept.
+        recipe = AcquireRecipe.from_recipe(recipe_value("sblgnt-d7f35adca9ec"))
+        self.assertIsNone(recipe.manifest.get("expected_sha256"))
+        storage, data = Storage(), b"synthetic archive bytes"
+        with serving(data):
+            first = recipe.acquire(job_for(recipe), storage)
+        storage.save(first)
+        with serving(b"a newer upload", "etag:newer") as fetched:
+            again = recipe.acquire(job_for(recipe), storage)
+        fetched.assert_not_called()
+        for kind in ("source_node", "admission"):
+            self.assertEqual(again.rows(kind), first.rows(kind))
+
+    def test_a_damaged_kept_original_stops_the_fetch(self):
+        recipe = AcquireRecipe.from_recipe(recipe_value("sblgnt-d7f35adca9ec"))
+        storage = Storage()
+        with serving(b"synthetic archive bytes"):
+            storage.save(recipe.acquire(job_for(recipe), storage))
+        (key,) = storage.blobs
+        storage.blobs[key] = b"damaged"
+        with serving(b"x") as fetched, self.assertRaisesRegex(RecordError, "stored"):
+            recipe.acquire(job_for(recipe), storage)
+        fetched.assert_not_called()
+
+    def test_a_missing_original_is_saved_only_when_it_matches_the_record(self):
+        recipe = AcquireRecipe.from_recipe(recipe_value("sblgnt-d7f35adca9ec"))
+        storage, data = Storage(), b"synthetic archive bytes"
+        with serving(data):
+            first = recipe.acquire(job_for(recipe), storage)
+        storage.save(first)
+        storage.blobs.clear()
+        with serving(b"other bytes") as fetched:
+            with self.assertRaisesRegex(RecordError, "differ from those recorded"):
+                recipe.acquire(job_for(recipe), storage)
+        fetched.assert_called_once()
+        self.assertEqual(storage.blobs, {})
+        # The same bytes under a new transfer basis restore the original; the saved identity
+        # stays exactly as recorded, so the shared rows do not conflict.
+        with serving(data, "etag:newer"):
+            again = recipe.acquire(job_for(recipe), storage)
+        self.assertEqual(list(storage.blobs.values()), [data])
+        self.assertEqual(again.rows("source_node"), first.rows("source_node"))
+
+    def test_a_pinned_original_kept_without_a_record_is_registered_without_a_download(
+        self,
+    ):
+        recipe = AcquireRecipe.from_recipe(
+            recipe_value("character-statement-0-2-fetch")
+        )
+        data = (ROOT / "collection/character-of-god-statement.json").read_bytes()
+        storage = Storage()
+        digest = recipe.manifest["expected_sha256"]
+        key = f"originals/{recipe.manifest['source_revision']}/{digest}/original"
+        storage.blobs[key] = data
+        with serving(data) as fetched:
+            records = recipe.acquire(job_for(recipe), storage)
+        fetched.assert_not_called()
+        node = records.rows("source_node")[-1]
+        self.assertEqual(node["details_json"]["sha256"], digest)
+        self.assertEqual(node["details_json"]["locator"], key)
+
+    def test_the_manifest_states_the_whole_admission_record(self):
+        manifest_dir = ROOT / "collection/manifests"
+        for name in ("sblgnt-d7f35adca9ec", "character-statement-0-2-fetch"):
+            value = recipe_value(name)
+            filename = value["parameters"]["manifest"]
+            manifest = json.loads((manifest_dir / filename).read_text())
+            recipe = AcquireRecipe.from_recipe(value)
+            record = manifest["admission_record"]
+            self.assertEqual(
+                recipe.admission["terms_basis"], record["terms_basis"], name
+            )
+            for field in ("permitted_uses", "restrictions", "notices"):
+                self.assertEqual(recipe.admission[field + "_json"], record[field])
+            for change in (
+                {"both_hosts_eligible": False},
+                {"restrictions": ["Anywhere"]},
+                {"public_redistribution": "allowed"}
+                if record["public_redistribution"] != "allowed"
+                else {"public_redistribution": "unresolved"},
+                {"notices": []},
+                {"extra": "x"},
+            ):
+                changed = {**manifest, "admission_record": {**record, **change}}
+                with (
+                    self.subTest(name=name, change=change),
+                    tempfile.TemporaryDirectory() as d,
+                    patch("css_preparation.adapters.acquire_only.MANIFESTS", Path(d)),
+                ):
+                    Path(d, filename).write_text(json.dumps(changed))
+                    with self.assertRaises(ValueError):
+                        AcquireRecipe.from_recipe(value)
 
     def test_refuses_unknown_host(self):
         value = json.loads(

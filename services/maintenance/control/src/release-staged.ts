@@ -2,6 +2,7 @@ import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import {
   inChunks,
   members,
+  outputs,
   releaseVersions,
   storedSizes,
   validateMembers,
@@ -10,11 +11,13 @@ import {
   type Stored,
 } from './release-check.ts';
 import {membership, overlaps} from './release-members.ts';
+import {replacementProblems} from './release-replace.ts';
 import {
   liftedBy,
   makeCurrent,
   recordedBy,
   releaseIdOf,
+  replacedBy,
   type Plan,
   type SelectResult,
 } from './release-write.ts';
@@ -85,11 +88,7 @@ async function rebase(
   const concurrent = current.filter(
     item => !originalIds.has(item.id) && !candidateIds.has(item.id),
   );
-  const replaces = new Set(
-    Array.isArray(buildScope.constraints.replaces)
-      ? (buildScope.constraints.replaces as string[])
-      : [],
-  );
+  const replaces = replacedBy(buildScope);
   if (
     concurrent.some(
       item =>
@@ -139,6 +138,24 @@ async function validateCombined(
       `${listed - candidate.length} listed output(s) are not saved`,
     );
   return check;
+}
+
+/** A prepared build is held to the same replacement rule when it is made current. */
+async function lostByReplacing(
+  db: D1Database,
+  {built, buildScope}: Staging,
+  {current, combined}: Rebased,
+) {
+  const replaces = replacedBy(buildScope);
+  if (!replaces.size) return [];
+  const own = (built.scope_report?.candidate ?? []) as string[];
+  return replacementProblems(
+    db,
+    replaces,
+    current,
+    combined.all,
+    await outputs(db, own),
+  );
 }
 
 const sameMembers = (candidate: Output[], ids: string[]) =>
@@ -219,6 +236,8 @@ async function releasePlan(
   if (typeof staging === 'string') return refuse(staging);
   const rebased = await rebase(db, staging, currentId);
   if (typeof rebased === 'string') return refuse(rebased);
+  const lost = await lostByReplacing(db, staging, rebased);
+  if (lost.length) return {outcome, problems: lost};
   const check = await validateCombined(db, stored, staging, rebased);
   if (check.problems.length)
     return refuse(

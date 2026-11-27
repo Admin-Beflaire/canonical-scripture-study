@@ -4,9 +4,27 @@
   "provider": "Canonical Scripture Study owner",
   "origin": "collection/character-of-god-statement.json of the public application repository",
   "version": "God's Character 0.2",
-  "licence": "Owner-supplied statement; the software licence does not cover it.",
-  "licence_basis": "The application owner supplies this statement as an input file of the public application repository and permits its public placement there (owner decision, 27 November 2026).",
-  "attribution": "God's Character, version 0.2, the application owner's statement",
+  "admission_record": {
+    "terms_basis": "The application owner supplies this statement as an input file of the public application repository and permits its public placement there (owner decision, 27 November 2026).",
+    "permitted_uses": [
+      "acquire",
+      "retain",
+      "git_history",
+      "backup",
+      "prepare",
+      "chatgpt",
+      "claude"
+    ],
+    "restrictions": [
+      "Owner file in the public repository; the acquired copy in protected private storage"
+    ],
+    "notices": [
+      "God's Character, version 0.2, the application owner's statement",
+      "Owner-supplied statement; the software licence does not cover it."
+    ],
+    "both_hosts_eligible": true,
+    "public_redistribution": "allowed"
+  },
   "url": "https://raw.githubusercontent.com/Admin-Beflaire/canonical-scripture-study/main/collection/character-of-god-statement.json",
   "allowed_hosts": [
     "raw.githubusercontent.com"
@@ -14,7 +32,6 @@
   "max_bytes": 64000,
   "expected_sha256": "de83ae1507088545f04cb956d9556ef1339468a466642ba3cc14e6ae27cce0f4",
   "byte_count": 16177,
-  "storage": "Owner file in the public repository; the acquired copy in protected private storage",
   "admission": "Owner decision in the Maintenance Control task",
   "format": "character-statement/1 JSON"
 }

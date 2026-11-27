@@ -21,7 +21,7 @@ from typing import Any
 
 from . import CAPABILITIES, INPUT_FORMAT
 from .prepare import METHOD_VERSION, book_verses, read_component
-from .source import Component
+from .source import LICENCE, Component
 
 MAX_VERSES = 300  # Keeps one prepare unit's rows within one D1 batch.
 MAX_PREPARE_UNITS = (
@@ -90,16 +90,46 @@ def book_recipe(component: Component, book: str, unit_ids: list[str]) -> dict[st
     }
 
 
+def admission_record(component: Component) -> dict[str, Any]:
+    """What a fetch of this file records about its admission, stated in the fetch recipe."""
+    return {
+        "terms_basis": f"{LICENCE} licence notice in {component.path} at STEPBible-Data commit {component.commit}",
+        "permitted_uses": [
+            "acquire",
+            "retain",
+            "backup",
+            "prepare",
+            "chatgpt",
+            "claude",
+        ],
+        "restrictions": [
+            "Attribute Tyndale House and STEPBible.org with a link to "
+            "STEPBible.github.io/STEPBible-Data",
+            "Make changes to the data visible to its users",
+        ],
+        "notices": [
+            component.identity().attribution,
+            "STEPBible asks: please do not post copies of this data file elsewhere, "
+            "so that it remains the single up-to-date source",
+        ],
+        "both_hosts_eligible": True,
+        "public_redistribution": "allowed",
+    }
+
+
 def fetch_recipe(component: Component) -> dict[str, Any]:
     """The recipe that fetches one component file; every book recipe over the file builds from it."""
     recipe_id = f"stepbible-fetch-{component.component}"
     return {
         "recipe_version": "preparation-recipe/1",
         "id": recipe_id,
-        "revision": f"{recipe_id}/{component.commit[:12]}/2",
+        "revision": f"{recipe_id}/{component.commit[:12]}/3",
         "adapter": {"name": "stepbible-fetch", "method_version": "stepbible-fetch/1"},
         "input_format": INPUT_FORMAT,
-        "parameters": pinned(component),
+        "parameters": {
+            **pinned(component),
+            "admission_record": admission_record(component),
+        },
         "native_extent": {"component": component.component},
         "capabilities": [],
         "dependencies": [component.acquisition_id],

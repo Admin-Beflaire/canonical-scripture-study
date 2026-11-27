@@ -143,7 +143,9 @@ class StatementPreparationTest(unittest.TestCase):
         )
         [admission] = self.api.db.execute("SELECT * FROM admissions").fetchall()
         self.assertEqual(admission["public_redistribution"], "allowed")
-        self.assertEqual(admission["terms_basis"], MANIFEST["licence_basis"])
+        self.assertEqual(
+            admission["terms_basis"], MANIFEST["admission_record"]["terms_basis"]
+        )
         self.assertIn("git_history", json.loads(admission["permitted_uses_json"]))
         checked = self.quality(output_id)
         self.assertEqual(checked["state"], "succeeded", checked["diagnostics"])

@@ -11,12 +11,14 @@ import {
   type Stored,
 } from './release-check.ts';
 import {membership} from './release-members.ts';
+import {replacementProblems} from './release-replace.ts';
 import {scopeCheck} from './release-scope.ts';
 import {
   liftedBy,
   makeCurrent,
   recordedBy,
   releaseIdOf,
+  replacedBy,
   type Plan,
   type SelectResult,
 } from './release-write.ts';
@@ -89,11 +91,7 @@ async function wholeRelease(
   checked: Built['checked'],
   currentId: string | null,
 ) {
-  const replaces = new Set(
-    Array.isArray(scope.constraints.replaces)
-      ? (scope.constraints.replaces as string[])
-      : [],
-  );
+  const replaces = replacedBy(scope);
   const base = await members(db, currentId);
   const replaced = await replacedStatements(db, scope, base);
   const whole = membership(
@@ -107,10 +105,18 @@ async function wholeRelease(
     approved: statementOf(scope),
     lifted: new Set(liftedBy(scope)),
   });
+  const lost = await replacementProblems(
+    db,
+    replaces,
+    base,
+    whole.all,
+    checked.candidate,
+  );
   const problems = [
     ...new Set([
       ...checked.problems,
       ...whole.problems,
+      ...lost,
       ...validation.problems,
     ]),
   ];

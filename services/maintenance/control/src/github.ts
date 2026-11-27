@@ -45,6 +45,23 @@ export class GitHubError extends OwnMessageError {
   }
 }
 
+/** Reading recipes and source manifests from main. */
+export type RecipeFiles = Pick<GitHubActions, 'listRecipes' | 'readFile'>;
+
+/** The same reads, each asked of GitHub once; for one answer that looks at a file repeatedly. */
+export function readOnce(files: RecipeFiles): RecipeFiles {
+  let names: Promise<string[]> | undefined;
+  const read = new Map<string, Promise<string | null>>();
+  return {
+    listRecipes: () => (names ??= files.listRecipes()),
+    readFile(path) {
+      const file = read.get(path) ?? files.readFile(path);
+      read.set(path, file);
+      return file;
+    },
+  };
+}
+
 /** GitHub REST access for dispatch, run identity and cancellation. Credentials go only to
  *  api.github.com, never follow redirects, and never appear in errors. */
 export class GitHubActions implements WorkflowTransport {
@@ -214,14 +231,14 @@ export class GitHubActions implements WorkflowTransport {
       .map(item => item.name.slice(0, -'.json'.length));
   }
 
-  /** A reviewed file from main, for example a recipe. */
+  /** A reviewed file from main: a recipe, or the source manifest it names. */
   async readFile(path: string): Promise<string | null> {
     if (
-      !/^collection\/recipes\/[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.json$/.test(
+      !/^collection\/(?:recipes|manifests)\/[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.json$/.test(
         path,
       )
     )
-      throw new GitHubError('Only recipes can be read');
+      throw new GitHubError('Only recipes and source manifests can be read');
     try {
       const reply = (await this.call(
         'GET',

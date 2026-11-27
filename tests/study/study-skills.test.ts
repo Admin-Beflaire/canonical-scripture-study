@@ -316,7 +316,11 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     // The background the explanation rests on.
     'the kind of writing (genre)',
     'who writes to whom and why, in which historical and cultural situation',
-    'what the book as a whole argues or tells; and where this passage stands in it',
+    'what the book as a whole argues or tells; where this passage stands in it',
+    // The canon: what it builds on before, where it leads after.
+    'its place in Scripture: the earlier texts, events and themes the passage builds on, and related writings of the same author or kind',
+    'drawn from the text and this background',
+    'where the line through Scripture leads from this passage, to Christ, without rewriting what the text meant',
     'When the asked verses depend on a larger unit, give its argument here',
     'gets all six parts',
     'form your own interpretation before you turn to known ones',

@@ -290,15 +290,12 @@ for (const [name, fixture, limited] of [
 test('the exegesis skill keeps the agreed order, points and statement check', () => {
   const text = guidance('exegesis').text;
   const order = [
-    'Core summary',
-    'Words and meaning',
-    'Historical and cultural background',
-    'Literary context',
-    'Storyline through Scripture',
-    'Quotations, echoes and themes',
-    'Interpretations:',
-    'Christ as anchor',
-    "Check of the conclusions against God's revealed character",
+    'Working translation',
+    'Background',
+    'The text itself',
+    'Your interpretation',
+    'Comparison with the known interpretations',
+    'Closing',
   ].map((part, index) => text.indexOf(`${index + 1}. ${part}`));
   assert.ok(
     order.every(at => at >= 0),
@@ -313,23 +310,85 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     ['+2', '+2', '+1', '+1', '+1', '-1', '-1', '-2'],
   );
   for (const rule of [
-    'never counts as support',
+    // The text first, then the own reading, then the others.
+    'name every place where the passage seems to contradict itself or other Scripture',
+    'come at the verse where they matter, not in blocks of their own',
+    // The background the explanation rests on.
+    'the kind of writing (genre)',
+    'who writes to whom and why, in which historical and cultural situation',
+    'what the book as a whole argues or tells; where this passage stands in it',
+    // The canon: what it builds on before, where it leads after.
+    'its place in Scripture: the earlier texts, events and themes the passage builds on, and related writings of the same author or kind',
+    'drawn from the text and this background',
+    'where the line through Scripture leads from this passage, to Christ, without rewriting what the text meant',
+    'When the asked verses depend on a larger unit, give its argument here',
+    'gets all six parts',
+    'form your own interpretation before you turn to known ones',
+    'Coming first gives it no advantage',
+    'its footnote gives the source word, every sense possible here, your choice and why',
+    'part 3 says what each of those senses does to the reading',
+    'gives only the chosen sense is incomplete when another sense is possible here',
+    'when only one sense is possible here, say why',
+    // Plain language and no talk about the work.
+    'Write in everyday language and short sentences',
+    'Write about the text, not about your work',
+    // The translation keeps its footnotes; the exegesis comes on top.
+    'Working translation with its footnotes',
+    'built on top of the translation: parts 2 to 6 do not repeat its footnotes',
+    'always with footnotes (standard level, or full when the reader asks for more depth)',
+    'the argument of a larger unit is not written before it, because part 2 gives it',
+    'the Sources and Limits lines stand once, at the end of the whole answer',
+    'does not explain or interpret the passage',
+    'the Sources and Limits lines once, at the end of the whole answer',
+    // Points.
+    'A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support',
     'not named strongest, whatever its total',
     "God's character gives no points: it is a check, never a premise",
+    'Show points only when the reader asks',
+    // The statement check: part of the weighing, shown only on request.
     'read the conclusion-check skill',
     'mode "conclusion_check"',
     'returns the name, version, wording and scriptural basis (reader references)',
     'present only its own wording as the statement',
     'It is never a premise and agreement proves nothing',
     'call this your own check, not the approved version',
-    'Show points only when the reader asks',
-    'every sense possible here, which interpretation of part 7 each sense supports',
-    'An entry that gives only the chosen sense is incomplete when another sense is possible here',
-    'when only one sense is possible here, say why',
-    'every interpretation of part 7, not only the strongest',
-    'When there is another serious reading, a check of the favoured one alone is incomplete',
+    'Check every serious interpretation',
+    'a check of the favoured one alone is incomplete',
+    'do not write about the check, the statement or an outcome for each reading',
+    'When no statement is selected, the Limits line says so',
+    'tests a reading; a reading never redefines that character',
+    'Good, just and loving keep their meaning when used of God',
+    'can stand only by bending them is wrong',
+    'Do not argue that an act must be good simply because a reading attributes it to God',
+    'How sure you are counts',
+    'when that stays uncertain, do not reject it, but lower how sure you are of it and say why',
+    '-2 for each fault in its grounds: a fallacy (circular reasoning among them), a mistranslation, or passing over texts that say otherwise',
+    'count such a text here, not also as an unexplained difficulty',
+    'examine both the reading and the statement against Scripture again',
+    'reject it as unacceptable, whatever else speaks for it, your own included',
+    'Name a rejected reading in part 5, after the others, as not acceptable',
+    'such as a place named in part 3',
+    'leave the question open',
+    'give the reason with that reading',
+    'Show the check only when the reader asks; then name the statement with its version',
   ])
     assert.ok(text.includes(rule), rule);
+});
+
+test('a conclusion check asked for on its own shows every interpretation', () => {
+  const text = guidance('conclusion-check').text;
+  for (const rule of [
+    'Asked for on its own, name the statement with its version',
+    'for each interpretation say what it implies about God',
+    'Run as part of an exegesis, the answer shows of this check only what the exegesis skill says',
+    'an act must be good simply because a reading attributes it to God',
+    'if you find no tension, say so and why',
+    'reject it as unacceptable',
+    'a reading never redefines that character',
+    'when that stays uncertain, do not reject it',
+  ])
+    assert.ok(text.includes(rule), rule);
+  assert.doesNotMatch(text, /do not write about the check/);
 });
 
 test('skills share one text for a rule two of them need', () => {
@@ -357,7 +416,7 @@ test('skills share one text for a rule two of them need', () => {
   );
   shared(
     '- Results with evidence do not carry the statement',
-    '- Check every serious interpretation',
+    '- When a reading seems not to fit',
     'exegesis',
     'conclusion-check',
   );

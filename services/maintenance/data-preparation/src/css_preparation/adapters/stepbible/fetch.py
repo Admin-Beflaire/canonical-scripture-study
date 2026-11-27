@@ -17,7 +17,7 @@ from ...acquire.retention import (
     declared_admission,
 )
 from ...acquire.transfer import Route
-from ...prepare.records import RecordError, RecordSet
+from ...prepare.records import RecordError, RecordSet, comparable
 from .. import AdapterDeclaration, AdapterRegistry
 from . import INPUT_FORMAT
 from .source import RAW_HOST, Component
@@ -69,9 +69,10 @@ def _stated_admission(
             tuple(row["notices_json"]),
         )
     )
+    # The whole route, so that another file cannot pass under an unchanged record.
+    route = f" in {component.path} at STEPBible-Data commit {component.commit}"
     if (
-        component.commit not in row["terms_basis"]
-        or component.path not in row["terms_basis"]
+        not row["terms_basis"].endswith(route)
         or row["notices_json"][0] != component.identity().attribution
     ):
         raise RecordError(
@@ -117,9 +118,20 @@ class ComponentFetch:
         )
 
     def acquire(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
-        """Retain the pinned original privately and register its source and admission records."""
+        """Retain the pinned original privately and register its source and admission records.
+
+        A saved admission record fixes which file this revision and component are: when the
+        recipe states another one, nothing is downloaded or saved.
+        """
         component = self.component
         component.check_inputs(job)
+        saved = storage.read_row("admission", self.admission["id"])
+        if saved is not None and dict(saved) != comparable("admission", self.admission):
+            raise RecordError(
+                f"Another file or admission is recorded for {component.revision_id} "
+                f"{component.component}; nothing was saved under it. Using this one needs "
+                "a new source revision with its own admission"
+            )
         key = component.original_key
         try:
             component.check_original(storage.read_blob(key))

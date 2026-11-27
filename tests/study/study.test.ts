@@ -759,7 +759,8 @@ test('study batches carry no translation rules; the rules and the full skill kee
     /Limits: <one line>/,
     /Elsewhere:/,
     /Traditions:/,
-    /Effect:/,
+    /A footnote is about the words/,
+    /It does not explain or interpret the passage/,
     /Footnote slots/,
     /The title never names the level/,
     /one heading level below the chapter heading/,
@@ -781,6 +782,11 @@ test('study batches carry no translation rules; the rules and the full skill kee
     /give the same translation at every level|how settled it is: a close call/,
   );
   assert.doesNotMatch(rules, /same translation/);
+  // Footnotes carry no interpretation, in the skill or the key rules.
+  assert.doesNotMatch(
+    `${full}\n${rules}`,
+    /Effect|changes for the interpretation|theological notes/,
+  );
 });
 
 test('the key translation rules and the translation skill share their tested wording', async () => {

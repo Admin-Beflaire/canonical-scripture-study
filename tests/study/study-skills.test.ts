@@ -314,17 +314,20 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'come at the verse where they matter, not in blocks of their own',
     'form your own interpretation before you turn to known ones',
     'Coming first gives it no advantage',
-    'every sense possible here, what each sense does to the reading',
+    'its footnote gives the source word, every sense possible here, your choice and why',
+    'part 2 says what each of those senses does to the reading',
     'gives only the chosen sense is incomplete when another sense is possible here',
     'when only one sense is possible here, say why',
     // Plain language and no talk about the work.
     'Write in everyday language and short sentences',
     'Write about the text, not about your work',
-    // The form of the answer leads over the translation form.
-    'researched, decided and worded by the translation rules in full',
-    'this skill leads, over the translation rules below, the translation skill and the Method above',
-    'there is no note level, no footnote and no argument before the translation',
-    'stands in plain words at its verse in part 2',
+    // The translation keeps its footnotes; the exegesis comes on top.
+    'Working translation with its footnotes',
+    'built on top of the translation: parts 2 to 5 do not repeat its footnotes',
+    'always with footnotes (standard level, or full when the reader asks for more depth)',
+    'the argument of a larger unit is not written before it, because part 2 gives it',
+    'the Sources and Limits lines stand once, at the end of the whole answer',
+    'does not explain or interpret the passage',
     'the Sources and Limits lines once, at the end of the whole answer',
     // Points.
     'A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support',

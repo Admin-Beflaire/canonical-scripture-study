@@ -1,4 +1,5 @@
 import type {D1Database} from './d1.ts';
+import {partOf} from './release-members.ts';
 
 /** What current data holds from each source revision, so a removal or a replacement can name it
  *  (Maintenance Technical §6). Read only; bounded pages. */
@@ -36,11 +37,10 @@ async function heldRows(db: D1Database, revisions: string[]) {
   ).results;
 }
 
-/** How many native units these extents cover and in which parts: a unit's name up to its first
- *  dot, which for a Bible text is the book. */
+/** How many native units these extents cover, and in which parts. */
 function covered(extents: string[][]) {
   const units = new Set(extents.flat());
-  const parts = [...new Set([...units].map(unit => unit.split('.')[0]))].sort();
+  const parts = [...new Set([...units].map(partOf))].sort();
   return {
     units: units.size,
     parts: parts.slice(0, PARTS),

@@ -10,6 +10,10 @@ export const units = (extent: Record<string, unknown>) =>
     ? (extent.unit_ids as string[])
     : null;
 
+/** The part of a source a native unit belongs to: its name up to the first dot, which for a
+ *  Bible text is the book. */
+export const partOf = (unit: string) => unit.split('.')[0];
+
 /** Same kind, except that an `aid_entries` output replaces the `evidence` output that held the
  *  same language aids before they moved to an entries file (same source revision, coordinate
  *  version and units). An `evidence` candidate never replaces an `aid_entries` output. */

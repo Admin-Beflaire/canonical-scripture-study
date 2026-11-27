@@ -34,7 +34,7 @@ export const CHARACTER_CHECK = `- Results with evidence do not carry the stateme
 - With a statement: check your conclusions against its wording and its scriptural basis, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
 - Check every serious interpretation or alternative, not only the one you favour; when there is another serious reading, a check of the favoured one alone is incomplete.
-- God's character, as the whole of Scripture reveals it, tests a reading; a reading never redefines that character. Good, just and loving keep their meaning when used of God. A reading that can stand only by bending them is wrong.
+- God's character, as the whole of Scripture reveals it, tests a reading; a reading never redefines that character. Good, just and loving keep their meaning when used of God. A reading that can stand only by bending them is wrong. Do not argue that an act must be good simply because a reading attributes it to God: that is circular reasoning.
 - When a reading seems not to fit, first examine both the reading and the statement against Scripture again. How sure you are counts: when it clearly still does not fit, reject it as unacceptable, whatever else speaks for it, your own included; when that stays uncertain, do not reject it, but lower how sure you are of it and say why.`;
 
 export const EXEGESIS = `Exegesis:
@@ -42,11 +42,12 @@ export const EXEGESIS = `Exegesis:
 The answer
 - Read the whole literary unit, also when particular verses are asked; deliver the asked scope.
 - Give, for each literary unit, in this order:
-  1. Working translation, under the translation skill. Here it has no footnotes, also where the translation rules below ask for them: what a footnote would explain belongs at its verse in part 2.
+  1. Working translation, made by the translation rules; the next rule says what the answer shows of them.
   2. The text itself. When the asked verses depend on a larger unit, give its argument first. Then name every place where the passage seems to contradict itself or other Scripture, including cases that seem to break one of its general statements. Then follow the writer's line of thought and explain what the passage says and how its parts fit. Words, literary form, historical and cultural background, quotations and echoes come at the verse where they matter, not in blocks of their own.
   3. Your interpretation, drawn from the text, and how it deals with each of those places.
   4. Comparison with the known interpretations that matter: for each, where it agrees or differs, what speaks for and against it and how it deals with those places. Give them in order of likelihood, and say which is strongest, yours or another, and why.
   5. Closing: briefly the line through Scripture and to Christ, without rewriting what the text meant in its own setting.
+- In an exegesis the translation is researched, decided and worded by the translation rules in full, with their title, headings, verse numbers, quotations and marks. For the form of the answer this skill leads, over the translation rules below, the translation skill and the Method above: there is no note level, no footnote and no argument before the translation; what a note would explain stands in plain words at its verse in part 2, and the Sources and Limits lines stand once, at the end.
 - For each word or construction whose meaning changes the reading, give the source word, every sense possible here, what each sense does to the reading, your choice and why. An explanation that gives only the chosen sense is incomplete when another sense is possible here; when only one sense is possible here, say why.
 - An exegesis of a passage gets all five parts; a limited question gets the parts that bear on it.
 
@@ -75,6 +76,7 @@ Weighing interpretations (points)
   -1 it leaves a significant difficulty unexplained, such as a place named in part 2.
   -1 it needs a later system or outside concept to supply a premise.
   -2 for each fault in its grounds: a fallacy (circular reasoning among them), a mistranslation, or passing over texts that say otherwise (count such a text here, not also as an unexplained difficulty).
+- A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support.
 - A reading that cannot stand without a premise that never counts as support is not named strongest, whatever its total. Historical and linguistic evidence may still illuminate the context.
 - When totals are level, the reading with fewer unsupported assumptions goes first. If they are still level, say that the evidence does not decide.
 - The number of scholars and the age of a tradition give no points. God's character gives no points: it is a check, never a premise.
@@ -138,4 +140,5 @@ export const CONCLUSION_CHECK = `Conclusion check:
 
 Run it after interpreting.
 ${CHARACTER_CHECK}
-- Name the statement with its version. For each interpretation say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why.`;
+- Asked for on its own, name the statement with its version, and for each interpretation say what it implies about God, where that fits his revealed character and where it creates tension; if you find no tension, say so and why.
+- Run as part of an exegesis, the answer shows of this check only what the exegesis skill says.`;

@@ -320,9 +320,14 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     // Plain language and no talk about the work.
     'Write in everyday language and short sentences',
     'Write about the text, not about your work',
+    // The form of the answer leads over the translation form.
+    'researched, decided and worded by the translation rules in full',
+    'this skill leads, over the translation rules below, the translation skill and the Method above',
+    'there is no note level, no footnote and no argument before the translation',
+    'stands in plain words at its verse in part 2',
     'the Sources and Limits lines once, at the end of the whole answer',
     // Points.
-    'never counts as support',
+    'A theological premise that only an outside philosophical or religious concept, a later system or circular reasoning supplies never counts as support',
     'not named strongest, whatever its total',
     "God's character gives no points: it is a check, never a premise",
     'Show points only when the reader asks',
@@ -340,6 +345,7 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'tests a reading; a reading never redefines that character',
     'Good, just and loving keep their meaning when used of God',
     'can stand only by bending them is wrong',
+    'Do not argue that an act must be good simply because a reading attributes it to God',
     'How sure you are counts',
     'when that stays uncertain, do not reject it, but lower how sure you are of it and say why',
     '-2 for each fault in its grounds: a fallacy (circular reasoning among them), a mistranslation, or passing over texts that say otherwise',
@@ -354,11 +360,13 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     assert.ok(text.includes(rule), rule);
 });
 
-test('a conclusion check shows its outcome for every interpretation', () => {
+test('a conclusion check asked for on its own shows every interpretation', () => {
   const text = guidance('conclusion-check').text;
   for (const rule of [
-    'Name the statement with its version',
-    'For each interpretation say what it implies about God',
+    'Asked for on its own, name the statement with its version',
+    'for each interpretation say what it implies about God',
+    'Run as part of an exegesis, the answer shows of this check only what the exegesis skill says',
+    'an act must be good simply because a reading attributes it to God',
     'if you find no tension, say so and why',
     'reject it as unacceptable',
     'a reading never redefines that character',
@@ -393,7 +401,7 @@ test('skills share one text for a rule two of them need', () => {
   );
   shared(
     '- Results with evidence do not carry the statement',
-    "- God's character, as the whole",
+    '- When a reading seems not to fit',
     'exegesis',
     'conclusion-check',
   );

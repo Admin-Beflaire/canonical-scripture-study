@@ -31,9 +31,9 @@ def read(path):
     return json.loads((ROOT / path).read_text(encoding="utf-8"))
 
 
-MANIFEST = read("collection/manifests/character-statement-0-1.json")
-FETCH = read("collection/recipes/character-statement-0-1-fetch.json")
-BUILD = read("collection/recipes/character-statement-0-1.json")
+MANIFEST = read("collection/manifests/character-statement-0-2.json")
+FETCH = read("collection/recipes/character-statement-0-2-fetch.json")
+BUILD = read("collection/recipes/character-statement-0-2.json")
 SOURCE = MANIFEST["source_revision"]
 
 
@@ -135,7 +135,7 @@ class StatementPreparationTest(unittest.TestCase):
         [row] = self.api.db.execute("SELECT * FROM character_statements").fetchall()
         self.assertEqual(
             (row["name"], row["version"], row["status"], row["owner_approval_ref"]),
-            ("God's Character", "0.1", "approved", value["owner_approval_ref"]),
+            ("God's Character", "0.2", "approved", value["owner_approval_ref"]),
         )
         self.assertEqual(row["wording"], "\n\n".join(value["wording"]))
         self.assertEqual(

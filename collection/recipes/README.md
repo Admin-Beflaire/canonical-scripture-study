@@ -51,8 +51,8 @@ The acquisition receipt captures SHA-256 of the downloaded bytes.
 
 ## Character-of-God statement
 
-`character-statement-0-1-fetch.json` (acquire-only) keeps the pinned statement file.
-`character-statement-0-1.json` uses the `character-statement` adapter: one `prepare` unit
+`character-statement-0-2-fetch.json` (acquire-only) keeps the pinned statement file.
+`character-statement-0-2.json` uses the `character-statement` adapter: one `prepare` unit
 copies the file's fields into one statement record, and `quality` rebuilds that record from
 the kept original and compares it. A task also needs the owner's statement approval (decision
 kind `statement`, with the file's name and version) and, the first time, the admission decision.

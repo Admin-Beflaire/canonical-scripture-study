@@ -26,7 +26,7 @@ const METHOD = `Method:
 - Look for alternatives and contrary evidence. Name doctrinal premises that need independent support and how they depend on each other. Watch for direct or indirect circular reasoning and unsupported assumptions.
 - Compare explanations by contextual support, explanatory strength and difficulties. Where support is comparable, prefer the one with fewer unsupported assumptions, and say where uncertainty remains.
 - Treat scholarship and outside concepts as attributed arguments, not missing biblical premises. Keep source evidence, your own translation and conclusions, and outside sources clearly separate.
-- God's character is the light in which you work out your own explanation of what Scripture means, from the start, and the test for other explanations. The conclusion-check skill gives the approved statement of it, when one exists: it never decides a translation, it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
+- God's character is the light in which you work out your own explanation of what Scripture means, from the start, and the test for every explanation, your own finished one included. The conclusion-check skill gives the approved statement of it, when one exists: it never decides a translation, it is never a premise, agreement proves nothing, and a conflict means examining both against Scripture.`;
 
 /** How to use the study tool, one rule each; they travel with the tool and field descriptions. */
 export const SUPERSCRIPTION_RULE =

@@ -378,7 +378,9 @@ test("the exegesis works out its own interpretation in the light of God's charac
   const text = guidance('exegesis').text;
   for (const rule of [
     'Before you form your own interpretation, read the conclusion-check skill',
-    "in the light of God's character from start to end; it counts while you work, not as a test afterwards",
+    "in the light of God's character from start to end: working it out and testing it go together",
+    "When your own interpretation is complete, test the whole of it against God's character once more",
+    "test your finished interpretation and the known ones against God's character",
     'An explanation that clearly clashes with any part of it is not an option',
     'still comes from the text and accounts for everything the text says',
     'say what remains uncertain, and bend neither of them',

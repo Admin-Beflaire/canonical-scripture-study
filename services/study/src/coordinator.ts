@@ -256,8 +256,8 @@ function searchLead(
 }
 
 /** The selected approved statement and its scriptural basis, or its explicit absence. The host
- *  works out its own explanation in its light and tests others against it; it is never a
- *  premise. */
+ *  works out its own explanation in its light and tests it, and others, against it; it is
+ *  never a premise. */
 async function conclusionCheck(
   session: ReadSession,
   base: {mode: string; depth: string; language: string},

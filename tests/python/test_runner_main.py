@@ -541,7 +541,7 @@ class DeclaredInputTest(unittest.TestCase):
             path.stem: json.loads(path.read_text(encoding="utf-8"))
             for path in RECIPE_DIRECTORY.glob("*.json")
         }
-        self.build = RECIPES[self.files["character-statement-0-1"]["revision"]]
+        self.build = RECIPES[self.files["character-statement-0-2"]["revision"]]
 
     def test_every_route_a_recipe_file_names_counts_on_a_build_unit(self):
         routes = set()
@@ -559,7 +559,7 @@ class DeclaredInputTest(unittest.TestCase):
             )
 
     def test_nothing_else_is_vouched_for(self):
-        fetch = self.files["character-statement-0-1-fetch"]
+        fetch = self.files["character-statement-0-2-fetch"]
         source = fetch["manifest_revision"]
         # A source revision is vouched for only by the acquire unit that creates it.
         created = {"kind": "source_revision", "id": source}

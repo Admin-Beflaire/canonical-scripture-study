@@ -6,7 +6,7 @@ Source manifests belong here. A manifest must retain the applicable admission an
 STEPBible recipes, their licence basis and storage rule. The owner's admission decision is
 given in the Maintenance Control task, not here.
 
-`character-statement-0-1.json` pins the owner's statement file in this repository. It is the
+`character-statement-0-2.json` pins the owner's statement file in this repository. It is the
 only manifest whose source is a file of the public repository. Its storage value records that
 the admission allows public placement, which its licence basis grounds in the owner's
 permission; every other acquire-only source stays unresolved for public redistribution.

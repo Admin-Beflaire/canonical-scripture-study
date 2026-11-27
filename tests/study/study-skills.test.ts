@@ -379,8 +379,10 @@ test("the exegesis works out its own interpretation in the light of God's charac
   for (const rule of [
     'Before you form your own interpretation, read the conclusion-check skill',
     "in the light of God's character from start to end: working it out and testing it go together",
-    "When your own interpretation is complete, test the whole of it against God's character once more",
-    "test your finished interpretation and the known ones against God's character",
+    'Before you deliver, test every theological conclusion that the finished answer draws or leaves possible against every part of the statement',
+    'in your interpretation, the explanation of the text, the background, the comparison and the closing, with everything the weighing changed',
+    'Rework from the text what clearly does not fit and test it again',
+    'test again every conclusion that a later step changes',
     'An explanation that clearly clashes with any part of it is not an option',
     'still comes from the text and accounts for everything the text says',
     'say what remains uncertain, and bend neither of them',
@@ -390,9 +392,18 @@ test("the exegesis works out its own interpretation in the light of God's charac
     'not an interpretation to rank',
   ])
     assert.ok(text.includes(rule), rule);
+  // One order of work: text, statement, research, own reading, others, test.
+  const steps = [
+    'Start with the text',
+    "Read the statement of God's character",
+    'In its light, investigate the words, background and canon',
+    'form your own interpretation before you turn to known ones',
+    'Investigate the known interpretations',
+    'test it as a whole before you deliver it',
+  ].map(step => text.indexOf(step));
   assert.ok(
-    text.indexOf('call study with mode "conclusion_check"') >
-      text.indexOf('Start with the text'),
+    steps.every((at, index) => at > (steps[index - 1] ?? 0)),
+    String(steps),
   );
   assert.doesNotMatch(text, /After weighing the points/);
   for (const skill of SKILLS)

@@ -337,8 +337,11 @@ test('the exegesis skill keeps the agreed order, points and statement check', ()
     'a check of the favoured one alone is incomplete',
     'do not write about the check, the statement or an outcome for each reading',
     'When no statement is selected, the Limits line says so',
-    'after both have been examined again',
-    'is never named strongest',
+    'is never correct',
+    'examine both the reading and the statement against Scripture again',
+    'reject it as unacceptable, whatever else speaks for it, your own included',
+    'Name a rejected reading in part 4, after the others, as not acceptable',
+    'leave the question open',
     'give the reason with that reading',
     'Show the check only when the reader asks; then name the statement with its version',
   ])
@@ -351,6 +354,7 @@ test('a conclusion check shows its outcome for every interpretation', () => {
     'Name the statement with its version',
     'For each interpretation say what it implies about God',
     'if you find no tension, say so and why',
+    'reject it as unacceptable',
   ])
     assert.ok(text.includes(rule), rule);
   assert.doesNotMatch(text, /do not write about the check/);
@@ -381,7 +385,7 @@ test('skills share one text for a rule two of them need', () => {
   );
   shared(
     '- Results with evidence do not carry the statement',
-    '- Check every serious interpretation',
+    '- A reading that does not fit',
     'exegesis',
     'conclusion-check',
   );

@@ -33,7 +33,8 @@ export const TRANSLATION_KEY = `- YHWH is always "Yahweh"; never LORD, the LORD,
 export const CHARACTER_CHECK = `- Results with evidence do not carry the statement. conclusion_check returns the name, version, wording and scriptural basis (reader references) of the approved statement, or says that none is selected.
 - With a statement: check your conclusions against its wording and its scriptural basis, and present only its own wording as the statement. It is never a premise and agreement proves nothing; a conflict means examining both the conclusion and the statement against Scripture.
 - Without one: say so, check against what Scripture reveals about God's character, and call this your own check, not the approved version.
-- Check every serious interpretation or alternative, not only the one you favour; when there is another serious reading, a check of the favoured one alone is incomplete.`;
+- Check every serious interpretation or alternative, not only the one you favour; when there is another serious reading, a check of the favoured one alone is incomplete.
+- A reading that does not fit God's character as Scripture reveals it is never correct. When one seems not to fit, first examine both the reading and the statement against Scripture again; if it still does not fit, reject it as unacceptable, whatever else speaks for it, your own included.`;
 
 export const EXEGESIS = `Exegesis:
 
@@ -88,7 +89,7 @@ God's character
 - After weighing the points and before naming the strongest reading, read the conclusion-check skill and call study with mode "conclusion_check".
 ${CHARACTER_CHECK}
 - In an exegesis this check is part of the weighing, like the points: do not write about the check, the statement or an outcome for each reading. When no statement is selected, the Limits line says so.
-- A reading that still conflicts with God's character as Scripture reveals it, after both have been examined again, is never named strongest.
+- Name a rejected reading in part 4, after the others, as not acceptable, with the reason; never offer it as strongest or as possible. If no reading remains, say that none is acceptable yet and leave the question open.
 - When this affects which reading is strongest or how sure you are, give the reason with that reading, as a plain statement about the text and God.
 - Show the check only when the reader asks; then name the statement with its version and say for each interpretation what it implies about God, where that fits his revealed character and where it creates tension, or why you find no tension.`;
 

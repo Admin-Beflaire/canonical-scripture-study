@@ -135,8 +135,11 @@ def typescript_tests(paths, root=ROOT):
     uses = {
         name: imported(file, set()) for name, file in zip(every, files, strict=True)
     }
-    # The repository checks read the sources instead of importing them.
+    # These read sources instead of importing them: the repository checks, and the
+    # test that keeps Study from writing, holding credentials or dispatching.
     chosen = {name for name in every if name.startswith("tests/repository/")}
+    if any(path.startswith("services/study/") for path in paths):
+        chosen.add("tests/study/read-only.test.ts")
     for path in paths:
         if "typescript" not in select_suites([path]):
             continue

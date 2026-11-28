@@ -120,6 +120,7 @@ class RoutingTests(unittest.TestCase):
             ["services/study/src/read/search.ts", "README.md"]
         )
         self.assertIn("tests/study/search.test.ts", study)
+        self.assertIn("tests/study/read-only.test.ts", study)
         self.assertNotIn("tests/maintenance/tasks.test.ts", study)
         control = profiles.typescript_tests(
             ["services/maintenance/control/src/tasks.ts"]

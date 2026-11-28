@@ -91,3 +91,19 @@ test('Control: each kind of request has its way in exactly one skill', async () 
       rule,
     );
 });
+
+test('Study advertises exact WEB spellings where search leads are entered', async () => {
+  const {tools} = await delivered(study);
+  const tool = tools.find(tool => tool.name === 'study')!;
+  assert.ok(
+    fieldDescriptions(tool.inputSchema).some(text =>
+      [
+        'use lookup "word"',
+        'apostrophes and hyphens',
+        'Psalm titles',
+        '"love"',
+        '"Love"',
+      ].every(rule => text.includes(rule)),
+    ),
+  );
+});

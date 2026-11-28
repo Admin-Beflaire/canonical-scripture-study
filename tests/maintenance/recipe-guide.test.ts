@@ -152,7 +152,11 @@ test('a kept original gets no fetch, also inside a shared source revision; a mis
   const post = jobSender(w.db, w.github, w.objects);
   const task_id = analysed.data.task_id;
   const receipt = await report(
-    {gh: w.server, post: async (path, body) => (await post(path, body)).json()},
+    {
+      gh: w.server,
+      post: async (path, body) =>
+        (await (await post(path, body)).json()) as Record<string, unknown>,
+    },
     task_id,
     'analyse',
     {

@@ -315,6 +315,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn(
             'cp "$WORK/config/adoption/imports.tf" "$WORK/config/imports.tf"', workflow
         )
+        # Public run logs print variables; personal addresses must stay masked.
+        for name in ("PLATFORM_CF_OWNER_EMAIL", "PLATFORM_CF_STUDY_OWNER_EMAIL"):
+            self.assertIn(f"secrets.{name}", workflow)
+            self.assertNotIn(f"vars.{name}", workflow)
         for removed in (
             "diagnostic --key",
             "diagnostics.txt",

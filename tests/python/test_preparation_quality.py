@@ -145,6 +145,11 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed["remaining_extent"], self.job["native_extent"])
         self.assertEqual(self.received, {})
 
+    def invoke_record(self, **fields):
+        result = self.invoke(**fields)
+        self.assertEqual(result["state"], "failed")
+        return self.record(result)
+
     def test_quality_failure_diagnostic_keeps_cause_without_private_text(self):
         def fail_rows(*_):
             raise KeyError("private source words and secret token")

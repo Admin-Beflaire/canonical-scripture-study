@@ -5,6 +5,7 @@ import type {RecipeFiles} from './github.ts';
 import {
   ADMISSION_RULE,
   ALREADY_OBTAINED,
+  ANALYSIS_REPORT,
   SEND_IN_ORDER,
   admissionQuestion,
   alternativesNote,
@@ -251,6 +252,33 @@ async function describeFetch(
   };
 }
 
+async function describeAnalysis(
+  sources: GuideSources,
+  id: string,
+  recipe: Recipe,
+) {
+  const state = await stateOf(sources, recipe);
+  if (!state)
+    return {
+      found: false as const,
+      message: 'The fetch recipe does not identify an original to analyse.',
+    };
+  const request = fetchRequest(id, recipe);
+  request.steps =
+    state.kept && state.recorded && !state.asks
+      ? ['analyse']
+      : ['fetch', 'analyse'];
+  const decisions = await admissionDecisions(sources, [request]);
+  return {
+    found: true as const,
+    recipe: id,
+    does: 'analyse' as const,
+    requests: [request],
+    owner_decisions: decisions,
+    notes: [ANALYSIS_REPORT, ...(decisions.length ? [ADMISSION_RULE] : [])],
+  };
+}
+
 async function describeBuild(
   sources: GuideSources,
   id: string,
@@ -298,9 +326,17 @@ export async function describeRecipe(
   sources: GuideSources,
   id: string,
   prepareOnly = false,
+  analyse = false,
 ) {
   const {recipe, problem} = await loadRecipe(sources.github, id);
   if (!recipe) return {found: false as const, message: problem!};
+  if (analyse)
+    return fetchesOnly(recipe)
+      ? describeAnalysis(sources, id, recipe)
+      : {
+          found: false as const,
+          message: 'Use analyse with the source’s fetch recipe.',
+        };
   return fetchesOnly(recipe)
     ? describeFetch(sources, id, recipe)
     : describeBuild(sources, id, recipe, !prepareOnly);

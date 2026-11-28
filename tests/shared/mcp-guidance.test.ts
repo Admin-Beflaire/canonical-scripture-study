@@ -55,7 +55,21 @@ test('Control: exactly four skills with digests, named within what hosts keep', 
 
 test('Control: each kind of request has its way in exactly one skill', async () => {
   const skills = await controlSkills();
+  const {tools} = await delivered(control);
+  const recipe = tools.find(tool => tool.name === 'get_recipe')!;
+  const task = tools.find(tool => tool.name === 'get_task')!;
+  assert.ok(
+    fieldDescriptions(recipe.inputSchema).some(
+      text =>
+        text.includes(rules.ANALYSE_SOURCE) &&
+        text.includes(rules.ANALYSIS_JUDGEMENT),
+    ),
+  );
+  assert.ok(task.description.includes(rules.ANALYSIS_REPORT));
   const ways: [rule: string, skill: string][] = [
+    [rules.ANALYSE_SOURCE, 'add-source'],
+    [rules.ANALYSIS_REPORT, 'add-source'],
+    [rules.ANALYSIS_JUDGEMENT, 'add-source'],
     [rules.BELONGING, 'add-source'],
     [rules.STATEMENT_NEEDS, 'add-source'],
     [rules.PREPARE, 'add-source'],

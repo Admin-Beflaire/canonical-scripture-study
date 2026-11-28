@@ -15,6 +15,7 @@ type Bucket = {
     truncated: boolean;
     cursor?: string;
   }>;
+  get(key: string): Promise<{size: number; text(): Promise<string>} | null>;
   delete(keys: string[]): Promise<void>;
 };
 type ControlSettings = AccessSettings & {
@@ -39,6 +40,10 @@ function objects(settings: ControlSettings): ObjectStore | null {
         objects: page.objects.map(item => ({key: item.key, size: item.size})),
         ...(page.truncated && page.cursor ? {cursor: page.cursor} : {}),
       };
+    },
+    async read(key, expectedBytes) {
+      const object = await bucket.get(key);
+      return object?.size === expectedBytes ? object.text() : null;
     },
     remove: keys => bucket.delete(keys),
   };

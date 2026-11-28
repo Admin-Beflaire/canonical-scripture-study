@@ -117,6 +117,21 @@ class ComponentFetch:
             and set(reference) == {"kind", "id"}
         )
 
+    def read_original(self, job: Mapping[str, Any], storage: Any) -> tuple[bytes, str]:
+        """Read the admitted pinned file only, using the original's normal verifier."""
+        component = self.component
+        component.check_inputs(job)
+        saved = storage.read_row("admission", self.admission["id"])
+        if saved is None or dict(saved) != comparable("admission", self.admission):
+            raise RecordError("No matching retained original and admission")
+        try:
+            original = component.check_original(
+                storage.read_blob(component.original_key)
+            )
+        except KeyError:
+            raise RecordError("The retained original is missing") from None
+        return original, f"{component.component}.txt"
+
     def acquire(self, job: Mapping[str, Any], storage: Any) -> RecordSet:
         """Retain the pinned original privately and register its source and admission records.
 

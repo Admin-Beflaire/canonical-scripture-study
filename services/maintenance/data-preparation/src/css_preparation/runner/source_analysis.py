@@ -10,7 +10,7 @@ import re
 import stat
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile, ZipInfo, is_zipfile
-from zlib import error as DeflateError
+import zlib
 
 from ..prepare.records import RecordError
 
@@ -26,7 +26,7 @@ _CHAPTER = re.compile(r"[1-9][0-9]{0,3}(?=\s|$)")
 _VERSE = re.compile(r"([1-9][0-9]{0,2})([a-z]?)(?:-([1-9][0-9]{0,2})([a-z]?))?(?=\s|$)")
 
 
-class AnalysisRefused(RecordError):
+class AnalysisRefusedError(RecordError):
     """The bytes or archive cannot be analysed within the supported limits."""
 
 
@@ -65,7 +65,7 @@ class Chapter:
         label = first + suffix + (f"-{last}{end_suffix}" if last else "")
         self.labels[label] += 1
         if len(self.labels) > 1000:
-            raise AnalysisRefused("Too many verse labels in one chapter")
+            raise AnalysisRefusedError("Too many verse labels in one chapter")
         return True
 
     def facts(self) -> dict[str, Any]:
@@ -105,7 +105,7 @@ class Usfm:
             self.chapter = int(chapter[0]) if chapter and self.book else 0
             if self.chapter:
                 if len(self.chapters) >= MAX_FACTS:
-                    raise AnalysisRefused(
+                    raise AnalysisRefusedError(
                         "Too many USFM chapters for an analysis report"
                     )
                 self.chapters.setdefault((self.book, self.chapter), Chapter())
@@ -129,7 +129,9 @@ def _usfm(data: bytes, file_index: int) -> tuple[dict[str, Any], list[dict[str, 
         marker, close = match.groups()
         usfm.markup[marker + close] += 1
         if len(usfm.markup) > 512:
-            raise AnalysisRefused("Too many USFM markup kinds for an analysis report")
+            raise AnalysisRefusedError(
+                "Too many USFM markup kinds for an analysis report"
+            )
         if not close and marker in ("id", "c", "v"):
             offset = match.end()
             while offset < len(text) and text[offset] in " \t":
@@ -178,24 +180,26 @@ def _members(data: bytes):
     with ZipFile(BytesIO(data)) as archive:
         entries = archive.infolist()
         if len(entries) > MAX_FILES or not all(map(_safe_entry, entries)):
-            raise AnalysisRefused("ZIP has too many entries or an unsafe entry")
+            raise AnalysisRefusedError("ZIP has too many entries or an unsafe entry")
         files = [entry for entry in entries if not entry.is_dir()]
         if len({entry.filename for entry in files}) != len(files):
-            raise AnalysisRefused("ZIP contains duplicate file paths")
+            raise AnalysisRefusedError("ZIP contains duplicate file paths")
         if sum(entry.file_size for entry in files) > MAX_ORIGINAL_BYTES:
-            raise AnalysisRefused("ZIP exceeds the unpacked byte limit")
+            raise AnalysisRefusedError("ZIP exceeds the unpacked byte limit")
         for entry in sorted(files, key=lambda item: item.filename):
             with archive.open(entry) as member:
                 content = member.read(entry.file_size + 1)
             if len(content) != entry.file_size:
-                raise AnalysisRefused("ZIP entry size does not match its declaration")
+                raise AnalysisRefusedError(
+                    "ZIP entry size does not match its declaration"
+                )
             yield entry.filename, content
 
 
 def inspect_original(data: bytes, name: str) -> dict[str, Any]:
     """Record file metadata and USFM references without reading outside these bytes."""
     if len(data) > MAX_ORIGINAL_BYTES:
-        raise AnalysisRefused("Original exceeds the analysis byte limit")
+        raise AnalysisRefusedError("Original exceeds the analysis byte limit")
     zipped = is_zipfile(BytesIO(data)) or PurePosixPath(name).suffix.lower() == ".zip"
     members = _members(data) if zipped else iter([(name, data)])
     facts: list[dict[str, Any]] = []
@@ -217,9 +221,9 @@ def inspect_original(data: bytes, name: str) -> dict[str, Any]:
             )
             facts.extend(chapters)
             if len(facts) > MAX_FACTS:
-                raise AnalysisRefused("Too many facts for an analysis report")
-    except (BadZipFile, DeflateError, NotImplementedError, RuntimeError, OSError):
-        raise AnalysisRefused("ZIP cannot be read in a supported format") from None
+                raise AnalysisRefusedError("Too many facts for an analysis report")
+    except (BadZipFile, zlib.error, NotImplementedError, RuntimeError, OSError):
+        raise AnalysisRefusedError("ZIP cannot be read in a supported format") from None
     return {
         "method": METHOD,
         "input_sha256": _digest(data),
@@ -237,10 +241,10 @@ def save_report(data: bytes, name: str, storage: Any) -> dict[str, Any]:
         len(json.dumps(fact, separators=separators)) > MAX_FACT_BYTES
         for fact in report["facts"]
     ):
-        raise AnalysisRefused("An analysis report entry exceeds its byte limit")
+        raise AnalysisRefusedError("An analysis report entry exceeds its byte limit")
     payload = json.dumps(report, sort_keys=True, separators=separators).encode()
     if len(payload) > MAX_REPORT_BYTES:
-        raise AnalysisRefused("Analysis report exceeds its byte limit")
+        raise AnalysisRefusedError("Analysis report exceeds its byte limit")
     digest = _digest(payload)
     storage.put_blob(f"analysis-reports/{digest}.json", payload)
     return {

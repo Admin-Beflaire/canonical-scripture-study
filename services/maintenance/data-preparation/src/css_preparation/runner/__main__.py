@@ -35,7 +35,7 @@ from ..validate.saved import CandidateInventory
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
 from .recipes import RECIPES, Recipe, declared_input
-from .source_analysis import AnalysisRefused, save_report
+from .source_analysis import AnalysisRefusedError, save_report
 from .web import Origin, ProviderError
 
 KINDS = ("acquire", "prepare", "quality")
@@ -143,11 +143,13 @@ def _analyse_job(
 ) -> dict[str, Any]:
     def analyse(job: dict[str, Any]):
         if recipe.read_original is None:
-            raise AnalysisRefused("Analysis needs a fetch recipe for a kept original")
+            raise AnalysisRefusedError(
+                "Analysis needs a fetch recipe for a kept original"
+            )
         try:
             data, name = recipe.read_original(job, storage)
         except RecordError as error:
-            raise AnalysisRefused(
+            raise AnalysisRefusedError(
                 "The kept original or its admission could not be verified"
             ) from error
         return unit_result(
@@ -271,7 +273,7 @@ def run_job(
                 diagnostic(job, "control_check", code, error, outcome="cancelled")
             ],
         )
-    except AnalysisRefused as error:
+    except AnalysisRefusedError as error:
         return unit_result(
             job,
             run_id,

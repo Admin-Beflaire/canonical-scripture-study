@@ -4,7 +4,10 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from css_preparation.runner.source_analysis import AnalysisRefused, inspect_original
+from css_preparation.runner.source_analysis import (
+    AnalysisRefusedError,
+    inspect_original,
+)
 
 
 def archive(path: str) -> bytes:
@@ -36,8 +39,8 @@ class OriginalAnalysisTest(unittest.TestCase):
         data = archive("safe.usfm")
         with (
             patch("css_preparation.runner.source_analysis.MAX_FILES", 1),
-            self.assertRaises(AnalysisRefused),
+            self.assertRaises(AnalysisRefusedError),
         ):
             inspect_original(data, "original.zip")
-        with self.assertRaises(AnalysisRefused):
+        with self.assertRaises(AnalysisRefusedError):
             inspect_original(archive("../outside.usfm"), "original.zip")

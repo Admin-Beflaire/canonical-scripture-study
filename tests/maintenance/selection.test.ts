@@ -90,6 +90,38 @@ async function stageGenesis(w: World) {
   return staged.taskId;
 }
 
+/** A Genesis task with both prepare units reported, waiting for its quality result. */
+async function preparedGenesis(w: World) {
+  const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
+  const id = (created as {task: {id: string}}).task.id;
+  await advance(w.db, w.github, id, w.objects);
+  const refs = [];
+  for (const [unit, verses] of [
+    ['prepare-1', ['Gen.1.1', 'Gen.1.2']],
+    ['prepare-2', ['Gen.1.3']],
+  ] as const) {
+    const saved = savePrepared(w, 'rev-1', unit, [...verses]);
+    refs.push(...saved.refs);
+    await report(w, id, unit, {output_refs: saved.refs});
+  }
+  return {id, refs};
+}
+
+/** The task is blocked for the expected reason and nothing was selected. */
+function assertBlockedBy(
+  w: World,
+  task: {state: string; limitations: string[]},
+  expected: string,
+  name: string,
+) {
+  assert.equal(task.state, 'blocked', name);
+  assert.ok(
+    task.limitations.some(text => text.includes(expected)),
+    `${name}: ${task.limitations.join(' | ')}`,
+  );
+  assert.equal(selected(w).current_release_id, null, name);
+}
+
 /** The write of the named task never reaches the database while `on` is set. */
 function interruptWrite(w: World, requestKey: string) {
   const interrupt = {on: true};
@@ -525,13 +557,8 @@ test('scope failures leave the current release unchanged and block the task', as
       beforeQuality: () => options.beforeQuality?.(w),
     });
     const task = (await taskReport(w.db, owner, taskId))!;
-    assert.equal(task.state, 'blocked', name);
     assert.equal(task.checks.scope, 'failed', name);
-    assert.ok(
-      task.limitations.some(text => text.includes(expected)),
-      `${name}: ${task.limitations.join(' | ')}`,
-    );
-    assert.equal(selected(w).current_release_id, null, name);
+    assertBlockedBy(w, task, expected, name);
     assert.equal(
       w.db.sqlite.prepare('SELECT COUNT(*) AS n FROM releases').get()?.n,
       0,
@@ -617,20 +644,7 @@ test('a lost selection response is settled by reading the selection back', async
 
 test('pause and cancel stop promotion; resume runs the check again', async () => {
   const w = world();
-  const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
-  const id = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, id, w.objects);
-  const refs = [];
-  for (const unit of ['prepare-1', 'prepare-2']) {
-    const saved = savePrepared(
-      w,
-      'rev-1',
-      unit,
-      unit === 'prepare-1' ? ['Gen.1.1', 'Gen.1.2'] : ['Gen.1.3'],
-    );
-    refs.push(...saved.refs);
-    await report(w, id, unit, {output_refs: saved.refs});
-  }
+  const {id, refs} = await preparedGenesis(w);
   const paused = (await taskReport(w.db, owner, id))!;
   assert.equal(
     (await controlTask(w.db, owner, id, paused.revision, 'pause')).status,
@@ -1005,26 +1019,10 @@ test('R25-1: every result reference must be a saved artifact with its digest and
   ];
   for (const [name, quality, expected] of cases) {
     const w = world();
-    const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
-    const id = (created as {task: {id: string}}).task.id;
-    await advance(w.db, w.github, id, w.objects);
-    const refs = [];
-    for (const [unit, verses] of [
-      ['prepare-1', ['Gen.1.1', 'Gen.1.2']],
-      ['prepare-2', ['Gen.1.3']],
-    ] as const) {
-      const saved = savePrepared(w, 'rev-1', unit, [...verses]);
-      refs.push(...saved.refs);
-      await report(w, id, unit, {output_refs: saved.refs});
-    }
+    const {id, refs} = await preparedGenesis(w);
     await report(w, id, 'quality', quality(w, refs, id));
     const task = (await taskReport(w.db, owner, id))!;
-    assert.equal(task.state, 'blocked', name);
-    assert.ok(
-      task.limitations.some(text => text.includes(expected)),
-      `${name}: ${task.limitations.join(' | ')}`,
-    );
-    assert.equal(selected(w).current_release_id, null);
+    assertBlockedBy(w, task, expected, name);
   }
 });
 

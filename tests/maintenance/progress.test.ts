@@ -4,8 +4,8 @@ import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {localD1} from './d1.ts';
 import {fakeGitHub} from './github.ts';
+import {jobSender} from './builds.ts';
 import {GitHubActions} from '../../services/maintenance/control/src/github.ts';
-import {jobRoutes} from '../../services/maintenance/control/src/jobs.ts';
 import {
   advance,
   reconcile,
@@ -87,14 +87,9 @@ async function setup(
     instruction: 'Prepare the synthetic source',
   });
   assert.ok(created.status === 'created');
-  const routes = jobRoutes(db, github);
+  const send = jobSender(db, github);
   const post = async (path: string, body: unknown) => {
-    const response = await routes(
-      new Request(`https://control.example.invalid${path}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    );
+    const response = await send(path, body);
     return {
       status: response.status,
       body: (await response.json()) as Record<string, unknown>,

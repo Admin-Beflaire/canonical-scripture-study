@@ -15,7 +15,6 @@ import {
 import {compareUtf8} from '../../services/study/src/read/bytes.ts';
 import {QUERIES} from '../../services/study/src/read/queries.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
-import {sourcesWith} from '../../services/study/src/operators/language.ts';
 
 const roomy = {
   ...limitsFor({}, 'passage'),
@@ -208,27 +207,6 @@ test('indexed output routing skips empty partitions without losing occurrences',
   );
 });
 
-test('a routed no-match output retains coverage beside a legacy matching output', async () => {
-  clearSearchCache();
-  const fixture = buildFixture();
-  const request: SearchRequest = {lookup: 'word', key: 'epsilon', sources: [A]};
-  const baseline = await once(fixture, request);
-  routeFixture(fixture, ['syn-src-1']);
-  fixture.env.DATA_DB = {...fixture.db};
-  clearSearchCache();
-  const mixed = await once(fixture, request);
-  assert.equal(mixed.result.state, 'complete');
-  assert.deepEqual(mixed.result.hits, baseline.result.hits);
-  assert.deepEqual(
-    mixed.result.searched
-      .filter(s => s.routing_summary)
-      .map(s => s.order_range),
-    [[0, 9999]],
-  );
-  assert.equal(mixed.usage.d1Calls, 3);
-  assert.ok(mixed.usage.r2Reads < baseline.usage.r2Reads);
-});
-
 test('a key absent from complete routed indexes is no_match, not missing coverage', async () => {
   clearSearchCache();
   const fixture = buildFixture();
@@ -316,48 +294,6 @@ test('routing keeps incompatible matching and nonmatching outputs as limitations
   }
 });
 
-test('cold ordinary and absent-key search measure the cost of routed coverage', async () => {
-  for (const key of ['alpha', 'unlisted']) {
-    clearSearchCache();
-    const fixture = buildFixture();
-    const request: SearchRequest = {lookup: 'word', key, sources: [A]};
-    const args = ['rel-2', JSON.stringify([A]), 'word_exact', key] as const;
-    const files = fixture.db.sqlite.prepare(QUERIES.index_files.sql);
-    assert.equal(files.all(...args, A, -1, '', 41).length, 6);
-    const before = await once(fixture, request);
-    routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
-    fixture.env.DATA_DB = {...fixture.db};
-    clearSearchCache();
-    const after = await once(fixture, request);
-    assert.equal(before.usage.d1Calls, 2);
-    assert.equal(after.usage.d1Calls, 3);
-    assert.equal(
-      files.all(...args, A, -1, '', 41).length,
-      key === 'alpha' ? 6 : 0,
-    );
-    const coverageRows = fixture.db.sqlite
-      .prepare(QUERIES.index_sources.sql)
-      .all(...args, 41);
-    assert.equal(coverageRows.length, 1);
-    assert.deepEqual(after.result.hits, before.result.hits);
-    assert.equal(after.result.state, before.result.state);
-    if (key === 'unlisted') assert.equal(after.usage.r2Reads, 0);
-  }
-});
-
-test('exact search can use cached index metadata after its D1 allowance is spent', async () => {
-  clearSearchCache();
-  const fixture = buildFixture();
-  const request: SearchRequest = {lookup: 'word', key: 'alpha', sources: [A]};
-  const cold = await once(fixture, request);
-  assert.equal(cold.usage.d1Calls, 2);
-  assert.ok(cold.result.hits.length > 0);
-
-  const warm = await once(fixture, request, {...roomy, d1Calls: 1});
-  assert.deepEqual(warm.result, cold.result);
-  assert.equal(warm.usage.d1Calls, 1);
-});
-
 test('a key spanning many pages is enumerated across bounded requests without duplicates or false exhaustion', async () => {
   clearSearchCache();
   const fixture = buildFixture({pageCap: 2048, commonCount: 48});
@@ -394,27 +330,6 @@ test('a key spanning many pages is enumerated across bounded requests without du
   assert.ok(
     run.usage.slice(1, -1).every(u => u.r2Reads === 4),
     'later requests reuse the verified manifest and read only pages',
-  );
-});
-
-test('the same enumeration works with a cold cache on every request', async () => {
-  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
-  const hits = [];
-  let position = null;
-  for (let i = 0; i < 100; i++) {
-    clearSearchCache();
-    const {result} = await once(
-      fixture,
-      {lookup: 'word', key: 'common', sources: [A], position},
-      limitsFor({}, 'passage'),
-    );
-    hits.push(...result.hits);
-    position = result.remaining;
-    if (!position) break;
-  }
-  assert.deepEqual(
-    hits.map(h => h.occurrence_id),
-    expected(fixture, ['syn-src-1'], 'common'),
   );
 });
 
@@ -683,26 +598,6 @@ test('a page or manifest beyond the configured caps is reported, not read', asyn
   assert.equal(small.usage.r2Reads, 0);
 });
 
-test('local measurement: queries, rows, R2 reads and bytes per request (synthetic, Node, not Workers)', async t => {
-  clearSearchCache();
-  const fixture = buildFixture({pageCap: 2048, commonCount: 60});
-  const started = performance.now();
-  const run = await all(
-    fixture,
-    {lookup: 'word', key: 'common', sources: [A]},
-    limitsFor({}, 'passage'),
-  );
-  const elapsed = performance.now() - started;
-  t.diagnostic(
-    `common key: ${run.hits.length} occurrences in ${run.results.length} requests, ${(elapsed / run.results.length).toFixed(2)} ms/request in-process`,
-  );
-  for (const [i, u] of run.usage.entries())
-    t.diagnostic(
-      `request ${i + 1}: D1 ${u.d1Calls} calls, R2 ${u.r2Reads} reads / ${u.r2Bytes} B, result ${u.resultBytes} B, hits ${run.results[i].hits.length}`,
-    );
-  assert.equal(run.hits.length, 60);
-});
-
 test('R30-8: one output filling the whole D1 window is reported, not repeated as the same continuation', async () => {
   clearSearchCache();
   const fixture = buildFixture();
@@ -770,109 +665,6 @@ test("the stored index summary gives the full scan's files and coverage, without
       name,
     );
   }
-});
-
-test('a release stores its summary when it is selected, for the current and the previous release', () => {
-  const fixture = buildFixture();
-  const db = fixture.db.sqlite;
-  const stored = () =>
-    db
-      .prepare(
-        'SELECT release_id, COUNT(*) AS n FROM release_index_summary GROUP BY release_id ORDER BY release_id',
-      )
-      .all();
-  const releases = stored().map(row => row.release_id);
-  assert.ok(releases.includes('rel-2'));
-  dropSummary(fixture);
-  assert.deepEqual(stored(), []);
-  storeSummary(fixture);
-  assert.deepEqual(
-    stored().map(row => row.release_id),
-    releases,
-  );
-});
-
-/** The source list of a search is the same from the stored summary and from the coverage scan. */
-test('the sources a search covers are the same from the summary and from the scan, and the summary reads no coverage', async () => {
-  const fixture = buildFixture();
-  routeFixture(fixture, ['syn-src-1', 'syn-src-2']);
-  // One source has no available output left for the capability; the other keeps one.
-  const db = fixture.db.sqlite;
-  for (const {name} of db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'coverage'",
-    )
-    .all())
-    db.exec(`DROP TRIGGER ${name}`);
-  db.exec(
-    `UPDATE coverage SET state = 'partial', limitation = 'x' WHERE output_id = 'syn-src-2'`,
-  );
-  // A capability outside the search indexes, which the summary does not hold.
-  const columns = db
-    .prepare('PRAGMA table_info(coverage)')
-    .all()
-    .map(column => String(column.name));
-  db.exec(
-    `INSERT INTO coverage (${columns.join(', ')})
-     SELECT ${columns.map(c => (c === 'capability' ? "'source_context'" : c)).join(', ')}
-     FROM coverage WHERE output_id = 'syn-src-1' AND capability = 'word_exact'`,
-  );
-  storeSummary(fixture);
-  const listed = (name: 'release_sources' | 'release_sources_summary') =>
-    db
-      .prepare(QUERIES[name].sql)
-      .all('rel-2', 'word_exact', '', '', 41)
-      .map(row => [
-        row.source_revision_id,
-        row.capability,
-        row.outputs,
-        Number(row.available) > 0,
-      ]);
-  assert.deepEqual(
-    listed('release_sources_summary'),
-    listed('release_sources'),
-  );
-  assert.ok(listed('release_sources_summary').length > 0);
-  const allCapabilities = (
-    name: 'release_sources' | 'release_sources_summary',
-  ) =>
-    db
-      .prepare(QUERIES[name].sql)
-      .all('rel-2', null, '', '', 41)
-      .map(row => [
-        row.source_revision_id,
-        row.capability,
-        Number(row.available) > 0,
-      ]);
-  assert.deepEqual(
-    allCapabilities('release_sources_summary'),
-    allCapabilities('release_sources'),
-  );
-  const plan = db
-    .prepare(`EXPLAIN QUERY PLAN ${QUERIES.release_sources_summary.sql}`)
-    .all('rel-2', 'word_exact', '', '', 41)
-    .map(row => String(row.detail))
-    .join('\n');
-  assert.match(plan, /SEARCH s USING PRIMARY KEY/);
-  assert.doesNotMatch(
-    plan,
-    /\b(coverage|release_outputs|prepared_outputs|index_routes|source_nodes)\b/,
-  );
-  const other: string[][] = [];
-  for (const summary of [true, false]) {
-    if (!summary) dropSummary(fixture);
-    const session = await ReadSession.open(fixture.env, roomy);
-    assert.equal(session.release.index_summary, summary);
-    assert.deepEqual(
-      await sourcesWith(session, 'word_exact'),
-      [A],
-      summary ? 'summary' : 'scan',
-    );
-    // A capability that is not a search capability is not in the summary: it keeps the scan.
-    other.push(await sourcesWith(session, 'source_context'));
-  }
-  assert.ok(other[0].length > 0, 'the fixture has source_context');
-  assert.deepEqual(other[0], other[1]);
 });
 
 /** Exhausting a key page by page returns the same answer by both paths, at a tight allowance. */

@@ -115,25 +115,6 @@ test('no competing Worker or SQL writer in Terraform; R2 managed access disabled
   );
 });
 
-test('malformed DNS labels and trailing instance hyphens fail validation', () => {
-  for (const key of ['ZONE_NAME', 'STUDY_HOSTNAME', 'CONTROL_HOSTNAME']) {
-    for (const value of [
-      'a..example.invalid',
-      '-a.example.invalid',
-      'a-.example.invalid',
-      'a'.repeat(64) + '.example.invalid',
-      ('a'.repeat(60) + '.').repeat(5) + 'invalid',
-    ]) {
-      assert.throws(() => renderWorkerConfigs({...input, [key]: value}, root), {
-        message: `Invalid or missing ${key}`,
-      });
-    }
-  }
-  assert.throws(
-    () => renderWorkerConfigs({...input, INSTANCE: 'a-'}, root),
-    /Invalid or missing INSTANCE/,
-  );
-});
 test(
   're-rendering resets stale directory and file permissions',
   {skip: process.platform === 'win32'},

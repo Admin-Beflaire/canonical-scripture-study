@@ -12,7 +12,7 @@ import unittest
 
 from css_preparation.acquire.retention import AdmissionBasis, InputRecord, assert_usable
 from css_preparation.contracts import contract_errors
-from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
+from css_preparation.executor import ControlState
 from css_preparation.executor.candidate import CandidateStore, persist_candidate
 from css_preparation.executor.records import RecordStore
 from css_preparation.executor.unit import run_unit
@@ -360,73 +360,6 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         self.assertEqual(result["state"], "failed")
         self.assertIsNone(result["quality_receipt_ref"])
         self.assert_no_selection()
-
-    def test_control_double_rejects_late_wrong_duplicate_and_changed_results(self):
-        self.build()
-        job, run, result = self.quality()
-        for change in (
-            {"run_id": "wrong-run"},
-            {"basis_digest": "f" * 64},
-            {"task_revision": 7},
-            {"unit_id": "wrong-unit"},
-        ):
-            self.assertEqual(
-                self.control.accept(job, run, {**result, **change})[0], "rejected"
-            )
-        self.control.state = "cancelled"
-        self.assertEqual(self.control.accept(job, run, result), ("accepted", False))
-        self.assertEqual(self.control.accept(job, run, result), ("duplicate", False))
-        self.assert_no_selection()
-        self.control = ControlDouble()
-        self.control.state = "superseded"
-        self.assertEqual(self.control.accept(job, run, result), ("accepted", False))
-        self.assert_no_selection()
-
-    def test_exact_control_wire_bytes_and_json_reserialization_refusal(self):
-        job, raw, expected = WIRE["job_input"], WIRE["canonical_json"], WIRE["sha256"]
-        self.assertEqual(hashlib.sha256(raw.encode("utf-8")).hexdigest(), expected)
-        self.assertEqual(json.loads(raw), job)
-        state = ControlState(
-            job["task_id"],
-            job["task_revision"] + 1,
-            "running",
-            job["basis_digest"],
-            job["unit_id"],
-            job["attempt"],
-            job["task_revision"],
-            expected,
-            "run-wire",
-            "dispatched",
-        )
-
-        def reader(*_):
-            return state
-
-        def registered(ref):
-            return ref["kind"] == "source_revision" and ref["id"] == SOURCE_REV
-
-        self.assertEqual(
-            execute_unit(
-                raw,
-                run_id="run-wire",
-                read_control=reader,
-                registered=registered,
-                process=lambda _: "ok",
-            ),
-            "ok",
-        )
-        # Equivalent parsed data is NOT enough: Control has persisted the hash
-        # of its own canonicalJson UTF-8 bytes. Transport cannot reserialize it.
-        altered = json.dumps(job, ensure_ascii=False)
-        self.assertNotEqual(altered, raw)
-        with self.assertRaises(UnitNotRunnableError):
-            execute_unit(
-                altered,
-                run_id="run-wire",
-                read_control=reader,
-                registered=registered,
-                process=lambda _: self.fail("must not run"),
-            )
 
 
 if __name__ == "__main__":

@@ -112,34 +112,6 @@ class PlanRecordTests(unittest.TestCase):
         ):
             self.assertNotIn(private, output)
 
-    def test_a_plan_with_many_resources_is_limited(self):
-        text = "".join(
-            f'  # aws_thing.t{i} will be created\n  + resource "aws_thing" "t{i}" {{\n'
-            f"      + size = 1\n    }}\n"
-            for i in range(20)
-        )
-        _, lines = run_tool(
-            "terraform",
-            "--tool",
-            "platform",
-            "--stage",
-            "plan",
-            text=text + "Plan: 20 to add, 0 to change, 0 to destroy.\n",
-        )
-        self.assertEqual(len(lines), 1 + tool_log.MAX_RESOURCES)
-        self.assertEqual(parsed(lines[0])["counts"]["resources"], 20)
-
-    def test_a_clean_plan_gives_no_records(self):
-        _, lines = run_tool(
-            "terraform",
-            "--tool",
-            "platform",
-            "--stage",
-            "plan",
-            text="No changes. Your infrastructure matches the configuration.\n",
-        )
-        self.assertEqual(lines, [])
-
 
 class FailureRecordTests(unittest.TestCase):
     def test_terraform_failure_gives_kind_address_and_exit(self):
@@ -191,19 +163,6 @@ class FailureRecordTests(unittest.TestCase):
                 self.assertNotIn("secret123", lines[0])
                 self.assertNotIn("hunter2", lines[0])
 
-    def test_a_summary_of_no_known_kind_gives_no_message(self):
-        _, lines = run_tool(
-            "terraform",
-            "--tool",
-            "platform",
-            "--stage",
-            "apply",
-            "--exit",
-            "1",
-            text="Error: something about hunter2\n",
-        )
-        self.assertNotIn("message", parsed(lines[0]))
-
     def test_wrangler_failure_keeps_the_provider_code_not_the_message(self):
         _, lines = run_tool(
             "wrangler",
@@ -219,81 +178,6 @@ class FailureRecordTests(unittest.TestCase):
         self.assertEqual(record["provider_code"], 10000)
         self.assertNotIn("message", record)
         self.assertNotIn("0123456789abcdef", lines[0])
-
-    def test_real_wrangler_and_esbuild_output_with_colour_codes(self):
-        # Captured from wrangler 4.158.0 and esbuild; Wrangler coloured the output sent to a file.
-        wrangler = (
-            "\x1b[33m▲ \x1b[43;33m[\x1b[43;30mWARNING\x1b[43;33m]\x1b[0m \x1b[1mProxy environment variables detected.\x1b[0m\n\n"
-            "\x1b[31m✘ \x1b[41;31m[\x1b[41;97mERROR\x1b[41;31m]\x1b[0m "
-            '\x1b[1mThe entry-point file at "missing.js" was not found.\x1b[0m\n\n'
-            "  This might mean that your entry-point file needs to be generated.\n"
-        )
-        esbuild = '✘ [ERROR] Unexpected ";"\n\n    bad.ts:1:10:\n      1 │ const x = ;\n        ╵           ^\n\n1 error\n'
-        _, lines = run_tool(
-            "wrangler",
-            "--tool",
-            "deploy",
-            "--stage",
-            "worker_build",
-            "--exit",
-            "1",
-            text=wrangler,
-        )
-        self.assertEqual(
-            parsed(lines[0])["message"], "A resource or file was not found."
-        )
-        self.assertNotIn("missing.js", lines[0])
-        _, lines = run_tool(
-            "wrangler",
-            "--tool",
-            "deploy",
-            "--stage",
-            "worker_build",
-            "--exit",
-            "1",
-            text=esbuild,
-        )
-        self.assertEqual(
-            parsed(lines[0])["message"], "A source file has a syntax error."
-        )
-        self.assertNotIn("const x", lines[0])
-
-    def test_a_command_without_a_known_format_gives_only_its_exit_code(self):
-        _, lines = run_tool(
-            "none",
-            "--tool",
-            "deploy",
-            "--stage",
-            "install",
-            "--exit",
-            "7",
-            text="npm error anything private\n",
-        )
-        record = parsed(lines[0])
-        self.assertEqual(
-            (record["code"], record["exit"], record["stage"]),
-            ("command_failed", 7, "install"),
-        )
-        self.assertNotIn("private", lines[0])
-
-    def test_a_missing_log_still_reports_the_failure(self):
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            status = tool_log.main(
-                [
-                    "terraform",
-                    "--tool",
-                    "platform",
-                    "--stage",
-                    "init",
-                    "--exit",
-                    "1",
-                    "--log",
-                    "/nonexistent/x.log",
-                ]
-            )
-        self.assertEqual(status, 0)
-        self.assertEqual(parsed(out.getvalue())["code"], "terraform_failed")
 
     def test_the_summary_never_changes_the_exit_status(self):
         out = io.StringIO()

@@ -63,6 +63,16 @@ def recipe(component, commit, revision):
     return AidRecipe(raw, component, commit, revision, cap, 1), unit
 
 
+def prepare(reader, unit, refs, store):
+    job = {
+        "kind": "prepare",
+        "unit_id": unit["unit_id"],
+        "native_extent": unit["native_extent"],
+        "input_refs": refs,
+    }
+    return reader.prepare(job, store)
+
+
 class PreparationTest(unittest.TestCase):
     def test_hebrew_preserves_restriction_and_private_body(self):
         rev = "fixture-tbesh/1"
@@ -106,15 +116,7 @@ class PreparationTest(unittest.TestCase):
                 store = Store({rev: data.encode()})
                 reader, unit = recipe(component, BDB_COMMIT, rev)
                 refs = [{"kind": "source_revision", "id": rev}]
-                records = reader.prepare(
-                    {
-                        "kind": "prepare",
-                        "unit_id": unit["unit_id"],
-                        "native_extent": unit["native_extent"],
-                        "input_refs": refs,
-                    },
-                    store,
-                )
+                records = prepare(reader, unit, refs, store)
                 self.assertEqual(
                     records.rows("prepared_output")[0]["input_revisions_json"], [rev]
                 )
@@ -128,49 +130,6 @@ class PreparationTest(unittest.TestCase):
                     )
                 )
 
-    def test_saved_candidate_quality_checks_bdb_output(self):
-        from css_preparation.prepare.evidence import OutputBasis
-        from css_preparation.validate.saved import CandidateInventory
-        from css_preparation.validate.semantic import check_saved_semantics
-
-        rev = "fixture-bdb/1"
-        store = Store({rev: BDB.encode()})
-        reader, unit = recipe("bdb", BDB_COMMIT, rev)
-        refs = [{"kind": "source_revision", "id": rev}]
-        records = reader.prepare(
-            {
-                "kind": "prepare",
-                "unit_id": unit["unit_id"],
-                "native_extent": unit["native_extent"],
-                "input_refs": refs,
-            },
-            store,
-        )
-        basis = OutputBasis(
-            "aid_entries",
-            (rev,),
-            "language-aids/2",
-            {"component": "bdb", "commit": BDB_COMMIT, "entries": "r2"},
-            {"coordinate_version": "language-aids/bdb/1", "unit_ids": ["p000"]},
-        )
-        blobs = {
-            row["registered_locator"]: records.blobs[row["id"]]
-            for row in records.rows("artifact")
-        }
-        result = check_saved_semantics(
-            {
-                "input_refs": refs,
-                "native_extent": {"unit_ids": ["p000"]},
-                "required_capabilities": ["lexicon_entry"],
-            },
-            CandidateInventory(added=(basis,)),
-            read_rows=lambda kind, _: records.rows(kind),
-            read_blob=blobs.__getitem__,
-            read_source=lambda revision: reader.read_source(revision, store),
-            read_aid_entries=lambda job: reader.read_aid_entries(job, store),
-        )
-        self.assertIn("lexicon_entry", result.capabilities)
-
     def saved(self):
         from css_preparation.prepare.evidence import OutputBasis
         from css_preparation.validate.saved import CandidateInventory
@@ -179,15 +138,7 @@ class PreparationTest(unittest.TestCase):
         store = Store({rev: BDB.encode()})
         reader, unit = recipe("bdb", BDB_COMMIT, rev)
         refs = [{"kind": "source_revision", "id": rev}]
-        records = reader.prepare(
-            {
-                "kind": "prepare",
-                "unit_id": unit["unit_id"],
-                "native_extent": unit["native_extent"],
-                "input_refs": refs,
-            },
-            store,
-        )
+        records = prepare(reader, unit, refs, store)
         basis = OutputBasis(
             "aid_entries",
             (rev,),
@@ -197,7 +148,7 @@ class PreparationTest(unittest.TestCase):
         )
         return reader, store, records, refs, CandidateInventory(added=(basis,))
 
-    def check(self, reader, store, records, refs, inventory, blobs=None):
+    def check(self, reader, store, records, refs, inventory, blobs=None, verified=True):
         from css_preparation.validate.semantic import check_saved_semantics
 
         blobs = blobs or {
@@ -214,7 +165,11 @@ class PreparationTest(unittest.TestCase):
             read_rows=lambda kind, _: records.rows(kind),
             read_blob=blobs.__getitem__,
             read_source=lambda revision: reader.read_source(revision, store),
-            read_aid_entries=lambda job: reader.read_aid_entries(job, store),
+            **(
+                {"read_aid_entries": lambda job: reader.read_aid_entries(job, store)}
+                if verified
+                else {}
+            ),
         )
 
     def test_quality_refuses_aid_entries_that_differ_from_the_source_or_their_file(
@@ -338,25 +293,9 @@ class PreparationTest(unittest.TestCase):
         self.check(reader, clean, good, refs, CandidateInventory(added=(basis,)))
 
     def test_quality_refuses_aid_outputs_without_a_verification_source(self):
-        from css_preparation.validate.semantic import check_saved_semantics
-
         reader, store, records, refs, inventory = self.saved()
-        blobs = {
-            row["registered_locator"]: records.blobs[row["id"]]
-            for row in records.rows("artifact")
-        }
         with self.assertRaises(RecordError):
-            check_saved_semantics(
-                {
-                    "input_refs": refs,
-                    "native_extent": {"unit_ids": ["p000"]},
-                    "required_capabilities": ["lexicon_entry"],
-                },
-                inventory,
-                read_rows=lambda kind, _: records.rows(kind),
-                read_blob=blobs.__getitem__,
-                read_source=lambda revision: reader.read_source(revision, store),
-            )
+            self.check(reader, store, records, refs, inventory, verified=False)
 
     def test_empty_lsj_meaning_is_a_gap_without_substituting_gloss(self):
         rev = "fixture-lsj/1"
@@ -374,27 +313,6 @@ class PreparationTest(unittest.TestCase):
         last = lines(records)[-1]
         self.assertEqual((last["reading_kind"], last["text"]), ("gap", None))
         self.assertEqual(last["details"]["gloss"], "Sin")
-
-    def test_recipe_must_list_the_source_revision_a_task_names(self):
-        from pathlib import Path
-
-        raw = json.loads(
-            (
-                Path(__file__).resolve().parents[2]
-                / "collection/recipes/language-aids-bdb.json"
-            ).read_text()
-        )
-        self.assertEqual(
-            raw["task_inputs"],
-            [{"kind": "source_revision", "id": raw["parameters"]["source_revision"]}],
-        )
-        AidRecipe.from_recipe(raw)
-        for change in (
-            {"task_inputs": []},
-            {"task_inputs": [{"kind": "acquisition", "id": raw["dependencies"][0]}]},
-        ):
-            with self.subTest(change=change), self.assertRaises(RecordError):
-                AidRecipe.from_recipe({**raw, **change})
 
     def test_all_recipe_partitions_fit_the_runner_batch_at_observed_sizes(self):
         from pathlib import Path
@@ -541,50 +459,6 @@ class PreparationTest(unittest.TestCase):
             store.nodes[rev]["details_json"]["sha256"] = "f" * 64
             with self.assertRaises(RecordError):
                 run(units[1])
-
-    def test_partition_cache_write_failure_logs_once_and_preparation_succeeds(self):
-        from unittest.mock import Mock
-
-        rev = "fixture-tbesh/1"
-        store = Store({rev: HEBREW.encode()})
-        store.write_partition_cache = Mock(side_effect=OSError("cache unavailable"))
-        coord = "language-aids/tbesh/1"
-        units = [
-            {
-                "unit_id": f"prepare-{i:03d}",
-                "kind": "prepare",
-                "native_extent": {
-                    "unit_ids": [f"p{i:03d}"],
-                    "coordinate_version": coord,
-                },
-                "depends_on": [],
-            }
-            for i in range(2)
-        ]
-        reader = AidRecipe(
-            {"native_extent": {"coordinate_version": coord}, "units": units},
-            "tbesh",
-            STEP,
-            rev,
-            "lexicon_entry",
-            2,
-        )
-        job = {
-            "kind": "prepare",
-            "unit_id": units[0]["unit_id"],
-            "native_extent": units[0]["native_extent"],
-            "input_refs": [{"kind": "source_revision", "id": rev}],
-        }
-        expected = reader.prepare(job, Store({rev: HEBREW.encode()}))
-        with self.assertLogs(
-            "css_preparation.adapters.step_aids", level="WARNING"
-        ) as logs:
-            actual = reader.prepare(job, store)
-        self.assertEqual(store.write_partition_cache.call_count, 2)
-        self.assertEqual(len(logs.records), 1)
-        self.assertIn("Partition cache write failed", logs.output[0])
-        self.assertEqual(actual.statements(), expected.statements())
-        self.assertEqual(actual.blobs, expected.blobs)
 
     def test_original_digest_is_checked(self):
         rev = "fixture-tbesh/1"

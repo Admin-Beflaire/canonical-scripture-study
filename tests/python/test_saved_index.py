@@ -376,10 +376,6 @@ class SavedIndexStageFour(unittest.TestCase):
             self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SavedIndexAcrossFiles(unittest.TestCase):
     """A key spanning two postings files: the directory sequence decides the order readers see."""
 
@@ -505,3 +501,7 @@ class SavedIndexAcrossFiles(unittest.TestCase):
         )
         with self.assertRaisesRegex(RecordError, "directory sequence"):
             verify_saved_index(*self.build(reverse=True), max_page_bytes=2048)
+
+
+if __name__ == "__main__":
+    unittest.main()

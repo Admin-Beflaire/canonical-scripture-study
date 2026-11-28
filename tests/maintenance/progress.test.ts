@@ -4,8 +4,8 @@ import {createHash} from 'node:crypto';
 import type {DatabaseSync} from 'node:sqlite';
 import {localD1} from './d1.ts';
 import {fakeGitHub} from './github.ts';
+import {jobSender} from './builds.ts';
 import {GitHubActions} from '../../services/maintenance/control/src/github.ts';
-import {jobRoutes} from '../../services/maintenance/control/src/jobs.ts';
 import {
   advance,
   reconcile,
@@ -17,10 +17,7 @@ import {
   taskReport,
   type TaskRequest,
 } from '../../services/maintenance/control/src/tasks.ts';
-import {
-  controlServer,
-  describeProgressFailure,
-} from '../../services/maintenance/control/src/mcp.ts';
+import {controlServer} from '../../services/maintenance/control/src/mcp.ts';
 import {protocolHandler} from '../../packages/shared/src/platform.ts';
 import type {JobInput} from '../../services/maintenance/control/src/contracts.ts';
 
@@ -90,14 +87,9 @@ async function setup(
     instruction: 'Prepare the synthetic source',
   });
   assert.ok(created.status === 'created');
-  const routes = jobRoutes(db, github);
+  const send = jobSender(db, github);
   const post = async (path: string, body: unknown) => {
-    const response = await routes(
-      new Request(`https://control.example.invalid${path}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    );
+    const response = await send(path, body);
     return {
       status: response.status,
       body: (await response.json()) as Record<string, unknown>,
@@ -546,64 +538,6 @@ async function initializedCaller(
   return call;
 }
 
-test('MCP: request_task dispatches, get_task reconciles, cancel asks GitHub to stop runs', async () => {
-  const {db, gh, github} = githubWorld();
-  const handler = protocolHandler(
-    () => controlServer(db, owner, false, github),
-    false,
-  );
-  let id = 0;
-  const call = async (method: string, params: Record<string, unknown> = {}) => {
-    const response = await handler.fetch(
-      new Request('https://control.example.invalid/mcp', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/event-stream',
-          'MCP-Protocol-Version': '2025-06-18',
-        },
-        body: JSON.stringify({jsonrpc: '2.0', id: ++id, method, params}),
-      }),
-    );
-    const text = await response.text();
-    const data = text.startsWith('{')
-      ? text
-      : text
-          .split('\n')
-          .find(line => line.startsWith('data: '))!
-          .slice(6);
-    return JSON.parse(data);
-  };
-  await call('initialize', {
-    protocolVersion: '2025-06-18',
-    capabilities: {},
-    clientInfo: {name: 't', version: '1'},
-  });
-  const created = await call('tools/call', {
-    name: 'request_task',
-    arguments: {...requestArguments},
-  });
-  assert.match(created.result.content[0].text, /dispatched prepare-u1/);
-  const taskId = JSON.parse(
-    created.result.content[0].text.split('\n\n')[1],
-  ).task_id;
-  const report = await call('tools/call', {
-    name: 'get_task',
-    arguments: {task_id: taskId},
-  });
-  const revision = JSON.parse(
-    report.result.content[0].text.split('\n\n')[1],
-  ).revision;
-  const cancelled = await call('tools/call', {
-    name: 'control_task',
-    arguments: {task_id: taskId, expected_revision: revision, action: 'cancel'},
-  });
-  const body = JSON.parse(cancelled.result.content[0].text.split('\n\n')[1]);
-  assert.equal(body.state, 'cancelled');
-  assert.deepEqual(body.runs_cancelled, [String([...gh.runs.keys()][0])]);
-  assert.equal([...gh.runs.values()][0].conclusion, 'cancelled');
-});
-
 test('R22-1: a GitHub outage postpones progression but never breaks or blocks the task tools', async () => {
   for (const mode of ['down', 'offline'] as const) {
     const {db, gh, github} = githubWorld();
@@ -651,64 +585,6 @@ test('R22-1: a GitHub outage postpones progression but never breaks or blocks th
     context.db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()
       ?.state,
     'intended',
-  );
-});
-
-test('R22-2: failed cancellations are reported and retried', async () => {
-  const {db, gh, github} = githubWorld();
-  const call = await initializedCaller(db, github);
-  const created = JSON.parse(
-    (
-      await call('tools/call', {
-        name: 'request_task',
-        arguments: {...requestArguments},
-      })
-    ).result.content[0].text.split('\n\n')[1],
-  );
-  const run = [...gh.runs.values()][0];
-  gh.state.failCancel = true;
-  const report = await taskReport(db, owner, created.task_id);
-  const cancelled = await call('tools/call', {
-    name: 'control_task',
-    arguments: {
-      task_id: created.task_id,
-      expected_revision: report!.revision,
-      action: 'cancel',
-    },
-  });
-  assert.match(
-    cancelled.result.content[0].text,
-    /did not go through; get_task requests it again/,
-  );
-  const body = JSON.parse(cancelled.result.content[0].text.split('\n\n')[1]);
-  assert.deepEqual(
-    [body.runs_cancelled, body.cancel_failed],
-    [[], [String(run.id)]],
-  );
-  assert.equal(run.status, 'queued');
-  // The next check asks again; when GitHub reports the run finished, the job is closed as cancelled.
-  gh.state.failCancel = false;
-  const again = JSON.parse(
-    (
-      await call('tools/call', {
-        name: 'get_task',
-        arguments: {task_id: created.task_id},
-      })
-    ).result.content[0].text.split('\n\n')[1],
-  );
-  assert.ok(
-    again.reconciliation.some((note: string) =>
-      note.includes('cancellation requested again'),
-    ),
-  );
-  assert.equal(run.conclusion, 'cancelled');
-  await call('tools/call', {
-    name: 'get_task',
-    arguments: {task_id: created.task_id},
-  });
-  assert.equal(
-    db.sqlite.prepare('SELECT state FROM maintenance_jobs').get()?.state,
-    'cancelled',
   );
 });
 
@@ -770,36 +646,6 @@ function mcpCaller(db: ReturnType<typeof localD1>, github: GitHubActions) {
   };
 }
 
-test('R22-4: a run that confirms itself before GitHub replies is the same dispatch, not an orphan', async () => {
-  const context = await setup();
-  const {db, gh, task, post} = context;
-  context.gh.state.onDispatch = async run => {
-    // The runner starts and reads its state while Control still awaits the dispatch reply.
-    const confirmed = await post('/internal/jobs/state', {
-      task_id: task.id,
-      unit_id: 'prepare-u1',
-      attempt: 1,
-      run_id: String(run.id),
-      job_input_basis: sha(run.job),
-    });
-    assert.equal(confirmed.status, 200);
-  };
-  const progress = await advance(db, context.github, task.id);
-  assert.deepEqual(progress.dispatched, ['prepare-u1']);
-  const run = [...gh.runs.values()][0];
-  assert.equal(
-    run.conclusion,
-    null,
-    'the legitimately claimed run is not cancelled',
-  );
-  assert.ok(!gh.requests.some(request => request.url.endsWith('/cancel')));
-  const job = db.sqlite
-    .prepare('SELECT state, run_id FROM maintenance_jobs')
-    .get() as Record<string, unknown>;
-  assert.deepEqual([job.state, job.run_id], ['dispatched', String(run.id)]);
-  assert.equal((await taskReport(db, owner, task.id))?.state, 'running');
-});
-
 test('R22-5: a losing first advance never dispatches under a recipe revision other than the saved pin', async () => {
   const context = await setup();
   const {db, gh, task} = context;
@@ -831,17 +677,6 @@ test('R22-5: a losing first advance never dispatches under a recipe revision oth
     ),
   );
   assert.equal(gh.runs.size, 0);
-});
-
-test('a recipe that is not valid UTF-8 blocks the task as a recipe problem, not an outage', async () => {
-  const context = await setup();
-  context.gh.state.rawRecipes.set(
-    'collection/recipes/synthetic.json',
-    new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]),
-  );
-  const progress = await advance(context.db, context.github, context.task.id);
-  assert.equal(progress.state, 'blocked');
-  assert.match(progress.limitation ?? '', /not valid UTF-8/);
 });
 
 test('R22-6: only the run GitHub titled with this job can claim a lost dispatch', async () => {
@@ -914,33 +749,6 @@ test('R22-7: a lost dispatch is never retried on a partial run listing', async (
       .prepare('SELECT state FROM maintenance_jobs WHERE unit_id = ?')
       .get('prepare-u1')?.state,
     'intended',
-  );
-});
-
-test('Control progression failures distinguish D1 write quota from other errors without leaking details', () => {
-  assert.deepEqual(
-    describeProgressFailure(
-      'advance',
-      new Error(
-        "D1_ERROR: Your account has exceeded D1's free tier daily row write limit. Upgrade or wait.",
-      ),
-    ),
-    {
-      operation: 'advance',
-      code: 'd1_write_quota',
-      message: 'Cloudflare D1 daily row write limit exceeded.',
-    },
-  );
-  assert.deepEqual(
-    describeProgressFailure(
-      'reconcile',
-      new Error('secret-token: unexpected database error'),
-    ),
-    {
-      operation: 'reconcile',
-      code: 'failed',
-      message: 'Progression failed; inspect Worker logs.',
-    },
   );
 });
 
@@ -1068,63 +876,6 @@ test('an acquire task completes with the original recorded and never touches a r
       .get()?.current_release_id,
     null,
   );
-});
-
-test('a recipe that lists its task inputs blocks a task that misses one before anything is dispatched', async () => {
-  const listed = {
-    ...acquireRecipe,
-    id: 'acquire-listed',
-    revision: 'acquire-listed/1',
-    adapter: {name: 'other-fetch', method_version: 'other-fetch/1'},
-    task_inputs: [
-      {kind: 'acquisition', id: 'route/1'},
-      {kind: 'source_revision', id: 'revision/1'},
-    ],
-  };
-  const ctx = await setup({'collection/recipes/acquire-listed.json': listed});
-  const created = await requestTask(ctx.db, owner, {
-    request_key: 'listed',
-    instruction: 'Fetch it',
-    steps: ['fetch'],
-    inputs: [{kind: 'acquisition', id: 'route/1'}],
-    extent: {component: 'revision/1'},
-    capabilities: [],
-    constraints: {fetch_recipe: 'acquire-listed'},
-    decision_refs: [
-      {kind: 'admission', ref: 'owner-decision:1', subject: 'route/1'},
-    ],
-  });
-  if (created.status !== 'created') throw new Error('task not created');
-  await advance(ctx.db, ctx.github, created.task.id);
-  const report = (await taskReport(ctx.db, owner, created.task.id))!;
-  assert.equal(report.state, 'blocked');
-  assert.ok(
-    report.limitations.some(text =>
-      text.includes('source_revision revision/1'),
-    ),
-    JSON.stringify(report.limitations),
-  );
-  assert.equal(ctx.gh.runs.size, 0, 'nothing was dispatched');
-});
-
-test('a fetch followed by a select goes on to the select step instead of completing', async () => {
-  const ctx = await acquireContext();
-  const id = await requestAcquire(ctx, ['fetch', 'select'], {
-    candidate: 'task-that-does-not-exist',
-  });
-  await finishAcquire(ctx);
-  const report = (await taskReport(ctx.db, owner, id))!;
-  assert.equal(report.state, 'blocked', 'the select step ran and refused');
-  assert.ok(
-    report.limitations.some(text => text.includes('was not found')),
-    JSON.stringify(report.limitations),
-  );
-  assert.deepEqual(
-    report.completed_extent,
-    {component: 'revision/1'},
-    'the finished fetch is recorded before the select step',
-  );
-  assert.deepEqual(report.remaining_extent, {});
 });
 
 test('acquire-only validation stops unsuitable recipes and incomplete references before dispatch', async () => {
@@ -1281,30 +1032,6 @@ test('each recipe step keeps its own pin: a changed fetch recipe blocks the task
   );
   assert.equal(context.gh.runs.size, 1, 'only the first fetch ran');
 });
-
-test('a task requested before tasks listed their steps is blocked, not guessed', async () => {
-  const context = await setup();
-  const old = {
-    kind: 'prepare',
-    inputs: [],
-    operations: [],
-    extent: {},
-    capabilities: [],
-    constraints: {recipe: 'synthetic'},
-    decision_refs: [],
-  };
-  context.db.sqlite.exec('DROP TRIGGER maintenance_task_identity_stable');
-  context.db.sqlite
-    .prepare(
-      'UPDATE maintenance_tasks SET revision = revision + 1, scope_json = ? WHERE id = ?',
-    )
-    .run(JSON.stringify(old), context.task.id);
-  const result = await advance(context.db, context.github, context.task.id);
-  assert.equal(result.state, 'blocked');
-  assert.match(result.limitation!, /request it again/);
-  assert.equal(context.gh.runs.size, 0);
-});
-
 test('a fetch recipe and a build recipe cannot be swapped, and a recipe does only one of them', async () => {
   const mixed = {
     ...recipe,

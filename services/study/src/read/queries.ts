@@ -54,21 +54,8 @@ const key = (value: unknown): string => {
     throw new ReadError('invalid_request', 'Invalid search key');
   return value;
 };
-const order = (value: unknown): number => {
-  if (!isSafeCount(value))
-    throw new ReadError('invalid_request', 'Expected a native order');
-  return value;
-};
-
 export interface SpansInput {
   ids: string[];
-}
-export interface OverlapInput {
-  source_revision_id: string;
-  kinds: string[];
-  start: number;
-  end: number;
-  after?: [number, string, number] | null;
 }
 export interface AnnotationsInput {
   span_ids: string[];
@@ -142,17 +129,6 @@ CROSS JOIN source_nodes s ON s.id = n.source_revision_id
 LEFT JOIN text_payloads p ON p.content_id = n.content_id
 ORDER BY n.source_revision_id, n.native_order, n.id
 LIMIT ?3`;
-
-const OVERLAP = `SELECT g.span_id, g.segment_ordinal, g.kind, g.start_order, g.end_order,
-  n.label, n.native_order, n.basis_json, n.source_revision_id
-FROM span_segments g
-JOIN native_spans n ON n.id = g.span_id
-JOIN release_outputs ro ON ro.output_id = n.output_id AND ro.release_id = ?1
-WHERE g.source_revision_id = ?2 AND g.kind IN (SELECT value FROM json_each(?3))
-  AND g.start_order <= ?5 AND g.end_order >= ?4
-  AND (g.start_order, g.span_id, g.segment_ordinal) > (?6, ?7, ?8)
-ORDER BY g.start_order, g.span_id, g.segment_ordinal
-LIMIT ?9`;
 
 const ANNOTATIONS = `SELECT a.id, a.span_id, a.source_revision_id, a.kind, a.provider, a.basis_json, a.details_json
 FROM annotations a
@@ -561,23 +537,6 @@ FROM json_each(?2) wanted WHERE EXISTS (
     params: aidParams,
   },
   spans: {sql: SPANS, params: (i: SpansInput) => [JSON.stringify(list(i.ids))]},
-  literary_overlap: {
-    sql: OVERLAP,
-    params: (i: OverlapInput) => {
-      const start = order(i.start),
-        end = order(i.end);
-      if (end < start)
-        throw new ReadError('invalid_request', 'Empty native order range');
-      const after = optionalAfter(i.after, 3) ?? [-1, '', -1];
-      return [
-        id(i.source_revision_id),
-        JSON.stringify(list(i.kinds, 8)),
-        start,
-        end,
-        ...after,
-      ];
-    },
-  },
   annotations: {
     sql: ANNOTATIONS,
     params: (i: AnnotationsInput) => [

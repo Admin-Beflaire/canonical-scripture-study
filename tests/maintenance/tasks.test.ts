@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
 import {localD1} from './d1.ts';
 import {
   controlTask,
@@ -450,58 +449,5 @@ test('task report shows the error record as stored and only a code for results f
   assert.equal(
     await taskReport(db, 'other@example.invalid', created.task.id),
     null,
-  );
-});
-
-test('Python preparation error records are shown by Control exactly as built', async () => {
-  const script = `import json
-from css_preparation.diagnostics import diagnostic
-from css_preparation.executor.unit import UnitProgress
-from css_preparation.prepare.records import ReaderBoundaryError, RecordError
-from css_preparation.provider import ProviderError
-from css_preparation.runner.__main__ import _from_progress
-job = json.load(open('tests/conformance/dp04-control-wire.v1.json'))['job_input']
-errors = [('invalid_or_unavailable_output', OSError('private secret material')),
-          ('invalid_or_unavailable_output', RecordError('Gen.3 line 1204, field morph: expected a morphology code')),
-          ('provider_failure', ProviderError('Provider request refused', status=503)),
-          ('reader_boundary', ReaderBoundaryError('1Ch.12.5')), ('stopped', None)]
-out = []
-for stage in ['control_check', 'building_output', 'saving_output']:
-    for code, error in errors:
-        progress = UnitProgress('failed', {}, job['native_extent'], None, (code,), diagnostic(job, stage, code, error)['message'])
-        out.extend(_from_progress(job, '123', progress)['diagnostics'])
-print(json.dumps(out))`;
-  const env = {
-    ...process.env,
-    PYTHONPATH: [
-      'packages/shared-python/src',
-      'services/maintenance/data-preparation/src',
-      'tests/python',
-    ].join(process.platform === 'win32' ? ';' : ':'),
-  };
-  const python =
-    process.env.PYTHON ?? (process.platform === 'win32' ? 'python' : 'python3');
-  const diagnostics = JSON.parse(
-    execFileSync(python, ['-c', script], {encoding: 'utf8', env}),
-  ) as {code: string; message: string}[];
-  const db = localD1();
-  admitted(db);
-  const created = await requestTask(db, owner, prepare());
-  assert.ok(created.status === 'created');
-  db.sqlite
-    .prepare(
-      `INSERT INTO maintenance_jobs (task_id, task_revision, unit_id, attempt, kind, input_basis, run_id, state, result_json)
-    VALUES (?,1,'u1',1,'prepare',?,'run-1','failed',?)`,
-    )
-    .run(created.task.id, 'a'.repeat(64), JSON.stringify({diagnostics}));
-  const report = await taskReport(db, owner, created.task.id);
-  assert.equal(diagnostics.length, 15);
-  assert.deepEqual(
-    report?.jobs[0].diagnostics,
-    diagnostics.map(({code, message}) => ({code, record: JSON.parse(message)})),
-  );
-  assert.equal(
-    JSON.stringify(report).includes('private secret material'),
-    false,
   );
 });

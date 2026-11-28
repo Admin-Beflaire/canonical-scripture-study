@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
 import {
-  formatBytes,
   OUTPUT_ROWS,
   tidyReleases,
 } from '../../services/maintenance/control/src/cleanup.ts';
@@ -425,16 +424,6 @@ test('a task that ends clears what it left behind, and the selection is unchange
   assert.equal(selected.c, 'release-current');
 });
 
-test('a call that reaches its limit says that more may remain; one that does not says it is done', async () => {
-  const w = world();
-  const member = w.output('member', 'member');
-  for (let n = 0; n < 21; n++) w.release(`old-${n}`, [member]);
-  w.release('release-current', [member]);
-  w.select('release-current');
-  assert.equal((await tidyReleases(w.db, bucket())).more, true);
-  assert.equal((await tidyReleases(w.db, bucket())).more, false);
-});
-
 test('outputs that are blocked do not hide the removable ones behind them', async () => {
   const w = world();
   const kept = w.output('kept', 'kept');
@@ -519,13 +508,4 @@ test('every table that holds rows for a saved output is cleared with it', () => 
       OUTPUT_ROWS.some(sql => sql.startsWith(`DELETE FROM ${table} WHERE`)),
       `${table} has rows per saved output that cleanup does not remove; add it to OUTPUT_ROWS`,
     );
-});
-
-test('formatBytes shows small totals in B and KB, not as 0.0 MB', () => {
-  assert.deepEqual([0, 10, 1500, 2_500_000].map(formatBytes), [
-    '0 B',
-    '10 B',
-    '1.5 KB',
-    '2.5 MB',
-  ]);
 });

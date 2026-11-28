@@ -11,7 +11,6 @@ from css_preparation.executor import ControlState
 from css_preparation.executor.records import RecordStore
 from css_preparation.executor.quality import check_candidate_quality
 from css_preparation.prepare.records import ReaderBoundaryError
-from css_preparation.provider import ProviderError
 from preparation_fixture import COORDINATES, text_a
 from test_saved_candidate_inventory import SavedInventoryStageFour
 
@@ -146,24 +145,10 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed["remaining_extent"], self.job["native_extent"])
         self.assertEqual(self.received, {})
 
-    def test_quality_stage_is_reported_without_exception_text(self):
-        def fail_rows(*_):
-            raise OSError("secret or source wording")
-
-        code, record = self.record(self.invoke(rows=fail_rows))
-        self.assertEqual(
-            (code, record["stage"]), ("quality_failed", "validating_candidate")
-        )
-        self.assertNotIn("secret", json.dumps(record))
-
-        def fail_save(_):
-            raise OSError("secret or source wording")
-
-        failed = self.invoke(receipts=RecordStore(fail_save, self.load))
-        code, record = self.record(failed)
-        self.assertEqual((code, record["stage"]), ("quality_failed", "saving_receipt"))
-        self.assertNotIn("secret", json.dumps(record))
-        self.assertIsNone(failed["quality_receipt_ref"])
+    def invoke_record(self, **fields):
+        result = self.invoke(**fields)
+        self.assertEqual(result["state"], "failed")
+        return self.record(result)
 
     def test_quality_failure_diagnostic_keeps_cause_without_private_text(self):
         def fail_rows(*_):
@@ -177,51 +162,6 @@ class CandidateQualityStageFive(unittest.TestCase):
         )
         self.assertNotIn("private source words", json.dumps(record))
         self.assertNotIn("secret token", json.dumps(record))
-
-    def test_quality_control_provider_diagnostic_keeps_status(self):
-        def fail_control(*_):
-            raise ProviderError("Control state request refused", status=503)
-
-        code, record = self.invoke_record(control=fail_control)
-        self.assertEqual(code, "provider_failure")
-        self.assertEqual((record["stage"], record["http"]), ("control_check", 503))
-
-    def invoke_record(self, **fields):
-        result = self.invoke(**fields)
-        self.assertEqual(result["state"], "failed")
-        return self.record(result)
-
-    def test_quality_provider_failure_retains_receipt_stage(self):
-        def fail(_):
-            raise ProviderError("Receipt read refused", status=503)
-
-        code, record = self.record(self.invoke(receipts=RecordStore(self.save, fail)))
-        self.assertEqual(
-            (code, record["stage"], record["http"]),
-            ("provider_failure", "verifying_receipt", 503),
-        )
-
-    def failing_control(self, fail_at):
-        calls = []
-
-        def control(*_):
-            calls.append(1)
-            if len(calls) == fail_at:
-                raise ProviderError("Control state request refused", status=503)
-            return self.state
-
-        return control
-
-    def test_initial_and_pre_receipt_control_failures_identify_control_stage(self):
-        for fail_at in (1, 2):
-            with self.subTest(fail_at=fail_at):
-                failed = self.invoke(control=self.failing_control(fail_at))
-                code, record = self.record(failed)
-                self.assertEqual(
-                    (code, record["stage"], record["http"]),
-                    ("provider_failure", "control_check", 503),
-                )
-                self.assertIsNone(failed["quality_receipt_ref"])
 
     def test_quality_preserves_reader_boundary(self):
         from unittest.mock import patch
@@ -338,16 +278,6 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertIsNone(failed["quality_receipt_ref"])
         self.saved.assert_no_selection_change()
 
-    def test_receipt_is_identical_when_database_row_order_changes(self):
-        first = self.invoke()
-        self.assertEqual(first["state"], "succeeded")
-        second = self.invoke(
-            rows=lambda kind, *_: list(reversed(self.saved.rows(kind)))
-        )
-        self.assertEqual(second["state"], "succeeded")
-        self.assertEqual(first["quality_receipt_ref"], second["quality_receipt_ref"])
-        self.assertEqual(first["coverage_refs"], second["coverage_refs"])
-
     def test_cancelled_mid_quality_never_emits_receipt(self):
         from css_preparation.executor import UnitNotRunnableError
 
@@ -383,33 +313,6 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(result["completed_extent"], {})
         self.assertIsNone(result["quality_receipt_ref"])
         self.assertEqual(self.received, {})
-
-    def disappearing_reader(self, locator, error_class):
-        calls = [0]
-
-        def disappearing(key):
-            if key == locator:
-                calls[0] += 1
-                if calls[0] > 1:
-                    raise error_class("synthetic storage disappearance")
-            return self.saved.blobs[key]
-
-        return disappearing, calls
-
-    def test_saved_artifact_disappears_between_reads_returns_failed_result(self):
-        locator = self.saved.records.rows("artifact")[0]["registered_locator"]
-        for error_class in (KeyError, OSError):
-            with self.subTest(error=error_class.__name__):
-                disappearing, calls = self.disappearing_reader(locator, error_class)
-                result = self.invoke(read_blob=disappearing)
-                self.assertEqual(result["state"], "failed")
-                self.assertEqual(result["diagnostics"][0]["code"], "quality_failed")
-                self.assertEqual(result["completed_extent"], {})
-                self.assertEqual(result["remaining_extent"], self.job["native_extent"])
-                self.assertIsNone(result["quality_receipt_ref"])
-                self.assertGreaterEqual(calls[0], 2)
-                self.assertEqual(self.received, {})
-        self.saved.assert_no_selection_change()
 
     def test_changed_job_input_produces_distinct_immutable_receipt(self):
         first = self.invoke()

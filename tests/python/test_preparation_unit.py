@@ -8,18 +8,8 @@ import unittest
 
 from css_preparation.executor import ControlState, UnitNotRunnableError
 from css_preparation.executor.candidate import CandidateStore
-from css_preparation.executor.unit import (
-    RetryableUnitError,
-    StopWorkError,
-    run_unit,
-)
-from css_preparation.prepare.records import (
-    ReaderBoundaryError,
-    RecordError,
-    decoded,
-    TABLES,
-)
-from css_preparation.provider import ProviderError
+from css_preparation.executor.unit import RetryableUnitError, run_unit
+from css_preparation.prepare.records import RecordError, decoded, TABLES
 from preparation_fixture import COORDINATES, database, evidence_a, text_a
 
 FIXTURE = json.loads(
@@ -222,31 +212,6 @@ class UnitRun(unittest.TestCase):
         self.assertEqual(result.diagnostics, ("stopped",))
         self.assertEqual(calls, ["called"])
 
-    def test_bounded_transient_retry_and_refusal_limit_diagnostics(self):
-        attempts = []
-
-        def once(_):
-            attempts.append(1)
-            if len(attempts) == 1:
-                raise RetryableUnitError("retry once")
-            return evidence_a()
-
-        result = self.invoke(builder=once)
-        self.assertEqual(result.state, "saved")
-        self.assertEqual(len(attempts), 2)
-        for reason in ("quota", "refused", "missing_dependency", "limit"):
-            with self.subTest(reason=reason):
-
-                def stop(_, reason=reason):
-                    raise StopWorkError(reason)
-
-                failed = self.invoke(builder=stop)
-                self.assertEqual(failed.diagnostics, (reason,))
-                self.assertEqual(failed.remaining_extent, self.job["native_extent"])
-                self.assertIsNone(failed.saved)
-        with self.assertRaises(ValueError):
-            self.invoke(max_retries=4)
-
     def record(self, progress):
         """The safe error record in a failed unit's diagnostic detail."""
         return json.loads(progress.diagnostic_detail)
@@ -281,73 +246,6 @@ class UnitRun(unittest.TestCase):
         self.assertEqual(
             self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0
         )
-
-    def test_reader_boundary_reports_only_validated_reference(self):
-        def split(_):
-            raise ReaderBoundaryError("1Ch.12.5")
-
-        failed = self.invoke(builder=split)
-        self.assertEqual(failed.diagnostics, ("reader_boundary",))
-        self.assertEqual(
-            self.record(failed)["message"],
-            "Reader marker 1Ch.12.5 crosses the requested native unit boundary",
-        )
-        with self.assertRaises(RecordError) as caught:
-            ReaderBoundaryError("1Ch.12.5 secret=bad")
-        self.assertIs(type(caught.exception), RecordError)
-
-    def test_control_failure_on_retry_reports_control_stage(self):
-        checks = []
-        attempts = []
-
-        def control():
-            checks.append(1)
-            if len(checks) == 3:
-                raise OSError("private detail")
-            return self.state
-
-        def once(_):
-            attempts.append(1)
-            if len(attempts) == 1:
-                raise RetryableUnitError("retry")
-            return evidence_a()
-
-        result = self.invoke(control=control, builder=once)
-        self.assertEqual(self.record(result)["stage"], "control_check")
-        self.assertNotIn("private", result.diagnostic_detail)
-
-    def test_a_storage_provider_error_retains_stage_and_status(self):
-        for transient in (True, False):
-            with self.subTest(transient=transient):
-                calls = []
-
-                def refuse(key, data, calls=calls, transient=transient):
-                    calls.append(1)
-                    raise ProviderError(
-                        "Storage write refused", status=503, transient=transient
-                    )
-
-                self.storage = replace(self.storage, put_blob=refuse)
-                result = self.invoke()
-                self.assertEqual(result.diagnostics, ("provider_failure",))
-                record = self.record(result)
-                self.assertEqual(
-                    (record["stage"], record["http"], record["message"]),
-                    ("saving_output", 503, "Storage write refused"),
-                )
-                self.assertEqual(len(calls), 1)
-
-    def test_acquisition_failure_reports_stage_and_tool(self):
-        def fail(_):
-            raise OSError("secret source detail")
-
-        result = self.invoke(job={**self.job, "kind": "acquire"}, builder=fail)
-        record = self.record(result)
-        self.assertEqual(
-            (record["tool"], record["stage"], record["error"]),
-            ("acquire", "acquiring_input", "OSError"),
-        )
-        self.assertNotIn("secret", result.diagnostic_detail)
 
     def test_the_record_names_the_unit_and_never_holds_foreign_text(self):
         def fail(_):

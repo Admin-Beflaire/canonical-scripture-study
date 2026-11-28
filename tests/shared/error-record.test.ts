@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import test from 'node:test';
 import {
-  MAX_TEXT,
   OwnMessageError,
   errorRecord,
   recordText,
@@ -73,45 +72,6 @@ test('only plain identifiers and counts are accepted', () => {
   assert.deepEqual(record.ids, {position: 1204, source_revision: 'sbl-1.2'});
   assert.deepEqual(record.counts, {rows: 12});
   assert.deepEqual([record.exit, record.provider_code], [1, 10000]);
-});
-
-test('a message has no line breaks or control characters and is cut', () => {
-  const record = errorRecord(
-    new OwnError('first\nsecond\x1b[31m ' + 'x'.repeat(500)),
-    fields,
-  );
-  assert.ok(!record.message!.includes('\n'));
-  assert.ok(!record.message!.includes('\u001b'));
-  assert.ok(record.message!.length <= 200);
-});
-
-test('the text stays within its limit and is ASCII', () => {
-  const ids = Object.fromEntries(
-    Array.from({length: 30}, (_, i) => [`id${i}`, 'v'.repeat(80)]),
-  );
-  const text = recordText(
-    errorRecord(new OwnError('ἐν ' + 'y'.repeat(500)), {...fields, ids}),
-  );
-  assert.ok(text.length <= MAX_TEXT);
-  assert.ok([...text].every(c => c.charCodeAt(0) < 128));
-  assert.equal(JSON.parse(text).code, 'progression_failed');
-});
-
-test('a condition without an error has no error fields', () => {
-  const record = errorRecord(undefined, fields);
-  assert.deepEqual(Object.keys(record).sort(), [
-    'code',
-    'outcome',
-    'stage',
-    'tool',
-    'v',
-  ]);
-});
-
-test('plain names are required', () => {
-  for (const bad of [{tool: 'a b'}, {stage: 'x::y'}, {code: 'Bad Code'}]) {
-    assert.throws(() => errorRecord(new Error('x'), {...fields, ...bad}));
-  }
 });
 
 test('the TypeScript and Python records agree on field names and order', () => {

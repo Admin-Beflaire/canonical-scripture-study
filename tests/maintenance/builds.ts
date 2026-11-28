@@ -71,6 +71,18 @@ function bucket() {
   return store;
 }
 
+/** Posts one runner message to Control's job routes. */
+export function jobSender(...routeArguments: Parameters<typeof jobRoutes>) {
+  const routes = jobRoutes(...routeArguments);
+  return (path: string, body: unknown) =>
+    routes(
+      new Request(`https://control.example.invalid${path}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    );
+}
+
 const twoRecipes = () => ({
   'collection/recipes/gen.json': recipeFor('gen', [
     ['Gen.1.1', 'Gen.1.2'],
@@ -87,16 +99,9 @@ export function world(recipes: Record<string, unknown> = twoRecipes()) {
     {repository: 'owner/app', token: 'synthetic-token'},
     gh.fetcher,
   );
-  const routes = jobRoutes(db, github, objects);
-  const post = async (path: string, body: unknown) => {
-    const response = await routes(
-      new Request(`https://control.example.invalid${path}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
-    );
-    return (await response.json()) as Record<string, unknown>;
-  };
+  const send = jobSender(db, github, objects);
+  const post = async (path: string, body: unknown) =>
+    (await (await send(path, body)).json()) as Record<string, unknown>;
   source(db, 'rev-1');
   return {db, objects, gh, github, post};
 }

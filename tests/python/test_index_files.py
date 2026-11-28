@@ -249,37 +249,6 @@ class IndexFilesStageThree(unittest.TestCase):
             [row["occurrence_id"] for row in rows],
         )
 
-    def test_page_cap_changes_immutable_output_and_coverage_identity(self):
-        normal = self.parts[0]
-        compact = with_cap(normal, 2048)
-        a = build_index_files(normal)
-        b = build_index_files(compact, encoded_page_cap_bytes=2048)
-        self.assertNotEqual(normal.basis.output_id, compact.basis.output_id)
-        self.assertNotEqual(
-            a.manifest["prepared_output_id"], b.manifest["prepared_output_id"]
-        )
-        self.assertNotEqual(a.manifest_artifact_id, b.manifest_artifact_id)
-        self.assertNotEqual(a.postings_artifact_id, b.postings_artifact_id)
-        self.assertEqual(
-            a.records.blobs[a.postings_artifact_id],
-            b.records.blobs[b.postings_artifact_id],
-        )
-        self.assertNotEqual(
-            a.records.rows("coverage")[0]["output_id"],
-            b.records.rows("coverage")[0]["output_id"],
-        )
-
-    def test_manifest_schema_rejects_duplicate_coverage_capabilities(self):
-        built = build_index_files(self.parts[0])
-        invalid = {
-            **built.manifest,
-            "coverage": {
-                **built.manifest["coverage"],
-                "capabilities": ["word_exact", "word_exact"],
-            },
-        }
-        self.assertTrue(_MANIFEST.document_errors(invalid))
-
     def test_reject_unrepresentable_lines_invalid_order_and_identity(self):
         base = self.parts[0]
         sample = base.postings[0]

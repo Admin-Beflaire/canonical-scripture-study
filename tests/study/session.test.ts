@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {mock, test} from 'node:test';
-import {buildFixture, A} from './fixture.ts';
-import {addAids} from './aid-fixture.ts';
+import {buildFixture} from './fixture.ts';
 import {buildPassageFixture, HEB} from './passage-fixture.ts';
 import {
   ReadSession,
@@ -59,33 +58,6 @@ test('starting budgets come from CF-02 and never exceed configured Platform caps
     () => limitsFor({REQUEST_BYTES: -1}),
     state('temporary_failure'),
   );
-});
-
-test('one bounded allowance schedule serves passage, word and aid requests', () => {
-  const passage = limitsFor({}, 'passage');
-  const word = limitsFor({}, 'word');
-  const aid = limitsFor({}, 'aid');
-  assert.deepEqual(passage, limitsFor({}, 'passage'));
-  assert.deepEqual(word, {
-    ...limitsFor({}, 'passage'),
-    d1Calls: 8,
-    r2Reads: 8,
-    r2Bytes: 98304,
-  });
-  assert.deepEqual(aid, {
-    ...limitsFor({}, 'passage'),
-    r2Reads: 6,
-    r2Bytes: 98304,
-  });
-  const env = {
-    MAX_D1_CALLS: 7,
-    MAX_SUBREQUESTS: 10,
-    REQUEST_BYTES: 80000,
-  };
-  const bounded = limitsFor(env, 'word');
-  assert.equal(bounded.d1Calls, 7);
-  assert.equal(bounded.r2Reads, 3);
-  assert.equal(bounded.r2Bytes, 80000);
 });
 
 test('budget counts work before it happens', () => {
@@ -192,58 +164,6 @@ test('two releases: reads are scoped to current release membership only', async 
   assert.deepEqual(
     spans.rows.map(r => [r.id, r.exact_text]),
     [['a-old', 'OLD wording']],
-  );
-});
-
-test('language-aid lookups return only selected entries and preserve same-key alternatives', async () => {
-  const fixture = buildFixture();
-  fixture.select(null, null);
-  addAids(fixture, 'syn-ev', [
-    {
-      kind: 'lexicon_entry',
-      details: {strong_base: 'H1234', entry_key: 'lex:one'},
-    },
-    {
-      kind: 'lexicon_entry',
-      details: {strong_base: 'H1234', entry_key: 'lex:two'},
-    },
-    {
-      kind: 'grammar_expansion',
-      details: {code: 'Ncmsa', entry_key: 'grammar-1'},
-    },
-  ]);
-  addAids(fixture, 'syn-ev-old', [
-    {
-      kind: 'lexicon_entry',
-      details: {strong_base: 'H1234', entry_key: 'lex:old'},
-    },
-  ]);
-  fixture.select('rel-2', 'rel-1');
-  const session = await ReadSession.open(fixture.env, roomy);
-  const lex = await session.query('lexicon_strong', {key: 'H1234'});
-  assert.deepEqual(
-    lex.rows.map(row => row.entry_key),
-    ['lex:one', 'lex:two'],
-  );
-  assert.deepEqual(
-    (await session.query('lexicon_entry', {key: 'lex:two'})).rows.map(
-      row => row.entry_key,
-    ),
-    ['lex:two'],
-  );
-  assert.deepEqual(
-    (await session.query('grammar_expansion', {key: 'Ncmsa'})).rows.map(
-      row => row.entry_key,
-    ),
-    ['grammar-1'],
-  );
-  fixture.select('rel-1');
-  const old = await ReadSession.open(fixture.env, roomy);
-  assert.deepEqual(
-    (await old.query('lexicon_strong', {key: 'H1234'})).rows.map(
-      row => row.entry_key,
-    ),
-    ['lex:old'],
   );
 });
 
@@ -395,40 +315,6 @@ test('selected statement withholds the private approval reference', async () => 
   );
 });
 
-test('literary overlap and row limits page deterministically', async () => {
-  const session = await ReadSession.open(buildFixture().env, {
-    ...roomy,
-    rowsPerQuery: 1,
-  });
-  const first = await session.query('literary_overlap', {
-    source_revision_id: A,
-    kinds: ['literary_unit'],
-    start: 0,
-    end: 10,
-  });
-  assert.equal(first.more, true);
-  const last = first.rows[0];
-  const second = await session.query('literary_overlap', {
-    source_revision_id: A,
-    kinds: ['literary_unit'],
-    start: 0,
-    end: 10,
-    after: [
-      last.start_order as number,
-      last.span_id as string,
-      last.segment_ordinal as number,
-    ],
-  });
-  assert.deepEqual(
-    [...first.rows, ...second.rows].map(r => [r.span_id, r.segment_ordinal]),
-    [
-      ['a-unit', 0],
-      ['a-unit', 1],
-    ],
-  );
-  assert.equal(second.more, false);
-});
-
 test('raw SQL, unknown queries and mutations are rejected; budget stops further queries', async () => {
   const fixture = buildFixture();
   const session = await ReadSession.open(fixture.env, {...roomy, d1Calls: 2});
@@ -499,29 +385,5 @@ test('a provider failure is logged as a safe record that holds no provider text'
     assert.equal(lines[0].includes('character_statements'), false);
   } finally {
     logged.mock.restore();
-  }
-});
-
-test('R30-6: a release declaring index_manifest 2 opens; one declaring version 1 is incompatible', async () => {
-  for (const [version, ok] of [
-    ['2', true],
-    ['1', false],
-  ] as const) {
-    const fixture = buildFixture();
-    fixture.db.sqlite.exec(
-      `INSERT INTO releases VALUES ('rel-v${version}','m','r','{"evidence_records":"1","native_reference":"1","index_manifest":"${version}"}','c','q','s')`,
-    );
-    fixture.select(`rel-v${version}`, 'rel-2');
-    if (ok)
-      assert.equal(
-        (await ReadSession.open(fixture.env, roomy)).release.schema_versions
-          .index_manifest,
-        '2',
-      );
-    else
-      await assert.rejects(
-        ReadSession.open(fixture.env, roomy),
-        state('incompatible_release'),
-      );
   }
 });

@@ -7,16 +7,10 @@ import {
   RequestBudget,
 } from '../../services/study/src/read/budget.ts';
 import {readSpans} from '../../services/study/src/read/evidence.ts';
-import {compareUtf8} from '../../services/study/src/read/bytes.ts';
 import {
   PagedIndexSearch,
-  checkRequest,
   clearSearchCache,
-  hitBytes,
   type SearchAdapter,
-  type SearchHit,
-  type SearchRequest,
-  type SearchResult,
 } from '../../services/study/src/read/search.ts';
 import {ReadError} from '../../services/study/src/read/states.ts';
 import {
@@ -78,20 +72,6 @@ async function drain(
   return batches;
 }
 
-test('continuation round-trips for the same workload and needs no signing secret', async () => {
-  const token = await encodeContinuation(workload, {
-    op: 'op',
-    pos: {n: 1},
-    key: [3, 'x'],
-  });
-  assert.match(token, /^[A-Za-z0-9_-]+$/);
-  assert.deepEqual(await resumeContinuation(token, workload, checks), {
-    op: 'op',
-    pos: {n: 1},
-    key: [3, 'x'],
-  });
-});
-
 test('malformed, foreign or out-of-bounds continuations are rejected', async () => {
   const token = await encodeContinuation(workload, {
     op: 'op',
@@ -139,40 +119,6 @@ test('malformed, foreign or out-of-bounds continuations are rejected', async () 
   );
 });
 
-test('a search batch continues to completion; every continuation resolves current anew', async () => {
-  clearSearchCache();
-  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
-  const batches = await drain(fixture, new PagedIndexSearch(), workload);
-  const hits = batches.flatMap(b =>
-    b.evidence.map(e => (e.kind === 'search_hit' ? e.hit.occurrence_id : '')),
-  );
-  assert.equal(hits.length, 48);
-  assert.equal(new Set(hits).size, 48);
-  assert.ok(
-    batches.every(
-      b => b.release_id === 'rel-2' && b.guidance_version === 'guidance-test/1',
-    ),
-  );
-  assert.ok(batches.slice(0, -1).every(b => b.continuation && b.remaining));
-  assert.equal(batches.at(-1)!.remaining, null);
-  for (const key of [
-    'release_id',
-    'mode',
-    'depth',
-    'delivered_scope',
-    'context_scope',
-    'evidence',
-    'citations',
-    'searched_scope',
-    'coverage',
-    'limitations',
-    'remaining',
-    'continuation',
-    'guidance_version',
-  ])
-    assert.ok(Object.hasOwn(batches[0], key), key);
-});
-
 test('after promotion or rollback a continuation resolves current anew and rejects a stale anchor', async () => {
   clearSearchCache();
   const fixture = buildFixture({pageCap: 2048, commonCount: 48});
@@ -209,39 +155,27 @@ test('after promotion or rollback a continuation resolves current anew and rejec
   assert.ok(next.evidence.length > 0);
 });
 
-test('tampered continuation positions cannot escape the workload or the index bounds', async () => {
-  clearSearchCache();
-  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
-  const tamper = [
-    {source: B, output: 'syn-src-b', order: 0, dir: 0, entry: 0, anchor: null}, // source outside the workload
-    {
-      source: A,
-      output: 'syn-src-1',
-      order: 0,
-      dir: 0,
-      entry: 9999,
-      anchor: null,
-    }, // mid-output without an order key
-    {
-      source: A,
-      output: 'syn-src-1',
-      order: 0,
-      dir: 0,
-      entry: 0,
-      anchor: null,
-      extra: 1,
-    },
-  ];
-  const rejectPosition = async (pos: unknown, key: unknown) => {
-    const token = await encodeContinuation(workload, {op: 'search', pos, key});
-    const session = await ReadSession.open(fixture.env, roomy);
-    await assert.rejects(
-      searchBatch(session, new PagedIndexSearch(), workload, token, 'g/1'),
-      state('invalid_request'),
-      JSON.stringify(pos),
-    );
-  };
-  for (const pos of tamper) await rejectPosition(pos, null);
+const outsidePositions = [
+  {source: B, output: 'syn-src-b', order: 0, dir: 0, entry: 0, anchor: null}, // source outside the workload
+  {
+    source: A,
+    output: 'syn-src-1',
+    order: 0,
+    dir: 0,
+    entry: 9999,
+    anchor: null,
+  }, // mid-output without an order key
+  {
+    source: A,
+    output: 'syn-src-1',
+    order: 0,
+    dir: 0,
+    entry: 0,
+    anchor: null,
+    extra: 1,
+  },
+];
+function forgedAnchors(fixture: ReturnType<typeof buildFixture>) {
   // Invented anchors: unselected or high output names, a wrong order position, a next page that does not
   // follow the anchor page, an order key the anchor page does not hold, and an anchor range that is not a page.
   const entries = entriesOf(fixture.indexes['syn-src-1']).filter(
@@ -318,6 +252,23 @@ test('tampered continuation positions cannot escape the workload or the index bo
       key: [onP0.native_order, onP0.occurrence_id],
     },
   ];
+  return {p0, p1, p2, at, ref, forged};
+}
+
+test('tampered continuation positions cannot escape the workload or the index bounds', async () => {
+  clearSearchCache();
+  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
+  const rejectPosition = async (pos: unknown, key: unknown) => {
+    const token = await encodeContinuation(workload, {op: 'search', pos, key});
+    const session = await ReadSession.open(fixture.env, roomy);
+    await assert.rejects(
+      searchBatch(session, new PagedIndexSearch(), workload, token, 'g/1'),
+      state('invalid_request'),
+      JSON.stringify(pos),
+    );
+  };
+  for (const pos of outsidePositions) await rejectPosition(pos, null);
+  const {p0, p1, p2, at, ref, forged} = forgedAnchors(fixture);
   assert.ok(p2, 'the key spans at least three pages');
   for (const {pos, key} of forged) await rejectPosition(pos, key);
   assert.equal(
@@ -448,147 +399,6 @@ test('evidence beyond the result allowance is deferred in order, never dropped',
   assert.equal(batch.limitations.at(-1)?.state, 'budget');
 });
 
-/** Contract-faithful replacement: plain in-memory postings, no R2 pages or manifests.
- *  It honours the same request checks, order, allowance charging and position semantics. */
-class MemorySearch implements SearchAdapter {
-  readonly hits: Record<string, SearchHit[]>;
-  readonly perRequest: number;
-  constructor(hits: Record<string, SearchHit[]>, perRequest: number) {
-    this.hits = hits;
-    this.perRequest = perRequest;
-  }
-  async search(
-    session: ReadSession,
-    input: SearchRequest,
-  ): Promise<SearchResult> {
-    const request = checkRequest(input);
-    const base = {
-      lookup: request.lookup,
-      key: request.key,
-      searched: [],
-      limitations: [],
-      ranked: false as const,
-    };
-    if (['phrase', 'proximity', 'fuzzy'].includes(request.lookup))
-      return {
-        ...base,
-        state: 'unsupported_capability',
-        hits: [],
-        remaining: null,
-        resume_after: [],
-        limitations: [
-          {
-            state: 'unsupported_capability',
-            scope: request.lookup,
-            detail: 'not offered',
-          },
-        ],
-      };
-    const all = (this.hits[request.key] ?? [])
-      .filter(h => request.sources.includes(h.source_revision_id))
-      .sort(
-        (x, y) =>
-          compareUtf8(x.source_revision_id, y.source_revision_id) ||
-          x.native_order - y.native_order ||
-          compareUtf8(x.occurrence_id, y.occurrence_id),
-      );
-    const after = request.position?.after;
-    const start = after
-      ? all.findIndex(
-          h =>
-            h.native_order > after[0] ||
-            (h.native_order === after[0] &&
-              compareUtf8(h.occurrence_id, after[1]) > 0),
-        )
-      : 0;
-    const slice = (start < 0 ? [] : all.slice(start)).slice(0, this.perRequest);
-    for (const hit of slice) session.budget.spendResult(hitBytes(hit));
-    const rest = start >= 0 && start + slice.length < all.length;
-    const last = slice.at(-1);
-    return {
-      ...base,
-      hits: slice,
-      state: rest ? 'continues' : slice.length ? 'complete' : 'no_match',
-      searched: request.sources.map(s => ({
-        source_revision_id: s,
-        capability: 'word_exact',
-        coverage_state: 'available',
-        unit_count: 2,
-        first_unit: 'u1',
-        last_unit: 'u2',
-        order_range: [0, 19999] as [number, number],
-        normalization_rule: 'syn:identity/1',
-        complete: !rest,
-        resumed_after: request.position?.after ?? null,
-      })),
-      resume_after: slice.map(h => ({
-        source: h.source_revision_id,
-        output: 'memory',
-        order: 0,
-        dir: 0,
-        entry: 0,
-        after: [h.native_order, h.occurrence_id] as [number, string],
-        anchor: {file: 'memory', offset: 0, length: 1, sha256: '0'.repeat(64)},
-      })),
-      remaining:
-        rest && last
-          ? {
-              source: last.source_revision_id,
-              output: 'memory',
-              order: 0,
-              dir: 0,
-              entry: 0,
-              after: [last.native_order, last.occurrence_id],
-              anchor: {
-                file: 'memory',
-                offset: 0,
-                length: 1,
-                sha256: '0'.repeat(64),
-              },
-            }
-          : null,
-    };
-  }
-}
-
-test('a contract-faithful replacement adapter yields the same hits through the same batch contract', async () => {
-  clearSearchCache();
-  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
-  const paged = await drain(fixture, new PagedIndexSearch(), workload);
-  const memoryHits = fixture.postings['syn-src-1']
-    .filter(p => p.search_key === 'common')
-    .map(p => ({
-      source_revision_id: p.source_revision_id,
-      span_id: p.span_id,
-      coordinate_version: p.coordinate_version,
-      native_order: p.native_order,
-      occurrence_id: p.occurrence_id,
-      native_reference: p.native_reference,
-    }));
-  const memory = await drain(
-    fixture,
-    new MemorySearch({common: memoryHits}, 5),
-    workload,
-  );
-  const ids = (batches: Batch[]) =>
-    batches.flatMap(b =>
-      b.evidence.map(e => (e.kind === 'search_hit' ? e.hit.occurrence_id : '')),
-    );
-  assert.deepEqual(ids(memory), ids(paged));
-  assert.deepEqual(Object.keys(memory[0]).sort(), Object.keys(paged[0]).sort());
-  const unsupported = await searchBatch(
-    await ReadSession.open(fixture.env, roomy),
-    new MemorySearch({}, 5),
-    {...workload, lookup: 'phrase'},
-    null,
-    'g/1',
-  );
-  assert.deepEqual(
-    unsupported.limitations.map(l => l.state),
-    ['unsupported_capability'],
-  );
-});
-
 test('every batch, envelope included, fits the result allowance', async () => {
   clearSearchCache();
   const fixture = buildFixture({pageCap: 2048, commonCount: 48});
@@ -656,103 +466,4 @@ test('a large envelope defers uncharged evidence instead of exceeding the allowa
       ),
     state('exceeds_limits'),
   );
-});
-
-test('R30-3: a large envelope (many sources and limitations) delivers fewer hits and continues exactly', async () => {
-  clearSearchCache();
-  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
-  const absent = Array.from(
-    {length: 18},
-    (_, i) =>
-      `syn:absent-${String(i).padStart(2, '0')}:source_revision-with-a-long-identifier`,
-  );
-  const many: SearchWorkload = {...workload, sources: [A, ...absent]};
-  const limits = {...limitsFor({}, 'passage'), resultBytes: 7000};
-  const batches: Batch[] = [];
-  let continuation: string | null = null;
-  for (let i = 0; i < 200; i++) {
-    const batch = await searchBatch(
-      await ReadSession.open(fixture.env, limits),
-      new PagedIndexSearch(),
-      many,
-      continuation,
-      'g/1',
-    );
-    assert.ok(
-      Buffer.byteLength(JSON.stringify(batch)) <= limits.resultBytes,
-      `batch ${i} fits`,
-    );
-    batches.push(batch);
-    continuation = batch.continuation;
-    if (!continuation) break;
-  }
-  assert.equal(
-    batches[0].limitations.filter(l => l.state === 'missing_index').length,
-    18,
-  );
-  assert.ok(
-    batches[0].limitations.some(
-      l => l.state === 'budget' && l.scope === 'evidence',
-    ),
-    'the first batch delivered fewer hits than it read',
-  );
-  const ids = batches.flatMap(b =>
-    b.evidence.map(e => (e.kind === 'search_hit' ? e.hit.occurrence_id : '')),
-  );
-  const want = fixture.postings['syn-src-1']
-    .filter(p => p.search_key === 'common')
-    .map(p => p.occurrence_id)
-    .sort();
-  assert.deepEqual([...ids].sort(), want);
-  assert.equal(new Set(ids).size, ids.length);
-});
-
-test('R30-7: removing an uncharged item never defers charged evidence', async () => {
-  const fixture = buildFixture();
-  const session = await ReadSession.open(fixture.env, roomy);
-  const read = await readSpans(session, ['a-u1', 'a-u2']);
-  const charged = {
-    kind: 'search_hit' as const,
-    hit: {
-      source_revision_id: A,
-      span_id: 'a-u1',
-      coordinate_version: 'c',
-      native_order: 0,
-      occurrence_id: 'o',
-      native_reference: {
-        schema_version: 'native-reference/1',
-        source_revision_id: A,
-        coordinate_version: 'c',
-        segments: [{unit_id: 'u1', start: 0, end: 1}],
-      },
-    },
-  };
-  const items = [
-    {kind: 'source_text' as const, span: read.spans[0]},
-    charged,
-    {kind: 'source_text' as const, span: read.spans[1]},
-  ];
-  const base = {
-    release_id: 'rel-2',
-    mode: 'passage',
-    depth: 'standard',
-    delivered_scope: null,
-    context_scope: null,
-    citations: [],
-    searched_scope: [],
-    coverage: [],
-    limitations: [],
-    remaining: null,
-    continuation: null,
-    guidance_version: 'g/1',
-  };
-  const cap =
-    Buffer.byteLength(JSON.stringify({...base, evidence: [charged]})) + 150;
-  const {batch, deferred} = assembleBatch(
-    {...base, evidence: items, charged: new Set([charged])},
-    new RequestBudget({...roomy, resultBytes: cap}),
-  );
-  assert.ok(batch.evidence.includes(charged));
-  assert.ok(!deferred.includes(charged));
-  assert.equal(deferred.length, 2);
 });

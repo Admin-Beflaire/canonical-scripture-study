@@ -14,8 +14,8 @@ export const ADMISSION_RULE =
 
 /** The rules that the instructions, the descriptions, the answers and the skills share, each
  *  said once. */
-export const ONLY_INSTRUCTED =
-  "Use these tools only on the owner's explicit instruction.";
+export const OWNER_INSTRUCTION =
+  "The owner's instruction authorizes every step needed within its scope.";
 export const RECIPE_FIRST =
   'For a fetch, analysis or build, start with get_recipe and send its requests to request_task.';
 export const NEVER_INVENT =
@@ -159,7 +159,7 @@ const SKILL_ROUTES = `Each request belongs to one skill. ${READ_SKILL} ${Object.
   .join('; ')}.`;
 
 /** Needed to use Control correctly. */
-const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. ${ONLY_INSTRUCTED} ${RECIPE_FIRST} ${NEVER_INVENT} ${ADMISSION_RULE} ${ASK_LISTED}
+const ESSENTIALS = `Canonical Scripture Study — Maintenance Control. ${OWNER_INSTRUCTION} ${RECIPE_FIRST} ${NEVER_INVENT} ${ADMISSION_RULE} ${ASK_LISTED}
 
 ${SKILL_ROUTES}
 
@@ -184,11 +184,11 @@ const BACKGROUND = `How a task runs:
 export const CONTROL_INSTRUCTIONS = `${ESSENTIALS}\n\n${BACKGROUND}\n\nGuidance: ${GUIDANCE_VERSION}.`;
 
 export const TOOL_DESCRIPTIONS = {
-  request_task: `${ONLY_INSTRUCTED} ${RECIPE_FIRST} Skill: add-source for fetch, analysis, build or selection; remove-source for removal; restore-data for rollback or restore validation; follow-tasks for changing an unfinished task. ${READ_SKILL} Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Add request_key, the instruction and the owner's decision references to each request. Select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed. ${NEVER_INVENT} ${ASK_LISTED} ${STATEMENT_NEEDS} ${CANDIDATE} ${REMOVE} ${ROLLBACK} ${VALIDATE}`,
-  get_task: `${ONLY_INSTRUCTED} Skill: follow-tasks for status or changing an unfinished task; add-source for an analysis report or selecting a prepared build. ${READ_SKILL} ${FOLLOW} Without task_id: open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work. For a completed analysis, returns a bounded analysis_report page. ${ANALYSIS_REPORT} ${REPORT}`,
-  get_recipe: `${ONLY_INSTRUCTED} Read only. Skill: add-source for fetching, analysing, building or replacing a source; remove-source when looking up what to remove. ${READ_SKILL} Without recipe: list recipe IDs, optionally filtered by a word (such as a book or source name). With find, also page through matching current source revisions with their capabilities and extent. With recipe: whether it fetches, analyses or builds, requests (the request_task fields to send: steps, constraints, extent, capabilities, exact input IDs) and owner_decisions (what to ask first). A build's requests fetch each original that is not kept, build and select; with prepare_only none selects. With analyse: true use a fetch recipe. ${EMPTY_LIST} ${ASK_FIRST} ${TURN} ${SEND_IN_ORDER} ${DONE} ${BELONGING} ${PREPARE} ${NO_RECIPE}`,
-  tidy_releases: `${ONLY_INSTRUCTED} Skill: follow-tasks. ${READ_SKILL} Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. It also runs when a task ends. Each call does a bounded part. ${TIDY} Skipped outputs are blocked by another output and are left. Changes no task and no selection.`,
-  control_task: `${ONLY_INSTRUCTED} Skill: follow-tasks. ${READ_SKILL} ${CONTROL_RULE} Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units. Saved outputs are kept.`,
+  request_task: `${OWNER_INSTRUCTION} ${RECIPE_FIRST} Skill: add-source for fetch, analysis, build or selection; remove-source for removal; restore-data for rollback or restore validation; follow-tasks for changing an unfinished task. ${READ_SKILL} Start a Maintenance task from the owner's instruction, or return the existing task for a repeated request key. Add request_key, the instruction and the owner's decision references to each request. Select, remove, rollback and validate_restore on their own have no recipe. Returns the task ID and state, or the information still needed. ${NEVER_INVENT} ${ASK_LISTED} ${STATEMENT_NEEDS} ${CANDIDATE} ${REMOVE} ${ROLLBACK} ${VALIDATE}`,
+  get_task: `Skill: follow-tasks for status or changing an unfinished task; add-source for an analysis report or selecting a prepared build. ${READ_SKILL} ${FOLLOW} Without task_id: open and recent tasks (newest first, bounded pages; pass the returned cursor for the next page). With task_id: requested, completed and remaining scope, jobs, checks, selection, limitations and whether data became current; it also reconciles interrupted work. For a completed analysis, returns a bounded analysis_report page. ${ANALYSIS_REPORT} ${REPORT}`,
+  get_recipe: `Read only. Skill: add-source for fetching, analysing, building or replacing a source; remove-source when looking up what to remove. ${READ_SKILL} Without recipe: list recipe IDs, optionally filtered by a word (such as a book or source name). With find, also page through matching current source revisions with their capabilities and extent. With recipe: whether it fetches, analyses or builds, requests (the request_task fields to send: steps, constraints, extent, capabilities, exact input IDs) and owner_decisions (what to ask first). A build's requests fetch each original that is not kept, build and select; with prepare_only none selects. With analyse: true use a fetch recipe. ${EMPTY_LIST} ${ASK_FIRST} ${TURN} ${SEND_IN_ORDER} ${DONE} ${BELONGING} ${PREPARE} ${NO_RECIPE}`,
+  tidy_releases: `${OWNER_INSTRUCTION} Skill: follow-tasks. ${READ_SKILL} Remove what no kept release and no open task needs: the membership of old releases, then unused saved outputs with their stored objects. It also runs when a task ends. Each call does a bounded part. ${TIDY} Skipped outputs are blocked by another output and are left. Changes no task and no selection.`,
+  control_task: `${OWNER_INSTRUCTION} Skill: follow-tasks. ${READ_SKILL} ${CONTROL_RULE} Pause stops new units and promotion; cancel also stops running ones; resume continues only unfinished units. Saved outputs are kept.`,
 };
 
 /** request_task's fields. */

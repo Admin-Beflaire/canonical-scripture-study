@@ -53,7 +53,7 @@ test('Control: exactly four skills with digests, named within what hosts keep', 
   within(instructions, NEEDED, names);
 });
 
-test('Control: tool descriptions carry their owner and skill guidance', async () => {
+test('Control: tool descriptions carry their skill guidance and scope of authority', async () => {
   const {tools} = await delivered(control);
   const skillsByTool = {
     request_task: [
@@ -70,7 +70,8 @@ test('Control: tool descriptions carry their owner and skill guidance', async ()
   for (const [name, skills] of Object.entries(skillsByTool)) {
     const tool = tools.find(tool => tool.name === name);
     assert.ok(tool, name);
-    assert.ok(tool.description.startsWith(rules.ONLY_INSTRUCTED), name);
+    if (['request_task', 'control_task', 'tidy_releases'].includes(name))
+      assert.ok(tool.description.startsWith(rules.OWNER_INSTRUCTION), name);
     within(tool.description, 512, [
       'resources/read',
       'skill://<name>/SKILL.md',

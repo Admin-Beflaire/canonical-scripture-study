@@ -133,8 +133,9 @@ jobs:
           PLATFORM_CF_ACCOUNT_ID: ${{ vars.PLATFORM_CF_ACCOUNT_ID }}
           PLATFORM_CF_ZONE_NAME: ${{ vars.PLATFORM_CF_ZONE_NAME }}
           PLATFORM_CF_ACCESS_ISSUER: ${{ vars.PLATFORM_CF_ACCESS_ISSUER }}
-          PLATFORM_CF_OWNER_EMAIL: ${{ vars.PLATFORM_CF_OWNER_EMAIL }}
-          PLATFORM_CF_STUDY_OWNER_EMAIL: ${{ vars.PLATFORM_CF_STUDY_OWNER_EMAIL }}
+          # Personal data: secrets, so GitHub masks them in the public run log.
+          PLATFORM_CF_OWNER_EMAIL: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CF_OWNER_EMAIL || '' }}
+          PLATFORM_CF_STUDY_OWNER_EMAIL: ${{ inputs.target == 'cloudflare' && secrets.PLATFORM_CF_STUDY_OWNER_EMAIL || '' }}
           PLATFORM_CF_OAUTH_REDIRECT_URIS: ${{ vars.PLATFORM_CF_OAUTH_REDIRECT_URIS }}
           PLATFORM_CF_INSTANCE: ${{ vars.PLATFORM_CF_INSTANCE }}
         shell: bash

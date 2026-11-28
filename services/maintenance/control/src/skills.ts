@@ -15,7 +15,7 @@ import {
   FOLLOW,
   NEVER_INVENT,
   NO_RECIPE,
-  ONLY_INSTRUCTED,
+  OWNER_INSTRUCTION,
   PREPARE,
   RECIPE_FIRST,
   REMOVE,
@@ -42,7 +42,7 @@ const section = (title: string, rules: string[]) =>
   `${title}:\n${rules.map(rule => `- ${rule}`).join('\n')}`;
 
 const ALWAYS = section('Always', [
-  ONLY_INSTRUCTED,
+  OWNER_INSTRUCTION,
   NEVER_INVENT,
   ADMISSION_RULE,
   ASK_LISTED,

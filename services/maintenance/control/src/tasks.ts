@@ -150,7 +150,10 @@ const identifierProblems = (scope: Scope) =>
 function sourceProblems(scope: Scope): string[] {
   const usesFetchRecipe = has(scope, 'fetch') || has(scope, 'analyse');
   const builds = has(scope, 'build');
-  if (!usesFetchRecipe && !builds && !has(scope, 'remove')) return [];
+  const needsSource = (['fetch', 'analyse', 'build', 'remove'] as const).some(
+    step => has(scope, step),
+  );
+  if (!needsSource) return [];
   const missing: string[] = [];
   if (!scope.inputs.length)
     missing.push(

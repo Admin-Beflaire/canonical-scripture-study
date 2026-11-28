@@ -58,6 +58,21 @@ class EvidenceContractsTests(unittest.TestCase):
             (release,),
         ).fetchall()
 
+    def test_sql_records_round_trip_decoded_json_without_losing_fields(self):
+        for kind, records in FIXTURE["records"].items():
+            if kind in ("release", "release_output", "release_selection"):
+                continue
+            fetched = [
+                dict(row) for row in self.db.execute(f"SELECT * FROM {TABLES[kind]}")
+            ]
+            for row in fetched:
+                for key, value in list(row.items()):
+                    if key.endswith("_json"):
+                        row[key] = json.loads(value)
+                    elif key == "both_hosts_eligible":
+                        row[key] = bool(value)
+            self.assertCountEqual(fetched, records, kind)
+
     def test_shared_text_keeps_separate_source_attribution_and_native_identity(self):
         rows = self.db.execute(
             "SELECT ns.id,ns.source_revision_id,sn.attribution,ns.content_id FROM native_spans ns JOIN source_nodes sn ON sn.id=ns.source_revision_id WHERE ns.content_id IS NOT NULL ORDER BY ns.id"

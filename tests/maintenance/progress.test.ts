@@ -1037,3 +1037,34 @@ test('each recipe step keeps its own pin: a changed fetch recipe blocks the task
   );
   assert.equal(context.gh.runs.size, 1, 'only the first fetch ran');
 });
+test('a fetch recipe and a build recipe cannot be swapped, and a recipe does only one of them', async () => {
+  const mixed = {
+    ...recipe,
+    units: [
+      {unit_id: 'acquire', kind: 'acquire', native_extent: {}, depends_on: []},
+      ...recipe.units,
+    ],
+  };
+  const context = await setup({'collection/recipes/synthetic.json': mixed});
+  const blocked = await advance(context.db, context.github, context.task.id);
+  assert.equal(blocked.state, 'blocked');
+  assert.match(blocked.limitation!, /mixes fetch and build units/);
+  assert.equal(context.gh.runs.size, 0);
+  const swapped = await setup({'collection/recipes/synthetic.json': recipe});
+  const fetch = await requestTask(swapped.db, owner, {
+    request_key: 'f1',
+    instruction: 'Fetch',
+    steps: ['fetch'],
+    inputs: [{kind: 'acquisition', id: 'route-1'}],
+    extent: {units: ['u1', 'u2']},
+    constraints: {fetch_recipe: 'synthetic'},
+    decision_refs: [
+      {kind: 'admission', ref: 'owner-decision:1', subject: 'route-1'},
+    ],
+  });
+  assert.ok(fetch.status === 'created');
+  const result = await advance(swapped.db, swapped.github, fetch.task.id);
+  assert.equal(result.state, 'blocked');
+  assert.match(result.limitation!, /nothing to fetch/);
+  assert.equal(swapped.gh.runs.size, 0);
+});

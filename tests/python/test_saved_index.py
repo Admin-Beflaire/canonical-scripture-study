@@ -240,6 +240,43 @@ class SavedIndexStageFour(unittest.TestCase):
             self.word.manifest,
         )
 
+    def test_portable_object_keys_and_wrong_cap_rejected(self):
+        built = self.a
+        for artifact in built.records.rows("artifact"):
+            self.assertNotIn(":", artifact["registered_locator"])
+            self.assertNotIn("\\", artifact["registered_locator"])
+            self.assertTrue(
+                artifact["registered_locator"].startswith("prepared/source_search/")
+            )
+        wrong = replace(
+            self.bases[0],
+            parameters={**self.bases[0].parameters, "encoded_page_cap_bytes": 700},
+        )
+        self.assertNotEqual(wrong.output_id, self.bases[0].output_id)
+        with self.assertRaisesRegex(RecordError, "reuse basis"):
+            verify_saved_index(
+                wrong,
+                self.a.records.rows("prepared_output")[0],
+                self.a.records.rows("artifact"),
+                self.a.records.rows("coverage"),
+                self.a.records.blobs,
+            )
+        # A forged manifest can have correct SHA-256 yet contradict its output basis.
+        artifacts, coverage, blobs = self.mutate_manifest(
+            self.a, lambda manifest: manifest.update(encoded_page_cap_bytes=700)
+        )
+        with self.assertRaisesRegex(RecordError, "page cap disagrees"):
+            self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+        # A path from the retired colon-containing form must not be reused.
+        legacy = deepcopy(self.artifacts)
+        for row in legacy:
+            if row["id"] == built.postings_artifact_id:
+                row["registered_locator"] = (
+                    f"prepared/{row['output_id']}/indexes/{row['sha256']}/postings.ndjson"
+                )
+        with self.assertRaisesRegex(RecordError, "incompatible object key"):
+            self.check(self.a, artifacts=legacy)
+
     def test_wrong_basis_or_missing_registered_bytes_are_not_reused(self):
         saved = next(
             row
@@ -259,6 +296,53 @@ class SavedIndexStageFour(unittest.TestCase):
         replaced = {**self.blobs, self.a.postings_artifact_id: b"corrupted"}
         with self.assertRaisesRegex(RecordError, "artifact"):
             self.check(self.a, blobs=replaced)
+
+    def test_page_caps_and_manifest_directory_fail_closed(self):
+        with self.assertRaisesRegex(RecordError, "page cap"):
+            self.check(self.a, max_page_bytes=1024)
+        self.assertEqual(
+            self.check(
+                self.a,
+                **dict(
+                    zip(
+                        ("artifacts", "coverage", "blobs"),
+                        self.forge(self.a),
+                        strict=True,
+                    )
+                ),
+            )["format_version"],
+            "index-manifest/2",
+            "the forging helper itself yields a valid index",
+        )
+        root = self.blobs[self.a.directory_artifact_id]
+        good = [json.loads(line) for line in root.splitlines()]
+        for change in (
+            lambda e: e[0].update(byte_offset=1),
+            lambda e: e[0].update(first_key="wrong"),
+            lambda e: e[0].update(byte_length=PAGE_CAP + 1),
+            lambda e: e.pop(),
+            lambda e: e[0].update(postings_artifact_id="elsewhere"),
+        ):
+            with self.subTest(change=change.__code__.co_firstlineno):
+                entries = deepcopy(good)
+                change(entries)
+                artifacts, coverage, blobs = self.forge(self.a, entries=entries)
+                with self.assertRaises(RecordError):
+                    self.check(
+                        self.a, artifacts=artifacts, coverage=coverage, blobs=blobs
+                    )
+        for change in (
+            lambda m: m["directory"]["pages"][0].update(first_key="wrong"),
+            lambda m: m["directory"]["pages"].pop(),
+            lambda m: m.update(format_version="index-manifest/1"),
+            lambda m: m["native_extent"].update(order_range=[5, 1]),
+        ):
+            with self.subTest(manifest=change.__code__.co_firstlineno):
+                artifacts, coverage, blobs = self.mutate_manifest(self.a, change)
+                with self.assertRaises(RecordError):
+                    self.check(
+                        self.a, artifacts=artifacts, coverage=coverage, blobs=blobs
+                    )
 
     def test_complete_coverage_required_and_registry_consistency(self):
         artifacts, covered, blobs = self.mutate_manifest(
@@ -290,6 +374,16 @@ class SavedIndexStageFour(unittest.TestCase):
         )
         with self.assertRaisesRegex(RecordError, "out of (bytewise|key) order"):
             self.check(self.a, artifacts=artifacts, coverage=coverage, blobs=blobs)
+
+    def test_directory_sequence_order_is_verified_across_files(self):
+        self.assertEqual(
+            verify_saved_index(*self.build(reverse=False), max_page_bytes=2048)[
+                "format_version"
+            ],
+            "index-manifest/2",
+        )
+        with self.assertRaisesRegex(RecordError, "directory sequence"):
+            verify_saved_index(*self.build(reverse=True), max_page_bytes=2048)
 
 
 if __name__ == "__main__":

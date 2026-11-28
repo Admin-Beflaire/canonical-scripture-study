@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {buildFixture, A, B, type Fixture} from './fixture.ts';
+import {buildFixture, entriesOf, A, B, type Fixture} from './fixture.ts';
 import {ReadSession} from '../../services/study/src/read/session.ts';
 import {
   limitsFor,
@@ -22,6 +22,7 @@ import {
   resumeContinuation,
 } from '../../services/study/src/results/continuation.ts';
 import {
+  SEARCH_CHECKS,
   searchBatch,
   type SearchWorkload,
 } from '../../services/study/src/results/search-batch.ts';
@@ -152,6 +153,140 @@ test('after promotion or rollback a continuation resolves current anew and rejec
   );
   assert.equal(next.release_id, 'rel-2');
   assert.ok(next.evidence.length > 0);
+});
+
+const outsidePositions = [
+  {source: B, output: 'syn-src-b', order: 0, dir: 0, entry: 0, anchor: null}, // source outside the workload
+  {
+    source: A,
+    output: 'syn-src-1',
+    order: 0,
+    dir: 0,
+    entry: 9999,
+    anchor: null,
+  }, // mid-output without an order key
+  {
+    source: A,
+    output: 'syn-src-1',
+    order: 0,
+    dir: 0,
+    entry: 0,
+    anchor: null,
+    extra: 1,
+  },
+];
+function forgedAnchors(fixture: ReturnType<typeof buildFixture>) {
+  // Invented anchors: unselected or high output names, a wrong order position, a next page that does not
+  // follow the anchor page, an order key the anchor page does not hold, and an anchor range that is not a page.
+  const entries = entriesOf(fixture.indexes['syn-src-1']).filter(
+    e => e.first_key <= 'common' && 'common' <= e.last_key,
+  );
+  const [p0, p1, p2] = entries;
+  const ref = (e: typeof p0) => ({
+    file: e.postings_artifact_id,
+    offset: e.byte_offset,
+    length: e.byte_length,
+    sha256: e.sha256,
+  });
+  const onP0 = fixture.postings['syn-src-1'].filter(
+    p => p.search_key === 'common',
+  )[0];
+  const at = (next: typeof p0, anchor: ReturnType<typeof ref>) => ({
+    source: A,
+    output: 'syn-src-1',
+    order: 0,
+    dir: next.dir,
+    entry: next.entry,
+    anchor,
+  });
+  const forged = [
+    {
+      pos: {
+        source: A,
+        output: '../x',
+        order: 0,
+        dir: 0,
+        entry: 0,
+        anchor: null,
+      },
+      key: null,
+    },
+    {
+      pos: {
+        source: A,
+        output: 'zzz-after-everything',
+        order: 0,
+        dir: 0,
+        entry: 0,
+        anchor: null,
+      },
+      key: null,
+    },
+    {
+      pos: {
+        source: A,
+        output: 'syn-src-1',
+        order: 5,
+        dir: 0,
+        entry: 0,
+        anchor: null,
+      },
+      key: null,
+    },
+    {pos: at(p2, ref(p0)), key: [onP0.native_order, onP0.occurrence_id]}, // skips p1
+    {pos: at(p1, ref(p0)), key: [9_000_000, 'occ-x']}, // not on p0
+    {
+      pos: at(p1, ref(p0)),
+      key: [onP0.native_order, `${onP0.occurrence_id}-forged`],
+    },
+    {
+      pos: at(p1, {...ref(p0), sha256: 'f'.repeat(64)}),
+      key: [onP0.native_order, onP0.occurrence_id],
+    }, // not a real page
+    {
+      pos: at(p1, {
+        ...ref(p0),
+        offset: ref(p0).offset + 1,
+        length: ref(p0).length - 1,
+      }),
+      key: [onP0.native_order, onP0.occurrence_id],
+    },
+  ];
+  return {p0, p1, p2, at, ref, forged};
+}
+
+test('tampered continuation positions cannot escape the workload or the index bounds', async () => {
+  clearSearchCache();
+  const fixture = buildFixture({pageCap: 2048, commonCount: 48});
+  const rejectPosition = async (pos: unknown, key: unknown) => {
+    const token = await encodeContinuation(workload, {op: 'search', pos, key});
+    const session = await ReadSession.open(fixture.env, roomy);
+    await assert.rejects(
+      searchBatch(session, new PagedIndexSearch(), workload, token, 'g/1'),
+      state('invalid_request'),
+      JSON.stringify(pos),
+    );
+  };
+  for (const pos of outsidePositions) await rejectPosition(pos, null);
+  const {p0, p1, p2, at, ref, forged} = forgedAnchors(fixture);
+  assert.ok(p2, 'the key spans at least three pages');
+  for (const {pos, key} of forged) await rejectPosition(pos, key);
+  assert.equal(
+    SEARCH_CHECKS.search(at(p1, ref(p0)), [1, 'occ'], workload),
+    true,
+  );
+  assert.equal(
+    SEARCH_CHECKS.search(at(p1, ref(p0)), [-1, 'occ'], workload),
+    false,
+  );
+  assert.equal(
+    SEARCH_CHECKS.search(
+      {...at(p1, ref(p0)), anchor: null},
+      [1, 'occ'],
+      workload,
+    ),
+    false,
+  );
 });
 
 test('citations must match supplied evidence; equal wording from two sources stays separate', async () => {

@@ -13,7 +13,7 @@ import unittest
 from css_preparation.acquire.retention import AdmissionBasis, InputRecord, assert_usable
 from css_preparation.contracts import contract_errors
 from css_preparation.executor import ControlState
-from css_preparation.executor.candidate import CandidateStore
+from css_preparation.executor.candidate import CandidateStore, persist_candidate
 from css_preparation.executor.records import RecordStore
 from css_preparation.executor.unit import run_unit
 from css_preparation.executor.quality import check_candidate_quality
@@ -22,7 +22,7 @@ from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.evidence import OutputBasis
 from css_preparation.prepare.records import RecordError, TABLES, decoded, scoped_query
 from css_preparation.validate.saved import CandidateInventory
-from preparation_fixture import COORDINATES, database, evidence_a, text_a
+from preparation_fixture import COORDINATES, database, evidence_a, evidence_b, text_a
 from test_source_index_builder import RULES, configured_basis
 
 WIRE = json.loads(
@@ -328,6 +328,28 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         _, _, failed = self.quality(required=("word_exact",))
         self.assertEqual(failed["state"], "failed")
         self.assertEqual(failed["completed_extent"], {})
+        self.assert_no_selection()
+
+    def test_omitted_old_candidate_keeps_reused_unrelated_outputs(self):
+        self.build()
+        unrelated = evidence_b()
+        persist_candidate(unrelated, self.store)
+        inventory = CandidateInventory(
+            added=(self.evidence_basis,),
+            reused=(self.index_basis,),
+            omitted=tuple(unrelated.output_ids()),
+        )
+        _, _, result = self.quality(inventory)
+        self.assertEqual(result["state"], "succeeded")
+        receipt = json.loads(self.load_receipt(result["quality_receipt_ref"]))
+        self.assertEqual(receipt["candidate"]["omitted"], unrelated.output_ids())
+        self.assertEqual(
+            set(receipt["candidate"]["output_ids"]),
+            {self.evidence_basis.output_id, self.index_basis.output_id},
+        )
+        self.assertIn(
+            unrelated.output_ids()[0], {r["id"] for r in self.rows("prepared_output")}
+        )
         self.assert_no_selection()
 
     def test_corrupt_saved_object_fails_quality_and_never_selects_release(self):

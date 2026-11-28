@@ -217,6 +217,19 @@ test('sources are kept apart; a reference no source has is reported, not filled'
     sources: [HEB],
   });
   assert.deepEqual(units([only]), ['Gen.1.1']);
+  const [mixed] = await all(env, {
+    mode: 'passage',
+    depth: 'focused',
+    references: ['Gen 1:1'],
+    sources: [HEB, GRK],
+  });
+  assert.deepEqual(units([mixed]), ['Gen.1.1']);
+  assert.ok(
+    mixed.limitations.some(
+      l => l.state === 'missing_evidence' && l.detail.startsWith(`${GRK}:`),
+    ),
+    'a named source without the verses is reported',
+  );
 });
 
 test('a verse whose stored wording fails its check is withheld alone', async () => {

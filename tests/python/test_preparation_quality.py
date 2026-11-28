@@ -145,6 +145,19 @@ class CandidateQualityStageFive(unittest.TestCase):
         self.assertEqual(failed["remaining_extent"], self.job["native_extent"])
         self.assertEqual(self.received, {})
 
+    def test_quality_failure_diagnostic_keeps_cause_without_private_text(self):
+        def fail_rows(*_):
+            raise KeyError("private source words and secret token")
+
+        code, record = self.invoke_record(rows=fail_rows)
+        self.assertEqual(code, "quality_failed")
+        self.assertEqual(
+            (record["tool"], record["stage"], record["error"]),
+            ("quality", "validating_candidate", "KeyError"),
+        )
+        self.assertNotIn("private source words", json.dumps(record))
+        self.assertNotIn("secret token", json.dumps(record))
+
     def test_quality_preserves_reader_boundary(self):
         from unittest.mock import patch
 

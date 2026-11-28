@@ -1246,6 +1246,25 @@ test('a selection that keeps moving blocks the task with the reason and changes 
   );
 });
 
+test('a release task whose revision moves just before the write changes nothing', async () => {
+  const w = world();
+  const taskId = await stageGenesis(w);
+  const before = selected(w);
+  const rows = releaseCounts(w);
+  beforeWrite(w, 'release-g1', () =>
+    w.db.sqlite
+      .prepare(
+        `UPDATE maintenance_tasks SET revision = revision + 1 WHERE request_key = 'release-g1'`,
+      )
+      .run(),
+  );
+  const released = await releaseBuild(w, taskId, 'release-g1');
+  assert.notEqual(released.report.state, 'completed');
+  assert.deepEqual(selected(w), before);
+  assert.deepEqual(releaseCounts(w), rows);
+  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
+});
+
 test('R110-2: a task whose selection was refused is not completed because another task selected the same release', async () => {
   const w = world();
   const taskId = await stageGenesis(w);

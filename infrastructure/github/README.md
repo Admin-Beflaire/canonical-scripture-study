@@ -228,11 +228,13 @@ Contents write. No credential is changed automatically by this PR.
 For the first Cloudflare plan, configure these **one-time environment
 variables** in the trusted `provisioning` environment, not JSON:
 `PLATFORM_CF_ACCOUNT_ID`, `PLATFORM_CF_ZONE_NAME`,
-`PLATFORM_CF_ACCESS_ISSUER`, `PLATFORM_CF_OWNER_EMAIL` (Control),
-`PLATFORM_CF_STUDY_OWNER_EMAIL` (Study), and
+`PLATFORM_CF_ACCESS_ISSUER`, and
 `PLATFORM_CF_OAUTH_REDIRECT_URIS` (semicolon-separated, verified HTTPS
 ChatGPT/Claude callbacks). Optional `PLATFORM_CF_INSTANCE` defaults to
-`main`. Study/Control hostnames derive from the zone (study./control.),
+`main`. The two login addresses are environment **secrets**, never variables,
+because public run logs print variable values:
+`PLATFORM_CF_OWNER_EMAIL` (Control) and `PLATFORM_CF_STUDY_OWNER_EMAIL`
+(Study). Study/Control hostnames derive from the zone (study./control.),
 while zone and service-token resource IDs are read from Cloudflare each run.
 The two human identities have separate Terraform-managed Access policies;
 Study does not inherit Control's login. Missing/ambiguous identities stop the plan. The `github` Terraform target

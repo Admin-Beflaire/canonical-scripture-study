@@ -289,13 +289,22 @@ async function checkedReaderBuild() {
   return {w, id, mapping, inputs};
 }
 
-test('a reader-reference build is selected before the text build of its book, and both stay', async () => {
+test('the reader-reference and text builds of a book can both be prepared to checked, then be made current in that order', async () => {
   const {w, id, mapping, inputs} = await checkedReaderBuild();
-  const reader = await releaseBuild(w, id, 'release-reader');
-  assert.equal(reader.report.state, 'completed');
+  const text = await runBook(w, prepareTask('exo', 'text', {inputs}), 'rev-2', {
+    release: false,
+  });
+  assert.equal(text.task.state, 'checked', text.task.limitations.join(' | '));
+  assert.equal((await taskReport(w.db, owner, id))!.state, 'checked');
+  assert.equal(selected(w).current_release_id, null, 'nothing is selected');
 
-  const text = await runBook(w, prepareTask('exo', 'text', {inputs}), 'rev-2');
-  assert.equal(text.task.state, 'completed', text.task.limitations.join(' | '));
+  for (const [build, key] of [
+    [id, 'release-reader'],
+    [text.taskId, 'release-text'],
+  ]) {
+    const {report} = await releaseBuild(w, build, key);
+    assert.equal(report.state, 'completed', report.limitations.join(' | '));
+  }
   const members = membersOf(w, selected(w).current_release_id);
   assert.equal(members.length, 3);
   assert.ok(members.includes(mapping));

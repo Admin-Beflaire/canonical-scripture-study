@@ -17,90 +17,17 @@ import re
 from typing import Any, Mapping
 import urllib.parse
 
-from ...prepare.evidence import SourceIdentity, SourceLevel
+from ...prepare.evidence import SourceIdentity, SourceLevel, canonical_digest
 from ...prepare.records import RecordError
+from ...recipe_source import source_variables
 from .format import Language
 
 ORIGIN = "https://github.com/STEPBible/STEPBible-Data"
 RAW_HOST = "raw.githubusercontent.com"
-PROVIDER = "STEPBible.org/Tyndale House"
 LICENCE = "CC BY 4.0"
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 _COMPONENT = re.compile(r"(tahot|tagnt)-[a-z0-9]+-[a-z0-9]+")
 _HEX = re.compile(r"[0-9a-f]{64}")
-# Book order of each source's files; the ordinal fixes the book's place in the linear order.
-BOOKS = {
-    "tahot": (
-        "Gen",
-        "Exo",
-        "Lev",
-        "Num",
-        "Deu",
-        "Jos",
-        "Jdg",
-        "Rut",
-        "1Sa",
-        "2Sa",
-        "1Ki",
-        "2Ki",
-        "1Ch",
-        "2Ch",
-        "Ezr",
-        "Neh",
-        "Est",
-        "Job",
-        "Psa",
-        "Pro",
-        "Ecc",
-        "Sng",
-        "Isa",
-        "Jer",
-        "Lam",
-        "Ezk",
-        "Dan",
-        "Hos",
-        "Jol",
-        "Amo",
-        "Oba",
-        "Jon",
-        "Mic",
-        "Nam",
-        "Hab",
-        "Zep",
-        "Hag",
-        "Zec",
-        "Mal",
-    ),
-    "tagnt": (
-        "Mat",
-        "Mrk",
-        "Luk",
-        "Jhn",
-        "Act",
-        "Rom",
-        "1Co",
-        "2Co",
-        "Gal",
-        "Eph",
-        "Php",
-        "Col",
-        "1Th",
-        "2Th",
-        "1Ti",
-        "2Ti",
-        "Tit",
-        "Phm",
-        "Heb",
-        "Jas",
-        "1Pe",
-        "2Pe",
-        "1Jn",
-        "2Jn",
-        "3Jn",
-        "Jud",
-        "Rev",
-    ),
-}
 BOOK_STRIDE = (
     2**32
 )  # Linear order: book ordinal × 2^32 + Unicode scalars within the book.
@@ -116,30 +43,18 @@ class Declaration:
     versification: str
     base_text: str
     analysis_basis: str
+    provider: str
+    base_edition: str | None
+    books: list[str]
 
 
-SOURCES = {
-    "tahot": Declaration(
-        "tahot",
-        "hebrew",
-        "Translators Amalgamated Hebrew OT (TAHOT)",
-        "translators-text",
-        "TAHOT translators' text: Leningrad codex following the Qere, with restored and LXX-based words marked",
-        "hebrew",
-        "Every TAHOT word row (L, Q, R and X text types); Ketiv and other variants are annotations",
-        "TAHOT dStrongs+Grammar",
-    ),
-    "tagnt": Declaration(
-        "tagnt",
-        "greek",
-        "Translators Amalgamated Greek NT (TAGNT)",
-        "na28-words",
-        "TAGNT words found in NA28, in TAGNT spelling (NA28 where available)",
-        "nestle-aland",
-        "TAGNT word rows whose editions include NA28; other editions' words are annotations",
-        "TAGNT dStrong=Grammar",
-    ),
-}
+def source_profile(source: str, key: str) -> Declaration:
+    return Declaration(**source_variables(f"stepbible-{source}")["profiles"][key])
+
+
+_SOURCES = ("tahot", "tagnt")
+BOOKS = {key: source_profile(key, "1").books for key in _SOURCES}
+PROVIDER = source_profile("tahot", "1").provider
 
 
 @dataclass(frozen=True)
@@ -152,10 +67,14 @@ class Component:
     path: str
     sha256: str
     byte_count: int
+    profile: str = "1"
 
     @classmethod
     def from_parameters(cls, parameters: Mapping[str, Any]) -> "Component":
-        source = SOURCES.get(parameters.get("source"))
+        source, profile = (
+            parameters.get("source"),
+            parameters.get("source_profile", "1"),
+        )
         commit, component = parameters.get("commit"), parameters.get("component")
         path, sha256, size = (
             parameters.get("path"),
@@ -163,12 +82,13 @@ class Component:
             parameters.get("byte_count"),
         )
         if (
-            source is None
+            source not in _SOURCES
+            or not isinstance(profile, str)
             or not isinstance(commit, str)
             or not _COMMIT.fullmatch(commit)
             or not isinstance(component, str)
             or not _COMPONENT.fullmatch(component)
-            or not component.startswith(source.key + "-")
+            or not component.startswith(source + "-")
             or not isinstance(path, str)
             or not path.endswith(".txt")
             or ".." in path.split("/")
@@ -179,7 +99,16 @@ class Component:
             or not 0 < size <= 64_000_000
         ):
             raise RecordError("Recipe does not declare a pinned STEPBible component")
-        return cls(source, commit, component, path, sha256, size)
+        try:
+            selected = source_profile(source, profile)
+        except KeyError:
+            raise RecordError("Unknown STEPBible source profile") from None
+        return cls(selected, commit, component, path, sha256, size, profile)
+
+    def reuse_parameters(self) -> dict[str, str]:
+        if self.profile == "1":
+            return {}  # Migration preserves existing prepared-output identities.
+        return {"source_profile": canonical_digest(vars(self.source))}
 
     @property
     def revision_id(self) -> str:

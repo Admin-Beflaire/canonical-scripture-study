@@ -78,6 +78,9 @@ KEYS: dict[str, tuple[str, ...]] = {
 SHARED = ("source_node", "admission", "text_payload")
 
 
+D1_BATCH_LIMIT = 1000
+
+
 class RecordError(OwnMessage, ValueError):
     """A record does not match its contract or conflicts with one already prepared."""
 

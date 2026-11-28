@@ -39,7 +39,7 @@ class OriginalAnalysisTest(unittest.TestCase):
     def test_archive_bounds_and_paths(self):
         data = archive("safe.usfm")
         with (
-            patch("css_preparation.runner.source_analysis.MAX_FILES", 1),
+            patch("css_preparation.acquire.archive.MAX_FILES", 1),
             self.assertRaises(AnalysisRefusedError),
         ):
             inspect_original(data, "original.zip")

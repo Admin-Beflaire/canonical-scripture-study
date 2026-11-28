@@ -28,6 +28,7 @@ from ...prepare.evidence import (
     SpanSpec,
     build_evidence,
 )
+from ...prepare.records import D1_BATCH_LIMIT as MAX_STATEMENTS
 from ...prepare.records import RecordError, RecordSet
 from .format import (
     FormatError,
@@ -40,11 +41,9 @@ from .format import (
     read_words,
 )
 from .rules import GRAMMAR_KEY_VERSION, RULES, analyses, grammar_keys
-from .source import BOOK_STRIDE, BOOKS, PROVIDER, Component
+from .source import BOOK_STRIDE, Component
 
 METHOD_VERSION = "stepbible-tagged/1"
-BASE_EDITION = "NA28"
-MAX_STATEMENTS = 1000  # One D1 batch per unit (runner limit).
 _READING = {"R": "restored", "X": "reconstructed"}
 
 
@@ -70,7 +69,7 @@ def read_component(data: bytes, component: Component) -> list[TaggedWord]:
 
 def _in_base(word: TaggedWord, component: Component) -> bool:
     if component.source.language == "greek":
-        return BASE_EDITION in greek_editions(word)
+        return component.source.base_edition in greek_editions(word)
     return True
 
 
@@ -122,7 +121,7 @@ def book_text(
 ) -> NativeText:
     """Native text of a book, or of some of its verses, positioned in the revision's linear order."""
     try:
-        start = BOOKS[component.source.key].index(book) * BOOK_STRIDE
+        start = component.source.books.index(book) * BOOK_STRIDE
     except ValueError:
         raise RecordError(f"Unknown book {book}") from None
     bases, offset = {}, start
@@ -240,7 +239,7 @@ def evidence_specs(
                     f"{unit}@variants",
                     unit,
                     "textual_variants",
-                    PROVIDER,
+                    component.source.provider,
                     {"columns": "text type, editions, meaning and spelling variants"},
                     {"words": entries},
                 )
@@ -276,7 +275,7 @@ def _observations(
             language,
             posting["occurrence_id"],
             component.analysis_revision_id,
-            PROVIDER,
+            component.source.provider,
             component.source.analysis_basis,
             (start - span[0], end - span[0]),
         )
@@ -306,7 +305,11 @@ def prepare_unit(
         "evidence",
         (revision,),
         METHOD_VERSION,
-        {"d1_body_max_bytes": 0, "base_text": component.source.base_text},
+        {
+            "d1_body_max_bytes": 0,
+            "base_text": component.source.base_text,
+            **component.reuse_parameters(),
+        },
         extent,
     )
     evidence = build_evidence(

@@ -1,23 +1,21 @@
 """Prepare a bounded NRSVA navigation output from STEPBible's reader markers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import hashlib
-import json
 from typing import Sequence
 
-from ...prepare.evidence import OutputBasis, SpanSpec, build_evidence, canonical_digest, span_id
+from ...prepare.evidence import OutputBasis, SpanSpec, canonical_digest
 from ...prepare.literary import LiteraryUnit, literary_spans
 from ...prepare.records import ReaderBoundaryError, RecordError, RecordSet
-from ...validation import SCHEMAS
-from .prepare import MAX_STATEMENTS, book_text, book_verses, read_component
+from ...prepare.reader_references import Anchor, build_reader_output, reader_catalogue
+from ...prepare.reader_references import READER_REFERENCE as READER_REFERENCE
+from .prepare import book_text, book_verses, read_component
 from .source import Component
 
-READER_REFERENCE = 'reader_reference'
-_METHOD = 'stepbible-reader-reference/1'
-_TITLE = 'superscription'
-_TEXT = 'numbered_text'
-Anchor = tuple[str, int, int]
+_METHOD = "stepbible-reader-reference/1"
+_TITLE = "superscription"
+_TEXT = "numbered_text"
 Segment = tuple[str, int, int]
 
 
@@ -28,50 +26,39 @@ class _Reading:
 
 
 def _reader_anchor(marker: str, chapter_ends: dict, code: str) -> tuple[Anchor, str]:
-    book, chapter, verse = marker.split('.')
+    book, chapter, verse = marker.split(".")
     if book != code:
-        raise RecordError(f'Reader marker {marker} names a different book from {code}')
+        raise RecordError(f"Reader marker {marker} names a different book from {code}")
     chapter, verse = int(chapter), int(verse)
     role = _TEXT
-    if verse == 0 and chapter_ends['book_id'] == 'Ps':
+    if verse == 0 and chapter_ends["book_id"] == "Ps":
         verse, role = 1, _TITLE
-    ends = chapter_ends['last_verses']
-    first = chapter_ends.get('first_verse_overrides', {}).get(str(chapter), 1)
+    ends = chapter_ends["last_verses"]
+    first = chapter_ends.get("first_verse_overrides", {}).get(str(chapter), 1)
     if not 1 <= chapter <= len(ends) or not first <= verse <= ends[chapter - 1]:
-        raise RecordError(f'Reader marker {marker} is outside the NRSVA catalogue')
-    return (chapter_ends['book_id'], chapter, verse), role
-
-
-def _checked_ranges(anchors: list[Anchor]) -> list[dict]:
-    ranges: list[dict] = []
-    for book, chapter, verse in sorted(anchors):
-        if (ranges and ranges[-1]['book_id'] == book and ranges[-1]['chapter'] == chapter
-                and ranges[-1]['last_verse'] + 1 == verse):
-            ranges[-1]['last_verse'] = verse
-        else:
-            ranges.append({'book_id': book, 'chapter': chapter, 'first_verse': verse, 'last_verse': verse})
-    return ranges
+        raise RecordError(f"Reader marker {marker} is outside the NRSVA catalogue")
+    return (chapter_ends["book_id"], chapter, verse), role
 
 
 def prepare_reader_reference_unit(  # noqa: C901, PLR0915
-    data: bytes, component: Component, book: str, unit_ids: Sequence[str], *,
+    data: bytes,
+    component: Component,
+    book: str,
+    unit_ids: Sequence[str],
+    *,
     literary_units: Sequence[LiteraryUnit] = (),
 ) -> RecordSet:
     """Build candidate rows. Each reader anchor must be wholly within the requested native unit batch."""
     if not unit_ids or len(set(unit_ids)) != len(unit_ids):
-        raise RecordError('A reader-reference unit needs distinct native verses')
-    catalogue = json.loads((SCHEMAS / 'reader-references/nrsva-1.json').read_text(encoding='utf-8'))
-    books = [row for row in catalogue['books'] if book == row['book_id'] or book in row['aliases']]
-    if len(books) != 1:
-        raise RecordError(f'Book {book} does not identify one NRSVA catalogue book')
-    [chapter_ends] = books
-    version = catalogue['reader_scheme_version']
+        raise RecordError("A reader-reference unit needs distinct native verses")
+    catalogue, chapter_ends = reader_catalogue(book)
+    version = catalogue["reader_scheme_version"]
     verses = book_verses(read_component(data, component), component, book)
     selected = set(unit_ids)
     chosen = [verse for verse in verses if verse.unit_id in selected]
     text = book_text(verses, component, book, [verse.unit_id for verse in chosen])
     if len(chosen) != len(selected):
-        raise RecordError('Requested native verses are not all in this book')
+        raise RecordError("Requested native verses are not all in this book")
 
     groups: dict[Anchor, dict[str, _Reading]] = {}
     native_anchors: dict[str, set[Anchor]] = {}
@@ -85,7 +72,11 @@ def prepare_reader_reference_unit(  # noqa: C901, PLR0915
             anchors.add(anchor)
             if bounds is not None and bounds[0] < bounds[1]:
                 start, end = bounds
-                if previous_wording == (anchor, role) and reading.segments and reading.segments[-1][0] == verse.unit_id:
+                if (
+                    previous_wording == (anchor, role)
+                    and reading.segments
+                    and reading.segments[-1][0] == verse.unit_id
+                ):
                     start = reading.segments[-1][1]
                     reading.segments[-1] = (verse.unit_id, start, end)
                 else:
@@ -97,96 +88,111 @@ def prepare_reader_reference_unit(  # noqa: C901, PLR0915
         if verse.unit_id in selected:
             continue
         for marker in verse.references:
-            _, chapter, number = marker.split('.')
+            _, chapter, number = marker.split(".")
             number = int(number)
-            if number == 0 and chapter_ends['book_id'] == 'Ps':
+            if number == 0 and chapter_ends["book_id"] == "Ps":
                 number = 1
-            if (chapter_ends['book_id'], int(chapter), number) in groups:
+            if (chapter_ends["book_id"], int(chapter), number) in groups:
                 raise ReaderBoundaryError(marker)
 
-    native_by_anchor = {anchor: f'{book}.{anchor[1]}.{anchor[2]}' for anchor in groups}
+    native_by_anchor = {anchor: f"{book}.{anchor[1]}.{anchor[2]}" for anchor in groups}
     baselines: list[Anchor] = []
     spans: list[SpanSpec] = []
     links: list[dict] = []
     for anchor, roles in groups.items():
         native = native_by_anchor[anchor]
         numbered = roles.get(_TEXT)
-        if (list(roles) == [_TEXT] and native in selected and native_anchors[native] == {anchor}
-                and numbered.segments == [(native, 0, len(text.unit(native)))]):
+        if (
+            list(roles) == [_TEXT]
+            and native in selected
+            and native_anchors[native] == {anchor}
+            and numbered.segments == [(native, 0, len(text.unit(native)))]
+        ):
             baselines.append(anchor)
             continue
-        reader_ref = '.'.join(map(str, anchor))
-        for ordinal, role in enumerate((_TITLE, _TEXT) if _TITLE in roles else (_TEXT,)):
+        reader_ref = ".".join(map(str, anchor))
+        for ordinal, role in enumerate(
+            (_TITLE, _TEXT) if _TITLE in roles else (_TEXT,)
+        ):
             reading = roles.get(role, _Reading())
-            segment_key = f'{reader_ref}:{role}'
-            basis = {'source_markers': sorted(reading.markers)}
+            segment_key = f"{reader_ref}:{role}"
+            basis = {"source_markers": sorted(reading.markers)}
             if reading.segments:
-                spans.append(SpanSpec(segment_key, role, reader_ref, tuple(reading.segments), 'extracted', basis))
-            status = 'missing' if not reading.segments else 'composite' if len(reading.segments) > 1 else 'exact'
-            links.append(dict(key=segment_key, has_span=bool(reading.segments), reader_ref=reader_ref,
-                              role=role, ordinal=ordinal, status=status, basis_json=basis,
-                              gap_reason=None if reading.segments else 'No base wording for this reader role'))
+                spans.append(
+                    SpanSpec(
+                        segment_key,
+                        role,
+                        reader_ref,
+                        tuple(reading.segments),
+                        "extracted",
+                        basis,
+                    )
+                )
+            status = (
+                "missing"
+                if not reading.segments
+                else "composite"
+                if len(reading.segments) > 1
+                else "exact"
+            )
+            links.append(
+                dict(
+                    key=segment_key,
+                    has_span=bool(reading.segments),
+                    reader_ref=reader_ref,
+                    role=role,
+                    ordinal=ordinal,
+                    status=status,
+                    basis_json=basis,
+                    gap_reason=None
+                    if reading.segments
+                    else "No base wording for this reader role",
+                )
+            )
 
     supplied_units = literary_spans(text, literary_units)
     basis = OutputBasis(
-        READER_REFERENCE, (component.revision_id,), _METHOD,
-        {'reader_scheme_version': version, 'inventory_digest': canonical_digest(catalogue),
-         'literary_units': [{'key': span.key, 'label': span.label, 'segments': span.segments,
-                             'reading_kind': span.reading_kind, 'basis': dict(span.basis),
-                             'parent_key': span.parent_key} for span in supplied_units],
-         **({'literary_chunk_bytes': 1024} if any(
-             len(text.unit(unit)[start:end].encode('utf-8')) > 1024
-             for span in supplied_units for unit, start, end in span.segments) else {})},
-        {'coordinate_version': text.coordinate_version, 'unit_ids': [verse.unit_id for verse in chosen]},
+        READER_REFERENCE,
+        (component.revision_id,),
+        _METHOD,
+        {
+            "reader_scheme_version": version,
+            "inventory_digest": canonical_digest(catalogue),
+            **component.reuse_parameters(),
+            "literary_units": [
+                {
+                    "key": span.key,
+                    "label": span.label,
+                    "segments": span.segments,
+                    "reading_kind": span.reading_kind,
+                    "basis": dict(span.basis),
+                    "parent_key": span.parent_key,
+                }
+                for span in supplied_units
+            ],
+            **(
+                {"literary_chunk_bytes": 1024}
+                if any(
+                    len(text.unit(unit)[start:end].encode("utf-8")) > 1024
+                    for span in supplied_units
+                    for unit, start, end in span.segments
+                )
+                else {}
+            ),
+        },
+        {
+            "coordinate_version": text.coordinate_version,
+            "unit_ids": [verse.unit_id for verse in chosen],
+        },
     )
-    records = build_evidence(component.identity(), text, [*spans, *supplied_units], basis,
-                             d1_body_max_bytes=0, source_context_coverage=False)
-    output_id = basis.output_id
-    common = dict(output_id=output_id, source_revision_id=component.revision_id, reader_scheme_version=version)
-    if baselines:
-        records.add('reader_reference_base', dict(
-            **common, id=f'{output_id}:base', native_scheme_version=component.source.versification,
-            checked_extent_json={'ranges': _checked_ranges(baselines)},
-            basis_json={'method': _METHOD, 'marker': 'leading NRSV word reference'},
-        ))
-    for link in links:
-        key, has_span = link.pop('key'), link.pop('has_span')
-        records.add('reader_reference_link', dict(
-            **common, **link, id=f'{output_id}:{key}', span_id=span_id(output_id, key) if has_span else None,
-        ))
-    # Control discovers prepared outputs through artifact refs, including
-    # baseline-only outputs with no wording artifact.
-    link_rows = records.rows('reader_reference_link')
-    manifest = {
-        'version': 'reader-reference-manifest/1',
-        'output_id': output_id,
-        'reader_scheme_version': version,
-        'checked_native_units': basis.extent['unit_ids'],
-        'baseline_anchor_count': len(baselines),
-        'explicit_link_count': len(link_rows),
-        'gaps': [{'reader_ref': row['reader_ref'], 'role': row['role'], 'reason': row['gap_reason']}
-                 for row in link_rows if row['status'] == 'missing'],
-        'literary_span_count': len(supplied_units),
-        'rows_digest': canonical_digest({
-            'baseline': records.rows('reader_reference_base'), 'links': link_rows,
-            'spans': records.rows('native_span'),
-        }),
-    }
-    payload = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
-    digest = hashlib.sha256(payload).hexdigest()
-    artifact_id = f'{output_id}:reader-manifest'
-    records.add('artifact', {'id': artifact_id, 'source_revision_id': component.revision_id,
-                             'output_id': output_id, 'sha256': digest, 'byte_count': len(payload),
-                             'format': 'application/json', 'registered_locator': f'prepared/{digest}.json'})
-    records.add_blob(artifact_id, payload)
-    # An explicit gap counts as a classified reference. Source wording coverage
-    # remains a separate capability.
-    records.add('coverage', {
-        'output_id': output_id, 'source_revision_id': component.revision_id, 'method_version': _METHOD,
-        'capability': READER_REFERENCE, 'state': 'available',
-        'native_extent_json': basis.extent, 'index_artifact_id': artifact_id,
-        'dependencies_json': [], 'limitation': None,
-    })
-    if len(records.statements()) > MAX_STATEMENTS:
-        raise RecordError('Reader-reference unit exceeds one D1 batch')
-    return records
+    return build_reader_output(
+        component.identity(),
+        text,
+        basis,
+        [*spans, *supplied_units],
+        baselines,
+        links,
+        native_scheme=component.source.versification,
+        base_evidence={"method": _METHOD, "marker": "leading NRSV word reference"},
+        literary_span_count=len(supplied_units),
+    )

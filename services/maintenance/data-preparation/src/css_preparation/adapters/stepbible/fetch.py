@@ -36,6 +36,7 @@ DECLARATION = AdapterDeclaration(
             "sha256",
             "byte_count",
             "admission_record",
+            "source_profile",
         }
     ),
 )

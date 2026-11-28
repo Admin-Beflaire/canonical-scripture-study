@@ -1,0 +1,64 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "web-usfm-2020-jol",
+  "revision": "web-usfm-2020-jol/1",
+  "adapter": {
+    "name": "usfm-text",
+    "method_version": "usfm-text/1"
+  },
+  "input_format": "archive/usfm",
+  "parameters": {
+    "variables": "web-usfm-2020",
+    "archive_sha256": "79ab3dd654e5852abe241e40a8007e4d364c8ffaaf56c35d63b494b70a1b9a34",
+    "member_sha256": "d3e7abee13ca3cd88634bde535fae53b0fc29207ffe55f561f08bc00e3f9269f",
+    "basis_sha256": "90ba9b9798afd6c8baff4b870692d35a8f99f273e26949433c132622539a4581"
+  },
+  "native_extent": {
+    "book": "Jol",
+    "coordinate_version": "web-usfm-2020:protestant-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact"
+  ],
+  "dependencies": [
+    "web-usfm-2020/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "web-usfm-2020/1"
+    },
+    {
+      "kind": "source_revision",
+      "id": "web-usfm-2020/1"
+    }
+  ],
+  "manifest_revision": "web-usfm-2020/1",
+  "units": [
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Jol.1.1", "Jol.1.2", "Jol.1.3", "Jol.1.4", "Jol.1.5", "Jol.1.6", "Jol.1.7", "Jol.1.8", "Jol.1.9", "Jol.1.10", "Jol.1.11", "Jol.1.12", "Jol.1.13", "Jol.1.14", "Jol.1.15", "Jol.1.16", "Jol.1.17", "Jol.1.18", "Jol.1.19", "Jol.1.20", "Jol.2.1", "Jol.2.2", "Jol.2.3", "Jol.2.4", "Jol.2.5", "Jol.2.6", "Jol.2.7", "Jol.2.8", "Jol.2.9", "Jol.2.10", "Jol.2.11", "Jol.2.12", "Jol.2.13", "Jol.2.14", "Jol.2.15", "Jol.2.16", "Jol.2.17", "Jol.2.18", "Jol.2.19", "Jol.2.20", "Jol.2.21", "Jol.2.22", "Jol.2.23", "Jol.2.24", "Jol.2.25", "Jol.2.26", "Jol.2.27", "Jol.2.28", "Jol.2.29", "Jol.2.30", "Jol.2.31", "Jol.2.32", "Jol.3.1", "Jol.3.2", "Jol.3.3", "Jol.3.4", "Jol.3.5", "Jol.3.6", "Jol.3.7", "Jol.3.8", "Jol.3.9", "Jol.3.10", "Jol.3.11", "Jol.3.12", "Jol.3.13", "Jol.3.14", "Jol.3.15", "Jol.3.16", "Jol.3.17", "Jol.3.18", "Jol.3.19", "Jol.3.20", "Jol.3.21"]
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Jol.1.1", "Jol.1.2", "Jol.1.3", "Jol.1.4", "Jol.1.5", "Jol.1.6", "Jol.1.7", "Jol.1.8", "Jol.1.9", "Jol.1.10", "Jol.1.11", "Jol.1.12", "Jol.1.13", "Jol.1.14", "Jol.1.15", "Jol.1.16", "Jol.1.17", "Jol.1.18", "Jol.1.19", "Jol.1.20", "Jol.2.1", "Jol.2.2", "Jol.2.3", "Jol.2.4", "Jol.2.5", "Jol.2.6", "Jol.2.7", "Jol.2.8", "Jol.2.9", "Jol.2.10", "Jol.2.11", "Jol.2.12", "Jol.2.13", "Jol.2.14", "Jol.2.15", "Jol.2.16", "Jol.2.17", "Jol.2.18", "Jol.2.19", "Jol.2.20", "Jol.2.21", "Jol.2.22", "Jol.2.23", "Jol.2.24", "Jol.2.25", "Jol.2.26", "Jol.2.27", "Jol.2.28", "Jol.2.29", "Jol.2.30", "Jol.2.31", "Jol.2.32", "Jol.3.1", "Jol.3.2", "Jol.3.3", "Jol.3.4", "Jol.3.5", "Jol.3.6", "Jol.3.7", "Jol.3.8", "Jol.3.9", "Jol.3.10", "Jol.3.11", "Jol.3.12", "Jol.3.13", "Jol.3.14", "Jol.3.15", "Jol.3.16", "Jol.3.17", "Jol.3.18", "Jol.3.19", "Jol.3.20", "Jol.3.21"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact"
+      ]
+    }
+  ]
+}

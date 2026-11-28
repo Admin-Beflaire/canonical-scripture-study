@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from ..adapters import AdapterDeclaration
+from ..adapters.usfm import DECLARATION as USFM, UsfmRecipe
 from ..adapters.stepbible import DECLARATION as STEPBIBLE, BookRecipe
 from ..adapters.stepbible.fetch import DECLARATION as STEPBIBLE_FETCH, ComponentFetch
 from ..adapters.acquire_only import DECLARATION as ACQUIRE_ONLY, AcquireRecipe
@@ -46,6 +48,66 @@ class Recipe:
     read_original: Callable[[Mapping[str, Any], Any], tuple[bytes, str]] | None = None
 
 
+def _step_book(value: Mapping[str, Any]) -> Recipe:
+    book = BookRecipe.from_recipe(value)
+    return Recipe(
+        prepare=book.prepare,
+        read_source=book.read_source,
+        read_reader_references=book.read_reader_references
+        if book.maps_reader_references
+        else None,
+    )
+
+
+def _usfm_book(value: Mapping[str, Any]) -> Recipe:
+    book = UsfmRecipe.from_recipe(value)
+    return Recipe(
+        prepare=book.prepare,
+        read_source=book.read_source,
+        read_reader_references=book.read_reader_references if book.reader else None,
+    )
+
+
+def _fetch(fetch: AcquireRecipe | ComponentFetch) -> Recipe:
+    return Recipe(
+        acquire=fetch.acquire,
+        declares=fetch.declares,
+        read_original=fetch.read_original,
+    )
+
+
+def _aid(value: Mapping[str, Any]) -> Recipe:
+    source = AidRecipe.from_recipe(value)
+    return Recipe(
+        prepare=source.prepare,
+        read_source=source.read_source,
+        read_aid_entries=source.read_aid_entries,
+    )
+
+
+def _statement(value: Mapping[str, Any]) -> Recipe:
+    statement = StatementRecipe.from_recipe(value)
+    return Recipe(
+        prepare=statement.prepare,
+        read_source=statement.read_source,
+        read_statements=statement.read_statements,
+    )
+
+
+def _key(adapter: AdapterDeclaration) -> tuple[str, str]:
+    return adapter.name, adapter.method_version
+
+
+ADAPTERS = {
+    _key(STEPBIBLE): _step_book,
+    _key(STEPBIBLE_FETCH): lambda value: _fetch(ComponentFetch.from_recipe(value)),
+    _key(ACQUIRE_ONLY): lambda value: _fetch(AcquireRecipe.from_recipe(value)),
+    _key(LANGUAGE_AIDS): _aid,
+    _key(CHARACTER_STATEMENT): _statement,
+    _key(USFM): _usfm_book,
+}
+
+
 def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
     recipes: dict[str, Recipe] = {}
     for path in sorted(directory.glob("*.json")):
@@ -58,48 +120,10 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         identity = (adapter.get("name"), adapter.get("method_version"))
         if value["revision"] in recipes:
             raise ValueError(f"Recipe revision {value['revision']} is declared twice")
-        if identity == (STEPBIBLE.name, STEPBIBLE.method_version):
-            book = BookRecipe.from_recipe(value)
-            recipes[value["revision"]] = Recipe(
-                prepare=book.prepare,
-                read_source=book.read_source,
-                read_reader_references=book.read_reader_references
-                if book.maps_reader_references
-                else None,
-            )
-        elif identity == (STEPBIBLE_FETCH.name, STEPBIBLE_FETCH.method_version):
-            fetch = ComponentFetch.from_recipe(value)
-            recipes[value["revision"]] = Recipe(
-                acquire=fetch.acquire,
-                declares=fetch.declares,
-                read_original=fetch.read_original,
-            )
-        elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
-            source = AcquireRecipe.from_recipe(value)
-            recipes[value["revision"]] = Recipe(
-                acquire=source.acquire,
-                declares=source.declares,
-                read_original=source.read_original,
-            )
-        elif identity == (LANGUAGE_AIDS.name, LANGUAGE_AIDS.method_version):
-            source = AidRecipe.from_recipe(value)
-            recipes[value["revision"]] = Recipe(
-                prepare=source.prepare,
-                read_source=source.read_source,
-                read_aid_entries=source.read_aid_entries,
-            )
-        elif identity == (
-            CHARACTER_STATEMENT.name,
-            CHARACTER_STATEMENT.method_version,
-        ):
-            statement = StatementRecipe.from_recipe(value)
-            recipes[value["revision"]] = Recipe(
-                prepare=statement.prepare,
-                read_source=statement.read_source,
-                read_statements=statement.read_statements,
-            )
-        else:
+        bind = ADAPTERS.get(identity)
+        if bind is None:
             raise ValueError(f"Recipe {path.stem} names no registered adapter")
+        recipes[value["revision"]] = bind(value)
     return recipes
 
 

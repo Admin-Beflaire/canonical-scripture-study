@@ -1,0 +1,64 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "web-usfm-2020-col",
+  "revision": "web-usfm-2020-col/1",
+  "adapter": {
+    "name": "usfm-text",
+    "method_version": "usfm-text/1"
+  },
+  "input_format": "archive/usfm",
+  "parameters": {
+    "variables": "web-usfm-2020",
+    "archive_sha256": "79ab3dd654e5852abe241e40a8007e4d364c8ffaaf56c35d63b494b70a1b9a34",
+    "member_sha256": "71c1c427013b7f3b70ee0a25305e3c335bd25e87357eedf11a0575cc79eb2b56",
+    "basis_sha256": "3c8b5871726ecf52557f58a983a6b1e8706bc760768a61e50aa400269fccab9a"
+  },
+  "native_extent": {
+    "book": "Col",
+    "coordinate_version": "web-usfm-2020:protestant-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact"
+  ],
+  "dependencies": [
+    "web-usfm-2020/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "web-usfm-2020/1"
+    },
+    {
+      "kind": "source_revision",
+      "id": "web-usfm-2020/1"
+    }
+  ],
+  "manifest_revision": "web-usfm-2020/1",
+  "units": [
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Col.1.1", "Col.1.2", "Col.1.3", "Col.1.4", "Col.1.5", "Col.1.6", "Col.1.7", "Col.1.8", "Col.1.9", "Col.1.10", "Col.1.11", "Col.1.12", "Col.1.13", "Col.1.14", "Col.1.15", "Col.1.16", "Col.1.17", "Col.1.18", "Col.1.19", "Col.1.20", "Col.1.21", "Col.1.22", "Col.1.23", "Col.1.24", "Col.1.25", "Col.1.26", "Col.1.27", "Col.1.28", "Col.1.29", "Col.2.1", "Col.2.2", "Col.2.3", "Col.2.4", "Col.2.5", "Col.2.6", "Col.2.7", "Col.2.8", "Col.2.9", "Col.2.10", "Col.2.11", "Col.2.12", "Col.2.13", "Col.2.14", "Col.2.15", "Col.2.16", "Col.2.17", "Col.2.18", "Col.2.19", "Col.2.20", "Col.2.21", "Col.2.22", "Col.2.23", "Col.3.1", "Col.3.2", "Col.3.3", "Col.3.4", "Col.3.5", "Col.3.6", "Col.3.7", "Col.3.8", "Col.3.9", "Col.3.10", "Col.3.11", "Col.3.12", "Col.3.13", "Col.3.14", "Col.3.15", "Col.3.16", "Col.3.17", "Col.3.18", "Col.3.19", "Col.3.20", "Col.3.21", "Col.3.22", "Col.3.23", "Col.3.24", "Col.3.25", "Col.4.1", "Col.4.2", "Col.4.3", "Col.4.4", "Col.4.5", "Col.4.6", "Col.4.7", "Col.4.8", "Col.4.9", "Col.4.10", "Col.4.11", "Col.4.12", "Col.4.13", "Col.4.14", "Col.4.15", "Col.4.16", "Col.4.17", "Col.4.18"]
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Col.1.1", "Col.1.2", "Col.1.3", "Col.1.4", "Col.1.5", "Col.1.6", "Col.1.7", "Col.1.8", "Col.1.9", "Col.1.10", "Col.1.11", "Col.1.12", "Col.1.13", "Col.1.14", "Col.1.15", "Col.1.16", "Col.1.17", "Col.1.18", "Col.1.19", "Col.1.20", "Col.1.21", "Col.1.22", "Col.1.23", "Col.1.24", "Col.1.25", "Col.1.26", "Col.1.27", "Col.1.28", "Col.1.29", "Col.2.1", "Col.2.2", "Col.2.3", "Col.2.4", "Col.2.5", "Col.2.6", "Col.2.7", "Col.2.8", "Col.2.9", "Col.2.10", "Col.2.11", "Col.2.12", "Col.2.13", "Col.2.14", "Col.2.15", "Col.2.16", "Col.2.17", "Col.2.18", "Col.2.19", "Col.2.20", "Col.2.21", "Col.2.22", "Col.2.23", "Col.3.1", "Col.3.2", "Col.3.3", "Col.3.4", "Col.3.5", "Col.3.6", "Col.3.7", "Col.3.8", "Col.3.9", "Col.3.10", "Col.3.11", "Col.3.12", "Col.3.13", "Col.3.14", "Col.3.15", "Col.3.16", "Col.3.17", "Col.3.18", "Col.3.19", "Col.3.20", "Col.3.21", "Col.3.22", "Col.3.23", "Col.3.24", "Col.3.25", "Col.4.1", "Col.4.2", "Col.4.3", "Col.4.4", "Col.4.5", "Col.4.6", "Col.4.7", "Col.4.8", "Col.4.9", "Col.4.10", "Col.4.11", "Col.4.12", "Col.4.13", "Col.4.14", "Col.4.15", "Col.4.16", "Col.4.17", "Col.4.18"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact"
+      ]
+    }
+  ]
+}

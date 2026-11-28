@@ -1,0 +1,64 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "web-usfm-2020-jon",
+  "revision": "web-usfm-2020-jon/1",
+  "adapter": {
+    "name": "usfm-text",
+    "method_version": "usfm-text/1"
+  },
+  "input_format": "archive/usfm",
+  "parameters": {
+    "variables": "web-usfm-2020",
+    "archive_sha256": "79ab3dd654e5852abe241e40a8007e4d364c8ffaaf56c35d63b494b70a1b9a34",
+    "member_sha256": "3302a161e6f12aaa17a177c0c5407915db134f7786c0523fa4c8aedc8bec56b8",
+    "basis_sha256": "746ca67e70b63856228aa3a451157ba1eaf0fff802ff6a1b30f4921ccee85aa8"
+  },
+  "native_extent": {
+    "book": "Jon",
+    "coordinate_version": "web-usfm-2020:protestant-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact"
+  ],
+  "dependencies": [
+    "web-usfm-2020/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "web-usfm-2020/1"
+    },
+    {
+      "kind": "source_revision",
+      "id": "web-usfm-2020/1"
+    }
+  ],
+  "manifest_revision": "web-usfm-2020/1",
+  "units": [
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Jon.1.1", "Jon.1.2", "Jon.1.3", "Jon.1.4", "Jon.1.5", "Jon.1.6", "Jon.1.7", "Jon.1.8", "Jon.1.9", "Jon.1.10", "Jon.1.11", "Jon.1.12", "Jon.1.13", "Jon.1.14", "Jon.1.15", "Jon.1.16", "Jon.1.17", "Jon.2.1", "Jon.2.2", "Jon.2.3", "Jon.2.4", "Jon.2.5", "Jon.2.6", "Jon.2.7", "Jon.2.8", "Jon.2.9", "Jon.2.10", "Jon.3.1", "Jon.3.2", "Jon.3.3", "Jon.3.4", "Jon.3.5", "Jon.3.6", "Jon.3.7", "Jon.3.8", "Jon.3.9", "Jon.3.10", "Jon.4.1", "Jon.4.2", "Jon.4.3", "Jon.4.4", "Jon.4.5", "Jon.4.6", "Jon.4.7", "Jon.4.8", "Jon.4.9", "Jon.4.10", "Jon.4.11"]
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Jon.1.1", "Jon.1.2", "Jon.1.3", "Jon.1.4", "Jon.1.5", "Jon.1.6", "Jon.1.7", "Jon.1.8", "Jon.1.9", "Jon.1.10", "Jon.1.11", "Jon.1.12", "Jon.1.13", "Jon.1.14", "Jon.1.15", "Jon.1.16", "Jon.1.17", "Jon.2.1", "Jon.2.2", "Jon.2.3", "Jon.2.4", "Jon.2.5", "Jon.2.6", "Jon.2.7", "Jon.2.8", "Jon.2.9", "Jon.2.10", "Jon.3.1", "Jon.3.2", "Jon.3.3", "Jon.3.4", "Jon.3.5", "Jon.3.6", "Jon.3.7", "Jon.3.8", "Jon.3.9", "Jon.3.10", "Jon.4.1", "Jon.4.2", "Jon.4.3", "Jon.4.4", "Jon.4.5", "Jon.4.6", "Jon.4.7", "Jon.4.8", "Jon.4.9", "Jon.4.10", "Jon.4.11"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact"
+      ]
+    }
+  ]
+}

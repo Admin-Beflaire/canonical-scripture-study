@@ -1,0 +1,64 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "web-usfm-2020-oba",
+  "revision": "web-usfm-2020-oba/1",
+  "adapter": {
+    "name": "usfm-text",
+    "method_version": "usfm-text/1"
+  },
+  "input_format": "archive/usfm",
+  "parameters": {
+    "variables": "web-usfm-2020",
+    "archive_sha256": "79ab3dd654e5852abe241e40a8007e4d364c8ffaaf56c35d63b494b70a1b9a34",
+    "member_sha256": "58c7d7270b81d5c0866db4059f1d8d4460f7ca8e49ec89686988f963adfa1a7e",
+    "basis_sha256": "8dc3ff5f3d94d105fa4bd0d71494a8dcb7f0db0262a3af2177d9b4f45cba4898"
+  },
+  "native_extent": {
+    "book": "Oba",
+    "coordinate_version": "web-usfm-2020:protestant-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact"
+  ],
+  "dependencies": [
+    "web-usfm-2020/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "web-usfm-2020/1"
+    },
+    {
+      "kind": "source_revision",
+      "id": "web-usfm-2020/1"
+    }
+  ],
+  "manifest_revision": "web-usfm-2020/1",
+  "units": [
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Oba.1.1", "Oba.1.2", "Oba.1.3", "Oba.1.4", "Oba.1.5", "Oba.1.6", "Oba.1.7", "Oba.1.8", "Oba.1.9", "Oba.1.10", "Oba.1.11", "Oba.1.12", "Oba.1.13", "Oba.1.14", "Oba.1.15", "Oba.1.16", "Oba.1.17", "Oba.1.18", "Oba.1.19", "Oba.1.20", "Oba.1.21"]
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["Oba.1.1", "Oba.1.2", "Oba.1.3", "Oba.1.4", "Oba.1.5", "Oba.1.6", "Oba.1.7", "Oba.1.8", "Oba.1.9", "Oba.1.10", "Oba.1.11", "Oba.1.12", "Oba.1.13", "Oba.1.14", "Oba.1.15", "Oba.1.16", "Oba.1.17", "Oba.1.18", "Oba.1.19", "Oba.1.20", "Oba.1.21"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact"
+      ]
+    }
+  ]
+}

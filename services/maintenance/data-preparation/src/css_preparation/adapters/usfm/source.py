@@ -44,6 +44,15 @@ def preparation_basis(
             "member": config["member"],
             "sha256": config["sha256"],
             "usfm_code": config.get("usfm_code", book.upper()),
+            **(
+                {
+                    "editorial_headings_before": sorted(
+                        config["editorial_headings_before"]
+                    )
+                }
+                if config.get("editorial_headings_before")
+                else {}
+            ),
             **({"mapping": config["reader_mapping"]} if reader else {}),
         }
     )
@@ -102,7 +111,10 @@ class UsfmSource:
         if hashlib.sha256(data).hexdigest() != self.config["sha256"]:
             raise RecordError("USFM member differs from the reviewed original")
         verses, titles = read_book(
-            data, self.book, self.config.get("usfm_code", self.book.upper())
+            data,
+            self.book,
+            self.config.get("usfm_code", self.book.upper()),
+            editorial_headings_before=self.config.get("editorial_headings_before", ()),
         )
         ordered = {
             entry: body

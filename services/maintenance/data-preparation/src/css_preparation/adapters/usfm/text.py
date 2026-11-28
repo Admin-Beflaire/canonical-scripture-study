@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 import re
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from ...prepare.records import RecordError
 from ..usfm_markers import BOOK, MARKER
@@ -57,6 +57,8 @@ class _Body:
     titles: dict[str, list[str]] = field(default_factory=dict)
     pending_title: list[str] | None = None
     parts: list[str] | None = None
+    verse_parts: list[str] | None = None
+    in_heading: bool = False
     chapter: int = 0
     letter_style: list[str] = field(default_factory=list)
     note: str | None = None
@@ -88,6 +90,8 @@ class _Body:
     def append(self, text: str) -> None:
         if self.parts is not None:
             self.parts.append(text)
+        elif not self.in_heading and text.strip():
+            raise RecordError("USFM wording has no numbered verse or descriptive title")
 
     def block(self, book: str, marker: str, payload: str) -> None:
         if marker == "v":
@@ -97,12 +101,13 @@ class _Body:
             unit = f"{book}.{self.chapter}.{number}"
             if unit in self.verses:
                 raise RecordError("Duplicate native USFM verse")
-            self.parts = self.verses[unit] = [wording]
+            self.verse_parts = self.parts = self.verses[unit] = [wording]
+            self.in_heading = False
             if self.pending_title is not None:
                 self.titles[unit + ".title"] = self.pending_title
                 self.pending_title = None
         elif marker == "c":
-            number, _ = _argument(payload)
+            number, remaining = _argument(payload)
             if (
                 self.pending_title is not None
                 or not _NUMBER.fullmatch(number)
@@ -110,18 +115,25 @@ class _Body:
             ):
                 raise RecordError("Unexpected USFM chapter sequence")
             self.chapter = int(number)
-            self.parts = None
+            self.verse_parts = self.parts = None
+            self.in_heading = False
+            self.append(remaining)
         elif marker == "d" and self.chapter:
             if self.pending_title is None:
                 self.pending_title = []
             self.parts = self.pending_title
+            self.in_heading = False
             self.append(" " + payload)
         elif _LAYOUT.fullmatch(marker):
+            self.in_heading = False
+            if self.parts is None:
+                self.parts = self.verse_parts
             self.append(" " + payload)
         elif _EDITORIAL.fullmatch(marker) or (
             not self.chapter and _FRONT.fullmatch(marker)
         ):
             self.parts = None
+            self.in_heading = True
         else:
             raise RecordError("Unsupported USFM block or character marker")
 
@@ -133,7 +145,11 @@ def _wording(parts: list[str]) -> str:
 
 
 def read_book(
-    data: bytes, book: str, usfm_code: str
+    data: bytes,
+    book: str,
+    usfm_code: str,
+    *,
+    editorial_headings_before: Iterable[str] = (),
 ) -> tuple[dict[str, str], dict[str, str]]:
     try:
         fields = _fields(data.decode("utf-8-sig"))
@@ -161,7 +177,15 @@ def read_book(
         or not body.verses
     ):
         raise RecordError("USFM body is missing or has unclosed markup")
+    # Some editions use the descriptive-title marker for editorial headings.
+    editorial_units = {f"{book}.{anchor}.title" for anchor in editorial_headings_before}
+    if not editorial_units.issubset(body.titles):
+        raise RecordError("Expected editorial headings are missing from the USFM book")
     return (
         {unit: _wording(parts) for unit, parts in body.verses.items()},
-        {unit: _wording(parts) for unit, parts in body.titles.items()},
+        {
+            unit: _wording(parts)
+            for unit, parts in body.titles.items()
+            if unit not in editorial_units
+        },
     )

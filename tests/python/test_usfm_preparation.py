@@ -43,19 +43,20 @@ class UsfmPreparationTest(unittest.TestCase):
 \d \w Title|lemma="ignored"\w* words
 \q1
 \v 1 \wj \+w Love|ignored="attributes"\+w*\wj*; love, well-known King's King’s é é.\f + \ft footnote\f*
-\q2 \qs Selah\qs*
 \x + \xt crossreference\x*
-\d Another heading
+\sp \it Speaker\it*
+\q2 \qs Selah\qs*
+\d Acrostic heading
 \v 2 Plain text.
 """.encode()
-        verses, titles = read_book(raw, "Psa", "PSA")
+        verses, titles = read_book(raw, "Psa", "PSA", editorial_headings_before=["1.2"])
         title, verse = "Psa.1.1.title", "Psa.1.1"
+        self.assertEqual(set(titles), {title})
         text = NativeText(
             "usfm-fixture/1",
             (
                 (title, titles[title]),
                 (verse, verses[verse]),
-                ("Psa.1.2.title", titles["Psa.1.2.title"]),
                 ("Psa.1.2", verses["Psa.1.2"]),
             ),
         )
@@ -89,8 +90,6 @@ class UsfmPreparationTest(unittest.TestCase):
                 "Selah",
                 "é",
                 "é",
-                "Another",
-                "heading",
                 "Plain",
                 "text",
             },
@@ -103,6 +102,18 @@ class UsfmPreparationTest(unittest.TestCase):
             [{"unit_id": title, "start": 0, "end": 5}],
         )
         self.check_saved(source, text, records, ["source_context", "word_exact"])
+
+    def test_refuses_unplaced_verse_wording(self):
+        for wording in (
+            b"\\c 1 stray wording\n",
+            b"\\c 1\n\\q1 stray wording\n",
+            b'\\c 1\n\\q1 \\w stray|lemma="ignored"\\w*\n',
+        ):
+            with (
+                self.subTest(wording=wording),
+                self.assertRaisesRegex(RecordError, "wording has no numbered verse"),
+            ):
+                read_book(b"\\id SNG\n" + wording + b"\\v 1 Verse.\n", "Sng", "SNG")
 
     def check_saved(self, source, text, records, capabilities, rebuild=None):
         db = database()

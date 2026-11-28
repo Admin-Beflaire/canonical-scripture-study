@@ -53,6 +53,14 @@ test('Control: exactly four skills with digests, named within what hosts keep', 
   within(instructions, NEEDED, names);
 });
 
+test("Control: action tools start with the owner's instruction rule", async () => {
+  const {tools} = await delivered(control);
+  for (const name of ['request_task', 'control_task', 'tidy_releases']) {
+    const tool = tools.find(tool => tool.name === name);
+    assert.ok(tool?.description.startsWith(rules.ONLY_INSTRUCTED), name);
+  }
+});
+
 test('Control: each kind of request has its way in exactly one skill', async () => {
   const skills = await controlSkills();
   const {tools} = await delivered(control);

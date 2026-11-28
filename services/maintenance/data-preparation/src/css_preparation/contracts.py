@@ -69,4 +69,9 @@ def unit_result(
         quality_receipt_ref=fields.get("quality_receipt_ref"),
         state=state,
         diagnostics=fields.get("diagnostics", []),
+        **(
+            {"analysis_report_ref": fields["analysis_report_ref"]}
+            if "analysis_report_ref" in fields
+            else {}
+        ),
     )

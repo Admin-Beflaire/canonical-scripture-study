@@ -3,6 +3,9 @@ import {
   ASK_FIRST,
   ASK_LISTED,
   ADMISSION_RULE,
+  ANALYSIS_JUDGEMENT,
+  ANALYSIS_REPORT,
+  ANALYSE_SOURCE,
   BELONGING,
   CANDIDATE,
   CONTROL_RULE,
@@ -61,7 +64,13 @@ function skill(
 export const CONTROL_SKILLS: readonly TaskSkill[] = Object.freeze([
   skill(
     'add-source',
-    'Adding, refreshing, correcting or replacing a source with Maintenance Control, fetching it, preparing it or making a prepared build current: read before such a request.',
+    'Adding, refreshing, correcting or replacing a source with Maintenance Control, fetching or analysing it, preparing it or making a prepared build current: read before such a request.',
+    section('Analysing a new source', [
+      ANALYSE_SOURCE,
+      ASK_FIRST,
+      ANALYSIS_REPORT,
+      ANALYSIS_JUDGEMENT,
+    ]),
     section('Fetching and building', [
       RECIPE_FIRST,
       BELONGING,

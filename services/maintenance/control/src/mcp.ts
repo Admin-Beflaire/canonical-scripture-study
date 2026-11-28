@@ -1,3 +1,4 @@
+import {analysisPage} from './analysis-report.ts';
 import {currentSources} from './current-sources.ts';
 import {describeRecipe, findRecipes} from './recipe-guide.ts';
 import {fromJsonSchema} from '@modelcontextprotocol/server';
@@ -14,6 +15,8 @@ import {
 import {formatBytes, tidyReleases} from './cleanup.ts';
 import {advance, reconcile} from './progress.ts';
 import {
+  ANALYSE_SOURCE,
+  ANALYSIS_JUDGEMENT,
   nextAction,
   CONTROL_INSTRUCTIONS,
   DECISION_REF_MAX,
@@ -119,7 +122,13 @@ const getSchema = fromJsonSchema<{task_id?: string; cursor?: string}>({
   additionalProperties: false,
   properties: {
     task_id: id,
-    cursor: {type: 'string', maxLength: 20, pattern: '^[0-9a-z]+$'},
+    cursor: {
+      type: 'string',
+      maxLength: 20,
+      pattern: '^[0-9a-z]+$',
+      description:
+        'Use the cursor from the preceding task-list or analysis-report page.',
+    },
   },
 });
 interface RecipeArgs {
@@ -127,6 +136,7 @@ interface RecipeArgs {
   find?: string;
   sources_after?: string;
   prepare_only?: boolean;
+  analyse?: boolean;
 }
 const recipeSchema = fromJsonSchema<RecipeArgs>({
   type: 'object',
@@ -146,6 +156,10 @@ const recipeSchema = fromJsonSchema<RecipeArgs>({
       ...id,
       description:
         'With find: next_sources_after from the page before, for more current sources.',
+    },
+    analyse: {
+      type: 'boolean',
+      description: `${ANALYSE_SOURCE} ${ANALYSIS_JUDGEMENT}`,
     },
     prepare_only: {
       type: 'boolean',
@@ -309,22 +323,26 @@ async function getTaskTool(
       page,
     );
   }
-  const {notes, failures} = (await taskReport(db, tools.owner(), task_id))
+  const existing = await taskReport(db, tools.owner(), task_id);
+  if (!existing) return reply('No task with this ID.', {task_id}, true);
+  const refresh = !existing.analysis_report_ref;
+  const {notes, failures} = refresh
     ? await refreshTask(tools, task_id)
     : {notes: [], failures: []};
-  const report = await taskReport(db, tools.owner(), task_id);
-  if (!report) return reply('No task with this ID.', {task_id}, true);
+  const {analysis_report_ref: reference, ...report} = refresh
+    ? ((await taskReport(db, tools.owner(), task_id)) ?? existing)
+    : existing;
+  const analysis = reference
+    ? await analysisPage(tools.objects, reference, cursor)
+    : null;
   return reply(
     `Task ${report.id} is ${report.state} (revision ${report.revision}); data ${report.data_current ? 'became current' : 'is not current from this task'}.`,
-    notes.length || failures.length
-      ? {
-          ...report,
-          ...(notes.length ? {reconciliation: notes} : {}),
-          ...(failures.length
-            ? {progression: {status: 'failed', failures}}
-            : {}),
-        }
-      : report,
+    {
+      ...report,
+      ...(analysis ? {analysis_report: analysis} : {}),
+      ...(notes.length ? {reconciliation: notes} : {}),
+      ...(failures.length ? {progression: {status: 'failed', failures}} : {}),
+    },
   );
 }
 
@@ -346,18 +364,18 @@ async function recipeList(
 async function recipeAnswer(
   tools: Tools,
   github: RecipeFiles,
-  id: string,
-  prepareOnly?: boolean,
+  args: RecipeArgs & {recipe: string},
 ) {
   const {db, objects} = tools;
   const found = await describeRecipe(
     {db, github: readOnce(github), objects},
-    id,
-    prepareOnly,
+    args.recipe,
+    args.prepare_only,
+    args.analyse,
   );
   if (!found.found) return reply(found.message, found, true);
   return reply(
-    `Recipe ${found.recipe} does a ${found.does}. ${nextAction(found, !!prepareOnly)}`,
+    `Recipe ${found.recipe} does a ${found.does}. ${nextAction(found, !!args.prepare_only)}`,
     found,
   );
 }
@@ -369,7 +387,7 @@ async function recipeTool(tools: Tools, args: RecipeArgs) {
     return reply('Recipes are not available: GitHub is not set up.', {}, true);
   try {
     return args.recipe
-      ? await recipeAnswer(tools, github, args.recipe, args.prepare_only)
+      ? await recipeAnswer(tools, github, {...args, recipe: args.recipe})
       : await recipeList(db, github, args);
   } catch (error) {
     if (!(error instanceof GitHubError)) throw error;

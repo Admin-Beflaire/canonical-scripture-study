@@ -1,11 +1,11 @@
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import {admissionGaps, type AdmissionSources} from './admission.ts';
-import type {InputRef} from './contracts.ts';
+import type {ArtifactRef, InputRef} from './contracts.ts';
 
 /** Task scope, state and owner-instruction resolution (Maintenance Control To-Be §1–2). */
 /** The steps Control offers. A task lists the ones it needs, in this order; nothing is mandatory.
  *  `remove`, `rollback` and `validate_restore` act on the current data and stand alone. */
-export const CHAIN_STEPS = ['fetch', 'build', 'select'] as const;
+export const CHAIN_STEPS = ['fetch', 'analyse', 'build', 'select'] as const;
 export const ALONE_STEPS = ['remove', 'rollback', 'validate_restore'] as const;
 export const STEPS = [...CHAIN_STEPS, ...ALONE_STEPS] as const;
 export const TASK_STATES = [
@@ -76,6 +76,7 @@ export interface Outcome {
   };
   removal_report?: Record<string, unknown>;
   restore_report?: Record<string, unknown>;
+  analysis_report_ref?: ArtifactRef;
   /** The recipe revisions this task started with, one per recipe step. */
   recipe_revision?: string;
   fetch_recipe_revision?: string;
@@ -122,6 +123,11 @@ function stepProblems(steps: Step[]): string[] {
   const alone = steps.some(step => ALONE_STEPS.includes(step as never));
   if (alone && steps.length > 1)
     return [`steps: ${ALONE_STEPS.join(', ')} each stand alone`];
+  if (
+    steps.includes('analyse') &&
+    steps.some(step => step !== 'analyse' && step !== 'fetch')
+  )
+    return ['steps: analyse runs alone or immediately after fetch'];
   const order = steps.map(step => CHAIN_STEPS.indexOf(step as never));
   if (!alone && order.some((place, i) => i && place <= order[i - 1]))
     return [`steps: each step once, in this order: ${CHAIN_STEPS.join(', ')}`];
@@ -142,9 +148,9 @@ const identifierProblems = (scope: Scope) =>
 
 /** What the fetch and build steps need: sources, a finite extent, a recipe and the outputs wanted. */
 function sourceProblems(scope: Scope): string[] {
-  const fetches = has(scope, 'fetch');
+  const usesFetchRecipe = has(scope, 'fetch') || has(scope, 'analyse');
   const builds = has(scope, 'build');
-  if (!fetches && !builds && !has(scope, 'remove')) return [];
+  if (!usesFetchRecipe && !builds && !has(scope, 'remove')) return [];
   const missing: string[] = [];
   if (!scope.inputs.length)
     missing.push(
@@ -155,7 +161,7 @@ function sourceProblems(scope: Scope): string[] {
     missing.push(
       'extent: the finite native extent (for example which books or units)',
     );
-  if (fetches && typeof scope.constraints.fetch_recipe !== 'string')
+  if (usesFetchRecipe && typeof scope.constraints.fetch_recipe !== 'string')
     missing.push('constraints.fetch_recipe: the reviewed fetch recipe');
   if (builds && typeof scope.constraints.recipe !== 'string')
     missing.push('constraints.recipe: the reviewed build recipe');
@@ -640,6 +646,7 @@ export async function taskReport(
       outcome: outcome.selection,
     },
     limitations: outcome.limitations,
+    analysis_report_ref: outcome.analysis_report_ref,
     data_current: outcome.selection?.became_current === true,
   };
 }

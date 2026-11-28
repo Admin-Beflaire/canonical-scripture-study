@@ -35,9 +35,11 @@ from ..validate.saved import CandidateInventory
 from .cloudflare import CloudflareConfig, CloudflareStorage
 from .control import ControlClient, ControlConfig
 from .recipes import RECIPES, Recipe, declared_input
+from .source_analysis import AnalysisRefused, save_report
 from .web import Origin, ProviderError
 
 KINDS = ("acquire", "prepare", "quality")
+ANALYSIS = "analyse"
 _RUN_ID = re.compile(r"[1-9][0-9]{0,19}")
 _COMMIT = re.compile(r"[0-9a-f]{40}")
 REQUIRED = (
@@ -132,6 +134,34 @@ def _inventory(job: dict[str, Any], storage: CloudflareStorage) -> CandidateInve
     )
 
 
+def _analyse_job(
+    job_json: str,
+    run_id: str,
+    recipe: Recipe,
+    storage: CloudflareStorage,
+    gate: dict[str, Any],
+) -> dict[str, Any]:
+    def analyse(job: dict[str, Any]):
+        if recipe.read_original is None:
+            raise AnalysisRefused("Analysis needs a fetch recipe for a kept original")
+        try:
+            data, name = recipe.read_original(job, storage)
+        except RecordError as error:
+            raise AnalysisRefused(
+                "The kept original or its admission could not be verified"
+            ) from error
+        return unit_result(
+            job,
+            run_id,
+            "succeeded",
+            completed_extent=job["native_extent"],
+            remaining_extent={},
+            analysis_report_ref=save_report(data, name, storage),
+        )
+
+    return execute_unit(job_json, **gate, process=analyse)
+
+
 def run_job(
     job_text: str,
     kind: str,
@@ -170,6 +200,8 @@ def run_job(
                 "failed",
                 diagnostics=[diagnostic(job, "recipe", "no_registered_recipe")],
             )
+        if kind == ANALYSIS:
+            return _analyse_job(job_json, run_id, recipe, storage, gate)
         if kind == "quality":
             if recipe.read_source is None:
                 return unit_result(
@@ -238,6 +270,13 @@ def run_job(
             diagnostics=[
                 diagnostic(job, "control_check", code, error, outcome="cancelled")
             ],
+        )
+    except AnalysisRefused as error:
+        return unit_result(
+            job,
+            run_id,
+            "failed",
+            diagnostics=[diagnostic(job, ANALYSIS, "analysis_refused", error)],
         )
     except ProviderError as error:
         return unit_result(
@@ -321,7 +360,7 @@ def main(argv: list[str], environ: Mapping[str, str]) -> int:
         ) as error:  # ValueError covers text that is not JSON
             return _refuse(lines, "invalid", "job_input", "invalid_job", error)
         kind = job["kind"]
-        if kind not in KINDS:
+        if kind not in (*KINDS, ANALYSIS):
             return _refuse(lines, "invalid", "job_input", "unknown_kind")
         try:
             control = ControlClient(

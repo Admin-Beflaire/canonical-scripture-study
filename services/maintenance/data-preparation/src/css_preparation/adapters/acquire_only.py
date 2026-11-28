@@ -7,13 +7,14 @@ import hashlib
 import json
 import re
 from typing import Any, Mapping
+from pathlib import PurePosixPath
 from urllib.parse import urlsplit
 
 from ..acquire.fetch import fetch_original
 from ..acquire.retention import declared_admission
 from ..acquire.transfer import Route
 from ..prepare.evidence import SourceIdentity, SourceLevel
-from ..prepare.records import RecordError, RecordSet
+from ..prepare.records import RecordError, RecordSet, comparable
 from ..validation import SCHEMAS
 from . import AdapterDeclaration, AdapterRegistry
 from .retained import retained_identity
@@ -156,10 +157,10 @@ class AcquireRecipe:
             "id": self.manifest["source_revision"],
         }
 
-    def _check_job(self, job: Mapping[str, Any]) -> None:
+    def _check_job(self, job: Mapping[str, Any], unit: str = "acquire") -> None:
         refs = job["input_refs"]
         if (
-            job["unit_id"] != "acquire"
+            job["unit_id"] != unit
             or job["native_extent"] != self.recipe["native_extent"]
             or not all(
                 any(
@@ -196,6 +197,31 @@ class AcquireRecipe:
         if hashlib.sha256(data).hexdigest() != digest or size not in (None, len(data)):
             raise RecordError("The stored original does not match its digest and size")
         return data
+
+    def read_original(self, job: Mapping[str, Any], storage: Any) -> tuple[bytes, str]:
+        """Read a kept, admitted original through this fetch recipe, without fetching."""
+        self._check_job(job, "analyse")
+        recorded = self._recorded(storage)
+        saved = storage.read_row("admission", self.admission["id"])
+        if (
+            not recorded
+            or recorded.get("url") != self.manifest["url"]
+            or saved is None
+            or dict(saved) != comparable("admission", self.admission)
+        ):
+            raise RecordError("No matching retained original and admission")
+        pinned = self.manifest.get("expected_sha256")
+        kept = self._kept(storage, recorded)
+        if (
+            kept is None
+            or pinned not in (None, recorded["sha256"])
+            or len(kept) != recorded["byte_count"]
+        ):
+            raise RecordError(
+                "The retained original does not match its recorded digest and size"
+            )
+        path = PurePosixPath(urlsplit(self.manifest["url"]).path)
+        return kept, path.name or "original"
 
     def _download(self) -> tuple[bytes, str]:
         m = self.manifest

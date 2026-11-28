@@ -43,6 +43,7 @@ class Recipe:
     read_reader_references: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
     read_aid_entries: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
     read_statements: Callable[[Mapping[str, Any], Any], RecordSet] | None = None
+    read_original: Callable[[Mapping[str, Any], Any], tuple[bytes, str]] | None = None
 
 
 def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
@@ -69,12 +70,16 @@ def load_recipes(directory: Path = RECIPE_DIRECTORY) -> dict[str, Recipe]:
         elif identity == (STEPBIBLE_FETCH.name, STEPBIBLE_FETCH.method_version):
             fetch = ComponentFetch.from_recipe(value)
             recipes[value["revision"]] = Recipe(
-                acquire=fetch.acquire, declares=fetch.declares
+                acquire=fetch.acquire,
+                declares=fetch.declares,
+                read_original=fetch.read_original,
             )
         elif identity == (ACQUIRE_ONLY.name, ACQUIRE_ONLY.method_version):
             source = AcquireRecipe.from_recipe(value)
             recipes[value["revision"]] = Recipe(
-                acquire=source.acquire, declares=source.declares
+                acquire=source.acquire,
+                declares=source.declares,
+                read_original=source.read_original,
             )
         elif identity == (LANGUAGE_AIDS.name, LANGUAGE_AIDS.method_version):
             source = AidRecipe.from_recipe(value)

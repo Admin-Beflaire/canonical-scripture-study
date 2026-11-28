@@ -48,7 +48,7 @@
         "task_revision": { "$ref": "#/$defs/positive" },
         "unit_id": { "$ref": "#/$defs/id" },
         "attempt": { "$ref": "#/$defs/positive" },
-        "kind": { "enum": ["acquire", "prepare", "quality"] },
+        "kind": { "enum": ["acquire", "prepare", "quality", "analyse"] },
         "basis_digest": { "$ref": "#/$defs/digest" },
         "input_refs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/input_ref" } },
         "manifest_revision": { "$ref": "#/$defs/id" },
@@ -78,6 +78,7 @@
         "output_refs": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/artifact_ref" } },
         "coverage_refs": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/id" } },
         "quality_receipt_ref": { "$ref": "#/$defs/optional_artifact_ref" },
+        "analysis_report_ref": { "$ref": "#/$defs/artifact_ref" },
         "state": { "enum": ["succeeded", "failed", "cancelled"] },
         "diagnostics": { "type": "array", "maxItems": 32, "items": {
           "type": "object", "additionalProperties": false, "required": ["code", "message"],

@@ -81,3 +81,7 @@ and is never written.
 an approved statement requires it. Apply it with the Study deployment before a task
 prepares a statement: the new preparation writes the column and the new Study build
 reads it. Earlier builds ignore it.
+
+`0018_source_analysis_jobs.sql` adds the `analyse` job kind and preserves existing
+job rows, result receipts and integrity triggers. Analysis reports are private
+objects referenced by the job result and are outside release data.

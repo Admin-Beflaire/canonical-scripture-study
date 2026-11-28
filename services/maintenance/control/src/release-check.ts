@@ -12,6 +12,7 @@ export interface ObjectStore {
     prefix: string,
     cursor?: string,
   ): Promise<{objects: Array<{key: string; size: number}>; cursor?: string}>;
+  read?(key: string, expectedBytes: number): Promise<string | null>;
   /** Remove stored objects (release cleanup only); a missing key is not an error. */
   remove?(keys: string[]): Promise<void>;
 }

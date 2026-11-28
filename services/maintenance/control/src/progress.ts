@@ -11,6 +11,7 @@ import {fetchesOnly, recipeInputs} from './recipe-inputs.ts';
 import {dispatchUnit, type DispatchResult, type UnitPlan} from './dispatch.ts';
 import {GitHubError, runTitle, type GitHubActions} from './github.ts';
 import {loadRecipe} from './recipe-load.ts';
+import {originalState, readOriginal} from './originals.ts';
 import {
   checkAndSelect,
   releaseCandidate,
@@ -88,8 +89,15 @@ export async function advance(
   taskId: string,
   objects: ObjectStore | null = null,
 ): Promise<Progress> {
-  const progress = await advanceTask(db, github, taskId, objects);
-  if (ENDED.has(progress.state)) await tidyReleases(db, objects);
+  const row = await task(db, taskId);
+  if (!row) return stop('unknown');
+  const scope = JSON.parse(row.scope_json) as Scope;
+  const progress = await advanceTask(db, github, row, scope, objects);
+  if (
+    ENDED.has(progress.state) &&
+    (!Array.isArray(scope.steps) || !has(scope, 'analyse'))
+  )
+    await tidyReleases(db, objects);
   return progress;
 }
 
@@ -118,14 +126,13 @@ async function blockWith(
 async function advanceTask(
   db: D1Database,
   github: GitHubActions | null,
-  taskId: string,
+  row: TaskRow,
+  scope: Scope,
   objects: ObjectStore | null,
 ): Promise<Progress> {
-  const row = await task(db, taskId);
-  if (!row) return stop('unknown');
   if (!['queued', 'running', 'checked'].includes(row.state))
     return stop(row.state);
-  const scope = JSON.parse(row.scope_json) as Scope;
+  const taskId = row.id;
   if (!Array.isArray(scope.steps))
     return blockWith(
       db,
@@ -136,7 +143,7 @@ async function advanceTask(
     // Removal, rollback and restore validation prepare nothing: they go straight to the checks and gate.
     return resultOf(await selectDirect(db, objects, row));
   }
-  if (!has(scope, 'fetch') && !has(scope, 'build'))
+  if (!has(scope, 'fetch') && !has(scope, 'analyse') && !has(scope, 'build'))
     // Make a finished build's checked candidate current; no work is dispatched.
     return selectStep(db, objects, row);
   if (!github) {
@@ -173,11 +180,12 @@ async function selectStep(
   return resultOf(await releaseCandidate(db, objects, row));
 }
 
-/** The steps the task lists, in order: fetch, then build, then select. Each runs only when listed;
+/** The steps the task lists, in order: fetch, analyse, build, select. Each runs only when listed;
  *  a step that has more steps after it hands on to the next one instead of completing the task. */
 async function runRecipes(run: Run): Promise<Progress> {
   const fetched = has(run.scope, 'fetch') ? await fetchStep(run) : null;
   if (fetched) return fetched;
+  if (has(run.scope, 'analyse')) return analyseStep(run);
   if (has(run.scope, 'build')) return buildStep(run);
   return selectStep(run.db, run.objects, (await task(run.db, run.taskId))!);
 }
@@ -348,24 +356,27 @@ async function runUnits(
   return ready ? {succeeded} : {done: stop(row.state, undefined, dispatched)};
 }
 
-/** What the runner said when a task's input is not saved as named: retrying cannot change that. */
+/** Problems a retry cannot fix, such as a missing input or a refused original. */
 function inputProblem(job: JobView): string | null {
   if (!job.result_json) return null;
   let found: {code: string; message: string} | undefined;
   try {
     found = (JSON.parse(job.result_json) as JobResult).diagnostics.find(
-      diagnostic => diagnostic.code === 'input_not_registered',
+      diagnostic =>
+        ['input_not_registered', 'analysis_refused'].includes(diagnostic.code),
     );
     if (!found) return null;
     const {message} = JSON.parse(found.message) as {message?: unknown};
-    return typeof message === 'string' ? message : 'an input is not registered';
+    return typeof message === 'string' ? message : found.code;
   } catch {
-    return found ? 'an input is not registered' : null;
+    return found?.code ?? null;
   }
 }
 
 const exhausted = (unit: RecipeUnit, latest: JobView) => {
   const input = inputProblem(latest);
+  if (input && unit.kind === 'analyse')
+    return `unit ${unit.unit_id} cannot run: ${input}`;
   if (input)
     return `unit ${unit.unit_id} cannot run: ${input}. Ask get_recipe for the recipe's exact input IDs, then request the task again under a new request_key with supersedes set to this task`;
   const codes = latest.result_json
@@ -390,7 +401,7 @@ async function fetchStep(run: Run): Promise<Progress | null> {
       taskId,
       'The acquired original and its admission were not recorded.',
     ).then(blocked => ({...blocked, limitation: 'acquisition_not_recorded'}));
-  if (has(scope, 'build')) return null; // the build step records the extent
+  if (has(scope, 'build') || has(scope, 'analyse')) return null;
   const row = (await task(db, taskId))!;
   if (has(scope, 'select')) {
     // The fetch is done; record it before the select step follows.
@@ -400,9 +411,51 @@ async function fetchStep(run: Run): Promise<Progress | null> {
     });
     return null;
   }
+  return completeOriginalTask(run, row);
+}
+
+async function analyseStep(run: Run): Promise<Progress> {
+  const {db, github, objects, taskId, scope} = run;
+  const pinned = await pinnedRecipe(run, 'fetch');
+  if ('done' in pinned) return pinned.done;
+  const original = await readOriginal(github, pinned.recipe);
+  const state = original ? await originalState(db, objects, original) : null;
+  if (!state?.kept || !state.recorded || state.asks)
+    return blockWith(
+      db,
+      taskId,
+      state?.asks ??
+        'Analysis needs a kept original with its recorded admission.',
+    );
+  const recipe: Recipe = {
+    ...pinned.recipe,
+    units: [
+      {
+        unit_id: 'analyse',
+        kind: 'analyse',
+        native_extent: scope.extent,
+        depends_on: [],
+      },
+    ],
+  };
+  const ran = await runUnits(run, recipe, 'fetch');
+  if ('done' in ran) return ran.done;
+  const report = ran.succeeded.get('analyse')?.analysis_report_ref;
+  if (!report) return blockWith(db, taskId, 'Analysis returned no report.');
+  const row = (await task(db, taskId))!;
+  return completeOriginalTask(run, row, report);
+}
+
+/** A task that only obtains or inspects an original has no release candidate. */
+async function completeOriginalTask(
+  {db, taskId, scope}: Run,
+  row: TaskRow,
+  report?: ArtifactRef,
+): Promise<Progress> {
   const outcome = JSON.parse(row.outcome_json) as Outcome;
   outcome.completed_extent = scope.extent;
   outcome.remaining_extent = {};
+  if (report) outcome.analysis_report_ref = report;
   await db
     .prepare(
       `UPDATE maintenance_tasks SET state = 'completed', revision = revision + 1, outcome_json = ?
@@ -532,6 +585,11 @@ function recipeFit(
 }
 
 function fetchFit(scope: Scope, recipe: Recipe): string | undefined {
+  if (
+    has(scope, 'analyse') &&
+    scope.inputs.length !== recipeInputs(recipe).length
+  )
+    return 'an analysis names only the inputs of its fetch recipe';
   if (
     recipe.adapter?.name === 'acquire-only' &&
     recipe.adapter.method_version === 'acquire-only/1'

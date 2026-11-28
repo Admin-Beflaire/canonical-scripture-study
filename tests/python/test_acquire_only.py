@@ -13,7 +13,7 @@ from css_preparation.adapters.acquire_only import (
     PRIVATE_STORAGE,
     AcquireRecipe,
 )
-from css_preparation.prepare.records import RecordError
+from css_preparation.prepare.records import RecordError, comparable
 from css_preparation.runner.recipes import load_recipes
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,10 +32,12 @@ class Storage:
         return self.blobs[key]
 
     def read_row(self, kind, identity):
-        return self.rows.get(identity) if kind == "source_node" else None
+        return self.rows.get((kind, identity))
 
     def save(self, records):
-        self.rows.update({row["id"]: row for row in records.rows("source_node")})
+        for kind in ("source_node", "admission"):
+            for row in records.rows(kind):
+                self.rows[kind, row["id"]] = comparable(kind, row)
 
 
 def recipe_value(name):
@@ -266,6 +268,23 @@ class AcquireOnlyTest(unittest.TestCase):
         storage.blobs[key] = b"damaged"
         with serving(b"x") as fetched, self.assertRaisesRegex(RecordError, "stored"):
             recipe.acquire(job_for(recipe), storage)
+        fetched.assert_not_called()
+
+    def test_analysis_reads_only_verified_kept_bytes_without_fetching(self):
+        recipe = AcquireRecipe.from_recipe(recipe_value("sblgnt-d7f35adca9ec"))
+        storage, data = Storage(), b"synthetic archive bytes"
+        with serving(data):
+            storage.save(recipe.acquire(job_for(recipe), storage))
+        (key,) = storage.blobs
+        job = {**job_for(recipe), "unit_id": "analyse"}
+        with serving(b"must not be used") as fetched:
+            self.assertEqual(recipe.read_original(job, storage)[0], data)
+            storage.blobs[key] = b"damaged"
+            with self.assertRaisesRegex(RecordError, "digest"):
+                recipe.read_original(job, storage)
+            storage.blobs.clear()
+            with self.assertRaisesRegex(RecordError, "digest"):
+                recipe.read_original(job, storage)
         fetched.assert_not_called()
 
     def test_a_missing_original_is_saved_only_when_it_matches_the_record(self):

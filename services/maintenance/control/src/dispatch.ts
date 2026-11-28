@@ -1,3 +1,4 @@
+import {validAnalysisReference} from './analysis-report.ts';
 import {canonicalJson, sha256, type D1Database} from './d1.ts';
 import {
   assertJobInput,
@@ -322,6 +323,12 @@ export async function acceptReceipt(
     return {status: 'rejected', reason: 'no matching dispatch'};
   const mismatch = dispatchMismatch(job, task, result);
   if (mismatch) return {status: 'rejected', reason: mismatch};
+  const analysis = job.kind === 'analyse' && result.state === 'succeeded';
+  if (
+    analysis !== (result.analysis_report_ref !== undefined) ||
+    (analysis && !validAnalysisReference(result.analysis_report_ref!))
+  )
+    return {status: 'rejected', reason: 'invalid analysis report reference'};
   const resultRef = `sha256:${await sha256(canonicalJson(result))}`;
   const live = !['cancelled', 'superseded'].includes(task.state);
   if (job.result_ref === resultRef)

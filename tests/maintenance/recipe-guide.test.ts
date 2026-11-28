@@ -79,6 +79,7 @@ const subjects = (decisions: Decision[], kind = 'admission') =>
 
 const CASES: [recipe: string, args: object, steps: string[]][] = [
   ['stepbible-fetch-tahot-job-sng', {}, ['fetch']],
+  ['stepbible-fetch-tahot-job-sng', {analyse: true}, ['fetch', 'analyse']],
   ['stepbible-tahot-sng', {}, ['fetch', 'build', 'select']],
   ['stepbible-tahot-sng', {prepare_only: true}, ['fetch', 'build']],
   ['stepdata-tbesg-5de0a47f', {}, ['fetch']],
@@ -120,6 +121,13 @@ test('a kept original gets no fetch, also inside a shared source revision; a mis
   const fetch = (await w.ask({recipe: 'stepbible-fetch-tahot-job-sng'})).data;
   assert.deepEqual(fetch.requests, []);
   assert.deepEqual(fetch.notes, [ALREADY_OBTAINED]);
+  const analysis = (
+    await w.ask({recipe: 'stepbible-fetch-tahot-job-sng', analyse: true})
+  ).data;
+  assert.deepEqual(analysis.requests[0].steps, ['analyse']);
+  assert.deepEqual(analysis.owner_decisions, []);
+  const analysed = await w.send('inspect', analysis.requests[0]);
+  assert.equal(analysed.data.status, 'created', analysed.text);
 
   w.stored.clear();
   const missing = (await w.ask({recipe: 'stepbible-tahot-sng'})).data;
@@ -127,6 +135,11 @@ test('a kept original gets no fetch, also inside a shared source revision; a mis
   assert.deepEqual(missing.owner_decisions, []);
   const refetch = (await w.ask({recipe: 'stepbible-fetch-tahot-job-sng'})).data;
   assert.deepEqual(refetch.requests[0].steps, ['fetch']);
+  const inspectMissing = (
+    await w.ask({recipe: 'stepbible-fetch-tahot-job-sng', analyse: true})
+  ).data;
+  assert.deepEqual(inspectMissing.requests[0].steps, ['fetch', 'analyse']);
+  assert.deepEqual(inspectMissing.owner_decisions, []);
   await w.handler.close();
 });
 

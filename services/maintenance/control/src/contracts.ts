@@ -175,7 +175,7 @@ export interface JobInput {
   task_revision: number;
   unit_id: string;
   attempt: number;
-  kind: 'acquire' | 'prepare' | 'quality';
+  kind: 'acquire' | 'prepare' | 'quality' | 'analyse';
   basis_digest: string;
   input_refs: InputRef[];
   manifest_revision: string;
@@ -198,6 +198,7 @@ export interface JobResult {
   output_refs: ArtifactRef[];
   coverage_refs: string[];
   quality_receipt_ref: ArtifactRef | null;
+  analysis_report_ref?: ArtifactRef;
   state: 'succeeded' | 'failed' | 'cancelled';
   diagnostics: {code: string; message: string}[];
 }

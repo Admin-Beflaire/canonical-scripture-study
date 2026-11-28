@@ -4,7 +4,6 @@ import type {ObjectStore} from './release-check.ts';
 
 const MAX_REPORT_BYTES = 1_000_000;
 const PAGE_BYTES = 32_000;
-const PAGE_ENTRIES = 20;
 const encoder = new TextEncoder();
 
 export function validAnalysisReference(reference: ArtifactRef): boolean {
@@ -55,7 +54,8 @@ export async function analysisPage(
     return {status: 'invalid_cursor'} as const;
   const page: typeof facts = [];
   let bytes = 0;
-  for (const fact of facts.slice(start, start + PAGE_ENTRIES)) {
+  for (let index = start; index < facts.length; index++) {
+    const fact = facts[index];
     bytes += encoder.encode(JSON.stringify(fact)).length + 1;
     if (bytes > PAGE_BYTES) break;
     page.push(fact);

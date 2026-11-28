@@ -325,13 +325,9 @@ async function getTaskTool(
   }
   const existing = await taskReport(db, tools.owner(), task_id);
   if (!existing) return reply('No task with this ID.', {task_id}, true);
-  const refresh = !existing.analysis_report_ref;
-  const {notes, failures} = refresh
-    ? await refreshTask(tools, task_id)
-    : {notes: [], failures: []};
-  const {analysis_report_ref: reference, ...report} = refresh
-    ? ((await taskReport(db, tools.owner(), task_id)) ?? existing)
-    : existing;
+  const {notes, failures} = await refreshTask(tools, task_id);
+  const {analysis_report_ref: reference, ...report} =
+    (await taskReport(db, tools.owner(), task_id)) ?? existing;
   const analysis = reference
     ? await analysisPage(tools.objects, reference, cursor)
     : null;

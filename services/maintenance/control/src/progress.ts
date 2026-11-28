@@ -89,15 +89,8 @@ export async function advance(
   taskId: string,
   objects: ObjectStore | null = null,
 ): Promise<Progress> {
-  const row = await task(db, taskId);
-  if (!row) return stop('unknown');
-  const scope = JSON.parse(row.scope_json) as Scope;
-  const progress = await advanceTask(db, github, row, scope, objects);
-  if (
-    ENDED.has(progress.state) &&
-    (!Array.isArray(scope.steps) || !has(scope, 'analyse'))
-  )
-    await tidyReleases(db, objects);
+  const progress = await advanceTask(db, github, taskId, objects);
+  if (ENDED.has(progress.state)) await tidyReleases(db, objects);
   return progress;
 }
 
@@ -126,13 +119,14 @@ async function blockWith(
 async function advanceTask(
   db: D1Database,
   github: GitHubActions | null,
-  row: TaskRow,
-  scope: Scope,
+  taskId: string,
   objects: ObjectStore | null,
 ): Promise<Progress> {
+  const row = await task(db, taskId);
+  if (!row) return stop('unknown');
   if (!['queued', 'running', 'checked'].includes(row.state))
     return stop(row.state);
-  const taskId = row.id;
+  const scope = JSON.parse(row.scope_json) as Scope;
   if (!Array.isArray(scope.steps))
     return blockWith(
       db,

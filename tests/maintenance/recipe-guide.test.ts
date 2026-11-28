@@ -11,6 +11,7 @@ import {controlServer} from '../../services/maintenance/control/src/mcp.ts';
 import {recipeInputs} from '../../services/maintenance/control/src/recipe-inputs.ts';
 import {validateMembers} from '../../services/maintenance/control/src/release-check.ts';
 import {callTool} from '../shared/mcp-call.ts';
+import {jobSender, report, sha} from './builds.ts';
 import {localD1} from './d1.ts';
 import {
   bucket,
@@ -68,7 +69,7 @@ function world(...names: string[]) {
         ...(kind === 'statement' ? {name: 'Synthetic', version: '1'} : {}),
       })),
     });
-  return {files, db, stored, objects, server, handler, ask, send};
+  return {files, db, stored, objects, server, github, handler, ask, send};
 }
 
 const subjects = (decisions: Decision[], kind = 'admission') =>
@@ -128,6 +129,50 @@ test('a kept original gets no fetch, also inside a shared source revision; a mis
   assert.deepEqual(analysis.owner_decisions, []);
   const analysed = await w.send('inspect', analysis.requests[0]);
   assert.equal(analysed.data.status, 'created', analysed.text);
+  const facts = Array.from({length: 512}, (_, chapter) => ({
+    book: 'GEN',
+    chapter: chapter + 1,
+    verses: [[1, 2]],
+    gaps: [],
+    repeats: {},
+  }));
+  const payload = JSON.stringify({
+    method: 'source-analysis/1',
+    input_sha256: sha('synthetic original'),
+    input_byte_count: 18,
+    format: 'file',
+    facts,
+  });
+  const digest = sha(payload);
+  w.objects.read = async (key, expectedBytes) =>
+    key === `analysis-reports/${digest}.json` &&
+    expectedBytes === payload.length
+      ? payload
+      : null;
+  const post = jobSender(w.db, w.github, w.objects);
+  const task_id = analysed.data.task_id;
+  const receipt = await report(
+    {gh: w.server, post: async (path, body) => (await post(path, body)).json()},
+    task_id,
+    'analyse',
+    {
+      analysis_report_ref: {
+        artifact_id: `analysis:${digest.slice(0, 32)}`,
+        sha256: digest,
+        byte_count: payload.length,
+      },
+    },
+  );
+  assert.equal(receipt.status, 'accepted');
+  const first = (await callTool(w.handler, 'get_task', {task_id})).data;
+  assert.equal(first.state, 'completed');
+  assert.equal(first.data_current, false);
+  const page = first.analysis_report;
+  assert.ok(page.facts.length > 20 && page.cursor);
+  const next = (
+    await callTool(w.handler, 'get_task', {task_id, cursor: page.cursor})
+  ).data.analysis_report;
+  assert.deepEqual([...page.facts, ...next.facts], facts);
 
   w.stored.clear();
   const missing = (await w.ask({recipe: 'stepbible-tahot-sng'})).data;

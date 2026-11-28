@@ -265,7 +265,7 @@ export function prepareTask(
   };
 }
 
-export function latestRun(w: World, unit: string, taskId: string) {
+export function latestRun(w: Pick<World, 'gh'>, unit: string, taskId: string) {
   const runs = [...w.gh.runs.values()].filter(run => {
     const job = JSON.parse(run.job) as JobInput;
     return job.unit_id === unit && job.task_id === taskId;
@@ -275,7 +275,7 @@ export function latestRun(w: World, unit: string, taskId: string) {
 }
 
 export async function report(
-  w: World,
+  w: Pick<World, 'gh' | 'post'>,
   taskId: string,
   unit: string,
   overrides: Record<string, unknown> = {},

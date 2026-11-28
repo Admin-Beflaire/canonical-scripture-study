@@ -16,7 +16,8 @@ def archive(path: str) -> bytes:
         out.writestr(
             path,
             "\\id GEN\n\\c 1\n\\p\n\\v 1 A synthetic line.\n"
-            "\\v 3-4 synthetic\n\\v 3-4 again\n\\wj text\\wj*.\n",
+            "\\v 3-4 synthetic\n\\v 3-4 again\n\\v 3 overlap\n"
+            "\\v 5a first\n\\v 5b second\n\\wj text\\wj*.\n",
         )
         out.writestr("notice.txt", "Synthetic notice")
     return stream.getvalue()
@@ -29,9 +30,9 @@ class OriginalAnalysisTest(unittest.TestCase):
         source, chapter, notice = report["facts"]
         self.assertEqual(source["books"]["GEN"]["chapters"], [[1]])
         self.assertEqual(source["markup"]["wj*"], 1)
-        self.assertEqual(chapter["verses"], [[1], [3, 4]])
+        self.assertEqual(chapter["verses"], [[1], [3, 5]])
         self.assertEqual(chapter["gaps"], [[2]])
-        self.assertEqual(chapter["repeats"], {"3-4": 2})
+        self.assertEqual(chapter["repeats"], {"3-4": 2, "3": 3})
         self.assertEqual(notice["inspection"], "unsupported_format")
         self.assertNotIn("synthetic", json.dumps(report).lower())
 

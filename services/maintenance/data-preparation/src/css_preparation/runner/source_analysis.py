@@ -54,7 +54,7 @@ def _coverage(numbers: set[int]) -> dict[str, list[list[int]]]:
 @dataclass
 class Chapter:
     numbers: set[int] = field(default_factory=set)
-    labels: Counter[str] = field(default_factory=Counter)
+    labels: Counter[tuple[str, int, int]] = field(default_factory=Counter)
 
     def add(self, verse: re.Match[str]) -> bool:
         first, suffix, last, end_suffix = verse.groups()
@@ -63,10 +63,32 @@ class Chapter:
             return False
         self.numbers.update(range(start, end + 1))
         label = first + suffix + (f"-{last}{end_suffix}" if last else "")
-        self.labels[label] += 1
+        self.labels[label, start, end] += 1
         if len(self.labels) > 1000:
             raise AnalysisRefusedError("Too many verse labels in one chapter")
         return True
+
+    def repeats(self) -> dict[str, int]:
+        repeats = {
+            label: count for (label, _, _), count in self.labels.items() if count > 1
+        }
+        bridged = {
+            number
+            for label, start, end in self.labels
+            if "-" in label
+            for number in range(start, end + 1)
+        }
+        # Only a bridge can cause differently named labels to overlap. Two
+        # segments of the same verse on their own are separate by design.
+        for number in sorted(bridged):
+            counts = [
+                count
+                for (_, start, end), count in self.labels.items()
+                if start <= number <= end
+            ]
+            if len(counts) > 1:
+                repeats[str(number)] = sum(counts)
+        return repeats
 
     def facts(self) -> dict[str, Any]:
         coverage = _coverage(self.numbers)
@@ -74,11 +96,9 @@ class Chapter:
             "verses": coverage["ranges"],
             "gaps": coverage["gaps"],
             "bridges_or_segments": [
-                label for label in self.labels if not label.isdecimal()
+                label for label, _, _ in self.labels if not label.isdecimal()
             ],
-            "repeats": {
-                label: count for label, count in self.labels.items() if count > 1
-            },
+            "repeats": self.repeats(),
         }
 
 

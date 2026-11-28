@@ -69,7 +69,8 @@ test('Control: tool descriptions carry their owner and skill guidance', async ()
   };
   for (const [name, skills] of Object.entries(skillsByTool)) {
     const tool = tools.find(tool => tool.name === name);
-    assert.ok(tool?.description.startsWith(rules.ONLY_INSTRUCTED), name);
+    assert.ok(tool, name);
+    assert.ok(tool.description.startsWith(rules.ONLY_INSTRUCTED), name);
     within(tool.description, 512, [
       'resources/read',
       'skill://<name>/SKILL.md',

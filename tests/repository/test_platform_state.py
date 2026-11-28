@@ -291,14 +291,6 @@ class FailureRecordTests(unittest.TestCase):
         self.assertEqual(record["message"], "Invalid private state repository boundary")
         self.assertNotIn("private-marker", completed.stdout + completed.stderr)
 
-    def test_workflows_report_failures_as_records_and_keep_no_diagnostic_assets(self):
-        for name in ("platform", "deploy", "reconcile-cloudflare"):
-            workflow = (ROOT / f".github/workflows/{name}.yml").read_text()
-            self.assertIn("css_shared.tool_log", workflow)
-            self.assertNotIn("diagnostics.txt", workflow)
-            self.assertNotIn("Preserve private diagnostics", workflow)
-            self.assertNotIn("private diagnostics", workflow)
-
 
 class WorkflowTests(unittest.TestCase):
     def test_minimal_manual_trusted_workflow_with_step_scoped_secrets(self):

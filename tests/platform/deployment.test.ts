@@ -39,7 +39,7 @@ for (const enhancements of [false, true]) {
 function authenticatedReply(
   reply: (rpc: ReturnType<typeof JSON.parse>) => Response,
 ) {
-  return (_url: string, options: RequestInit) =>
+  return async (_url: string, options: RequestInit) =>
     new Headers(options.headers).has('CF-Access-Client-Id')
       ? reply(JSON.parse(String(options.body)))
       : new Response(null, {status: 401});

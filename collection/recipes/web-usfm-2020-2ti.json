@@ -1,0 +1,64 @@
+{
+  "recipe_version": "preparation-recipe/1",
+  "id": "web-usfm-2020-2ti",
+  "revision": "web-usfm-2020-2ti/1",
+  "adapter": {
+    "name": "usfm-text",
+    "method_version": "usfm-text/1"
+  },
+  "input_format": "archive/usfm",
+  "parameters": {
+    "variables": "web-usfm-2020",
+    "archive_sha256": "79ab3dd654e5852abe241e40a8007e4d364c8ffaaf56c35d63b494b70a1b9a34",
+    "member_sha256": "a334074f6a9ec622dc8faf3858a2134df3e94c6ab28cbf896296bff140398891",
+    "basis_sha256": "7b1e565feb263345063e530c85b842694407e3a0c6e177ccd55660fd6c607a9e"
+  },
+  "native_extent": {
+    "book": "2Ti",
+    "coordinate_version": "web-usfm-2020:protestant-verses/1"
+  },
+  "capabilities": [
+    "source_context",
+    "word_exact"
+  ],
+  "dependencies": [
+    "web-usfm-2020/1"
+  ],
+  "task_inputs": [
+    {
+      "kind": "acquisition",
+      "id": "web-usfm-2020/1"
+    },
+    {
+      "kind": "source_revision",
+      "id": "web-usfm-2020/1"
+    }
+  ],
+  "manifest_revision": "web-usfm-2020/1",
+  "units": [
+    {
+      "unit_id": "prepare-01",
+      "kind": "prepare",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["2Ti.1.1", "2Ti.1.2", "2Ti.1.3", "2Ti.1.4", "2Ti.1.5", "2Ti.1.6", "2Ti.1.7", "2Ti.1.8", "2Ti.1.9", "2Ti.1.10", "2Ti.1.11", "2Ti.1.12", "2Ti.1.13", "2Ti.1.14", "2Ti.1.15", "2Ti.1.16", "2Ti.1.17", "2Ti.1.18", "2Ti.2.1", "2Ti.2.2", "2Ti.2.3", "2Ti.2.4", "2Ti.2.5", "2Ti.2.6", "2Ti.2.7", "2Ti.2.8", "2Ti.2.9", "2Ti.2.10", "2Ti.2.11", "2Ti.2.12", "2Ti.2.13", "2Ti.2.14", "2Ti.2.15", "2Ti.2.16", "2Ti.2.17", "2Ti.2.18", "2Ti.2.19", "2Ti.2.20", "2Ti.2.21", "2Ti.2.22", "2Ti.2.23", "2Ti.2.24", "2Ti.2.25", "2Ti.2.26", "2Ti.3.1", "2Ti.3.2", "2Ti.3.3", "2Ti.3.4", "2Ti.3.5", "2Ti.3.6", "2Ti.3.7", "2Ti.3.8", "2Ti.3.9", "2Ti.3.10", "2Ti.3.11", "2Ti.3.12", "2Ti.3.13", "2Ti.3.14", "2Ti.3.15", "2Ti.3.16", "2Ti.3.17", "2Ti.4.1", "2Ti.4.2", "2Ti.4.3", "2Ti.4.4", "2Ti.4.5", "2Ti.4.6", "2Ti.4.7", "2Ti.4.8", "2Ti.4.9", "2Ti.4.10", "2Ti.4.11", "2Ti.4.12", "2Ti.4.13", "2Ti.4.14", "2Ti.4.15", "2Ti.4.16", "2Ti.4.17", "2Ti.4.18", "2Ti.4.19", "2Ti.4.20", "2Ti.4.21", "2Ti.4.22"]
+      },
+      "depends_on": []
+    },
+    {
+      "unit_id": "quality",
+      "kind": "quality",
+      "native_extent": {
+        "coordinate_version": "web-usfm-2020:protestant-verses/1",
+        "unit_ids": ["2Ti.1.1", "2Ti.1.2", "2Ti.1.3", "2Ti.1.4", "2Ti.1.5", "2Ti.1.6", "2Ti.1.7", "2Ti.1.8", "2Ti.1.9", "2Ti.1.10", "2Ti.1.11", "2Ti.1.12", "2Ti.1.13", "2Ti.1.14", "2Ti.1.15", "2Ti.1.16", "2Ti.1.17", "2Ti.1.18", "2Ti.2.1", "2Ti.2.2", "2Ti.2.3", "2Ti.2.4", "2Ti.2.5", "2Ti.2.6", "2Ti.2.7", "2Ti.2.8", "2Ti.2.9", "2Ti.2.10", "2Ti.2.11", "2Ti.2.12", "2Ti.2.13", "2Ti.2.14", "2Ti.2.15", "2Ti.2.16", "2Ti.2.17", "2Ti.2.18", "2Ti.2.19", "2Ti.2.20", "2Ti.2.21", "2Ti.2.22", "2Ti.2.23", "2Ti.2.24", "2Ti.2.25", "2Ti.2.26", "2Ti.3.1", "2Ti.3.2", "2Ti.3.3", "2Ti.3.4", "2Ti.3.5", "2Ti.3.6", "2Ti.3.7", "2Ti.3.8", "2Ti.3.9", "2Ti.3.10", "2Ti.3.11", "2Ti.3.12", "2Ti.3.13", "2Ti.3.14", "2Ti.3.15", "2Ti.3.16", "2Ti.3.17", "2Ti.4.1", "2Ti.4.2", "2Ti.4.3", "2Ti.4.4", "2Ti.4.5", "2Ti.4.6", "2Ti.4.7", "2Ti.4.8", "2Ti.4.9", "2Ti.4.10", "2Ti.4.11", "2Ti.4.12", "2Ti.4.13", "2Ti.4.14", "2Ti.4.15", "2Ti.4.16", "2Ti.4.17", "2Ti.4.18", "2Ti.4.19", "2Ti.4.20", "2Ti.4.21", "2Ti.4.22"]
+      },
+      "depends_on": [
+        "prepare-01"
+      ],
+      "required_capabilities": [
+        "source_context",
+        "word_exact"
+      ]
+    }
+  ]
+}

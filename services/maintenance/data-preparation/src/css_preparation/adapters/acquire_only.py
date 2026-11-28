@@ -201,11 +201,19 @@ class AcquireRecipe:
     def read_original(self, job: Mapping[str, Any], storage: Any) -> tuple[bytes, str]:
         """Read a kept, admitted original through this fetch recipe, without fetching."""
         self._check_job(job, "analyse")
+        return self.read_kept_original(storage)
+
+    def read_kept_original(
+        self, storage: Any, *, sha256: str | None = None, byte_count: int | None = None
+    ) -> tuple[bytes, str]:
+        """Read the admitted bytes; a build can additionally pin the retained receipt."""
         recorded = self._recorded(storage)
         saved = storage.read_row("admission", self.admission["id"])
         if (
             not recorded
             or recorded.get("url") != self.manifest["url"]
+            or sha256 not in (None, recorded["sha256"])
+            or byte_count not in (None, recorded["byte_count"])
             or saved is None
             or dict(saved) != comparable("admission", self.admission)
         ):

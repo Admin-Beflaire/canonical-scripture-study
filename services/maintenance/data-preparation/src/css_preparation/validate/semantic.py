@@ -13,6 +13,7 @@ import json
 from typing import Any, Callable, Mapping, Sequence
 
 from ..indexes.files import PAGE_CAP
+from ..indexes.english import AS_WRITTEN
 from ..prepare.evidence import NativeText, OutputBasis, span_wording
 from ..prepare.records import KEYS, ORDER, SHARED, RecordError, RecordSet, comparable
 from .saved import CandidateInventory, SavedInventory, verify_candidate_inventory
@@ -306,7 +307,13 @@ def _check_posting_line(posting, text, bases, index, spans) -> None:
         for p in ref["segments"]
     ):
         raise RecordError("Saved posting is outside its native evidence span")
-    if posting["posting_kind"] == "word" and posting["form"] not in "".join(pieces):
+    wording = "".join(pieces)
+    if (
+        index.parameters.get("normalization_rule") == AS_WRITTEN
+        and posting["search_key"] != wording
+    ):
+        raise RecordError("Saved exact search key disagrees with source spelling")
+    if posting["posting_kind"] == "word" and posting["form"] not in wording:
         raise RecordError("Saved word form disagrees with source wording")
 
 

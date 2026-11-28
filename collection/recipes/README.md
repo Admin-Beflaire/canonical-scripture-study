@@ -30,17 +30,42 @@ A recipe says only how to do its step for that source. One task can chain the st
 (`steps: ["fetch", "build", "select"]`, with `constraints.fetch_recipe` and `constraints.recipe`);
 Control's `get_recipe` answers with the requests to send for a recipe, in order, fetching an original that is not kept, and names the other build recipes over the same original and extent (recipe IDs that start with the same name, such as `…-reader`).
 
-The fetch recipes and the base book recipes are written by
-`python -m css_preparation.adapters.stepbible.recipes` from local copies of the pinned files
-(see that module). They hold verse references, never wording.
+## Generated recipes
 
-The committed `-reader.json` recipes are maintained separately. Use the same pinned
-input and ordered book extent as the base recipe, but keep every reader reference
-within a single prepare unit. Preserve reviewed reader boundaries when regenerating
-base recipes. In 1 Chronicles, the reader recipe starts prepare-03 at native
-`1Ch.12.1` because reader `1Chr.12.4` spans native `1Ch.12.4` and `1Ch.12.5`.
-Bump the reader recipe revision when its prepare partition changes so an existing
-task stays tied to the partition it started with.
+The source variables in [`collection/recipe-sources/`](../recipe-sources) pin
+the original, book order and native coordinates. The fetch, text/search and reader
+templates produce the committed recipe JSON at development time. Regenerate with
+the standard library and the existing Preparation Python paths:
+
+```sh
+PYTHONPATH=packages/shared-python/src:services/maintenance/data-preparation/src \
+  python -m css_preparation.generate_recipes
+```
+
+The pull request check compares the full generated values and rejects a change to
+effective inputs under an unchanged recipe revision. Add a new source profile
+when changing pinned STEPBible book order, base edition or provider. The initial
+profiles keep the old output identities. Remove retired generated recipes
+explicitly. Standalone recipes remain managed here.
+
+Reader recipes keep every reader anchor's native contributors in one prepare
+unit. If a balanced boundary splits contributors, move it to the beginning of
+their chapter and check the resulting limits. The 1 Chronicles text recipe starts
+prepare-03 at `1Ch.12.5`. Its reader recipe starts that unit at `1Ch.12.1` because
+reader `1Chr.12.4` spans native `1Ch.12.4` and `1Ch.12.5`.
+
+## World English Bible
+
+`web-usfm-2020` registers the admitted publisher archive. The build recipes
+`web-usfm-2020-<book>` read that retained archive and check the pinned archive and
+member digests. They produce native passage text and exact word search. Psalm
+descriptive titles have separate native spans and searchable text. The source
+variables contain coordinates and digests only.
+
+The Revelation reader recipe uses the source's verified numbering profile and
+the listed offset exceptions. The evidence references in the source variables
+identify the retained TVTMS and TAGNT inputs and the pinned CrossWire reference
+metadata. The other books currently have native-text recipes.
 
 ## STEP language aids (B1)
 

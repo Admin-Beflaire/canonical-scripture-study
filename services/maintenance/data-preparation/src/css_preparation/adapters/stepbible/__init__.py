@@ -22,7 +22,7 @@ from .prepare import (
     read_component,
 )
 from .reader_references import READER_REFERENCE, prepare_reader_reference_unit
-from .source import BOOKS, Component
+from .source import Component
 
 INPUT_FORMAT = "stepbible/tagged-tsv"
 CAPABILITIES = (
@@ -37,7 +37,17 @@ DECLARATION = AdapterDeclaration(
     METHOD_VERSION,
     frozenset({INPUT_FORMAT}),
     frozenset((*CAPABILITIES, READER_REFERENCE)),
-    frozenset({"source", "commit", "component", "path", "sha256", "byte_count"}),
+    frozenset(
+        {
+            "source",
+            "commit",
+            "component",
+            "path",
+            "sha256",
+            "byte_count",
+            "source_profile",
+        }
+    ),
     (
         "Verses follow the declared base text; other readings are annotations, not alternative texts",
         "Paragraph markers are kept in the wording but are not yet literary-unit spans",
@@ -67,7 +77,7 @@ class BookRecipe:
         extent = recipe["native_extent"]
         book = extent.get("book")
         if (
-            book not in BOOKS[component.source.key]
+            book not in component.source.books
             or set(extent) != {"book", "coordinate_version"}
             or extent["coordinate_version"] != component.coordinate_version
             or recipe.get("dependencies") != [component.acquisition_id]

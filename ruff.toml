@@ -28,7 +28,6 @@ exclude = [
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/commit.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/lexicon.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/lsj.py",
-  "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/reader_references.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/rules.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/tipnr.py",
   "services/maintenance/data-preparation/src/css_preparation/adapters/stepbible/tvtms.py",

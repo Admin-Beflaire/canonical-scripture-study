@@ -116,6 +116,16 @@ test('host keys are normalized like the stored keys', () => {
     pointed.replace(String.fromCodePoint(0x596), '').normalize('NFC'),
     'accent removed, points kept',
   );
+  for (const key of [
+    'Love',
+    'love',
+    "King's",
+    'King’s',
+    'well-known',
+    'e\u0301',
+  ]) {
+    assert.equal(normalizeKey('word', ` ${key} `), key);
+  }
   assert.equal(normalizeKey('lemma', ' H7225 '), 'H7225');
 });
 

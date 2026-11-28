@@ -7,21 +7,22 @@ from io import BytesIO
 import json
 from pathlib import PurePosixPath
 import re
-import stat
 from typing import Any
-from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile, ZipInfo, is_zipfile
-import zlib
+from zipfile import is_zipfile
 
+from ..acquire.archive import (
+    ArchiveError,
+    MAX_ORIGINAL_BYTES,
+    ZIP_ERRORS,
+    archive_members,
+)
+from ..adapters.usfm_markers import BOOK as _BOOK, MARKER as _MARKER
 from ..prepare.records import RecordError
 
 METHOD = "source-analysis/1"
-MAX_ORIGINAL_BYTES = 64_000_000
-MAX_FILES = 512
 MAX_REPORT_BYTES = 1_000_000
 MAX_FACTS = 10_000
 MAX_FACT_BYTES = 16_000
-_MARKER = re.compile(r"\\(\+?[A-Za-z][A-Za-z0-9-]{0,23})(\*|(?=\s|\\|$))")
-_BOOK = re.compile(r"[1-9A-Z][A-Z0-9]{2}(?=\s|$)")
 _CHAPTER = re.compile(r"[1-9][0-9]{0,3}(?=\s|$)")
 _VERSE = re.compile(r"([1-9][0-9]{0,2})([a-z]?)(?:-([1-9][0-9]{0,2})([a-z]?))?(?=\s|$)")
 
@@ -181,47 +182,12 @@ def _usfm(data: bytes, file_index: int) -> tuple[dict[str, Any], list[dict[str, 
     )
 
 
-def _safe_entry(info: ZipInfo) -> bool:
-    name = info.orig_filename
-    parts = name.rstrip("/").split("/")
-    mode = stat.S_IFMT(info.external_attr >> 16)
-    return (
-        0 < len(name) <= 240
-        and all(part not in ("", ".", "..") for part in parts)
-        and not any(char in name for char in "\\:")
-        and name.isprintable()
-        and mode in (0, stat.S_IFREG, stat.S_IFDIR)
-        and info.compress_type in (ZIP_STORED, ZIP_DEFLATED)
-        and not info.flag_bits & 1
-    )
-
-
-def _members(data: bytes):
-    with ZipFile(BytesIO(data)) as archive:
-        entries = archive.infolist()
-        if len(entries) > MAX_FILES or not all(map(_safe_entry, entries)):
-            raise AnalysisRefusedError("ZIP has too many entries or an unsafe entry")
-        files = [entry for entry in entries if not entry.is_dir()]
-        if len({entry.filename for entry in files}) != len(files):
-            raise AnalysisRefusedError("ZIP contains duplicate file paths")
-        if sum(entry.file_size for entry in files) > MAX_ORIGINAL_BYTES:
-            raise AnalysisRefusedError("ZIP exceeds the unpacked byte limit")
-        for entry in sorted(files, key=lambda item: item.filename):
-            with archive.open(entry) as member:
-                content = member.read(entry.file_size + 1)
-            if len(content) != entry.file_size:
-                raise AnalysisRefusedError(
-                    "ZIP entry size does not match its declaration"
-                )
-            yield entry.filename, content
-
-
 def inspect_original(data: bytes, name: str) -> dict[str, Any]:
     """Record file metadata and USFM references without reading outside these bytes."""
     if len(data) > MAX_ORIGINAL_BYTES:
         raise AnalysisRefusedError("Original exceeds the analysis byte limit")
     zipped = is_zipfile(BytesIO(data)) or PurePosixPath(name).suffix.lower() == ".zip"
-    members = _members(data) if zipped else iter([(name, data)])
+    members = archive_members(data) if zipped else iter([(name, data)])
     facts: list[dict[str, Any]] = []
     try:
         for index, (path, content) in enumerate(members):
@@ -242,7 +208,9 @@ def inspect_original(data: bytes, name: str) -> dict[str, Any]:
             facts.extend(chapters)
             if len(facts) > MAX_FACTS:
                 raise AnalysisRefusedError("Too many facts for an analysis report")
-    except (BadZipFile, zlib.error, NotImplementedError, RuntimeError, OSError):
+    except ArchiveError as error:
+        raise AnalysisRefusedError(str(error)) from None
+    except ZIP_ERRORS:
         raise AnalysisRefusedError("ZIP cannot be read in a supported format") from None
     return {
         "method": METHOD,

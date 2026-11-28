@@ -1,31 +1,21 @@
-"""Write the reviewed STEPBible recipes: one fetch recipe per file and one recipe per book from local copies of the pinned files.
-
-Development tool, run by a writer, never by a workflow:
-
-    python -m css_preparation.adapters.stepbible.recipes COMMIT OUT_DIR \\
-        COMPONENT=REPO_PATH=LOCAL_FILE [...]
-
-It reads only verse references from the local files (to size the units) and checks each
-file against its declared digest; the recipes it writes hold references, digests and paths,
-never source wording. The files themselves stay outside Git.
-"""
+"""Bind STEPBible source variables to the shared recipe templates."""
 
 from __future__ import annotations
 
-import hashlib
 import json
-from pathlib import Path
 import re
-import sys
 from typing import Any
 
 from . import CAPABILITIES, INPUT_FORMAT
-from .prepare import METHOD_VERSION, book_verses, read_component
+from .prepare import METHOD_VERSION
 from .source import LICENCE, Component
 
-MAX_VERSES = 300  # Keeps one prepare unit's rows within one D1 batch.
-MAX_PREPARE_UNITS = (
-    12  # Quality depends on every prepare unit's outputs: at most 64 references.
+from ...recipe_templates import (
+    MAX_PREPARE_UNITS as MAX_PREPARE_UNITS,
+    MAX_VERSES as MAX_VERSES,
+    fetch_template,
+    reader_template,
+    text_template,
 )
 
 
@@ -42,52 +32,39 @@ def pinned(component: Component) -> dict[str, Any]:
         "path": component.path,
         "sha256": component.sha256,
         "byte_count": component.byte_count,
+        **({"source_profile": component.profile} if component.profile != "1" else {}),
     }
 
 
-def book_recipe(component: Component, book: str, unit_ids: list[str]) -> dict[str, Any]:
-    parts = -(-len(unit_ids) // MAX_VERSES)
-    size = -(-len(unit_ids) // parts)
-    groups = [unit_ids[start : start + size] for start in range(0, len(unit_ids), size)]
-    if len(groups) > MAX_PREPARE_UNITS:
-        raise ValueError(f"{book} needs more than {MAX_PREPARE_UNITS} prepare units")
-    coordinates = component.coordinate_version
+def book_recipe(
+    component: Component,
+    book: str,
+    unit_ids: list[str],
+    *,
+    revision: int = 3,
+    joins: list[list[str]] | None = None,
+) -> dict[str, Any]:
     recipe_id = f"stepbible-{component.source.key}-{book.lower()}"
-    prepare = [
-        {
-            "unit_id": f"prepare-{index:02d}",
-            "kind": "prepare",
-            "native_extent": {"coordinate_version": coordinates, "unit_ids": group},
-            "depends_on": [],
-        }
-        for index, group in enumerate(groups, start=1)
-    ]
-    return {
-        "recipe_version": "preparation-recipe/1",
+    if joins is not None:
+        recipe_id += "-reader"
+    recipe = {
         "id": recipe_id,
-        "revision": f"{recipe_id}/{component.commit[:12]}/3",
+        "revision": f"{recipe_id}/{component.commit[:12]}/{revision}",
         "adapter": {"name": "stepbible-tagged", "method_version": METHOD_VERSION},
         "input_format": INPUT_FORMAT,
         "parameters": pinned(component),
-        "native_extent": {"book": book, "coordinate_version": coordinates},
+        "native_extent": {
+            "book": book,
+            "coordinate_version": component.coordinate_version,
+        },
         "capabilities": list(CAPABILITIES),
         "dependencies": [component.acquisition_id],
         "task_inputs": component.task_inputs(),
         "manifest_revision": manifest_revision(component.commit),
-        "units": [
-            *prepare,
-            {
-                "unit_id": "quality",
-                "kind": "quality",
-                "native_extent": {
-                    "coordinate_version": coordinates,
-                    "unit_ids": unit_ids,
-                },
-                "depends_on": [unit["unit_id"] for unit in prepare],
-                "required_capabilities": list(CAPABILITIES),
-            },
-        ],
     }
+    if joins is not None:
+        return reader_template(recipe, unit_ids, joins)
+    return text_template(recipe, unit_ids)
 
 
 def admission_record(component: Component) -> dict[str, Any]:
@@ -117,33 +94,27 @@ def admission_record(component: Component) -> dict[str, Any]:
     }
 
 
-def fetch_recipe(component: Component) -> dict[str, Any]:
-    """The recipe that fetches one component file; every book recipe over the file builds from it."""
+def fetch_recipe(component: Component, revision: int = 3) -> dict[str, Any]:
     recipe_id = f"stepbible-fetch-{component.component}"
-    return {
-        "recipe_version": "preparation-recipe/1",
-        "id": recipe_id,
-        "revision": f"{recipe_id}/{component.commit[:12]}/3",
-        "adapter": {"name": "stepbible-fetch", "method_version": "stepbible-fetch/1"},
-        "input_format": INPUT_FORMAT,
-        "parameters": {
-            **pinned(component),
-            "admission_record": admission_record(component),
-        },
-        "native_extent": {"component": component.component},
-        "capabilities": [],
-        "dependencies": [component.acquisition_id],
-        "task_inputs": component.task_inputs(),
-        "manifest_revision": manifest_revision(component.commit),
-        "units": [
-            {
-                "unit_id": "acquire",
-                "kind": "acquire",
-                "native_extent": {"component": component.component},
-                "depends_on": [],
-            }
-        ],
-    }
+    return fetch_template(
+        {
+            "id": recipe_id,
+            "revision": f"{recipe_id}/{component.commit[:12]}/{revision}",
+            "adapter": {
+                "name": "stepbible-fetch",
+                "method_version": "stepbible-fetch/1",
+            },
+            "input_format": INPUT_FORMAT,
+            "parameters": {
+                **pinned(component),
+                "admission_record": admission_record(component),
+            },
+            "native_extent": {"component": component.component},
+            "dependencies": [component.acquisition_id],
+            "task_inputs": component.task_inputs(),
+            "manifest_revision": manifest_revision(component.commit),
+        }
+    )
 
 
 def dumps(value: dict[str, Any]) -> str:
@@ -159,35 +130,3 @@ def dumps(value: dict[str, Any]) -> str:
         )
         + "\n"
     )
-
-
-def main(argv: list[str]) -> int:
-    commit, out, *specs = argv
-    directory = Path(out)
-    for spec in specs:
-        name, path, local = spec.split("=", 2)
-        data = Path(local).read_bytes()
-        component = Component.from_parameters(
-            {
-                "source": name.split("-")[0],
-                "commit": commit,
-                "component": name,
-                "path": path,
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "byte_count": len(data),
-            }
-        )
-        fetch = fetch_recipe(component)
-        (directory / f"{fetch['id']}.json").write_text(dumps(fetch), encoding="utf-8")
-        words = read_component(data, component)
-        for book in dict.fromkeys(word.book for word in words):
-            units = [verse.unit_id for verse in book_verses(words, component, book)]
-            recipe = book_recipe(component, book, units)
-            (directory / f"{recipe['id']}.json").write_text(
-                dumps(recipe), encoding="utf-8"
-            )
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))

@@ -388,7 +388,8 @@ class RecipeTest(unittest.TestCase):
         mappings = [
             revision.rsplit("/", 1)[0]
             for revision, recipe in recipes.items()
-            if recipe.read_reader_references is not None
+            if revision.startswith("stepbible-")
+            and recipe.read_reader_references is not None
         ]
         base = {
             revision.rsplit("/", 1)[0]
@@ -466,12 +467,15 @@ class RecipeTest(unittest.TestCase):
                     )
                     if path.stem == "stepbible-tahot-1ch-reader":
                         groups = [u["native_extent"]["unit_ids"] for u in prepare]
-                        self.assertTrue(
-                            any(
-                                "1Ch.12.4" in group and "1Ch.12.5" in group
-                                for group in groups
-                            )
+                        self.assertEqual(
+                            original_prepare[2]["native_extent"]["unit_ids"][0],
+                            "1Ch.12.5",
                         )
+                        self.assertEqual(groups[2][0], "1Ch.12.1")
+                        self.assertEqual(
+                            [len(group) for group in groups], [236, 232, 240, 235]
+                        )
+                        self.assertTrue(value["revision"].endswith("/4"))
                     else:
                         self.assertEqual(
                             [u["native_extent"] for u in prepare],

@@ -1,36 +1,86 @@
 """Literary units, span navigation and admitted mappings (synthetic only)."""
+
 from copy import deepcopy
 import json
 from pathlib import Path
 import unittest
 
-from css_preparation.prepare.evidence import NativeText, OutputBasis, build_evidence, navigation_rows
-from css_preparation.prepare.literary import LiteraryUnit, literary_spans, mapping_relationships, span_index
+from css_preparation.prepare.evidence import (
+    NativeText,
+    OutputBasis,
+    build_evidence,
+    navigation_rows,
+)
+from css_preparation.prepare.literary import (
+    LiteraryUnit,
+    literary_spans,
+    mapping_relationships,
+    span_index,
+)
 from css_preparation.prepare.records import RecordError, decoded
 
-from preparation_fixture import (COORDINATES, basis, database, evidence_a, evidence_b, identity, mappings, save,
-                                 spans_a, text_a)
+from preparation_fixture import (
+    COORDINATES,
+    basis,
+    database,
+    evidence_a,
+    evidence_b,
+    identity,
+    mappings,
+    save,
+    spans_a,
+    text_a,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
-INDEXES = json.loads((ROOT / 'tests/conformance/indexes/fixture.json').read_text(encoding='utf-8'))
-OVERLAP = ('SELECT DISTINCT ss.span_id FROM span_segments ss WHERE ss.source_revision_id=? AND ss.kind=? '
-           'AND ss.start_order<=? AND ss.end_order>=? ORDER BY ss.span_id')
+INDEXES = json.loads(
+    (ROOT / "tests/conformance/indexes/fixture.json").read_text(encoding="utf-8")
+)
+OVERLAP = (
+    "SELECT DISTINCT ss.span_id FROM span_segments ss WHERE ss.source_revision_id=? AND ss.kind=? "
+    "AND ss.start_order<=? AND ss.end_order>=? ORDER BY ss.span_id"
+)
 
 
 def units():
     return [
-        LiteraryUnit('unit-a', 'Opening unit', (('1.1', 0, 8), ('1.2', 0, 12), ('1.3', 0, 4)), 'Synthetic analyst',
-                     'synthetic discourse markers', 'disputed',
-                     ({'attribution': 'Synthetic second analyst', 'segments': (('1.1', 0, 8), ('1.2', 0, 12))},)),
-        LiteraryUnit('frame', 'Discontinuous frame', (('1.1', 0, 8), ('2.1', 0, 6)), 'Synthetic analyst',
-                     'synthetic inclusio'),
+        LiteraryUnit(
+            "unit-a",
+            "Opening unit",
+            (("1.1", 0, 8), ("1.2", 0, 12), ("1.3", 0, 4)),
+            "Synthetic analyst",
+            "synthetic discourse markers",
+            "disputed",
+            (
+                {
+                    "attribution": "Synthetic second analyst",
+                    "segments": (("1.1", 0, 8), ("1.2", 0, 12)),
+                },
+            ),
+        ),
+        LiteraryUnit(
+            "frame",
+            "Discontinuous frame",
+            (("1.1", 0, 8), ("2.1", 0, 6)),
+            "Synthetic analyst",
+            "synthetic inclusio",
+        ),
     ]
 
 
 def mapping_basis(dependencies):
-    return OutputBasis('versification_mapping', ('synthetic:map:revision-1', 'synthetic:a:revision-1',
-                                                 'synthetic:b:revision-1'), 'synthetic:mapping/1', {}, {},
-                       tuple(dependencies))
+    return OutputBasis(
+        "versification_mapping",
+        (
+            "synthetic:map:revision-1",
+            "synthetic:a:revision-1",
+            "synthetic:b:revision-1",
+        ),
+        "synthetic:mapping/1",
+        {},
+        {},
+        tuple(dependencies),
+    )
 
 
 class LiteraryTest(unittest.TestCase):
@@ -43,181 +93,386 @@ class LiteraryTest(unittest.TestCase):
         save(self.b, self.db)
 
     def spans(self, label):
-        return decoded(self.db.execute('SELECT * FROM native_spans WHERE label=?', (label,)).fetchall())
+        return decoded(
+            self.db.execute(
+                "SELECT * FROM native_spans WHERE label=?", (label,)
+            ).fetchall()
+        )
 
     def test_literary_units_keep_segments_disputed_boundaries_and_alternatives(self):
-        [unit] = self.spans('Opening unit')
-        self.assertEqual(unit['kind'], 'literary_unit')
-        self.assertEqual(len(unit['segments_json']), 3)
-        self.assertEqual(unit['basis_json']['boundary_status'], 'disputed')
-        self.assertEqual(unit['basis_json']['alternatives'][0]['attribution'], 'Synthetic second analyst')
-        self.assertEqual(len(unit['body_ranges_json']), 3)
-        [frame] = self.spans('Discontinuous frame')
-        self.assertEqual([s['unit_id'] for s in frame['segments_json']], ['1.1', '2.1'])
-        self.assertEqual(frame['basis_json']['boundary_status'], 'agreed')
+        [unit] = self.spans("Opening unit")
+        self.assertEqual(unit["kind"], "literary_unit")
+        self.assertEqual(len(unit["segments_json"]), 3)
+        self.assertEqual(unit["basis_json"]["boundary_status"], "disputed")
+        self.assertEqual(
+            unit["basis_json"]["alternatives"][0]["attribution"],
+            "Synthetic second analyst",
+        )
+        self.assertEqual(len(unit["body_ranges_json"]), 3)
+        [frame] = self.spans("Discontinuous frame")
+        self.assertEqual([s["unit_id"] for s in frame["segments_json"]], ["1.1", "2.1"])
+        self.assertEqual(frame["basis_json"]["boundary_status"], "agreed")
 
     def test_long_literary_range_has_contiguous_verifiable_utf8_chunks(self):
         import hashlib
-        body = 'α😀x' * 2000
-        text = NativeText(COORDINATES, (('1.1', body),))
-        source = identity('chunked')
-        unit = LiteraryUnit('large', 'Large', (('1.1', 0, len(body)),), 'Synthetic', 'Synthetic')
+
+        body = "α😀x" * 2000
+        text = NativeText(COORDINATES, (("1.1", body),))
+        source = identity("chunked")
+        unit = LiteraryUnit(
+            "large", "Large", (("1.1", 0, len(body)),), "Synthetic", "Synthetic"
+        )
         with self.assertRaises(RecordError):
-            build_evidence(source, text, literary_spans(text, [unit]), basis(source), d1_body_max_bytes=24)
-        result = build_evidence(source, text, literary_spans(text, [unit]),
-                                basis(source, parameters={'d1_body_max_bytes': 24, 'literary_chunk_bytes': 1024}),
-                                d1_body_max_bytes=24)
-        [span] = result.rows('native_span')
-        [body_range] = span['body_ranges_json']
-        raw = body.encode('utf-8')
-        chunks = body_range['chunks']
+            build_evidence(
+                source,
+                text,
+                literary_spans(text, [unit]),
+                basis(source),
+                d1_body_max_bytes=24,
+            )
+        result = build_evidence(
+            source,
+            text,
+            literary_spans(text, [unit]),
+            basis(
+                source,
+                parameters={"d1_body_max_bytes": 24, "literary_chunk_bytes": 1024},
+            ),
+            d1_body_max_bytes=24,
+        )
+        [span] = result.rows("native_span")
+        [body_range] = span["body_ranges_json"]
+        raw = body.encode("utf-8")
+        chunks = body_range["chunks"]
         self.assertGreater(len(chunks), 1)
         scalar, offset = 0, 0
         for chunk in chunks:
-            data = raw[chunk['byte_offset']:chunk['byte_offset'] + chunk['byte_length']]
+            data = raw[
+                chunk["byte_offset"] : chunk["byte_offset"] + chunk["byte_length"]
+            ]
             self.assertLessEqual(len(data), 1024)
-            self.assertEqual((chunk['start'], chunk['byte_offset']), (scalar, offset))
-            self.assertEqual(hashlib.sha256(data).hexdigest(), chunk['sha256'])
-            scalar += len(data.decode('utf-8')); offset += len(data)  # noqa: E702
-            self.assertEqual(chunk['end'], scalar)
+            self.assertEqual((chunk["start"], chunk["byte_offset"]), (scalar, offset))
+            self.assertEqual(hashlib.sha256(data).hexdigest(), chunk["sha256"])
+            scalar += len(data.decode("utf-8"))
+            offset += len(data)
+            self.assertEqual(chunk["end"], scalar)
         self.assertEqual((scalar, offset), (len(body), len(raw)))
-        from css_preparation.validate.saved import CandidateInventory, verify_candidate_inventory
-        output_basis = basis(source, parameters={'d1_body_max_bytes': 24, 'literary_chunk_bytes': 1024})
+        from css_preparation.validate.saved import (
+            CandidateInventory,
+            verify_candidate_inventory,
+        )
+
+        output_basis = basis(
+            source, parameters={"d1_body_max_bytes": 24, "literary_chunk_bytes": 1024}
+        )
         inventory = CandidateInventory(added=(output_basis,))
-        blobs = {row['registered_locator']: result.blobs[row['id']] for row in result.rows('artifact')}
+        blobs = {
+            row["registered_locator"]: result.blobs[row["id"]]
+            for row in result.rows("artifact")
+        }
+
         def checked_rows(kind, _ids):
             return result.rows(kind)
-        verify_candidate_inventory(inventory, read_rows=checked_rows, read_blob=blobs.__getitem__)
+
+        verify_candidate_inventory(
+            inventory, read_rows=checked_rows, read_blob=blobs.__getitem__
+        )
+
         def damaged_rows(kind, _ids):
             rows = deepcopy(result.rows(kind))
-            if kind == 'native_span':
-                rows[0]['body_ranges_json'][0]['chunks'][0]['sha256'] = '0' * 64
+            if kind == "native_span":
+                rows[0]["body_ranges_json"][0]["chunks"][0]["sha256"] = "0" * 64
             return rows
-        with self.assertRaisesRegex(RecordError, 'chunks are inconsistent'):
-            verify_candidate_inventory(inventory, read_rows=damaged_rows, read_blob=blobs.__getitem__)
+
+        with self.assertRaisesRegex(RecordError, "chunks are inconsistent"):
+            verify_candidate_inventory(
+                inventory, read_rows=damaged_rows, read_blob=blobs.__getitem__
+            )
 
     def test_navigation_rows_cover_every_segment_and_find_overlapping_units(self):
-        spans = self.db.execute('SELECT id, segments_json FROM native_spans').fetchall()
-        rows = self.db.execute('SELECT span_id, count(*) FROM span_segments GROUP BY span_id').fetchall()
-        self.assertEqual(dict(rows), {row['id']: len(json.loads(row['segments_json'])) for row in spans})
-        revision = identity('a').revision.id
-        [verse] = [span for span in self.spans('2:1') if span['source_revision_id'] == revision]
-        [interval] = self.db.execute('SELECT start_order,end_order FROM span_segments WHERE span_id=?', (verse['id'],))
-        found = [row[0] for row in self.db.execute(OVERLAP, (revision, 'literary_unit', interval[1], interval[0]))]
-        self.assertEqual(found, [self.spans('Discontinuous frame')[0]['id']])
-        [verse] = [span for span in self.spans('1:2') if span['source_revision_id'] == revision]
-        [interval] = self.db.execute('SELECT start_order,end_order FROM span_segments WHERE span_id=?', (verse['id'],))
-        found = {row[0] for row in self.db.execute(OVERLAP, (revision, 'literary_unit', interval[1], interval[0]))}
-        self.assertEqual(found, {self.spans('Opening unit')[0]['id']})
+        spans = self.db.execute("SELECT id, segments_json FROM native_spans").fetchall()
+        rows = self.db.execute(
+            "SELECT span_id, count(*) FROM span_segments GROUP BY span_id"
+        ).fetchall()
+        self.assertEqual(
+            dict(rows),
+            {row["id"]: len(json.loads(row["segments_json"])) for row in spans},
+        )
+        revision = identity("a").revision.id
+        [verse] = [
+            span for span in self.spans("2:1") if span["source_revision_id"] == revision
+        ]
+        [interval] = self.db.execute(
+            "SELECT start_order,end_order FROM span_segments WHERE span_id=?",
+            (verse["id"],),
+        )
+        found = [
+            row[0]
+            for row in self.db.execute(
+                OVERLAP, (revision, "literary_unit", interval[1], interval[0])
+            )
+        ]
+        self.assertEqual(found, [self.spans("Discontinuous frame")[0]["id"]])
+        [verse] = [
+            span for span in self.spans("1:2") if span["source_revision_id"] == revision
+        ]
+        [interval] = self.db.execute(
+            "SELECT start_order,end_order FROM span_segments WHERE span_id=?",
+            (verse["id"],),
+        )
+        found = {
+            row[0]
+            for row in self.db.execute(
+                OVERLAP, (revision, "literary_unit", interval[1], interval[0])
+            )
+        }
+        self.assertEqual(found, {self.spans("Opening unit")[0]["id"]})
 
     def test_navigation_matches_the_index_conformance_fixture(self):
-        delta = INDEXES['evidence_delta']
-        expected = sorted(INDEXES['span_segments'], key=lambda r: (r['span_id'], r['segment_ordinal']))
+        delta = INDEXES["evidence_delta"]
+        expected = sorted(
+            INDEXES["span_segments"], key=lambda r: (r["span_id"], r["segment_ordinal"])
+        )
         rows = []
-        for revision in sorted({span['source_revision_id'] for span in delta['native_span']}):
-            spans = [span for span in delta['native_span'] if span['source_revision_id'] == revision]
-            unit_ids = {segment['unit_id'] for span in spans for segment in span['segments_json']}
-            lengths = {unit: max(s['end'] for span in spans for s in span['segments_json'] if s['unit_id'] == unit)
-                       for unit in unit_ids}
-            text = NativeText(COORDINATES, tuple((unit, 'x' * lengths[unit]) for unit in sorted(unit_ids)))
+        for revision in sorted(
+            {span["source_revision_id"] for span in delta["native_span"]}
+        ):
+            spans = [
+                span
+                for span in delta["native_span"]
+                if span["source_revision_id"] == revision
+            ]
+            unit_ids = {
+                segment["unit_id"]
+                for span in spans
+                for segment in span["segments_json"]
+            }
+            lengths = {
+                unit: max(
+                    s["end"]
+                    for span in spans
+                    for s in span["segments_json"]
+                    if s["unit_id"] == unit
+                )
+                for unit in unit_ids
+            }
+            text = NativeText(
+                COORDINATES,
+                tuple((unit, "x" * lengths[unit]) for unit in sorted(unit_ids)),
+            )
             rows += navigation_rows(spans, text)
-        self.assertEqual(sorted(rows, key=lambda r: (r['span_id'], r['segment_ordinal'])), expected)
+        self.assertEqual(
+            sorted(rows, key=lambda r: (r["span_id"], r["segment_ordinal"])), expected
+        )
 
     def test_invalid_literary_boundaries_are_refused(self):
         good = units()[1]
         bad = [
-            LiteraryUnit('x', 'x', (('2.1', 0, 6), ('1.1', 0, 8)), 'p', 'm'),
-            LiteraryUnit('x', 'x', (('1.3', 0, 6), ('1.3', 4, 9)), 'p', 'm'),
-            LiteraryUnit('x', 'x', (('1.1', 0, 99),), 'p', 'm'),
-            LiteraryUnit('x', 'x', (), 'p', 'm'),
-            LiteraryUnit('x', 'x', good.segments, 'p', 'm', 'disputed'),
-            LiteraryUnit('x', 'x', good.segments, 'p', 'm', 'agreed', ({'attribution': 'q', 'segments': good.segments},)),
-            LiteraryUnit('x', 'x', good.segments, 'p', 'm', 'probable'),
-            LiteraryUnit('x', 'x', good.segments, '', 'm'),
-            LiteraryUnit('x', 'x', good.segments, 'p', 'm', 'disputed', ({'attribution': '', 'segments': good.segments},)),
-            LiteraryUnit('x', 'x', good.segments, 'p', 'm', 'disputed', ({'attribution': 'q', 'segments': (('9', 0, 1),)},)),
+            LiteraryUnit("x", "x", (("2.1", 0, 6), ("1.1", 0, 8)), "p", "m"),
+            LiteraryUnit("x", "x", (("1.3", 0, 6), ("1.3", 4, 9)), "p", "m"),
+            LiteraryUnit("x", "x", (("1.1", 0, 99),), "p", "m"),
+            LiteraryUnit("x", "x", (), "p", "m"),
+            LiteraryUnit("x", "x", good.segments, "p", "m", "disputed"),
+            LiteraryUnit(
+                "x",
+                "x",
+                good.segments,
+                "p",
+                "m",
+                "agreed",
+                ({"attribution": "q", "segments": good.segments},),
+            ),
+            LiteraryUnit("x", "x", good.segments, "p", "m", "probable"),
+            LiteraryUnit("x", "x", good.segments, "", "m"),
+            LiteraryUnit(
+                "x",
+                "x",
+                good.segments,
+                "p",
+                "m",
+                "disputed",
+                ({"attribution": "", "segments": good.segments},),
+            ),
+            LiteraryUnit(
+                "x",
+                "x",
+                good.segments,
+                "p",
+                "m",
+                "disputed",
+                ({"attribution": "q", "segments": (("9", 0, 1),)},),
+            ),
         ]
         for unit in bad:
             with self.assertRaises(RecordError, msg=unit):
                 literary_spans(text_a(), [unit])
 
     def mapping(self, items=None, dependencies=None):
-        spans = decoded(self.db.execute('SELECT * FROM native_spans').fetchall())
-        outputs = dependencies if dependencies is not None else self.a.output_ids() + self.b.output_ids()
-        return mapping_relationships(items if items is not None else mappings(), spans, mapping_basis(outputs),
-                                     provider='Synthetic mapping table', endpoint_kind='verse')
+        spans = decoded(self.db.execute("SELECT * FROM native_spans").fetchall())
+        outputs = (
+            dependencies
+            if dependencies is not None
+            else self.a.output_ids() + self.b.output_ids()
+        )
+        return mapping_relationships(
+            items if items is not None else mappings(),
+            spans,
+            mapping_basis(outputs),
+            provider="Synthetic mapping table",
+            endpoint_kind="verse",
+        )
 
     def test_admitted_mappings_keep_partial_disputed_and_missing_correspondence(self):
         records = self.mapping()
         save(records, self.db)
         rows = self.db.execute(
-            'SELECT r.status, r.basis_json, m.role, m.correspondence, m.gap_reason, f.label AS from_label, '
-            't.label AS to_label FROM relationships r JOIN relation_members m ON m.relationship_id=r.id AND m.role=\'to\' '
-            'JOIN relation_members fm ON fm.relationship_id=r.id AND fm.role=\'from\' JOIN native_spans f ON f.id=fm.span_id '
-            'LEFT JOIN native_spans t ON t.id=m.span_id ORDER BY r.id').fetchall()
-        summary = [(row['from_label'], row['to_label'], row['status'], row['correspondence']) for row in rows]
-        self.assertEqual(summary, [
-            ('1:1', '1:1', 'supported', 'exact'), ('1:2', '1:2', 'supported', 'partial'),
-            ('1:3', '1:3', 'disputed', 'unresolved'), ('2:1', '1:4', 'supported', 'exact'),
-            ('2:1', None, 'supported', 'missing')])
-        self.assertEqual(rows[-1]['gap_reason'], 'Synthetic: source a has no counterpart')
-        self.assertEqual(json.loads(rows[0]['basis_json'])['endpoint_kind'], 'verse')
-        self.assertEqual(json.loads(rows[0]['basis_json'])['provider'], 'Synthetic mapping table')
+            "SELECT r.status, r.basis_json, m.role, m.correspondence, m.gap_reason, f.label AS from_label, "
+            "t.label AS to_label FROM relationships r JOIN relation_members m ON m.relationship_id=r.id AND m.role='to' "
+            "JOIN relation_members fm ON fm.relationship_id=r.id AND fm.role='from' JOIN native_spans f ON f.id=fm.span_id "
+            "LEFT JOIN native_spans t ON t.id=m.span_id ORDER BY r.id"
+        ).fetchall()
+        summary = [
+            (row["from_label"], row["to_label"], row["status"], row["correspondence"])
+            for row in rows
+        ]
+        self.assertEqual(
+            summary,
+            [
+                ("1:1", "1:1", "supported", "exact"),
+                ("1:2", "1:2", "supported", "partial"),
+                ("1:3", "1:3", "disputed", "unresolved"),
+                ("2:1", "1:4", "supported", "exact"),
+                ("2:1", None, "supported", "missing"),
+            ],
+        )
+        self.assertEqual(
+            rows[-1]["gap_reason"], "Synthetic: source a has no counterpart"
+        )
+        self.assertEqual(json.loads(rows[0]["basis_json"])["endpoint_kind"], "verse")
+        self.assertEqual(
+            json.loads(rows[0]["basis_json"])["provider"], "Synthetic mapping table"
+        )
         # Same number, different verse: b's 2:1 is never linked to a's 2:1 without an admitted mapping.
-        [a21, b21] = sorted(self.spans('2:1'), key=lambda span: span['source_revision_id'])
-        shared = self.db.execute('SELECT count(*) FROM relation_members x JOIN relation_members y '
-                                 'ON x.relationship_id=y.relationship_id WHERE x.span_id=? AND y.span_id=?',
-                                 (a21['id'], b21['id'])).fetchone()[0]
+        [a21, b21] = sorted(
+            self.spans("2:1"), key=lambda span: span["source_revision_id"]
+        )
+        shared = self.db.execute(
+            "SELECT count(*) FROM relation_members x JOIN relation_members y "
+            "ON x.relationship_id=y.relationship_id WHERE x.span_id=? AND y.span_id=?",
+            (a21["id"], b21["id"]),
+        ).fetchone()[0]
         self.assertEqual(shared, 0)
-        coverage = {row['source_revision_id']: row['native_extent_json'] for row in
-                    decoded(self.db.execute("SELECT * FROM coverage WHERE capability='versification_mapping'"))}
-        self.assertEqual(coverage, {'synthetic:a:revision-1': {'unit_ids': ['1.1', '1.2', '1.3', '2.1']},
-                                    'synthetic:b:revision-1': {'unit_ids': ['2.1']}})
+        coverage = {
+            row["source_revision_id"]: row["native_extent_json"]
+            for row in decoded(
+                self.db.execute(
+                    "SELECT * FROM coverage WHERE capability='versification_mapping'"
+                )
+            )
+        }
+        self.assertEqual(
+            coverage,
+            {
+                "synthetic:a:revision-1": {"unit_ids": ["1.1", "1.2", "1.3", "2.1"]},
+                "synthetic:b:revision-1": {"unit_ids": ["2.1"]},
+            },
+        )
 
     def test_a_verse_and_a_literary_unit_may_share_one_reference(self):
-        same = LiteraryUnit('one-verse-unit', 'One-verse unit', (('2.1', 0, 6),), 'Synthetic analyst', 'synthetic')
+        same = LiteraryUnit(
+            "one-verse-unit",
+            "One-verse unit",
+            (("2.1", 0, 6),),
+            "Synthetic analyst",
+            "synthetic",
+        )
         db = database()
         self.addCleanup(db.close)
         a = evidence_a(spans=spans_a() + literary_spans(text_a(), [same]))
         save(a, db)
         save(self.b, db)
-        spans = decoded(db.execute('SELECT * FROM native_spans').fetchall())
-        self.assertEqual((len(span_index(spans, 'verse')), len(span_index(spans, 'literary_unit'))), (9, 1))
-        records = mapping_relationships([mappings()[3]], spans, mapping_basis(a.output_ids() + self.b.output_ids()),
-                                        provider='Synthetic mapping table', endpoint_kind='verse')
-        [source] = [m for m in records.rows('relation_member') if m['role'] == 'from']
-        self.assertEqual(source['span_id'], next(s['id'] for s in spans if s['label'] == '2:1' and s['kind'] == 'verse'
-                                                 and s['source_revision_id'] == 'synthetic:a:revision-1'))
-        with self.assertRaisesRegex(RecordError, 'no prepared span'):
-            mapping_relationships([mappings()[3]], spans, mapping_basis(a.output_ids() + self.b.output_ids()),
-                                  provider='Synthetic mapping table', endpoint_kind='literary_unit')
+        spans = decoded(db.execute("SELECT * FROM native_spans").fetchall())
+        self.assertEqual(
+            (len(span_index(spans, "verse")), len(span_index(spans, "literary_unit"))),
+            (9, 1),
+        )
+        records = mapping_relationships(
+            [mappings()[3]],
+            spans,
+            mapping_basis(a.output_ids() + self.b.output_ids()),
+            provider="Synthetic mapping table",
+            endpoint_kind="verse",
+        )
+        [source] = [m for m in records.rows("relation_member") if m["role"] == "from"]
+        self.assertEqual(
+            source["span_id"],
+            next(
+                s["id"]
+                for s in spans
+                if s["label"] == "2:1"
+                and s["kind"] == "verse"
+                and s["source_revision_id"] == "synthetic:a:revision-1"
+            ),
+        )
+        with self.assertRaisesRegex(RecordError, "no prepared span"):
+            mapping_relationships(
+                [mappings()[3]],
+                spans,
+                mapping_basis(a.output_ids() + self.b.output_ids()),
+                provider="Synthetic mapping table",
+                endpoint_kind="literary_unit",
+            )
 
     def test_composite_and_unresolved_targets(self):
-        items = [{'from': mappings()[2]['from'], 'to': [mappings()[1]['to'][0], mappings()[2]['to'][0]],
-                  'status': 'exact', 'basis': 'synthetic split verse'},
-                 {'from': mappings()[0]['from'], 'to': [], 'status': 'unresolved', 'basis': 'synthetic',
-                  'gap_reason': 'Synthetic: tables disagree'}]
+        items = [
+            {
+                "from": mappings()[2]["from"],
+                "to": [mappings()[1]["to"][0], mappings()[2]["to"][0]],
+                "status": "exact",
+                "basis": "synthetic split verse",
+            },
+            {
+                "from": mappings()[0]["from"],
+                "to": [],
+                "status": "unresolved",
+                "basis": "synthetic",
+                "gap_reason": "Synthetic: tables disagree",
+            },
+        ]
         records = self.mapping(items)
-        members = records.rows('relation_member')
-        self.assertEqual([m['correspondence'] for m in members if m['role'] == 'to'], ['composite', 'composite', 'unresolved'])
-        self.assertEqual(records.rows('relationship')[1]['status'], 'unresolved')
+        members = records.rows("relation_member")
+        self.assertEqual(
+            [m["correspondence"] for m in members if m["role"] == "to"],
+            ["composite", "composite", "unresolved"],
+        )
+        self.assertEqual(records.rows("relationship")[1]["status"], "unresolved")
 
-    def test_unresolvable_endpoints_invalid_mappings_and_undeclared_dependencies_fail(self):
+    def test_unresolvable_endpoints_invalid_mappings_and_undeclared_dependencies_fail(
+        self,
+    ):
         moved = deepcopy(mappings()[0])
-        moved['to'][0]['segments'][0]['end'] = 7
-        with self.assertRaisesRegex(RecordError, 'no prepared span'):
+        moved["to"][0]["segments"][0]["end"] = 7
+        with self.assertRaisesRegex(RecordError, "no prepared span"):
             self.mapping([moved])
-        for invalid in ({**mappings()[0], 'status': 'probable'}, {**mappings()[0], 'basis': ' '},
-                        {**mappings()[4], 'gap_reason': None}, {**mappings()[0], 'to': []}):
+        for invalid in (
+            {**mappings()[0], "status": "probable"},
+            {**mappings()[0], "basis": " "},
+            {**mappings()[4], "gap_reason": None},
+            {**mappings()[0], "to": []},
+        ):
             with self.assertRaises(ValueError):
                 self.mapping([invalid])
-        with self.assertRaisesRegex(RecordError, 'undeclared'):
+        with self.assertRaisesRegex(RecordError, "undeclared"):
             self.mapping(dependencies=self.a.output_ids())
-        with self.assertRaisesRegex(RecordError, 'provider'):
-            mapping_relationships([], [], mapping_basis([]), provider='', endpoint_kind='verse')
-        with self.assertRaisesRegex(RecordError, 'endpoint span kind'):
-            mapping_relationships([], [], mapping_basis([]), provider='p', endpoint_kind='')
+        with self.assertRaisesRegex(RecordError, "provider"):
+            mapping_relationships(
+                [], [], mapping_basis([]), provider="", endpoint_kind="verse"
+            )
+        with self.assertRaisesRegex(RecordError, "endpoint span kind"):
+            mapping_relationships(
+                [], [], mapping_basis([]), provider="p", endpoint_kind=""
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

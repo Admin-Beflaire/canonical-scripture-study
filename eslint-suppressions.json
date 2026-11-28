@@ -70,10 +70,5 @@
     "max-lines-per-function": {
       "count": 2
     }
-  },
-  "tests/study/reader-mappings.test.ts": {
-    "complexity": {
-      "count": 1
-    }
   }
 }

@@ -14,8 +14,9 @@ from css_shared import (
 )
 
 FIXTURES = json.loads(
-    (Path(__file__).resolve().parents[1] / "conformance/native-reference.v1.json")
-    .read_text(encoding="utf-8")
+    (
+        Path(__file__).resolve().parents[1] / "conformance/native-reference.v1.json"
+    ).read_text(encoding="utf-8")
 )
 if FIXTURES["fixture_version"] != "native-reference-conformance/1":
     raise ValueError("Unsupported conformance fixture version")
@@ -27,7 +28,9 @@ class ConformanceTests(unittest.TestCase):
             with self.subTest(case=case["id"]):
                 if case["valid"]:
                     assert_reference(case["input"])
-                    self.assertEqual(serialize_reference(case["input"]), case["serialized"])
+                    self.assertEqual(
+                        serialize_reference(case["input"]), case["serialized"]
+                    )
                     serialize_reference(case["input"]).encode("utf-8")
                     self.assertEqual(parse_reference(case["serialized"]), case["input"])
                 else:

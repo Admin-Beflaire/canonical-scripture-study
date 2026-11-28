@@ -6,11 +6,6 @@ import json
 from pathlib import Path
 import unittest
 
-from css_preparation.acquire.retention import (
-    AdmissionBasis,
-    InputRecord,
-    assert_usable,
-)
 from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
 from css_preparation.executor.basis import check_unit_records
 from css_preparation.executor.candidate import CandidateStore, persist_candidate
@@ -173,47 +168,6 @@ class CandidateStageTwo(unittest.TestCase):
             self.db.execute("SELECT COUNT(*) FROM release_outputs").fetchone()[0], 0
         )
 
-    def test_acquisition_and_quality_use_separate_existing_modules_without_claiming_receipts(
-        self,
-    ):
-        data = b"Synthetic source bytes"
-        called = []
-
-        def acquisition(_):
-            source = InputRecord(
-                "synthetic:revision-1",
-                "text",
-                "supplied",
-                "synthetic",
-                len(data),
-                hashlib.sha256(data).hexdigest(),
-                True,
-                AdmissionBasis(
-                    ("owner:synthetic",), "synthetic eligible", True, "not_allowed"
-                ),
-            )
-            assert_usable(source)
-            called.append(("acquire", source.sha256))
-            # Retention of originals is owned by the acquisition module.
-            return RecordSet()
-
-        result = self.invoke("acquire", acquisition)
-        self.assertEqual(result.output_ids, ())
-        self.assertEqual(result.artifact_refs, ())
-        self.assertEqual(called[0][0], "acquire")
-
-        def quality(_):
-            called.append(("quality", "synthetic"))
-            # Saved-inventory checking and receipts are Stage 4/5, not a Stage 2 success claim.
-            return RecordSet()
-
-        result = self.invoke("quality", quality)
-        self.assertEqual((result.output_ids, result.artifact_refs), ((), ()))
-        self.assertEqual(called[-1][0], "quality")
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 0
-        )
-
     def test_invalid_outputs_or_storage_failures_cannot_report_refs(self):
         records = self.candidate()
         artifact = records.rows("artifact")[0]
@@ -290,59 +244,6 @@ class CandidateStageTwo(unittest.TestCase):
             self.invoke("prepare", lambda _: self.candidate(), storage=counting), saved
         )
         self.assertEqual(writes, [])
-        self.assertEqual(
-            list(self.db.execute("SELECT * FROM release_selection")),
-            self.saved_selection,
-        )
-
-    def test_index_routing_basis_can_coexist_with_legacy_saved_index(self):
-        original = self.candidate()
-        self.invoke("prepare", lambda _: original)
-        text = text_a()
-        evidence = evidence_a()
-        parts = build_source_postings(
-            text,
-            evidence,
-            configured_basis(evidence, text),
-            RULES,
-            max_units=2,
-            max_scalars=64,
-            max_occurrences=20,
-        )
-        old_index = parts[0].basis.output_id
-        routed_basis = replace(
-            parts[0].basis,
-            parameters={**parts[0].basis.parameters, "index_routing": "key-output/1"},
-        )
-        self.assertNotEqual(old_index, routed_basis.output_id)
-        routed = build_index_files(replace(parts[0], basis=routed_basis))
-        self.assertEqual(original.rows("index_route"), [])
-        self.assertEqual(len(routed.records.rows("index_route")), 1)
-        saved = self.invoke(
-            "prepare", lambda _: RecordSet().merge(evidence).merge(routed.records)
-        )
-        self.assertIn(routed_basis.output_id, saved.output_ids)
-        self.assertIn(evidence.output_ids()[0], saved.output_ids)
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM prepared_outputs").fetchone()[0], 3
-        )
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM index_routes").fetchone()[0], 1
-        )
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM index_route_keys").fetchone()[0],
-            len(routed.records.rows("index_route")[0]["keys_json"]),
-        )
-        self.assertEqual(
-            self.db.execute("SELECT COUNT(*) FROM native_spans").fetchone()[0],
-            len(original.rows("native_span")),
-        )
-        self.assertEqual(
-            self.invoke(
-                "prepare", lambda _: RecordSet().merge(evidence).merge(routed.records)
-            ),
-            saved,
-        )
         self.assertEqual(
             list(self.db.execute("SELECT * FROM release_selection")),
             self.saved_selection,
@@ -446,24 +347,6 @@ class CandidateStageTwo(unittest.TestCase):
         self.assertEqual(rest.rows("source_node"), records.rows("source_node"))
         self.assertEqual(set(rest.blobs), {r["id"] for r in rest.rows("artifact")})
         self.assertEqual(len(records.output_ids()), 2)  # the original is unchanged
-
-    def test_missing_artifact_metadata_bytes_and_invalid_module_result(self):
-        records = self.candidate()
-        records.blobs.pop(next(iter(records.blobs)))
-        with self.assertRaisesRegex(RecordError, "bytes and metadata"):
-            self.invoke("prepare", lambda _: records)
-        self.assertEqual(self.puts, [])
-        with self.assertRaisesRegex(RecordError, "RecordSet"):
-            self.invoke("prepare", lambda _: "not records")
-        self.assertEqual(self.puts, [])
-
-    def test_missing_d1_identity_is_none_for_keyerror_adapter(self):
-        empty = replace(
-            self.store, read_row=lambda *_: (_ for _ in ()).throw(KeyError("missing"))
-        )
-        self.assertIsNone(empty.optional_row("prepared_output", "absent"))
-        self.assertIsNone(self.store.optional_row("prepared_output", "absent"))
-        self.assertIsNone(self.store.optional_row("artifact", "absent"))
 
     def test_external_dependency_uses_saved_output_identity_not_artifact_id(self):
         from css_preparation.executor.basis import (

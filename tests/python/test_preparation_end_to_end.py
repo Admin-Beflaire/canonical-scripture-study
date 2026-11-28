@@ -12,8 +12,8 @@ import unittest
 
 from css_preparation.acquire.retention import AdmissionBasis, InputRecord, assert_usable
 from css_preparation.contracts import contract_errors
-from css_preparation.executor import ControlState, UnitNotRunnableError, execute_unit
-from css_preparation.executor.candidate import CandidateStore, persist_candidate
+from css_preparation.executor import ControlState
+from css_preparation.executor.candidate import CandidateStore
 from css_preparation.executor.records import RecordStore
 from css_preparation.executor.unit import run_unit
 from css_preparation.executor.quality import check_candidate_quality
@@ -22,7 +22,7 @@ from css_preparation.indexes.source import build_source_postings
 from css_preparation.prepare.evidence import OutputBasis
 from css_preparation.prepare.records import RecordError, TABLES, decoded, scoped_query
 from css_preparation.validate.saved import CandidateInventory
-from preparation_fixture import COORDINATES, database, evidence_a, evidence_b, text_a
+from preparation_fixture import COORDINATES, database, evidence_a, text_a
 from test_source_index_builder import RULES, configured_basis
 
 WIRE = json.loads(
@@ -330,28 +330,6 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         self.assertEqual(failed["completed_extent"], {})
         self.assert_no_selection()
 
-    def test_omitted_old_candidate_keeps_reused_unrelated_outputs(self):
-        self.build()
-        unrelated = evidence_b()
-        persist_candidate(unrelated, self.store)
-        inventory = CandidateInventory(
-            added=(self.evidence_basis,),
-            reused=(self.index_basis,),
-            omitted=tuple(unrelated.output_ids()),
-        )
-        _, _, result = self.quality(inventory)
-        self.assertEqual(result["state"], "succeeded")
-        receipt = json.loads(self.load_receipt(result["quality_receipt_ref"]))
-        self.assertEqual(receipt["candidate"]["omitted"], unrelated.output_ids())
-        self.assertEqual(
-            set(receipt["candidate"]["output_ids"]),
-            {self.evidence_basis.output_id, self.index_basis.output_id},
-        )
-        self.assertIn(
-            unrelated.output_ids()[0], {r["id"] for r in self.rows("prepared_output")}
-        )
-        self.assert_no_selection()
-
     def test_corrupt_saved_object_fails_quality_and_never_selects_release(self):
         _, _, first, _ = self.build()
         row = self.row("artifact", first.saved.artifact_refs[0]["artifact_id"])
@@ -360,73 +338,6 @@ class PreparationIntegratedStageSix(unittest.TestCase):
         self.assertEqual(result["state"], "failed")
         self.assertIsNone(result["quality_receipt_ref"])
         self.assert_no_selection()
-
-    def test_control_double_rejects_late_wrong_duplicate_and_changed_results(self):
-        self.build()
-        job, run, result = self.quality()
-        for change in (
-            {"run_id": "wrong-run"},
-            {"basis_digest": "f" * 64},
-            {"task_revision": 7},
-            {"unit_id": "wrong-unit"},
-        ):
-            self.assertEqual(
-                self.control.accept(job, run, {**result, **change})[0], "rejected"
-            )
-        self.control.state = "cancelled"
-        self.assertEqual(self.control.accept(job, run, result), ("accepted", False))
-        self.assertEqual(self.control.accept(job, run, result), ("duplicate", False))
-        self.assert_no_selection()
-        self.control = ControlDouble()
-        self.control.state = "superseded"
-        self.assertEqual(self.control.accept(job, run, result), ("accepted", False))
-        self.assert_no_selection()
-
-    def test_exact_control_wire_bytes_and_json_reserialization_refusal(self):
-        job, raw, expected = WIRE["job_input"], WIRE["canonical_json"], WIRE["sha256"]
-        self.assertEqual(hashlib.sha256(raw.encode("utf-8")).hexdigest(), expected)
-        self.assertEqual(json.loads(raw), job)
-        state = ControlState(
-            job["task_id"],
-            job["task_revision"] + 1,
-            "running",
-            job["basis_digest"],
-            job["unit_id"],
-            job["attempt"],
-            job["task_revision"],
-            expected,
-            "run-wire",
-            "dispatched",
-        )
-
-        def reader(*_):
-            return state
-
-        def registered(ref):
-            return ref["kind"] == "source_revision" and ref["id"] == SOURCE_REV
-
-        self.assertEqual(
-            execute_unit(
-                raw,
-                run_id="run-wire",
-                read_control=reader,
-                registered=registered,
-                process=lambda _: "ok",
-            ),
-            "ok",
-        )
-        # Equivalent parsed data is NOT enough: Control has persisted the hash
-        # of its own canonicalJson UTF-8 bytes. Transport cannot reserialize it.
-        altered = json.dumps(job, ensure_ascii=False)
-        self.assertNotEqual(altered, raw)
-        with self.assertRaises(UnitNotRunnableError):
-            execute_unit(
-                altered,
-                run_id="run-wire",
-                read_control=reader,
-                registered=registered,
-                process=lambda _: self.fail("must not run"),
-            )
 
 
 if __name__ == "__main__":

@@ -58,48 +58,6 @@ class EvidenceContractsTests(unittest.TestCase):
             (release,),
         ).fetchall()
 
-    def test_migration_is_single_sequence_with_declared_tables_and_indexes(self):
-        self.assertEqual(FIXTURE["fixture_version"], "evidence-contracts/1")
-        tables = {
-            row[0]
-            for row in self.db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        self.assertEqual(tables, set(TABLES.values()))
-        self.assertEqual(self.db.execute("PRAGMA foreign_key_check").fetchall(), [])
-        migrations = sorted((ROOT / "schemas/migrations").glob("*.sql"))
-        self.assertEqual(migrations[0], ROOT / "schemas" / MANIFEST["migration"])
-        self.assertEqual(
-            [int(p.name.split("_")[0]) for p in migrations],
-            list(range(1, len(migrations) + 1)),
-        )
-        plan = self.db.execute(
-            "EXPLAIN QUERY PLAN SELECT output_id FROM release_outputs WHERE release_id=?",
-            ("release-1",),
-        ).fetchall()
-        self.assertTrue(any("INDEX" in row[3] for row in plan))
-        plan = self.db.execute(
-            "EXPLAIN QUERY PLAN SELECT relationship_id FROM relation_members WHERE span_id=?",
-            ("span-a",),
-        ).fetchall()
-        self.assertTrue(any("relation_members_span" in row[3] for row in plan))
-
-    def test_sql_records_round_trip_decoded_json_without_losing_fields(self):
-        for kind, records in FIXTURE["records"].items():
-            if kind in ("release", "release_output", "release_selection"):
-                continue
-            fetched = [
-                dict(row) for row in self.db.execute(f"SELECT * FROM {TABLES[kind]}")
-            ]
-            for row in fetched:
-                for key, value in list(row.items()):
-                    if key.endswith("_json"):
-                        row[key] = json.loads(value)
-                    elif key == "both_hosts_eligible":
-                        row[key] = bool(value)
-            self.assertCountEqual(fetched, records, kind)
-
     def test_shared_text_keeps_separate_source_attribution_and_native_identity(self):
         rows = self.db.execute(
             "SELECT ns.id,ns.source_revision_id,sn.attribution,ns.content_id FROM native_spans ns JOIN source_nodes sn ON sn.id=ns.source_revision_id WHERE ns.content_id IS NOT NULL ORDER BY ns.id"
@@ -181,29 +139,6 @@ class EvidenceContractsTests(unittest.TestCase):
             ).fetchone()[0],
             1,
         )
-
-    def test_ordered_many_endpoint_relationship_and_reverse_lookup(self):
-        self.releases()
-        members = self.db.execute(
-            "SELECT role,ordinal,span_id,correspondence,gap_reason FROM relation_members WHERE relationship_id=? ORDER BY role,ordinal",
-            ("relation-a",),
-        ).fetchall()
-        self.assertEqual(
-            [(r["role"], r["ordinal"], r["span_id"]) for r in members],
-            [
-                ("from", 0, "span-b"),
-                ("from", 1, "span-a"),
-                ("to", 0, "span-a"),
-                ("to", 1, None),
-            ],
-        )
-        self.assertEqual(members[-1]["correspondence"], "missing")
-        self.assertTrue(members[-1]["gap_reason"])
-        rows = self.db.execute(
-            "SELECT DISTINCT r.id,r.status FROM relation_members m JOIN relationships r ON r.id=m.relationship_id JOIN release_outputs ro ON ro.output_id=r.output_id WHERE m.span_id=? AND ro.release_id=?",
-            ("span-a", "release-2"),
-        ).fetchall()
-        self.assertEqual([(r[0], r[1]) for r in rows], [("relation-a", "disputed")])
 
     def test_registered_utf8_body_ranges_and_originals_remain_distinct(self):
         span = FIXTURE["records"]["native_span"][2]

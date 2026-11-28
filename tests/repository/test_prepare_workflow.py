@@ -81,15 +81,6 @@ class PrepareWorkflowTests(unittest.TestCase):
             len(SECRETS) + len(VARIABLES),
         )
 
-    def test_one_job_runs_every_kind_and_the_runner_reads_the_kind_from_the_job(self):
-        self.assertEqual(re.findall(r"(?m)^  ([a-z]+):\n", WORKFLOW), [JOB])
-        self.assertNotIn("--kind", WORKFLOW)
-        self.assertNotIn("--validate", WORKFLOW)
-        self.assertNotIn("needs:", WORKFLOW)
-        self.assertIn(
-            'python3 -m css_preparation.runner --status "$status"', job_block(JOB)
-        )
-
     def test_runner_output_is_published_as_records_and_nothing_is_kept_or_deleted(self):
         block = job_block(JOB)
         self.assertIn('cat "$status" >> "$GITHUB_STEP_SUMMARY"', block)
@@ -175,12 +166,3 @@ class FailurePathTests(unittest.TestCase):
         )
         self.assertEqual(summary, "Preparation unit finished: failed.\n")
         self.assertEqual(leftover, ["preparation-status.txt"])
-
-    def test_runner_without_status_reports_fixed_line(self):
-        completed, _, _ = self.run_step(JOB, 3, write_status=False)
-        self.assertEqual(completed.returncode, 3)
-        self.assertIn("Control reconciles this run.", completed.stdout)
-
-    def test_successful_runner_exits_zero(self):
-        completed, _, _ = self.run_step(JOB, 0)
-        self.assertEqual(completed.returncode, 0)

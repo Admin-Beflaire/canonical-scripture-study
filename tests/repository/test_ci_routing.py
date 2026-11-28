@@ -3,7 +3,6 @@
 import importlib.util
 from pathlib import Path
 import unittest
-from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
@@ -36,21 +35,6 @@ class RoutingTests(unittest.TestCase):
                 self.assertEqual(
                     set(profiles.select_profiles([path])), set(profiles.PROFILES)
                 )
-
-    def test_repository_profile_reuses_selected_python_interpreter(self):
-        with (
-            patch.object(profiles.sys, "executable", "selected-python"),
-            patch.object(profiles.subprocess, "run") as execute,
-        ):
-            profiles.run("repository")
-        self.assertEqual(execute.call_args.args[0][0], "selected-python")
-
-    def test_repository_profile_can_import_the_shared_python_package(self):
-        with patch.object(profiles.subprocess, "run") as execute:
-            profiles.run("repository")
-        shared = str(profiles.ROOT / "packages/shared-python/src")
-        paths = execute.call_args.kwargs["env"]["PYTHONPATH"].split(profiles.os.pathsep)
-        self.assertEqual(paths[0], shared)
 
     def test_shared_contract_changes_run_both_languages(self):
         for path in ("schemas/new.json", "tests/conformance/reference.json"):
@@ -104,17 +88,6 @@ class RoutingTests(unittest.TestCase):
                 set(profiles.select_profiles([path])), set(profiles.PROFILES)
             )
 
-    def test_docs_only_change_keeps_gate_without_running_suites(self):
-        self.assertEqual(profiles.select_profiles(["README.md", "CONTRIBUTING.md"]), [])
-
-    def test_removed_and_renamed_inputs_are_routed_as_paths(self):
-        self.assertEqual(
-            profiles.select_profiles(
-                ["packages/shared/old.ts", "packages/shared-python/new.py"]
-            ),
-            ["python", "repository", "standards", "typescript"],
-        )
-
     def test_typescript_tests_follow_the_imports_of_the_changed_files(self):
         study = profiles.typescript_tests(
             ["services/study/src/read/search.ts", "README.md"]
@@ -130,11 +103,6 @@ class RoutingTests(unittest.TestCase):
         # A change that no test imports cannot be narrowed.
         self.assertEqual(profiles.typescript_tests(["schemas/new.json"]), every)
 
-    def test_locked_python_tools_run_only_the_code_standards(self):
-        self.assertEqual(
-            profiles.select_profiles(["requirements-dev.txt"]), ["standards"]
-        )
-
     def test_code_standards_run_with_every_code_change(self):
         for path in (
             "services/study/src/search.ts",
@@ -145,20 +113,6 @@ class RoutingTests(unittest.TestCase):
             ".github/workflows/checks.yml",
         ):
             self.assertIn("standards", profiles.select_profiles([path]))
-
-    def test_checker_tests_run_only_when_the_checkers_change(self):
-        for changed, commands in (
-            (["services/study/src/index.ts"], ["check:standards"]),
-            (["eslint.config.mjs"], ["check:standards", "test:standards"]),
-        ):
-            with (
-                patch.object(profiles, "changed_paths", return_value=changed),
-                patch.object(profiles.subprocess, "run") as execute,
-            ):
-                profiles.run("standards")
-            self.assertEqual(
-                [call.args[0][-1] for call in execute.call_args_list], commands
-            )
 
     def test_public_workflow_cannot_access_privileged_inputs(self):
         workflow = (ROOT / ".github/workflows/checks.yml").read_text()

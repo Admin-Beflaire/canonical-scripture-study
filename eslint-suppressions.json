@@ -66,11 +66,6 @@
       "count": 1
     }
   },
-  "tests/study/aids.test.ts": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
   "tests/study/fixture.ts": {
     "max-lines-per-function": {
       "count": 2
@@ -78,16 +73,6 @@
   },
   "tests/study/reader-mappings.test.ts": {
     "complexity": {
-      "count": 1
-    }
-  },
-  "tests/study/results.test.ts": {
-    "max-lines-per-function": {
-      "count": 2
-    }
-  },
-  "tests/study/study.test.ts": {
-    "max-lines-per-function": {
       "count": 1
     }
   }

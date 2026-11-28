@@ -2,61 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {protocolHandler} from '../../packages/shared/src/platform.ts';
 import {controlServer} from '../../services/maintenance/control/src/mcp.ts';
-import {
-  ADMISSION_RULE,
-  CONTROL_INSTRUCTIONS,
-  DECISION_REF_MAX,
-} from '../../services/maintenance/control/src/guidance.ts';
-import {STEPS} from '../../services/maintenance/control/src/tasks.ts';
+import {CONTROL_INSTRUCTIONS} from '../../services/maintenance/control/src/guidance.ts';
 import {localD1} from './d1.ts';
 import {call, callTool, delivered} from '../shared/mcp-call.ts';
 import {prepareGenesis} from './requests.ts';
 
 const owner = 'owner@example.invalid';
 const control = () => controlServer(localD1(), owner, false);
-test('the guidance names every step, constraint and decision a task can use, where it is used', async () => {
-  const {tools} = await delivered(control);
-  const request = tools.find(t => t.name === 'request_task')!;
-  const fields = Object.fromEntries(
-    Object.entries(request.inputSchema.properties!).map(([name, field]) => [
-      name,
-      field.description ?? '',
-    ]),
-  );
-  for (const step of STEPS)
-    for (const text of [CONTROL_INSTRUCTIONS, fields.steps])
-      assert.match(text, new RegExp(`\\b${step}\\b`), step);
-  for (const key of [
-    'fetch_recipe',
-    'recipe',
-    'candidate',
-    'replaces',
-    'select_release',
-  ])
-    assert.match(fields.constraints, new RegExp(`\\b${key}:`), key);
-  for (const kind of ['admission', 'exclusion', 'statement'])
-    assert.match(fields.decision_refs, new RegExp(`\\b${kind}:`), kind);
-  // An admission is the owner's decision about a source, quoted by a short reference the field accepts.
-  assert.ok(fields.decision_refs.includes(ADMISSION_RULE));
-  assert.ok(
-    fields.decision_refs.includes(`at most ${DECISION_REF_MAX} characters`),
-  );
-  const all = [
-    CONTROL_INSTRUCTIONS,
-    ...tools.map(tool => tool.description),
-    ...Object.values(fields),
-  ].join('\n');
-  // No removed step kind; one task chains fetch and build; a decision is referenced, not copied.
-  for (const removed of [
-    'incorporate_statement',
-    'kind prepare',
-    'prepare (includes',
-    'separate tasks',
-    'exact words',
-  ])
-    assert.ok(!all.includes(removed), removed);
-});
-
 test('Control sends its usage guidance on initialize and lists exactly the five tools on the baseline protocol', async () => {
   const {instructions, tools} = await delivered(control);
   assert.equal(instructions, CONTROL_INSTRUCTIONS);

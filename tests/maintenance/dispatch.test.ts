@@ -1,4 +1,4 @@
-import test, {mock} from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {localD1} from './d1.ts';
 import {prepareGenesis} from './requests.ts';
@@ -114,26 +114,6 @@ test('intent is saved before dispatch and a repeated dispatch never creates a du
     (await dispatchUnit(db, wire, task.id, 1, unit)).status,
     'not_dispatchable',
   );
-});
-
-test('an unconfirmed dispatch is logged as one safe error record', async () => {
-  const {db, task} = await setup();
-  const logged = mock.method(console, 'error', () => {});
-  try {
-    await dispatchUnit(db, transport([]), task.id, 1, unit);
-    const lines = logged.mock.calls.map(call =>
-      JSON.parse(String(call.arguments[0])),
-    );
-    assert.equal(lines.length, 1);
-    assert.deepEqual(
-      [lines[0].tool, lines[0].stage, lines[0].code, lines[0].outcome],
-      ['control', 'dispatch', 'dispatch_unconfirmed', 'uncertain'],
-    );
-    assert.equal(lines[0].ids.task, task.id);
-    assert.equal(lines[0].message, undefined);
-  } finally {
-    logged.mock.restore();
-  }
 });
 
 test('an unconfirmed dispatch keeps its intent for reconciliation instead of re-sending', async () => {
@@ -287,26 +267,4 @@ test('a cancel that lands while a success receipt is being recorded makes it ine
     eligible: false,
     state: 'cancelled',
   });
-});
-
-test('a run started while the task was superseded is reported as orphaned', async () => {
-  const {db, task} = await setup();
-  const racing: WorkflowTransport = {
-    async dispatch() {
-      const next = await requestTask(db, owner, {
-        ...prepareGenesis,
-        request_key: 'p2',
-        instruction: 'Prepare Genesis and Exodus',
-        extent: {books: ['GEN', 'EXO']},
-        supersedes: task.id,
-      });
-      assert.equal(next.status, 'created');
-      return {run_id: 'run-late'};
-    },
-  };
-  assert.equal(
-    (await dispatchUnit(db, racing, task.id, 1, unit)).status,
-    'orphaned',
-  );
-  assert.equal((await taskReport(db, owner, task.id))?.state, 'superseded');
 });

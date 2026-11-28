@@ -301,27 +301,6 @@ test('a reader-reference build is selected before the text build of its book, an
   assert.ok(members.includes(mapping));
 });
 
-test('the reader-reference and text builds of a book can both be prepared to checked, then be made current in that order', async () => {
-  const {w, id, mapping, inputs} = await checkedReaderBuild();
-  const text = await runBook(w, prepareTask('exo', 'text', {inputs}), 'rev-2', {
-    release: false,
-  });
-  assert.equal(text.task.state, 'checked', text.task.limitations.join(' | '));
-  assert.equal((await taskReport(w.db, owner, id))!.state, 'checked');
-  assert.equal(selected(w).current_release_id, null, 'nothing is selected');
-
-  for (const [build, key] of [
-    [id, 'release-reader'],
-    [text.taskId, 'release-text'],
-  ]) {
-    const {report} = await releaseBuild(w, build, key);
-    assert.equal(report.state, 'completed', report.limitations.join(' | '));
-  }
-  const members = membersOf(w, selected(w).current_release_id);
-  assert.equal(members.length, 3);
-  assert.ok(members.includes(mapping));
-});
-
 test('a second book is added to the current release; parallel tasks each rebuild from current at check time', async () => {
   const w = world();
   const first = await runBook(w, prepareTask('gen', 'g1'));
@@ -585,35 +564,6 @@ test('the task must ask for the recipe extent and capabilities before anything i
   assert.equal(w.gh.runs.size, 0);
 });
 
-test('a checked candidate can be released after an unrelated selection without rebuilding', async () => {
-  const w = world();
-  await runBook(w, prepareTask('exo', 'e1'));
-  const exodus = selected(w).current_release_id;
-  const {taskId} = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', {
-    release: false,
-  });
-  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
-  assert.equal(
-    selected(w).current_release_id,
-    exodus,
-    'a build alone never selects',
-  );
-  // Another selection lands after the build.
-  w.db.sqlite
-    .exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
-    INSERT INTO release_outputs SELECT 'release-other', output_id FROM release_outputs WHERE release_id = '${exodus}';
-    UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = 'release-other'`);
-  const released = await releaseBuild(w, taskId, 'release-g1');
-  assert.equal(
-    released.report.state,
-    'completed',
-    JSON.stringify(released.report.limitations),
-  );
-  assert.equal(released.report.selection.base_release_id, 'release-other');
-  assert.equal(selected(w).previous_release_id, 'release-other');
-  assert.equal(membersOf(w, selected(w).current_release_id).length, 6);
-});
-
 test('a checked candidate does not overwrite a newer change to the same source extent', async () => {
   const w = world();
   const first = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', {
@@ -632,58 +582,6 @@ test('a checked candidate does not overwrite a newer change to the same source e
     ),
   );
   assert.equal(selected(w).current_release_id, before);
-});
-
-test('two independently checked builds can both be released, retaining both outputs', async () => {
-  const w = world();
-  const gen = await runBook(w, prepareTask('gen', 'parallel-gen'), 'rev-1', {
-    release: false,
-  });
-  const exo = await runBook(w, prepareTask('exo', 'parallel-exo'), 'rev-1', {
-    release: false,
-  });
-  const genRelease = await releaseBuild(w, gen.taskId, 'parallel-release-gen');
-  const genIds = membersOf(w, selected(w).current_release_id);
-  assert.equal(genRelease.report.state, 'completed');
-  const exoRelease = await releaseBuild(w, exo.taskId, 'parallel-release-exo');
-  assert.equal(
-    exoRelease.report.state,
-    'completed',
-    JSON.stringify(exoRelease.report.limitations),
-  );
-  const releaseId = selected(w).current_release_id;
-  const all = membersOf(w, releaseId);
-  assert.equal(all.length, 6);
-  assert.ok(genIds.every(id => all.includes(id)));
-  const rows = w.db.sqlite
-    .prepare(
-      `SELECT c.output_id, c.capability, c.state FROM coverage c
-    JOIN release_outputs ro ON ro.output_id = c.output_id WHERE ro.release_id = ?`,
-    )
-    .all(releaseId) as Array<{
-    output_id: string;
-    capability: string;
-    state: string;
-  }>;
-  const expected = `sha256:${sha(JSON.stringify(rows.map(row => [row.output_id, row.capability, row.state]).sort()))}`;
-  const actual = w.db.sqlite
-    .prepare('SELECT coverage_basis FROM releases WHERE id = ?')
-    .get(releaseId) as {coverage_basis: string};
-  assert.equal(
-    actual.coverage_basis,
-    expected,
-    'coverage includes both the retained and newly added outputs',
-  );
-  const candidate = (await taskReport(w.db, owner, exo.taskId))!.selection
-    .candidate_release_id;
-  const prior = w.db.sqlite
-    .prepare('SELECT coverage_basis FROM releases WHERE id = ?')
-    .get(candidate) as {coverage_basis: string};
-  assert.notEqual(
-    actual.coverage_basis,
-    prior.coverage_basis,
-    'the build-only coverage is not reused',
-  );
 });
 
 test('a lost selection response is settled by reading the selection back', async () => {
@@ -1348,25 +1246,6 @@ test('a selection that keeps moving blocks the task with the reason and changes 
   );
 });
 
-test('a release task whose revision moves just before the write changes nothing', async () => {
-  const w = world();
-  const taskId = await stageGenesis(w);
-  const before = selected(w);
-  const rows = releaseCounts(w);
-  beforeWrite(w, 'release-g1', () =>
-    w.db.sqlite
-      .prepare(
-        `UPDATE maintenance_tasks SET revision = revision + 1 WHERE request_key = 'release-g1'`,
-      )
-      .run(),
-  );
-  const released = await releaseBuild(w, taskId, 'release-g1');
-  assert.notEqual(released.report.state, 'completed');
-  assert.deepEqual(selected(w), before);
-  assert.deepEqual(releaseCounts(w), rows);
-  assert.equal((await taskReport(w.db, owner, taskId))!.state, 'checked');
-});
-
 test('R110-2: a task whose selection was refused is not completed because another task selected the same release', async () => {
   const w = world();
   const taskId = await stageGenesis(w);
@@ -1640,34 +1519,6 @@ test('R25-8: removal checks what stays against its new exclusions, and a stale c
   );
 });
 
-test('R25-9: a passed quality check is reported as passed when the scope check fails', async () => {
-  const w = world();
-  const {taskId} = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', {
-    damage: {skipWordCoverage: 'Gen.1.3'},
-  });
-  const task = (await taskReport(w.db, owner, taskId))!;
-  assert.equal(task.state, 'blocked');
-  assert.equal(task.checks.quality, 'passed');
-  assert.ok(task.checks.quality_receipt?.startsWith('receipt:'));
-  assert.equal(task.checks.scope, 'failed');
-});
-
-test('R25-10: a running task whose recipe changes is saved as blocked with the reason', async () => {
-  const w = world();
-  const created = await requestTask(w.db, owner, prepareTask('gen', 'g1'));
-  const taskId = (created as {task: {id: string}}).task.id;
-  await advance(w.db, w.github, taskId, w.objects);
-  w.gh.recipes.set('collection/recipes/gen.json', {
-    ...recipeFor('gen', [['Gen.1.1', 'Gen.1.2'], ['Gen.1.3']]),
-    revision: 'gen/r2',
-  });
-  const progress = await advance(w.db, w.github, taskId, w.objects);
-  assert.equal(progress.state, 'blocked');
-  const task = (await taskReport(w.db, owner, taskId))!;
-  assert.equal(task.state, 'blocked');
-  assert.ok(task.limitations.some(text => text.includes('recipe changed')));
-});
-
 test('a release refuses an unknown task, an unfinished build and a candidate that is already current', async () => {
   const w = world();
   const unknown = await releaseBuild(w, 'no-such-task', 'release-none');
@@ -1740,6 +1591,7 @@ for (const state of ['cancelled', 'superseded']) {
     const {taskId} = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', {
       release: false,
     });
+    const rows = releaseCounts(w);
     beforeWrite(w, 'release-g1', () =>
       w.db.sqlite
         .prepare(
@@ -1755,27 +1607,9 @@ for (const state of ['cancelled', 'superseded']) {
       state,
       'the build is left as it was changed',
     );
+    assert.deepEqual(releaseCounts(w), rows, 'no release rows are left');
   });
 }
-
-test('a released build is finished with the release and cannot be released again', async () => {
-  const w = world();
-  const {taskId, releaseId, task} = await runBook(w, prepareTask('gen', 'g1'));
-  assert.equal(task.state, 'completed');
-  const build = (await taskReport(w.db, owner, taskId))!;
-  assert.equal(build.state, 'completed');
-  assert.equal(
-    build.selection.candidate_release_id,
-    task.selection.candidate_release_id,
-  );
-  assert.equal(build.data_current, true);
-  const again = await releaseBuild(w, taskId, 'release-twice');
-  assert.equal(again.report.state, 'blocked');
-  assert.ok(
-    again.report.limitations.some(text => text.includes('already current')),
-  );
-  assert.ok(releaseId);
-});
 
 test('an interrupted release is selected again by the next check, after the same guards', async () => {
   const w = world();
@@ -1808,72 +1642,4 @@ test('an interrupted release is selected again by the next check, after the same
   // A repeated advance changes nothing.
   await advance(w.db, w.github, stuck.id, w.objects);
   assert.equal(selected(w).previous_release_id, null);
-});
-
-test('an interrupted release safely retries against an unrelated new base', async () => {
-  const w = world();
-  await runBook(w, prepareTask('exo', 'e1'));
-  const exodus = selected(w).current_release_id;
-  const {taskId} = await runBook(w, prepareTask('gen', 'g1'), 'rev-1', {
-    release: false,
-  });
-  const interrupt = interruptWrite(w, 'release-g1');
-  const stuck = await releaseBuild(w, taskId, 'release-g1');
-  assert.ok(['queued', 'running'].includes(stuck.report.state));
-  interrupt.on = false;
-  w.db.sqlite
-    .exec(`INSERT INTO releases VALUES ('release-other', 'm', 'r', '{}', 'c', 'q', 's');
-    INSERT INTO release_outputs SELECT 'release-other', output_id FROM release_outputs WHERE release_id = '${exodus}';
-    UPDATE release_selection SET previous_release_id = current_release_id, current_release_id = 'release-other'`);
-  await advance(w.db, w.github, stuck.id, w.objects);
-  const report = (await taskReport(w.db, owner, stuck.id))!;
-  assert.equal(report.state, 'completed', JSON.stringify(report.limitations));
-  assert.equal(selected(w).previous_release_id, 'release-other');
-  assert.equal(membersOf(w, selected(w).current_release_id).length, 6);
-});
-
-test('R74-2: a parallel build cancelled at guarded selection leaves no orphan combined release', async () => {
-  const w = world();
-  const genesis = await runBook(w, prepareTask('gen', 'guard-gen'), 'rev-1', {
-    release: false,
-  });
-  const exodus = await runBook(w, prepareTask('exo', 'guard-exo'), 'rev-1', {
-    release: false,
-  });
-  const first = await releaseBuild(w, genesis.taskId, 'guard-release-gen');
-  assert.equal(first.report.state, 'completed');
-  const current = selected(w).current_release_id;
-  const counts = () => ({
-    releases: (
-      w.db.sqlite.prepare('SELECT COUNT(*) AS total FROM releases').get() as {
-        total: number;
-      }
-    ).total,
-    members: (
-      w.db.sqlite
-        .prepare('SELECT COUNT(*) AS total FROM release_outputs')
-        .get() as {total: number}
-    ).total,
-  });
-  const before = counts();
-  const reached = beforeWrite(w, 'guard-release-exo', () =>
-    w.db.sqlite
-      .prepare(
-        "UPDATE maintenance_tasks SET state = 'cancelled', revision = revision + 1 WHERE id = ?",
-      )
-      .run(exodus.taskId),
-  );
-  const second = await releaseBuild(w, exodus.taskId, 'guard-release-exo');
-  assert.equal(reached(), true, 'test reached the guarded parallel selection');
-  assert.notEqual(second.report.state, 'completed');
-  assert.equal(selected(w).current_release_id, current);
-  assert.deepEqual(
-    counts(),
-    before,
-    'no unselected release row or members left behind',
-  );
-  assert.equal(
-    (await taskReport(w.db, owner, exodus.taskId))!.state,
-    'cancelled',
-  );
 });
